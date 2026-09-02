@@ -6,14 +6,16 @@ A hypothesis, not a spec. Short, living, rewritten after the first playable.
 
 One sentence: who the player is, what they do, why that is fun.
 
+Zoomed in, its a automation puzzle game, as the game progresses, as the player zooms out, it turns into an engineering game.
+
 ## Core loop
 
-The 30-second cycle and the interesting decision inside it.
-What the player does, never what the game has.
+Zoomed loop: similar to Opus Magnum.
+Wide loop: similar to Factorio.
 
 ## Feel
 
-Two or three reference games and what to steal from each: camera, pace, input device.
+Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included.
 
 ## First playable
 
@@ -30,4 +32,5 @@ Ideas that are not in the plan.
 
 ## Open questions
 
-What is unknown, and which prototype answers each.
+How do we limit simulation load? Limit number of atoms?
+How do we let player actively design and recover from mistakes. Debug step forward and back? Localized debug step?
