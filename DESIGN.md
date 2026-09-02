@@ -21,7 +21,7 @@ Factorio's model. Progression unlocks mechanics and reveals the next challenge, 
 
 ## Feel
 
-Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included.
+Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included. Mouse and keyboard only.
 
 ## First playable
 
@@ -50,3 +50,5 @@ Proposal: determinism gives step forward for free and step back by replay from a
 Are placed instances linked to one definition (edit once, all update) or independent copies? Linked gives blueprints plus an upgrade path.
 
 Are belts provided at all, or engineered from the primitives: grabbers moving a polymer, a corner meaning cut and re-bond after the turn, a favourite belt design copied? If engineered, two things follow. Copy-paste must make the fiftieth belt free, or transport becomes chores, so blueprints are core rather than a feature. And a hand-built belt costs far more to simulate than a provided one, so compiling blueprinted groups to a throughput function stops being an optimization and becomes the architecture. A third option: launchers. Single atoms can be launched; compounds need more involved transport. Transport cost then scales with what is moved, which is a decision in itself: move atoms and bond locally, or engineer compound transport.
+
+Does the world run while you edit? Factorio's always-running world is fun: things go wrong while you think, and progress happens while you think. Opus Magnum would be unplayable in real time. Proposal: the world always runs, but the region being edited freezes. A frozen patch is a physical thing: its arms stop, its atoms hold still, and upstream backs up while you think. Inside the patch, Opus Magnum's scrub: play it forward and back against its recorded inputs. Designing in a void is the degenerate case, a frozen patch with nothing around it, placed afterwards as a blueprint. Unresolved: what happens at the boundary of a frozen patch (launched atoms pile up, or bounce).
