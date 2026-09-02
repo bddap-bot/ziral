@@ -25,7 +25,7 @@ Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, c
 
 ## First playable
 
-One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by belts. One goal: deliver N of one molecule per minute. Graybox, circles and lines.
+One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by whatever transport the player builds from the same primitives. One goal: deliver N of one molecule per minute. Graybox, circles and lines.
 
 Falsifier: the machine gets designed once and never revisited. Then zoom-in is a tutorial, not a loop, and the pitch fails.
 
@@ -48,3 +48,5 @@ How do we let player actively design and recover from mistakes. Debug step forwa
 Proposal: determinism gives step forward for free and step back by replay from a checkpoint. Localized step is the same on one machine with its recorded input stream.
 
 Are placed instances linked to one definition (edit once, all update) or independent copies? Linked gives blueprints plus an upgrade path.
+
+Are belts provided at all, or engineered from the primitives: grabbers moving a polymer, a corner meaning cut and re-bond after the turn, a favourite belt design copied? If engineered, two things follow. Copy-paste must make the fiftieth belt free, or transport becomes chores, so blueprints are core rather than a feature. And a hand-built belt costs far more to simulate than a provided one, so compiling blueprinted groups to a throughput function stops being an optimization and becomes the architecture.
