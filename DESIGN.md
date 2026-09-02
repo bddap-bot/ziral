@@ -19,6 +19,8 @@ Zoom is continuous; there is no boundary between micro and macro. Zoomed in, the
 
 Factorio's model. Progression unlocks mechanics and reveals the next challenge, each to be received with dismay. Science compounds are combined, then consumed to advance research. Each research tier demands new molecules, which demands new machines: that is what pulls the player back into the micro loop.
 
+Each primitive machine is itself built as a compound and dropped on an output pad before it can be placed. Part of progression may fall out of the need to bootstrap, with no science at all. Open: how the first machine reaches the player's inventory.
+
 ## Feel
 
 Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included. Mouse and keyboard only.
@@ -37,7 +39,10 @@ Art. Research tree. Enemies. Power. Fluids. Multiplayer. More than one molecule 
 
 ## Parking lot
 
-Ideas that are not in the plan.
+- Creating a bond requires an atom: the atom becomes the bond between two other atoms.
+- A jam element: a bane in the early game, until the player learns they need it and builds machines to manufacture it on purpose.
+- Metals become transferable over long distances via a reaction resembling electroplating. Make it extra complicated, perhaps consuming a consumable on the receiving end.
+- Select a machine by entering a code, like d-pad codes. The fun may be there.
 
 ## Open questions
 
@@ -51,4 +56,8 @@ Are placed instances linked to one definition (edit once, all update) or indepen
 
 Are belts provided at all, or engineered from the primitives: grabbers moving a polymer, a corner meaning cut and re-bond after the turn, a favourite belt design copied? If engineered, two things follow. Copy-paste must make the fiftieth belt free, or transport becomes chores, so blueprints are core rather than a feature. And a hand-built belt costs far more to simulate than a provided one, so compiling blueprinted groups to a throughput function stops being an optimization and becomes the architecture. A third option: launchers. Single atoms can be launched; compounds need more involved transport. Transport cost then scales with what is moved, which is a decision in itself: move atoms and bond locally, or engineer compound transport.
 
-Does the world run while you edit? Factorio's always-running world is fun: things go wrong while you think, and progress happens while you think. Opus Magnum would be unplayable in real time. Proposal: the world always runs, but the region being edited freezes. A frozen patch is a physical thing: its arms stop, its atoms hold still, and upstream backs up while you think. Inside the patch, Opus Magnum's scrub: play it forward and back against its recorded inputs. Designing in a void is the degenerate case, a frozen patch with nothing around it, placed afterwards as a blueprint. Unresolved: what happens at the boundary of a frozen patch (launched atoms pile up, or bounce).
+Does the world run while you edit? Factorio's always-running world is fun: things go wrong while you think, and progress happens while you think. Opus Magnum would be unplayable in real time. Proposal: the world always runs, but the region being edited freezes. A frozen patch is a physical thing: its arms stop, its atoms hold still, and upstream backs up while you think. Inside the patch, Opus Magnum's scrub: play it forward and back against its recorded inputs. Designing in a void is the degenerate case, a frozen patch with nothing around it, placed afterwards as a blueprint. Unresolved: what happens at the boundary of a frozen patch (launched atoms pile up, or bounce). Status: the proposal has many seams to work out; undecided.
+
+What does a mistake look like in the world? Options: a local jam that persists until something clears it; no mistakes at all; the jam element from the parking lot; backpressure absorbing part of the problem.
+
+Substrate, two options. Clone Opus Magnum's elements, bonds, and machines and build atop them initially, possibly torn down and restarted later. Or a vertical slice that exercises the data model: one source atom type, two bond types. What makes a compound valuable is still open.
