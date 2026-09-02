@@ -13,6 +13,12 @@ Zoomed in, its a automation puzzle game, as the game progresses, as the player z
 Zoomed loop: similar to Opus Magnum.
 Wide loop: similar to Factorio.
 
+The boundary between zoomed in and zoomed out is fuzzy. Zoomed in, the puzzles are Opus Magnum-like; zooming out raises the level of abstraction. Mistakes at the micro level cause macro problems, and vice versa. The hard problems, as in Factorio, are planning, robustness, and managing complexity.
+
+## Progression
+
+Factorio's model. Progression unlocks mechanics and reveals the next challenge, each to be received with dismay. Science compounds are combined, then consumed to advance research. Each research tier demands new molecules, which demands new machines: that is what pulls the player back into the micro loop.
+
 ## Feel
 
 Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included.
