@@ -53,6 +53,12 @@ pub enum Instr {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stall {
+    Illegal,
+    Hand(usize),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AtomKind {
     Base,
 }
@@ -83,7 +89,7 @@ pub struct Arm {
     pub tape: Vec<Instr>,
     pub pc: usize,
     pub held: Option<usize>,
-    pub stalled: bool,
+    pub stall: Option<Stall>,
 }
 
 impl Arm {
@@ -94,7 +100,7 @@ impl Arm {
             tape,
             pc: 0,
             held: None,
-            stalled: false,
+            stall: None,
         }
     }
 
@@ -272,12 +278,12 @@ impl Sim {
         seen
     }
 
-    fn held_by_any(&self, id: usize) -> bool {
-        self.arms.iter().any(|a| a.held == Some(id))
+    fn holder(&self, id: usize) -> Option<usize> {
+        self.arms.iter().position(|a| a.held == Some(id))
     }
 
     fn component_released(&self, id: usize) -> bool {
-        !self.component(id).iter().any(|a| self.held_by_any(*a))
+        !self.component(id).iter().any(|a| self.holder(*a).is_some())
     }
 
     pub fn spawn(&mut self, atom: Atom) -> usize {
@@ -293,12 +299,11 @@ impl Sim {
         }
     }
 
-    pub fn second_hand(&self, i: usize) -> Option<usize> {
-        let comp = self.component(self.arms[i].held?);
-        self.arms
-            .iter()
-            .enumerate()
-            .position(|(j, a)| j != i && a.held.is_some_and(|id| comp.contains(&id)))
+    pub fn other_hand(&self, i: usize) -> Option<usize> {
+        self.component(self.arms[i].held?)
+            .into_iter()
+            .filter_map(|id| self.holder(id))
+            .find(|j| *j != i)
     }
 
     fn consume(&mut self, ids: &[usize]) {
@@ -342,10 +347,10 @@ impl Sim {
             } else {
                 arm.tape[arm.pc % arm.tape.len()]
             };
-            let done = self.exec(i, instr);
+            let stall = self.exec(i, instr).err();
             let arm = &mut self.arms[i];
-            arm.stalled = !done;
-            if done {
+            arm.stall = stall;
+            if stall.is_none() {
                 arm.pc = arm.pc.wrapping_add(1);
             }
         }
@@ -413,16 +418,14 @@ impl Sim {
         }
     }
 
-    fn exec(&mut self, i: usize, instr: Instr) -> bool {
+    fn exec(&mut self, i: usize, instr: Instr) -> Result<(), Stall> {
         let hand = self.arms[i].hand();
         match instr {
             Instr::Wait => {}
             Instr::Grab => {
-                let Some(id) = self.atom_at(hand) else {
-                    return false;
-                };
-                if self.held_by_any(id) && self.arms[i].held != Some(id) {
-                    return false;
+                let id = self.atom_at(hand).ok_or(Stall::Illegal)?;
+                if self.holder(id).is_some_and(|j| j != i) {
+                    return Err(Stall::Illegal);
                 }
                 self.arms[i].held = Some(id);
             }
@@ -431,8 +434,8 @@ impl Sim {
                 let cw = instr == Instr::RotCw;
                 let pivot = self.arms[i].pivot;
                 if let Some(held) = self.arms[i].held {
-                    if self.second_hand(i).is_some() {
-                        return false;
+                    if let Some(j) = self.other_hand(i) {
+                        return Err(Stall::Hand(j));
                     }
                     let comp = self.component(held);
                     let moved: Vec<(usize, Hex)> = comp
@@ -444,7 +447,7 @@ impl Sim {
                             .is_some_and(|other| !comp.contains(&other))
                     });
                     if blocked {
-                        return false;
+                        return Err(Stall::Illegal);
                     }
                     for (id, to) in moved {
                         self.atoms[id].as_mut().unwrap().pos = to;
@@ -454,7 +457,7 @@ impl Sim {
                 arm.dir = (arm.dir + if cw { 1 } else { 5 }) % 6;
             }
         }
-        true
+        Ok(())
     }
 
     fn place(&mut self, other: &Sim, at: Hex) {
@@ -574,14 +577,14 @@ mod tests {
         put(&mut sim, 1, -1);
         sim.step();
         sim.step();
-        assert!(sim.arms[0].stalled);
+        assert!(sim.arms[0].stall.is_some());
         assert_eq!(sim.arms[0].pc, 1);
         assert_eq!(sim.atoms[0].unwrap().pos, Hex::new(1, 0));
         sim.step();
         sim.step();
-        assert!(sim.arms[0].stalled);
+        assert!(sim.arms[0].stall.is_some());
         sim.step();
-        assert!(!sim.arms[0].stalled);
+        assert!(sim.arms[0].stall.is_none());
         assert_eq!(sim.atoms[0].unwrap().pos, Hex::new(1, -1));
     }
 
@@ -594,12 +597,12 @@ mod tests {
         put(&mut sim, 1, 0);
         sim.step();
         sim.step();
-        assert!(sim.arms[0].stalled);
+        assert!(sim.arms[0].stall.is_some());
         assert_eq!(sim.arms[0].pc, 1);
         sim.step();
-        assert!(sim.arms[0].stalled);
+        assert!(sim.arms[0].stall.is_some());
         sim.step();
-        assert!(!sim.arms[0].stalled);
+        assert!(sim.arms[0].stall.is_none());
         assert_eq!(sim.arms[0].held, Some(0));
         assert_eq!(sim.arms[1].held, None);
     }
@@ -616,10 +619,10 @@ mod tests {
         sim.step();
         assert_eq!(sim.atoms[0].unwrap().pos, Hex::new(1, -1));
         assert_eq!(sim.atoms[1].unwrap().pos, Hex::new(1, -2));
-        assert!(!sim.arms[0].stalled);
-        assert!(sim.arms[1].stalled);
+        assert!(sim.arms[0].stall.is_none());
+        assert!(sim.arms[1].stall.is_some());
         sim.step();
-        assert!(!sim.arms[1].stalled);
+        assert!(sim.arms[1].stall.is_none());
         assert_eq!(sim.atoms[1].unwrap().pos, Hex::new(1, -1));
     }
 
@@ -830,16 +833,16 @@ mod tests {
         let b = put(&mut sim, 1, -1);
         bond(&mut sim, a, b, BondKind::Single);
         sim.step();
-        assert_eq!(sim.second_hand(0), Some(1));
-        assert_eq!(sim.second_hand(1), Some(0));
+        assert_eq!(sim.other_hand(0), Some(1));
+        assert_eq!(sim.other_hand(1), Some(0));
         sim.step();
-        assert!(sim.arms[0].stalled);
+        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
         assert_eq!(sim.atoms[a].unwrap().pos, Hex::new(1, 0));
         sim.step();
-        assert!(sim.arms[0].stalled);
-        assert_eq!(sim.second_hand(0), None);
+        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
+        assert_eq!(sim.other_hand(0), None);
         sim.step();
-        assert!(!sim.arms[0].stalled);
+        assert!(sim.arms[0].stall.is_none());
         assert_eq!(sim.atoms[a].unwrap().pos, Hex::new(1, -1));
         assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(0, -1));
     }
@@ -909,7 +912,7 @@ mod tests {
         }
         assert_eq!(sim.delivered, 4 * (PLACEMENTS.len() as u64 - 1));
         let stalled: Vec<usize> = (0..sim.arms.len())
-            .filter(|i| sim.arms[*i].stalled)
+            .filter(|i| sim.arms[*i].stall.is_some())
             .collect();
         assert_eq!(stalled, vec![sim.arms.len() - 2, sim.arms.len() - 1]);
         assert!(sim.atoms.len() < 40);

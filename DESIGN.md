@@ -122,14 +122,14 @@ A2: let's let it tear the sacrificial atom off of compounds, could be fun
 
 ### Round 4, what Toy 1 now does
 
-Decided: a molecule under two hands stalls every rotate until a tape drops it. The bond and the grab that put the second hand on it do not wait. The stall is shown: the stalled arm's pivot carries its white ring as before, and the hand that blocks it carries a wider white ring, so the player can read which hold to drop.
+Decided: a molecule under two hands stalls every rotate until a tape drops it. The bond and the grab that put the second hand on it do not wait. The stall is shown: the stalled arm's pivot carries its white ring as before, and when the stall is another hand on the molecule, that hand carries a wider white ring, so the player can read which hold to drop. An arm records why it stalled, and only a stall caused by a hand names one.
 
-Decided: a bonder or second-bond glyph tears its sacrificial atom out of an unheld compound. The atom's bonds are severed in the same tick the new bond is written, and what remains is a smaller compound, or two, wherever they were. The tear is shown for that one tick: each severed bond stays drawn in dim grey from its surviving atom to the emptied slot. A sacrificial atom in a held compound still waits for release.
+Decided: a bonder or second-bond glyph tears its sacrificial atom out of an unheld compound. The atom's bonds are severed in the same tick the new bond is written, and what remains lies where it was, as one smaller compound or two. The tear is shown for that one tick: each severed bond stays drawn as a dim grey stub from its surviving atom toward the emptied slot. A sacrificial atom in a held compound still waits for release.
 
 No code hedged either rule; nothing was deleted for them.
 
 Questions for round 5:
 
-Q1: The sacrificial atom may itself be bonded to one of the two atoms the glyph joins. The toy tears that bond and writes the new one in the same tick, so a bonder can eat one atom of a compound to bond its neighbours. Is that a rule, or should the sacrificial slot refuse an atom bonded to either target?
+Q1: A tear can split a compound. The toy eats an atom out of the middle of a chain and leaves both halves lying where they were, each now its own compound. Is a split a tool too, or should the sacrificial slot only take an atom at the end of a compound, with one bond to sever?
 
-Q2: Within a tick, arms act before glyphs. A grab that lands on a compound the same tick a bonder would eat from it wins, and the bonder waits; a drop the same tick lets the bonder fire that tick. Is arms-before-glyphs the order, or should glyphs read the state the tick began with?
+Q2: Within a tick, arms act before glyphs. In the bonding scene the arm's grab and the bonder's fire land in the same tick, the grab first, so the arm holds the new compound; a grab that lands on a compound the same tick a bonder would eat from it wins, and the bonder waits. Is arms-before-glyphs the order, or should glyphs read the state the tick began with?

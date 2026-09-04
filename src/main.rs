@@ -3,7 +3,7 @@ mod sim;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
 
 const HEX: f32 = 20.0;
 const TICK_HZ: f64 = 6.0;
@@ -524,7 +524,10 @@ fn tape_line(world: &World, i: usize) -> String {
         Some(Focus::Arm { arm, cursor }) if arm == i => Some(cursor),
         _ => None,
     };
-    let mut out = format!("arm {i:<3}{}", if arm.stalled { "! " } else { "  " });
+    let mut out = format!(
+        "arm {i:<3}{}",
+        if arm.stall.is_some() { "! " } else { "  " }
+    );
     let pc = if arm.tape.is_empty() {
         0
     } else {
@@ -683,7 +686,8 @@ fn draw(
         draw_bond(&mut gizmos, px(a.pos), px(c.pos), b.kind, atom);
     }
     for (kept, lost, kind) in &s.torn {
-        draw_bond(&mut gizmos, px(*kept), px(*lost), *kind, torn);
+        let (a, b) = (px(*kept), px(*lost));
+        draw_bond(&mut gizmos, a, a.lerp(b, 0.5), *kind, torn);
     }
     for (_, a) in s.live_atoms() {
         gizmos.circle_2d(px(a.pos), HEX * 0.4, atom);
@@ -698,11 +702,11 @@ fn draw(
         if arm.held.is_some() {
             gizmos.circle_2d(px(arm.hand()), HEX * 0.5, color);
         }
-        if arm.stalled {
+        if arm.stall.is_some() {
             gizmos.circle_2d(px(arm.pivot), HEX * 0.5, picked);
-            if let Some(j) = s.second_hand(i) {
-                gizmos.circle_2d(px(s.arms[j].hand()), HEX * 0.65, picked);
-            }
+        }
+        if let Some(Stall::Hand(j)) = arm.stall {
+            gizmos.circle_2d(px(s.arms[j].hand()), HEX * 0.65, picked);
         }
     }
     if let (Some(held), Some(p)) = (world.held, world.pointer) {
@@ -865,20 +869,29 @@ mod shot {
                     at: Hex::new(1, -1),
                     dir: 0,
                 });
-                let chain: Vec<usize> = [Hex::new(-1, -1), Hex::new(0, -1), Hex::new(1, -1)]
-                    .into_iter()
-                    .chain([Hex::new(2, -1), Hex::new(2, -2)])
-                    .map(|pos| {
-                        sim.spawn(Atom {
-                            kind: AtomKind::Base,
-                            pos,
-                        })
+                let ids: Vec<usize> = [
+                    Hex::new(-1, -1),
+                    Hex::new(0, -1),
+                    Hex::new(1, -1),
+                    Hex::new(1, 0),
+                    Hex::new(2, -1),
+                    Hex::new(2, -2),
+                ]
+                .into_iter()
+                .map(|pos| {
+                    sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos,
                     })
-                    .collect();
-                for (k, kind) in [BondKind::Single, BondKind::Double].into_iter().enumerate() {
+                })
+                .collect();
+                for (k, kind) in [BondKind::Single, BondKind::Double, BondKind::Single]
+                    .into_iter()
+                    .enumerate()
+                {
                     sim.bonds.push(Bond {
-                        a: chain[k],
-                        b: chain[k + 1],
+                        a: ids[k],
+                        b: ids[k + 1],
                         kind,
                     });
                 }
