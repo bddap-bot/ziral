@@ -313,11 +313,6 @@ impl Sim {
         for id in ids {
             self.atoms[*id] = None;
         }
-        for arm in &mut self.arms {
-            if arm.held.is_some_and(gone) {
-                arm.held = None;
-            }
-        }
     }
 
     pub fn step(&mut self) {
