@@ -180,13 +180,12 @@ pub struct Glyph {
 }
 
 impl Glyph {
-    pub fn slots(&self) -> Vec<Hex> {
+    pub fn slots(&self) -> impl Iterator<Item = Hex> + '_ {
         self.kind
             .rule()
             .slots
             .iter()
-            .map(|s| self.at.add(s.at.turned(self.dir)))
-            .collect()
+            .map(move |s| self.at.add(s.at.turned(self.dir)))
     }
 }
 
@@ -281,7 +280,8 @@ impl Sim {
     }
 
     pub fn step(&mut self) {
-        for g in self.glyphs.clone() {
+        for i in 0..self.glyphs.len() {
+            let g = self.glyphs[i];
             if g.kind == GlyphKind::Source && self.atom_at(g.at).is_none() {
                 self.spawn(Atom {
                     kind: AtomKind::Base,
@@ -303,20 +303,19 @@ impl Sim {
                 arm.pc = arm.pc.wrapping_add(1);
             }
         }
-        for g in self.glyphs.clone() {
-            self.fire(g);
+        for i in 0..self.glyphs.len() {
+            self.fire(self.glyphs[i]);
         }
         self.tick += 1;
     }
 
-    pub fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
+    fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
         let rule = g.kind.rule();
         let ids: Vec<usize> = g
             .slots()
-            .iter()
             .zip(rule.slots)
             .map(|(at, slot)| {
-                self.atom_at(*at)
+                self.atom_at(at)
                     .filter(|id| self.atoms[*id].unwrap().kind == slot.kind)
             })
             .collect::<Option<_>>()?;
@@ -331,14 +330,6 @@ impl Sim {
         if rule.whole {
             let comp = self.component(ids[0]);
             if comp.len() != ids.len() || comp.iter().any(|id| !ids.contains(id)) {
-                return None;
-            }
-            let inside = self
-                .bonds
-                .iter()
-                .filter(|x| ids.contains(&x.a) && ids.contains(&x.b))
-                .count();
-            if inside != rule.before.iter().filter(|(_, _, w)| w.is_some()).count() {
                 return None;
             }
             if ids.iter().any(|id| self.held_by_any(*id)) {
@@ -361,7 +352,7 @@ impl Sim {
         for slot in rule.consumes {
             self.destroy(ids[*slot]);
         }
-        if rule.whole {
+        if g.kind == GlyphKind::Output {
             self.delivered += 1;
         }
     }
@@ -456,7 +447,7 @@ fn layout() -> Sim {
     sim.glyphs.push(Glyph {
         kind: GlyphKind::Output,
         at: Hex::new(0, 1),
-        dir: OUTPUT_DIR,
+        dir: 3,
     });
     sim.glyphs.push(Glyph {
         kind: GlyphKind::Bonder,
@@ -472,8 +463,6 @@ fn layout() -> Sim {
     sim.arms.push(Arm::new(Hex::new(0, -2), 5, ferry));
     sim
 }
-
-const OUTPUT_DIR: usize = 3;
 
 pub fn preloaded() -> Sim {
     let one = layout();
@@ -592,7 +581,7 @@ mod tests {
             dir: 1,
         };
         assert_eq!(
-            bonder.slots(),
+            bonder.slots().collect::<Vec<_>>(),
             [Hex::new(1, 0), Hex::new(2, -1), Hex::new(1, -1)]
         );
         let mut sim = bench(vec![Instr::Wait], vec![bonder]);
@@ -616,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn machines_never_collide_so_stacked_glyphs_fire_in_placement_order() {
+    fn machines_never_collide_so_glyphs_stack_on_one_hex() {
         let bonder = Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
@@ -648,7 +637,10 @@ mod tests {
             at: Hex::new(1, 0),
             dir: 5,
         };
-        assert_eq!(output.slots(), [Hex::new(1, 0), Hex::new(1, 1)]);
+        assert_eq!(
+            output.slots().collect::<Vec<_>>(),
+            [Hex::new(1, 0), Hex::new(1, 1)]
+        );
         let mut sim = bench(vec![Instr::Wait], vec![output]);
         let a = put(&mut sim, 1, 0);
         let b = put(&mut sim, 1, 1);

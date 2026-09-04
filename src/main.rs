@@ -3,7 +3,7 @@ mod sim;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim::{Arm, BondKind, Glyph, GlyphKind, Hex, Instr, Sim};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim};
 
 const HEX: f32 = 20.0;
 const TICK_HZ: f64 = 6.0;
@@ -11,102 +11,64 @@ const MICRO_SCALE: f32 = 0.5;
 const MAX_GRID_CELLS: f32 = 6000.0;
 const STRIP_ROWS: usize = 8;
 const DRAG_PX: f32 = 6.0;
+const PANEL: Color = Color::srgb(0.12, 0.12, 0.12);
+const PANEL_LIT: Color = Color::srgb(0.3, 0.3, 0.3);
 
 #[derive(Clone, Copy, PartialEq, Eq, Component)]
 enum Item {
     Arm,
-    Bonder,
-    SecondBond,
-    Source,
-    Output,
+    Glyph(GlyphKind),
 }
 
 const PALETTE: [(Item, &str); 5] = [
     (Item::Arm, "arm"),
-    (Item::Bonder, "bonder"),
-    (Item::SecondBond, "second bond"),
-    (Item::Source, "source"),
-    (Item::Output, "output"),
+    (Item::Glyph(GlyphKind::Bonder), "bonder"),
+    (Item::Glyph(GlyphKind::SecondBond), "second bond"),
+    (Item::Glyph(GlyphKind::Source), "source"),
+    (Item::Glyph(GlyphKind::Output), "output"),
 ];
 
-#[derive(Clone, Debug)]
-enum Machine {
-    Arm(Arm),
-    Glyph(Glyph),
-}
-
 impl Item {
-    fn machine(self, at: Hex) -> Machine {
-        let glyph = |kind| Machine::Glyph(Glyph { kind, at, dir: 0 });
-        match self {
-            Item::Arm => Machine::Arm(Arm::new(at, 0, Vec::new())),
-            Item::Bonder => glyph(GlyphKind::Bonder),
-            Item::SecondBond => glyph(GlyphKind::SecondBond),
-            Item::Source => glyph(GlyphKind::Source),
-            Item::Output => glyph(GlyphKind::Output),
-        }
+    fn name(self) -> &'static str {
+        PALETTE
+            .iter()
+            .find(|(i, _)| *i == self)
+            .map_or("", |(_, n)| n)
     }
 }
 
-impl Machine {
-    fn at(&self) -> Hex {
-        match self {
-            Machine::Arm(a) => a.pivot,
-            Machine::Glyph(g) => g.at,
-        }
-    }
+const KEYS: [(KeyCode, Instr, char, &str); 5] = [
+    (KeyCode::KeyF, Instr::Grab, 'F', "grab"),
+    (KeyCode::KeyR, Instr::Drop, 'R', "drop"),
+    (KeyCode::KeyE, Instr::RotCw, 'E', "cw"),
+    (KeyCode::KeyQ, Instr::RotCcw, 'Q', "ccw"),
+    (KeyCode::KeyX, Instr::Wait, '.', "wait"),
+];
 
-    fn moved(&self, at: Hex) -> Machine {
-        match self {
-            Machine::Arm(a) => Machine::Arm(Arm {
-                pivot: at,
-                held: None,
-                ..a.clone()
-            }),
-            Machine::Glyph(g) => Machine::Glyph(Glyph { at, ..*g }),
-        }
-    }
-
-    fn turn(&mut self, cw: bool) {
-        let dir = match self {
-            Machine::Arm(a) => &mut a.dir,
-            Machine::Glyph(g) => &mut g.dir,
-        };
-        *dir = (*dir + if cw { 1 } else { 5 }) % 6;
-        if let Machine::Arm(a) = self {
-            a.held = None;
-        }
-    }
-
-    fn name(&self) -> &'static str {
-        match self {
-            Machine::Arm(_) => "arm",
-            Machine::Glyph(g) => match g.kind {
-                GlyphKind::Source => "source",
-                GlyphKind::Bonder => "bonder",
-                GlyphKind::SecondBond => "second bond",
-                GlyphKind::Output => "output",
-            },
-        }
-    }
+fn instr_char(instr: Instr) -> char {
+    KEYS.iter().find(|k| k.1 == instr).map_or('?', |k| k.2)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
-    Arm(usize),
+    Arm { arm: usize, cursor: usize },
     Glyph(usize),
 }
 
-#[derive(Clone, Debug)]
-struct Held {
-    machine: Machine,
-    from: Option<Focus>,
+impl Focus {
+    fn arm(self) -> Option<usize> {
+        match self {
+            Focus::Arm { arm, .. } => Some(arm),
+            Focus::Glyph(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
-struct Press {
-    screen: Vec2,
-    target: Option<Focus>,
+struct Held {
+    item: Item,
+    dir: usize,
+    from: Option<Focus>,
 }
 
 #[derive(Resource)]
@@ -114,11 +76,9 @@ struct World {
     sim: Sim,
     running: bool,
     focus: Option<Focus>,
-    cursor: usize,
     held: Option<Held>,
-    press: Option<Press>,
+    press: Option<Vec2>,
     pointer: Option<Vec2>,
-    rows: Vec<usize>,
 }
 
 impl World {
@@ -127,99 +87,100 @@ impl World {
             sim: sim::preloaded(),
             running: true,
             focus: None,
-            cursor: 0,
             held: None,
             press: None,
             pointer: None,
-            rows: Vec::new(),
         }
     }
 
-    fn machine(&self, f: Focus) -> Machine {
+    fn focus_arm(&mut self, arm: usize) {
+        let cursor = self.sim.arms[arm].tape.len();
+        self.focus = Some(Focus::Arm { arm, cursor });
+    }
+
+    fn item(&self, f: Focus) -> (Item, usize) {
         match f {
-            Focus::Arm(i) => Machine::Arm(self.sim.arms[i].clone()),
-            Focus::Glyph(i) => Machine::Glyph(self.sim.glyphs[i]),
+            Focus::Arm { arm, .. } => (Item::Arm, self.sim.arms[arm].dir),
+            Focus::Glyph(i) => (Item::Glyph(self.sim.glyphs[i].kind), self.sim.glyphs[i].dir),
         }
     }
 
-    fn put(&mut self, f: Option<Focus>, m: Machine) -> Focus {
-        match (f, m) {
-            (Some(Focus::Arm(i)), Machine::Arm(a)) => {
-                self.sim.arms[i] = a;
-                Focus::Arm(i)
+    fn turn(&mut self, f: Focus, dir: usize) {
+        match f {
+            Focus::Arm { arm, .. } => {
+                self.sim.arms[arm].dir = dir;
+                self.sim.arms[arm].held = None;
             }
-            (Some(Focus::Glyph(i)), Machine::Glyph(g)) => {
-                self.sim.glyphs[i] = g;
-                Focus::Glyph(i)
-            }
-            (_, Machine::Arm(a)) => {
-                self.sim.arms.push(a);
-                Focus::Arm(self.sim.arms.len() - 1)
-            }
-            (_, Machine::Glyph(g)) => {
-                self.sim.glyphs.push(g);
-                Focus::Glyph(self.sim.glyphs.len() - 1)
-            }
+            Focus::Glyph(i) => self.sim.glyphs[i].dir = dir,
         }
     }
 
     fn remove(&mut self, f: Focus) {
         match f {
-            Focus::Arm(i) => {
-                self.sim.arms.remove(i);
+            Focus::Arm { arm, .. } => {
+                self.sim.arms.remove(arm);
             }
             Focus::Glyph(i) => {
                 self.sim.glyphs.remove(i);
             }
         }
         self.focus = None;
+        self.press = None;
     }
 
-    fn lift(&mut self, from: Option<Focus>, machine: Machine) {
-        self.held = Some(Held { machine, from });
+    fn lift(&mut self, item: Item, dir: usize, from: Option<Focus>) {
+        self.held = Some(Held { item, dir, from });
         self.focus = None;
     }
 
     fn drop_at(&mut self, at: Option<Hex>) {
         let Some(held) = self.held.take() else { return };
-        let target = match (at, held.from) {
-            (Some(at), _) => held.machine.moved(at),
-            (None, Some(_)) => held.machine.moved(held.machine.at()),
-            (None, None) => return,
-        };
-        let f = self.put(held.from, target);
-        self.focus = Some(f);
-        self.cursor = self.tape_len(f);
-    }
-
-    fn tape_len(&self, f: Focus) -> usize {
-        match f {
-            Focus::Arm(i) => self.sim.arms[i].tape.len(),
-            Focus::Glyph(_) => 0,
+        match (held.from, at) {
+            (Some(f), None) => self.focus = Some(f),
+            (Some(f), Some(at)) => {
+                match f {
+                    Focus::Arm { arm, .. } => {
+                        self.sim.arms[arm].pivot = at;
+                        self.sim.arms[arm].held = None;
+                    }
+                    Focus::Glyph(i) => self.sim.glyphs[i].at = at,
+                }
+                self.turn(f, held.dir);
+                self.focus = Some(f);
+            }
+            (None, Some(at)) => match held.item {
+                Item::Arm => {
+                    self.sim.arms.push(Arm::new(at, held.dir, Vec::new()));
+                    self.focus_arm(self.sim.arms.len() - 1);
+                }
+                Item::Glyph(kind) => {
+                    self.sim.glyphs.push(Glyph {
+                        kind,
+                        at,
+                        dir: held.dir,
+                    });
+                    self.focus = Some(Focus::Glyph(self.sim.glyphs.len() - 1));
+                }
+            },
+            (None, None) => {}
         }
     }
 
     fn hit(&self, at: Vec2) -> Option<Focus> {
-        let near = |h: Hex| px(h).distance(at) < HEX;
-        let arm = self
-            .sim
-            .arms
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| near(a.pivot))
-            .min_by(|x, y| {
-                px(x.1.pivot)
-                    .distance(at)
-                    .total_cmp(&px(y.1.pivot).distance(at))
+        let nearest = |cells: &mut dyn Iterator<Item = Hex>| {
+            cells
+                .enumerate()
+                .map(|(i, h)| (i, px(h).distance(at)))
+                .filter(|(_, d)| *d < HEX)
+                .min_by(|x, y| x.1.total_cmp(&y.1))
+                .map(|(i, _)| i)
+        };
+        nearest(&mut self.sim.arms.iter().map(|a| a.pivot))
+            .map(|arm| Focus::Arm {
+                arm,
+                cursor: self.sim.arms[arm].tape.len(),
             })
-            .map(|(i, _)| Focus::Arm(i));
-        arm.or_else(|| {
-            self.sim
-                .glyphs
-                .iter()
-                .position(|g| near(g.at))
-                .map(Focus::Glyph)
-        })
+            .or_else(|| nearest(&mut self.sim.glyphs.iter().map(|g| g.at)).map(Focus::Glyph))
     }
 }
 
@@ -250,27 +211,37 @@ fn corners(center: Vec2, size: f32) -> [Vec2; 7] {
     })
 }
 
-fn screen_to_world(cam: Vec2, size: Vec2, p: Vec2, scale: f32) -> Vec2 {
-    cam + Vec2::new(p.x - size.x / 2.0, size.y / 2.0 - p.y) * scale
+struct Viewport {
+    cam: Vec2,
+    size: Vec2,
+    scale: f32,
 }
 
-fn glyph_of(instr: Instr) -> char {
-    match instr {
-        Instr::Grab => 'F',
-        Instr::Drop => 'R',
-        Instr::RotCw => 'E',
-        Instr::RotCcw => 'Q',
-        Instr::Wait => '.',
+impl Viewport {
+    fn of(window: &Window, transform: &Transform, projection: &Projection) -> Option<Viewport> {
+        let Projection::Orthographic(ortho) = projection else {
+            return None;
+        };
+        Some(Viewport {
+            cam: transform.translation.truncate(),
+            size: window.size(),
+            scale: ortho.scale,
+        })
+    }
+
+    fn half(&self) -> Vec2 {
+        self.size * self.scale / 2.0
+    }
+
+    fn world(&self, screen: Vec2) -> Vec2 {
+        self.cam
+            + Vec2::new(screen.x - self.size.x / 2.0, self.size.y / 2.0 - screen.y) * self.scale
+    }
+
+    fn shows(&self, p: Vec2) -> bool {
+        (p - self.cam).abs().cmplt(self.half()).all()
     }
 }
-
-const TYPED: [(KeyCode, Instr); 5] = [
-    (KeyCode::KeyF, Instr::Grab),
-    (KeyCode::KeyR, Instr::Drop),
-    (KeyCode::KeyE, Instr::RotCw),
-    (KeyCode::KeyQ, Instr::RotCcw),
-    (KeyCode::KeyX, Instr::Wait),
-];
 
 fn main() {
     let mut app = App::new();
@@ -312,14 +283,17 @@ fn spawn_camera(mut commands: Commands) {
 struct Hud;
 
 #[derive(Component)]
-struct TapeRow(usize);
+struct TapeRow {
+    slot: usize,
+    arm: Option<usize>,
+}
 
 fn button(node: Node) -> impl Bundle {
     (
         Button,
         node,
         BorderColor::all(Color::srgb(0.5, 0.5, 0.5)),
-        BackgroundColor(Color::srgb(0.12, 0.12, 0.12)),
+        BackgroundColor(PANEL),
     )
 }
 
@@ -368,9 +342,9 @@ fn spawn_ui(mut commands: Commands) {
             ..default()
         })
         .with_children(|col| {
-            for k in 0..STRIP_ROWS {
+            for slot in 0..STRIP_ROWS {
                 col.spawn((
-                    TapeRow(k),
+                    TapeRow { slot, arm: None },
                     button(Node {
                         padding: UiRect::axes(Val::Px(6.0), Val::Px(1.0)),
                         border: UiRect::all(Val::Px(1.0)),
@@ -397,22 +371,23 @@ fn view(
     camera: Single<(&mut Transform, &mut Projection), With<Camera2d>>,
 ) {
     let (mut transform, mut projection) = camera.into_inner();
+    let Some(mut viewport) = Viewport::of(&window, &transform, &projection) else {
+        return;
+    };
     let Projection::Orthographic(ortho) = &mut *projection else {
         return;
     };
-    let size = window.size();
     if scroll.delta.y != 0.0
         && let Some(c) = window.cursor_position()
     {
-        let cam = transform.translation.truncate();
-        let before = screen_to_world(cam, size, c, ortho.scale);
+        let before = viewport.world(c);
         let notches = match scroll.unit {
             MouseScrollUnit::Line => scroll.delta.y,
             MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
         };
         ortho.scale = (ortho.scale * (-notches * 0.15).exp()).clamp(0.05, 40.0);
-        let after = screen_to_world(cam, size, c, ortho.scale);
-        transform.translation += (before - after).extend(0.0);
+        viewport.scale = ortho.scale;
+        transform.translation += (before - viewport.world(c)).extend(0.0);
     }
     if buttons.pressed(MouseButton::Middle) || buttons.pressed(MouseButton::Right) {
         let pan = Vec2::new(-motion.delta.x, motion.delta.y);
@@ -437,17 +412,12 @@ fn edit(
         world.sim.step();
     }
     let (transform, projection) = camera.into_inner();
-    let Projection::Orthographic(ortho) = projection else {
+    let Some(viewport) = Viewport::of(&window, transform, projection) else {
         return;
     };
     let screen = window.cursor_position();
     if let Some(c) = screen {
-        world.pointer = Some(screen_to_world(
-            transform.translation.truncate(),
-            window.size(),
-            c,
-            ortho.scale,
-        ));
+        world.pointer = Some(viewport.world(c));
     }
     let over_ui = palette.iter().any(|(_, i)| *i != Interaction::None)
         || rows.iter().any(|(_, i)| *i != Interaction::None);
@@ -455,37 +425,29 @@ fn edit(
 
     if buttons.just_pressed(MouseButton::Left) {
         if let Some((item, _)) = palette.iter().find(|(_, i)| **i == Interaction::Pressed) {
-            let machine = item.machine(at.unwrap_or(Hex::new(0, 0)));
-            world.lift(None, machine);
+            world.lift(*item, 0, None);
         } else if let Some((row, _)) = rows.iter().find(|(_, i)| **i == Interaction::Pressed) {
-            if let Some(&arm) = world.rows.get(row.0) {
-                world.focus = Some(Focus::Arm(arm));
-                world.cursor = world.sim.arms[arm].tape.len();
+            if let Some(arm) = row.arm.filter(|a| *a < world.sim.arms.len()) {
+                world.focus_arm(arm);
             }
         } else if !over_ui && let (Some(c), Some(p)) = (screen, world.pointer) {
-            let target = world.hit(p);
-            world.press = Some(Press { screen: c, target });
+            world.focus = world.hit(p);
+            world.press = Some(c);
         }
     }
     if buttons.pressed(MouseButton::Left)
         && world.held.is_none()
-        && let (Some(press), Some(c)) = (world.press, screen)
-        && let Some(target) = press.target
-        && press.screen.distance(c) > DRAG_PX
+        && let (Some(press), Some(c), Some(f)) = (world.press, screen, world.focus)
+        && press.distance(c) > DRAG_PX
     {
-        let machine = world.machine(target);
-        world.lift(Some(target), machine);
+        let (item, dir) = world.item(f);
+        world.lift(item, dir, Some(f));
     }
     if buttons.just_released(MouseButton::Left) {
-        let press = world.press.take();
+        world.press = None;
         if world.held.is_some() {
             let valid = !over_ui && screen.is_some();
             world.drop_at(at.filter(|_| valid));
-        } else if let Some(press) = press
-            && !over_ui
-        {
-            world.focus = press.target;
-            world.cursor = press.target.map_or(0, |f| world.tape_len(f));
         }
     }
 
@@ -495,19 +457,23 @@ fn edit(
         return;
     }
     let turn = if keys.just_pressed(KeyCode::KeyA) {
-        Some(false)
+        Some(5)
     } else if keys.just_pressed(KeyCode::KeyD) {
-        Some(true)
+        Some(1)
     } else {
         None
     };
     let delete = keys.just_pressed(KeyCode::KeyZ);
     if let Some(held) = &mut world.held {
-        if let Some(cw) = turn {
-            held.machine.turn(cw);
+        if let Some(step) = turn {
+            held.dir = (held.dir + step) % 6;
         }
         if delete {
+            let from = held.from;
             world.held = None;
+            if let Some(f) = from {
+                world.remove(f);
+            }
         }
         return;
     }
@@ -518,44 +484,46 @@ fn edit(
         world.remove(focus);
         return;
     }
-    if let Some(cw) = turn {
-        let mut m = world.machine(focus);
-        m.turn(cw);
-        world.put(Some(focus), m);
+    if let Some(step) = turn {
+        let (_, dir) = world.item(focus);
+        world.turn(focus, (dir + step) % 6);
     }
-    let Focus::Arm(arm) = focus else {
+    let Focus::Arm { arm, cursor } = focus else {
         return;
     };
     let len = world.sim.arms[arm].tape.len();
-    let at = world.cursor.min(len);
+    let mut cursor = cursor.min(len);
     if keys.just_pressed(KeyCode::ArrowLeft) {
-        world.cursor = at.saturating_sub(1);
+        cursor = cursor.saturating_sub(1);
     }
     if keys.just_pressed(KeyCode::ArrowRight) {
-        world.cursor = (at + 1).min(len);
+        cursor = (cursor + 1).min(len);
     }
-    let typed = TYPED
+    let typed = KEYS
         .into_iter()
-        .find(|(k, _)| keys.just_pressed(*k))
-        .map(|(_, i)| i);
-    let remove = keys.just_pressed(KeyCode::Backspace);
+        .find(|k| keys.just_pressed(k.0))
+        .map(|k| k.1);
     let tape = &mut world.sim.arms[arm].tape;
     if let Some(instr) = typed {
-        if at < tape.len() {
-            tape[at] = instr;
+        if cursor < tape.len() {
+            tape[cursor] = instr;
         } else {
             tape.push(instr);
         }
-        world.cursor = at + 1;
-    } else if remove && at > 0 {
-        tape.remove(at - 1);
-        world.cursor = at - 1;
+        cursor += 1;
+    } else if keys.just_pressed(KeyCode::Backspace) && cursor > 0 {
+        tape.remove(cursor - 1);
+        cursor -= 1;
     }
+    world.focus = Some(Focus::Arm { arm, cursor });
 }
 
 fn tape_line(world: &World, i: usize) -> String {
     let arm = &world.sim.arms[i];
-    let focused = world.focus == Some(Focus::Arm(i));
+    let cursor = match world.focus {
+        Some(Focus::Arm { arm, cursor }) if arm == i => Some(cursor),
+        _ => None,
+    };
     let mut out = format!("arm {i:<3}{}", if arm.stalled { "! " } else { "  " });
     let pc = if arm.tape.is_empty() {
         0
@@ -563,10 +531,10 @@ fn tape_line(world: &World, i: usize) -> String {
         arm.pc % arm.tape.len()
     };
     for (k, instr) in arm.tape.iter().enumerate() {
-        if focused && k == world.cursor {
+        if cursor == Some(k) {
             out.push('|');
         }
-        let g = glyph_of(*instr);
+        let g = instr_char(*instr);
         if k == pc {
             out.push_str(&format!("({g})"));
         } else {
@@ -574,44 +542,48 @@ fn tape_line(world: &World, i: usize) -> String {
         }
         out.push(' ');
     }
-    if focused && world.cursor >= arm.tape.len() {
+    if cursor.is_some_and(|c| c >= arm.tape.len()) {
         out.push('|');
     }
     out
 }
 
 fn strip(
-    mut world: ResMut<World>,
+    world: Res<World>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<Camera2d>>,
-    mut rows: Query<(&TapeRow, &mut Visibility, &mut BackgroundColor, &Children)>,
+    mut rows: Query<(
+        &mut TapeRow,
+        &mut Visibility,
+        &mut BackgroundColor,
+        &Children,
+    )>,
     mut texts: Query<&mut Text>,
 ) {
     let (transform, projection) = camera.into_inner();
-    let Projection::Orthographic(ortho) = projection else {
+    let Some(viewport) = Viewport::of(&window, transform, projection) else {
         return;
     };
-    let cam = transform.translation.truncate();
-    let half = window.size() * ortho.scale / 2.0;
-    world.rows = world
+    let shown: Vec<usize> = world
         .sim
         .arms
         .iter()
         .enumerate()
-        .filter(|(_, a)| (px(a.pivot) - cam).abs().cmplt(half).all())
+        .filter(|(_, a)| viewport.shows(px(a.pivot)))
         .map(|(i, _)| i)
         .take(STRIP_ROWS)
         .collect();
-    for (row, mut vis, mut bg, children) in &mut rows {
-        let Some(&arm) = world.rows.get(row.0) else {
+    for (mut row, mut vis, mut bg, children) in &mut rows {
+        row.arm = shown.get(row.slot).copied();
+        let Some(arm) = row.arm else {
             *vis = Visibility::Hidden;
             continue;
         };
         *vis = Visibility::Inherited;
-        bg.0 = if world.focus == Some(Focus::Arm(arm)) {
-            Color::srgb(0.3, 0.3, 0.3)
+        bg.0 = if world.focus.and_then(Focus::arm) == Some(arm) {
+            PANEL_LIT
         } else {
-            Color::srgb(0.12, 0.12, 0.12)
+            PANEL
         };
         if let Some(mut t) = children.first().and_then(|c| texts.get_mut(*c).ok()) {
             t.0 = tape_line(&world, arm);
@@ -619,31 +591,34 @@ fn strip(
     }
 }
 
-fn draw_machine(gizmos: &mut Gizmos, m: &Machine, color: Color) {
-    match m {
-        Machine::Arm(arm) => {
-            let pivot = px(arm.pivot);
+fn draw_machine(gizmos: &mut Gizmos, item: Item, at: Hex, dir: usize, color: Color) {
+    match item {
+        Item::Arm => {
+            let pivot = px(at);
             gizmos.circle_2d(pivot, HEX * 0.25, color);
-            gizmos.line_2d(pivot, px(arm.hand()), color);
+            gizmos.line_2d(pivot, px(at.add(DIRS[dir % 6])), color);
         }
-        Machine::Glyph(g) => {
-            let slots: Vec<Vec2> = g.slots().iter().map(|h| px(*h)).collect();
-            match g.kind {
+        Item::Glyph(kind) => {
+            let g = Glyph { kind, at, dir };
+            let slots: Vec<Vec2> = g.slots().map(px).collect();
+            match kind {
                 GlyphKind::Source => gizmos.linestrip_2d(corners(slots[0], HEX * 0.8), color),
                 GlyphKind::Output => {
                     for s in &slots {
                         gizmos.linestrip_2d(corners(*s, HEX * 0.8), color);
                         gizmos.circle_2d(*s, HEX * 0.15, color);
                     }
-                    for (a, b, kind) in g.kind.rule().before {
-                        draw_bond(gizmos, slots[*a], slots[*b], kind.unwrap(), color);
+                    for (a, b, kind) in kind.rule().before {
+                        if let Some(kind) = kind {
+                            draw_bond(gizmos, slots[*a], slots[*b], *kind, color);
+                        }
                     }
                 }
                 GlyphKind::Bonder | GlyphKind::SecondBond => {
                     let tri: Vec<Vec2> = slots.iter().chain(&slots[..1]).copied().collect();
                     gizmos.linestrip_2d(tri.iter().copied(), color);
                     gizmos.circle_2d(tri[0], HEX * 0.12, color);
-                    if g.kind == GlyphKind::SecondBond {
+                    if kind == GlyphKind::SecondBond {
                         let c = (tri[0] + tri[1] + tri[2]) / 3.0;
                         gizmos.linestrip_2d(tri.iter().map(|p| c + (*p - c) * 0.6), color);
                     }
@@ -678,13 +653,11 @@ fn draw(
     let s = &world.sim;
 
     let (transform, projection) = camera.into_inner();
-    if let Projection::Orthographic(ortho) = projection {
-        let cam = transform.translation.truncate();
-        let half = window.size() * ortho.scale / 2.0;
+    if let Some(v) = Viewport::of(&window, transform, projection) {
         let col = HEX * 3f32.sqrt();
         let row = HEX * 1.5;
-        if (half.x * 2.0 / col) * (half.y * 2.0 / row) < MAX_GRID_CELLS {
-            let (lo, hi) = (cam - half, cam + half);
+        if (v.size.x / col) * (v.size.y / row) < MAX_GRID_CELLS {
+            let (lo, hi) = (v.cam - v.half(), v.cam + v.half());
             for r in ((lo.y / row).floor() as i32 - 1)..=((hi.y / row).ceil() as i32 + 1) {
                 let q0 = (lo.x / col - r as f32 / 2.0).floor() as i32 - 1;
                 let q1 = (hi.x / col - r as f32 / 2.0).ceil() as i32 + 1;
@@ -700,7 +673,7 @@ fn draw(
         } else {
             pad
         };
-        draw_machine(&mut gizmos, &Machine::Glyph(*g), color);
+        draw_machine(&mut gizmos, Item::Glyph(g.kind), g.at, g.dir, color);
     }
     for b in &s.bonds {
         let (Some(a), Some(c)) = (s.atoms[b.a], s.atoms[b.b]) else {
@@ -711,13 +684,13 @@ fn draw(
     for (_, a) in s.live_atoms() {
         gizmos.circle_2d(px(a.pos), HEX * 0.4, atom);
     }
-    for (a, arm) in s.arms.iter().enumerate() {
-        let color = if world.focus == Some(Focus::Arm(a)) {
+    for (i, arm) in s.arms.iter().enumerate() {
+        let color = if world.focus.and_then(Focus::arm) == Some(i) {
             picked
         } else {
             arm_color
         };
-        draw_machine(&mut gizmos, &Machine::Arm(arm.clone()), color);
+        draw_machine(&mut gizmos, Item::Arm, arm.pivot, arm.dir, color);
         if arm.held.is_some() {
             gizmos.circle_2d(px(arm.hand()), HEX * 0.5, color);
         }
@@ -725,10 +698,10 @@ fn draw(
             gizmos.circle_2d(px(arm.pivot), HEX * 0.5, picked);
         }
     }
-    if let (Some(held), Some(p)) = (&world.held, world.pointer) {
+    if let (Some(held), Some(p)) = (world.held, world.pointer) {
         let at = hex_at(p);
         gizmos.linestrip_2d(corners(px(at), HEX * 0.9), picked);
-        draw_machine(&mut gizmos, &held.machine.moved(at), picked);
+        draw_machine(&mut gizmos, held.item, at, held.dir, picked);
     }
 }
 
@@ -740,20 +713,22 @@ fn text(world: Res<World>, mut label: Single<&mut Text, With<Hud>>) {
         s.delivered,
         if world.running { "running" } else { "paused" }
     );
-    if let Some(held) = &world.held {
+    if let Some(held) = world.held {
         out.push_str(&format!(
             "holding {}: A/D turn  Z delete  release on a hex to drop, elsewhere to put back\n",
-            held.machine.name()
+            held.item.name()
         ));
     } else if let Some(f) = world.focus {
         out.push_str(&format!(
             "focus {}: A/D turn  Z delete  esc done\n",
-            world.machine(f).name()
+            world.item(f).0.name()
         ));
-        if matches!(f, Focus::Arm(_)) {
-            out.push_str(
-                "tape F grab  R drop  E cw  Q ccw  X wait  arrows move  backspace remove\n",
-            );
+        if f.arm().is_some() {
+            out.push_str("tape");
+            for (_, _, c, name) in KEYS {
+                out.push_str(&format!("  {c} {name}"));
+            }
+            out.push_str("  arrows move  backspace remove\n");
         }
     }
     out.push_str(
@@ -769,7 +744,7 @@ mod shot {
     use bevy::camera::RenderTarget;
     use bevy::image::Image;
     use bevy::input::ButtonState;
-    use bevy::input::keyboard::{Key, KeyboardInput};
+    use bevy::input::keyboard::{Key, KeyboardInput, NativeKey};
     use bevy::render::render_resource::{TextureFormat, TextureUsages};
     use bevy::render::view::window::screenshot::{Screenshot, save_to_disk};
     use bevy::ui::IsDefaultUiCamera;
@@ -798,18 +773,18 @@ mod shot {
         let mut keys = Vec::new();
         let mut wide = false;
         match name {
-            "micro" => world.focus = Some(Focus::Arm(0)),
+            "micro" => world.focus_arm(0),
             "wide" => wide = true,
             "focus" => {
                 world
                     .sim
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
-                world.focus = Some(Focus::Arm(world.sim.arms.len() - 1));
+                world.focus_arm(world.sim.arms.len() - 1);
                 keys = vec![KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ];
             }
             "hold" => {
-                world.lift(None, Item::Bonder.machine(Hex::new(3, -3)));
+                world.lift(Item::Glyph(GlyphKind::Bonder), 0, None);
                 keys = vec![KeyD, KeyD];
             }
             "output" => {
@@ -830,7 +805,7 @@ mod shot {
                     });
                     let b = sim.spawn(Atom {
                         kind: AtomKind::Base,
-                        pos: at.add(sim::DIRS[0]),
+                        pos: at.add(DIRS[0]),
                     });
                     sim.bonds.push(Bond { a, b, kind });
                 }
@@ -907,6 +882,17 @@ mod shot {
         commands.insert_resource(Target(handle));
     }
 
+    fn key(key_code: KeyCode, state: ButtonState, window: Entity) -> KeyboardInput {
+        KeyboardInput {
+            key_code,
+            logical_key: Key::Unidentified(NativeKey::Unidentified),
+            state,
+            text: None,
+            repeat: false,
+            window,
+        }
+    }
+
     fn capture(
         mut commands: Commands,
         mut shot: ResMut<Shot>,
@@ -917,25 +903,11 @@ mod shot {
     ) {
         shot.frames += 1;
         let k = shot.frames as usize;
-        if k >= 2 && k - 2 < shot.keys.len() {
-            keyboard.write(KeyboardInput {
-                key_code: shot.keys[k - 2],
-                logical_key: Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified),
-                state: ButtonState::Pressed,
-                text: None,
-                repeat: false,
-                window: *window,
-            });
-        }
         if k >= 3 && k - 3 < shot.keys.len() {
-            keyboard.write(KeyboardInput {
-                key_code: shot.keys[k - 3],
-                logical_key: Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified),
-                state: ButtonState::Released,
-                text: None,
-                repeat: false,
-                window: *window,
-            });
+            keyboard.write(key(shot.keys[k - 3], ButtonState::Released, *window));
+        }
+        if k >= 2 && k - 2 < shot.keys.len() {
+            keyboard.write(key(shot.keys[k - 2], ButtonState::Pressed, *window));
         }
         if shot.frames == 12 {
             commands
