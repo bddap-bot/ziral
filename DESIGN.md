@@ -163,3 +163,34 @@ Questions for round 6:
 Q1: The simplified rule tears the sacrificial atom out of a compound an arm is holding, and the arm keeps what is left; before, that bonder waited for the drop. Is that the rule, or should a hand anywhere on the compound still keep its sacrificial atom from being eaten?
 
 Q2: Your same-tick example comes out by arm order in the toy, dropper first keeping the atom and grabber first losing it. Is arm order a fine tiebreak here, or should a drop and a grab of one atom in one tick always pass it from hand to hand?
+
+### Round 6 answers
+
+A1: that's fine
+A2: two grabbers can hold a compound at the same time, even by the same atom
+
+Should we stop letting glyphs care whether an atom/compound is dropped or held? I could see a fun game either way so what's simpler?
+
+### Round 6, what Toy 1 now does
+
+Decided: a bonder tears its sacrificial atom out of a compound an arm holds, and the arm keeps what is left. Round 5's rule stands; nothing changed for it.
+
+Decided: any number of hands may hold one atom, and so one compound. A grab never stalls because another hand is on the atom or its compound; the stall that named that hand is gone. Your same-tick example needs no tiebreak: the grabber's hand closes while the dropper's is still on, the drop takes one hand off, and the atom stays in the other. Arm order no longer decides it; both orders end in the same state. A rotate under two hands still stalls until a drop, as round 4 decided, and two grabs of one atom are now the shortest way to get there.
+
+The simpler one, landed: glyphs do not care. Old rule:
+- A glyph looked at its own slots at the end of the tick.
+- A held atom on a slot the glyph consumes meant it did nothing this tick.
+- So an output waited for the compound to be dropped, and a bonder waited while its sacrificial atom was in a hand.
+
+New rule:
+- A glyph looks at its own slots at the end of the tick and acts on whatever lies there, held or not.
+- A hand holds whatever is at its cell. After a glyph eats, the hand is on what is left there: the rest of the compound, or nothing.
+- Nothing anywhere waits on a hand.
+
+What made it fall out: an arm no longer remembers which atom it holds. Its hand is open or closed, and a closed hand holds whatever is at its cell, so an eaten atom leaves the hand closed on an empty cell with no code to clear it. Deleted with that: the grab stall naming another hand, the glyph's look at hands, and the per-hand atom record. Consequences the toy now shows: a closed hand on an empty cell keeps its ring, and an atom put there later is carried on the hand's next rotate; an output eats a compound straight out of a hand, and the arm is left closed on the pad. In your same-tick example with the bonder under it, the bonder eats the atom the tick the first hand grabs it, either order, and the second grab lands on an empty slot.
+
+Questions for round 7:
+
+Q1: A hand whose atom a glyph ate stays closed on the empty cell; the toy draws its ring on nothing, and an atom that another arm drops there is carried away by it on its next rotate. Should a closed hand catch whatever arrives under it, or open when its atom is gone?
+
+Q2: An output now eats a compound an arm is holding, and the arm is left closed on the pad. That feeds an output with no drop and one instruction fewer. Is that a tool, or a trap for the player who parked a compound there meaning to come back for it?
