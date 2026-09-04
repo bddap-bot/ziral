@@ -936,23 +936,29 @@ mod shot {
                 sim.arms.push(arm);
                 world.sim = sim;
             }
-            "sametick" => {
+            "dropfirst" | "grabfirst" => {
                 let mut sim = Sim::empty();
                 sim.glyphs.push(Glyph {
                     kind: GlyphKind::Bonder,
                     at: Hex::new(1, -1),
                     dir: 0,
                 });
-                sim.arms.push(Arm::new(
+                let dropper = Arm::new(
                     Hex::new(1, 0),
                     2,
                     vec![Instr::Grab, Instr::Drop, Instr::Wait],
-                ));
-                sim.arms.push(Arm::new(
+                );
+                let grabber = Arm::new(
                     Hex::new(1, -2),
                     5,
                     vec![Instr::Wait, Instr::Grab, Instr::Wait],
-                ));
+                );
+                let grabber_at = usize::from(name == "dropfirst");
+                sim.arms = if grabber_at == 1 {
+                    vec![dropper, grabber]
+                } else {
+                    vec![grabber, dropper]
+                };
                 for pos in [Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)] {
                     sim.spawn(Atom {
                         kind: AtomKind::Base,
@@ -960,7 +966,7 @@ mod shot {
                     });
                 }
                 world.sim = sim;
-                world.focus_arm(1);
+                world.focus_arm(grabber_at);
             }
             other => panic!("unknown scene {other}"),
         }
@@ -977,7 +983,7 @@ mod shot {
         };
         assert_eq!(
             flag, "--shot",
-            "usage: ziral --shot <png> micro|wide|focus|hold|output|bonding|twohands|tear|heldtear|sametick <ticks>"
+            "usage: ziral --shot <png> micro|wide|focus|hold|output|bonding|twohands|tear|heldtear|dropfirst|grabfirst <ticks>"
         );
         let ticks: u64 = ticks.parse().expect("ticks must be an integer");
         let (world, wide, keys) = scene(view, ticks);

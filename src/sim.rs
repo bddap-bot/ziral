@@ -415,8 +415,8 @@ impl Sim {
             Instr::Wait => {}
             Instr::Grab => {
                 let id = self.atom_at(hand).ok_or(Stall::Illegal)?;
-                if self.holder(id).is_some_and(|j| j != i) {
-                    return Err(Stall::Illegal);
+                if let Some(j) = self.holder(id).filter(|j| *j != i) {
+                    return Err(Stall::Hand(j));
                 }
                 self.arms[i].held = Some(id);
             }
@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn a_grab_of_a_held_atom_stalls_until_it_is_released() {
+    fn a_grab_of_a_held_atom_stalls_naming_the_hand_until_it_drops() {
         use Instr::*;
         let mut sim = bench(vec![Wait, Grab, RotCw], Vec::new());
         sim.arms
@@ -588,10 +588,10 @@ mod tests {
         put(&mut sim, 1, 0);
         sim.step();
         sim.step();
-        assert!(sim.arms[0].stall.is_some());
+        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
         assert_eq!(sim.arms[0].pc, 1);
         sim.step();
-        assert!(sim.arms[0].stall.is_some());
+        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
         sim.step();
         assert!(sim.arms[0].stall.is_none());
         assert_eq!(sim.arms[0].held, Some(0));
@@ -675,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn an_output_takes_only_the_exact_shape_atoms_and_bonds_once_released() {
+    fn an_output_takes_only_the_exact_shape_atoms_and_bonds_out_of_every_hand() {
         let output = Glyph {
             kind: GlyphKind::Output,
             at: Hex::new(1, 0),
@@ -711,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bonder_waits_for_its_sacrificial_atom_to_be_released() {
+    fn a_bonder_waits_while_its_sacrificial_atom_is_held() {
         use Instr::*;
         let bonder = Glyph {
             kind: GlyphKind::Bonder,
@@ -733,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn a_second_bond_waits_for_its_sacrificial_atom_to_be_released() {
+    fn a_second_bond_waits_while_its_sacrificial_atom_is_held() {
         use Instr::*;
         let second = Glyph {
             kind: GlyphKind::SecondBond,
@@ -844,10 +844,19 @@ mod tests {
             put(&mut sim, 1, -1);
             sim.step();
             sim.step();
-            let held = sim.arms.iter().any(|arm| arm.held == Some(sacrificial));
-            assert_eq!(held, dropper_first);
+            let (dropper, grabber) = if dropper_first { (0, 1) } else { (1, 0) };
+            assert_eq!(sim.arms[dropper].held, None);
             assert_eq!(sim.atoms[sacrificial].is_some(), dropper_first);
-            assert_eq!(sim.bonds.len(), usize::from(!dropper_first));
+            if dropper_first {
+                assert_eq!(sim.arms[grabber].held, Some(sacrificial));
+                assert_eq!(sim.arms[grabber].stall, None);
+                assert!(sim.bonds.is_empty());
+            } else {
+                assert_eq!(sim.arms[grabber].stall, Some(Stall::Hand(dropper)));
+                assert_eq!(sim.bonds.len(), 1);
+                sim.step();
+                assert_eq!(sim.arms[grabber].stall, Some(Stall::Illegal));
+            }
         }
     }
 
