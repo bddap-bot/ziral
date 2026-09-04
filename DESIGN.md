@@ -187,7 +187,7 @@ New rule:
 - A hand holds whatever is at its cell. After a glyph eats, the hand is on what is left there: the rest of the compound, or nothing.
 - No glyph waits on a hand.
 
-What made it fall out: an arm no longer remembers which atom it holds. Its hand is open or closed, and a closed hand holds whatever is at its cell, so an eaten atom leaves the hand closed on an empty cell with no code to clear it. Deleted with that: the grab stall naming another hand, the glyph's look at hands, and the per-hand atom record. Consequences the toy now shows: a closed hand on an empty cell keeps its ring, and an atom put there later is carried on the hand's next rotate; an output eats a compound straight out of a hand, and the arm is left closed on the pad. In your same-tick example with the bonder under it, the bonder eats the atom the tick the first hand grabs it, either order, and the second grab lands on an empty slot.
+What made it fall out: an arm no longer remembers which atom it holds. Its hand is open or closed, and a closed hand holds whatever is at its cell, so an eaten atom leaves the hand closed on an empty cell with no code to clear it. Deleted with that: the grab stall naming another hand, the glyph's look at hands, and what each hand remembered it held. Consequences the toy now shows: a closed hand on an empty cell keeps its ring, and an atom put there later is carried on the hand's next rotate; an output eats a compound straight out of a hand, and the arm is left closed on the pad. In your same-tick example with the bonder under it, the bonder eats the atom the tick the first hand grabs it, either order, and the second grab lands on an empty slot.
 
 Questions for round 7:
 

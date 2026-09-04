@@ -273,7 +273,7 @@ impl Sim {
         seen
     }
 
-    pub fn held(&self, i: usize) -> Option<usize> {
+    fn held(&self, i: usize) -> Option<usize> {
         let arm = &self.arms[i];
         arm.holding.then(|| self.atom_at(arm.hand())).flatten()
     }
@@ -291,7 +291,7 @@ impl Sim {
         }
     }
 
-    pub fn other_hand(&self, i: usize) -> Option<usize> {
+    fn other_hand(&self, i: usize) -> Option<usize> {
         let comp = self.component(self.held(i)?);
         (0..self.arms.len()).find(|j| *j != i && self.held(*j).is_some_and(|id| comp.contains(&id)))
     }
@@ -804,6 +804,7 @@ mod tests {
         assert!(g.holding);
         assert_eq!(g.stall, None);
     }
+
     #[test]
     fn a_rotate_under_two_hands_stalls_and_names_the_other_hand_until_it_drops() {
         use Instr::*;
