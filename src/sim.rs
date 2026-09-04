@@ -123,6 +123,7 @@ pub struct Rule {
     pub before: &'static [(usize, usize, Option<BondKind>)],
     pub after: &'static [(usize, usize, BondKind)],
     pub consumes: &'static [usize],
+    pub released: &'static [usize],
     pub whole: bool,
 }
 
@@ -145,6 +146,7 @@ impl GlyphKind {
                 before: &[],
                 after: &[],
                 consumes: &[],
+                released: &[],
                 whole: false,
             },
             GlyphKind::Bonder => Rule {
@@ -152,6 +154,7 @@ impl GlyphKind {
                 before: &[(1, 2, None)],
                 after: &[(1, 2, BondKind::Single)],
                 consumes: &[0],
+                released: &[0],
                 whole: false,
             },
             GlyphKind::SecondBond => Rule {
@@ -159,6 +162,7 @@ impl GlyphKind {
                 before: &[(1, 2, Some(BondKind::Single))],
                 after: &[(1, 2, BondKind::Double)],
                 consumes: &[0],
+                released: &[0],
                 whole: false,
             },
             GlyphKind::Output => Rule {
@@ -166,6 +170,7 @@ impl GlyphKind {
                 before: &[(0, 1, Some(BondKind::Double))],
                 after: &[],
                 consumes: &[0, 1],
+                released: &[0, 1],
                 whole: true,
             },
         }
@@ -256,6 +261,10 @@ impl Sim {
         self.arms.iter().any(|a| a.held == Some(id))
     }
 
+    fn released(&self, id: usize) -> bool {
+        !self.component(id).iter().any(|id| self.held_by_any(*id))
+    }
+
     pub fn spawn(&mut self, atom: Atom) -> usize {
         match self.atoms.iter().position(|a| a.is_none()) {
             Some(free) => {
@@ -327,12 +336,12 @@ impl Sim {
         {
             return None;
         }
+        if rule.released.iter().any(|slot| !self.released(ids[*slot])) {
+            return None;
+        }
         if rule.whole {
             let comp = self.component(ids[0]);
             if comp.len() != ids.len() || comp.iter().any(|id| !ids.contains(id)) {
-                return None;
-            }
-            if ids.iter().any(|id| self.held_by_any(*id)) {
                 return None;
             }
         }
@@ -663,6 +672,88 @@ mod tests {
         assert_eq!(sim.delivered, 1);
         assert!(sim.live_atoms().next().is_none());
         assert!(sim.bonds.is_empty());
+    }
+
+    #[test]
+    fn a_bonder_waits_for_its_sacrificial_atom_to_be_released() {
+        use Instr::*;
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(1, 0),
+            dir: 1,
+        };
+        let mut sim = bench(vec![Grab, Wait, Drop, Wait], vec![bonder]);
+        put(&mut sim, 1, 0);
+        put(&mut sim, 2, -1);
+        put(&mut sim, 1, -1);
+        sim.step();
+        sim.step();
+        assert_eq!(sim.arms[0].held, Some(0));
+        assert_eq!(sim.live_atoms().count(), 3);
+        assert!(sim.bonds.is_empty());
+        sim.step();
+        assert_eq!(sim.atoms[0], None);
+        assert_eq!(sim.bonds.len(), 1);
+    }
+
+    #[test]
+    fn a_bonder_fires_on_atoms_an_arm_holds_and_the_arm_keeps_the_compound() {
+        use Instr::*;
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(1, -1),
+            dir: 0,
+        };
+        assert_eq!(
+            bonder.slots().collect::<Vec<_>>(),
+            [Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)]
+        );
+        let mut sim = bench(vec![Grab, RotCw], vec![bonder]);
+        sim.arms[0].pivot = Hex::new(1, 0);
+        sim.arms[0].dir = 1;
+        let sacrificial = put(&mut sim, 1, -1);
+        let held = put(&mut sim, 2, -1);
+        let other = put(&mut sim, 2, -2);
+        sim.step();
+        assert_eq!(sim.arms[0].held, Some(held));
+        assert_eq!(sim.atoms[sacrificial], None);
+        assert_eq!(
+            sim.bonds,
+            vec![Bond {
+                a: held,
+                b: other,
+                kind: BondKind::Single
+            }]
+        );
+        sim.step();
+        assert_eq!(sim.atoms[held].unwrap().pos, Hex::new(1, -1));
+        assert_eq!(sim.atoms[other].unwrap().pos, Hex::new(0, -1));
+    }
+
+    #[test]
+    fn a_sacrificial_atom_bonded_into_a_held_compound_is_not_released() {
+        use Instr::*;
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(1, 0),
+            dir: 1,
+        };
+        let mut sim = bench(vec![Grab, Wait, Drop], vec![bonder]);
+        sim.arms[0].pivot = Hex::new(3, 0);
+        sim.arms[0].dir = 3;
+        let sacrificial = put(&mut sim, 1, 0);
+        put(&mut sim, 2, -1);
+        put(&mut sim, 1, -1);
+        let tail = put(&mut sim, 2, 0);
+        bond(&mut sim, sacrificial, tail, BondKind::Single);
+        sim.step();
+        sim.step();
+        assert_eq!(sim.arms[0].held, Some(tail));
+        assert_eq!(sim.live_atoms().count(), 4);
+        sim.step();
+        assert_eq!(sim.atoms[sacrificial], None);
+        assert_eq!(sim.live_atoms().count(), 3);
+        assert_eq!(sim.bonds.len(), 1);
     }
 
     #[test]
