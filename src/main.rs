@@ -109,7 +109,7 @@ impl World {
         match f {
             Focus::Arm { arm, .. } => {
                 self.sim.arms[arm].dir = dir;
-                self.sim.arms[arm].held = None;
+                self.sim.arms[arm].holding = false;
                 self.unstall();
             }
             Focus::Glyph(i) => self.sim.glyphs[i].dir = dir,
@@ -149,7 +149,7 @@ impl World {
                 match f {
                     Focus::Arm { arm, .. } => {
                         self.sim.arms[arm].pivot = at;
-                        self.sim.arms[arm].held = None;
+                        self.sim.arms[arm].holding = false;
                     }
                     Focus::Glyph(i) => self.sim.glyphs[i].at = at,
                 }
@@ -707,7 +707,7 @@ fn draw(
             arm_color
         };
         draw_machine(&mut gizmos, Item::Arm, arm.pivot, arm.dir, color);
-        if arm.held.is_some() {
+        if arm.holding {
             gizmos.circle_2d(px(arm.hand()), HEX * 0.5, color);
         }
         if arm.stall.is_some() {
@@ -903,12 +903,65 @@ mod shot {
                     kind: BondKind::Single,
                 });
                 let mut arm = Arm::new(Hex::new(-1, -1), 0, vec![Instr::Wait]);
-                arm.held = Some(ids[0]);
+                arm.holding = true;
                 sim.arms.push(arm);
                 world.sim = sim;
             }
+            "heldeat" => {
+                let (mut sim, _) = bonder(&[Hex::new(0, 0)]);
+                let mut eaten = Arm::new(
+                    Hex::new(0, -1),
+                    0,
+                    vec![
+                        Instr::Wait,
+                        Instr::Wait,
+                        Instr::Wait,
+                        Instr::RotCcw,
+                        Instr::Wait,
+                    ],
+                );
+                eaten.holding = true;
+                sim.arms.push(eaten);
+                sim.arms.push(Arm::new(
+                    Hex::new(1, 0),
+                    3,
+                    vec![Instr::Grab, Instr::RotCcw, Instr::Drop, Instr::Wait],
+                ));
+                world.sim = sim;
+                world.focus_arm(0);
+            }
+            "heldout" => {
+                let mut sim = Sim::empty();
+                sim.glyphs.push(Glyph {
+                    kind: GlyphKind::Output,
+                    at: Hex::new(1, -1),
+                    dir: 0,
+                });
+                let a = sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: Hex::new(1, -1),
+                });
+                let b = sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: Hex::new(2, -1),
+                });
+                sim.bonds.push(Bond {
+                    a,
+                    b,
+                    kind: BondKind::Double,
+                });
+                let mut arm = Arm::new(Hex::new(0, -1), 0, vec![Instr::Wait]);
+                arm.holding = true;
+                sim.arms.push(arm);
+                world.sim = sim;
+                world.focus_arm(0);
+            }
             "dropfirst" | "grabfirst" => {
-                let (mut sim, _) = bonder(&[]);
+                let mut sim = Sim::empty();
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: Hex::new(1, -1),
+                });
                 let dropper = Arm::new(
                     Hex::new(1, 0),
                     2,

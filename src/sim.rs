@@ -88,7 +88,7 @@ pub struct Arm {
     pub dir: usize,
     pub tape: Vec<Instr>,
     pub pc: usize,
-    pub held: Option<usize>,
+    pub holding: bool,
     pub stall: Option<Stall>,
 }
 
@@ -99,7 +99,7 @@ impl Arm {
             dir,
             tape,
             pc: 0,
-            held: None,
+            holding: false,
             stall: None,
         }
     }
@@ -273,8 +273,9 @@ impl Sim {
         seen
     }
 
-    fn holder(&self, id: usize) -> Option<usize> {
-        self.arms.iter().position(|a| a.held == Some(id))
+    pub fn held(&self, i: usize) -> Option<usize> {
+        let arm = &self.arms[i];
+        arm.holding.then(|| self.atom_at(arm.hand())).flatten()
     }
 
     pub fn spawn(&mut self, atom: Atom) -> usize {
@@ -291,10 +292,8 @@ impl Sim {
     }
 
     pub fn other_hand(&self, i: usize) -> Option<usize> {
-        self.component(self.arms[i].held?)
-            .into_iter()
-            .filter_map(|id| self.holder(id))
-            .find(|j| *j != i)
+        let comp = self.component(self.held(i)?);
+        (0..self.arms.len()).find(|j| *j != i && self.held(*j).is_some_and(|id| comp.contains(&id)))
     }
 
     fn consume(&mut self, ids: &[usize]) {
@@ -364,14 +363,6 @@ impl Sim {
         {
             return None;
         }
-        if rule
-            .slots
-            .iter()
-            .zip(&ids)
-            .any(|(slot, id)| slot.consumed && self.holder(*id).is_some())
-        {
-            return None;
-        }
         if rule.whole {
             let comp = self.component(ids[0]);
             if comp.len() != ids.len() || comp.iter().any(|id| !ids.contains(id)) {
@@ -409,17 +400,14 @@ impl Sim {
         match instr {
             Instr::Wait => {}
             Instr::Grab => {
-                let id = self.atom_at(hand).ok_or(Stall::Illegal)?;
-                if let Some(j) = self.holder(id).filter(|j| *j != i) {
-                    return Err(Stall::Hand(j));
-                }
-                self.arms[i].held = Some(id);
+                self.atom_at(hand).ok_or(Stall::Illegal)?;
+                self.arms[i].holding = true;
             }
-            Instr::Drop => self.arms[i].held = None,
+            Instr::Drop => self.arms[i].holding = false,
             Instr::RotCw | Instr::RotCcw => {
                 let cw = instr == Instr::RotCw;
                 let pivot = self.arms[i].pivot;
-                if let Some(held) = self.arms[i].held {
+                if let Some(held) = self.held(i) {
                     if let Some(j) = self.other_hand(i) {
                         return Err(Stall::Hand(j));
                     }
@@ -575,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn a_grab_of_a_held_atom_stalls_naming_the_hand_until_it_drops() {
+    fn a_grab_of_a_held_atom_puts_a_second_hand_on_it_and_rotates_stall_until_a_drop() {
         use Instr::*;
         let mut sim = bench(vec![Wait, Grab, RotCw], Vec::new());
         sim.arms
@@ -583,14 +571,15 @@ mod tests {
         put(&mut sim, 1, 0);
         sim.step();
         sim.step();
-        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
-        assert_eq!(sim.arms[0].pc, 1);
+        assert_eq!(sim.arms[0].stall, None);
+        assert_eq!(sim.held(0), Some(0));
+        assert_eq!(sim.held(1), Some(0));
         sim.step();
         assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
+        assert_eq!(sim.held(1), None);
         sim.step();
-        assert!(sim.arms[0].stall.is_none());
-        assert_eq!(sim.arms[0].held, Some(0));
-        assert_eq!(sim.arms[1].held, None);
+        assert_eq!(sim.arms[0].stall, None);
+        assert_eq!(sim.atoms[0].unwrap().pos, Hex::new(1, -1));
     }
 
     #[test]
@@ -692,61 +681,59 @@ mod tests {
         sim.step();
         assert_eq!(sim.delivered, 0);
         sim.consume(&[c]);
-        sim.arms[0].tape = vec![Instr::Grab, Instr::Wait, Instr::Drop];
+        sim.arms[0].tape = vec![Instr::Grab, Instr::Wait];
         sim.arms[0].pc = 0;
         sim.step();
-        sim.step();
-        assert_eq!(sim.delivered, 0);
-        assert_eq!(sim.live_atoms().count(), 2);
-        sim.step();
         assert_eq!(sim.delivered, 1);
+        assert!(sim.arms[0].holding);
+        assert_eq!(sim.held(0), None);
         assert!(sim.live_atoms().next().is_none());
         assert!(sim.bonds.is_empty());
         assert!(sim.torn.is_empty());
     }
 
     #[test]
-    fn a_bonder_waits_while_its_sacrificial_atom_is_held() {
+    fn a_glyph_eats_a_held_atom_and_the_hand_stays_closed_on_whatever_comes_next() {
         use Instr::*;
         let bonder = Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Grab, Wait, Drop], vec![bonder]);
+        let mut sim = bench(vec![Grab, Wait, RotCcw], vec![bonder]);
         let sacrificial = put(&mut sim, 1, 0);
         put(&mut sim, 2, -1);
         put(&mut sim, 1, -1);
         sim.step();
-        sim.step();
-        assert_eq!(sim.arms[0].held, Some(sacrificial));
-        assert_eq!(sim.live_atoms().count(), 3);
-        assert!(sim.bonds.is_empty());
-        sim.step();
+        assert!(sim.arms[0].holding);
+        assert_eq!(sim.held(0), None);
         assert_eq!(sim.atoms[sacrificial], None);
         assert_eq!(sim.bonds.len(), 1);
+        let arrived = put(&mut sim, 1, 0);
+        sim.step();
+        assert_eq!(sim.held(0), Some(arrived));
+        sim.step();
+        assert_eq!(sim.arms[0].stall, None);
+        assert_eq!(sim.atoms[arrived].unwrap().pos, Hex::new(0, 1));
     }
 
     #[test]
-    fn a_second_bond_waits_while_its_sacrificial_atom_is_held() {
+    fn a_second_bond_eats_its_sacrificial_atom_out_of_a_hand() {
         use Instr::*;
         let second = Glyph {
             kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Grab, Wait, Drop], vec![second]);
+        let mut sim = bench(vec![Grab, Wait], vec![second]);
         let sacrificial = put(&mut sim, 1, 0);
         let a = put(&mut sim, 2, -1);
         let b = put(&mut sim, 1, -1);
         bond(&mut sim, a, b, BondKind::Single);
         sim.step();
-        sim.step();
-        assert_eq!(sim.bonds[0].kind, BondKind::Single);
-        assert_eq!(sim.live_atoms().count(), 3);
-        sim.step();
         assert_eq!(sim.bonds[0].kind, BondKind::Double);
         assert_eq!(sim.atoms[sacrificial], None);
+        assert!(sim.arms[0].holding);
     }
 
     #[test]
@@ -768,7 +755,7 @@ mod tests {
         let held = put(&mut sim, 2, -1);
         let other = put(&mut sim, 2, -2);
         sim.step();
-        assert_eq!(sim.arms[0].held, Some(held));
+        assert_eq!(sim.held(0), Some(held));
         assert_eq!(sim.atoms[sacrificial], None);
         assert_eq!(
             sim.bonds,
@@ -800,7 +787,7 @@ mod tests {
         let tail = put(&mut sim, 2, 0);
         bond(&mut sim, sacrificial, tail, BondKind::Single);
         sim.step();
-        assert_eq!(sim.arms[0].held, Some(tail));
+        assert_eq!(sim.held(0), Some(tail));
         assert_eq!(sim.atoms[sacrificial], None);
         assert_eq!(
             sim.bonds,
@@ -812,47 +799,53 @@ mod tests {
         );
     }
 
-    fn same_tick(dropper_first: bool) -> (Sim, usize) {
+    #[test]
+    fn a_drop_and_a_grab_of_one_atom_in_one_tick_end_the_same_in_either_arm_order() {
         use Instr::*;
         let dropper = Arm::new(Hex::new(0, 0), 0, vec![Grab, Drop, Wait]);
         let grabber = Arm::new(Hex::new(2, 0), 3, vec![Wait, Grab, Wait]);
-        let mut sim = Sim::empty();
-        sim.glyphs.push(Glyph {
+        let bonder = Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
             dir: 1,
-        });
-        sim.arms = if dropper_first {
-            vec![dropper, grabber]
-        } else {
-            vec![grabber, dropper]
         };
-        let sacrificial = put(&mut sim, 1, 0);
-        put(&mut sim, 2, -1);
-        put(&mut sim, 1, -1);
-        sim.step();
-        sim.step();
-        (sim, sacrificial)
-    }
-
-    #[test]
-    fn a_drop_before_the_grab_passes_the_sacrificial_atom_from_hand_to_hand() {
-        let (sim, sacrificial) = same_tick(true);
-        assert_eq!(sim.arms[0].held, None);
-        assert_eq!(sim.arms[1].held, Some(sacrificial));
-        assert_eq!(sim.arms[1].stall, None);
-        assert!(sim.bonds.is_empty());
-    }
-
-    #[test]
-    fn a_grab_before_the_drop_stalls_and_the_bonder_eats_the_loose_atom() {
-        let (mut sim, sacrificial) = same_tick(false);
-        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
-        assert_eq!(sim.arms[1].held, None);
-        assert_eq!(sim.atoms[sacrificial], None);
-        assert_eq!(sim.bonds.len(), 1);
-        sim.step();
-        assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
+        for glyphs in [vec![], vec![bonder]] {
+            let ends: Vec<_> = [true, false]
+                .into_iter()
+                .map(|dropper_first| {
+                    let mut sim = Sim::empty();
+                    sim.glyphs = glyphs.clone();
+                    sim.arms = if dropper_first {
+                        vec![dropper.clone(), grabber.clone()]
+                    } else {
+                        vec![grabber.clone(), dropper.clone()]
+                    };
+                    put(&mut sim, 1, 0);
+                    put(&mut sim, 2, -1);
+                    put(&mut sim, 1, -1);
+                    sim.step();
+                    sim.step();
+                    let (d, g) = if dropper_first { (0, 1) } else { (1, 0) };
+                    (
+                        sim.arms[d].clone(),
+                        sim.arms[g].clone(),
+                        sim.live_atoms().count(),
+                        sim.bonds.len(),
+                    )
+                })
+                .collect();
+            assert_eq!(ends[0], ends[1]);
+            let (d, g, atoms, bonds) = &ends[0];
+            assert!(!d.holding);
+            if glyphs.is_empty() {
+                assert!(g.holding);
+                assert_eq!(g.stall, None);
+                assert_eq!((*atoms, *bonds), (3, 0));
+            } else {
+                assert_eq!(g.stall, Some(Stall::Illegal));
+                assert_eq!((*atoms, *bonds), (2, 1));
+            }
+        }
     }
 
     #[test]
