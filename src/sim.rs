@@ -122,7 +122,6 @@ pub struct Slot {
     pub at: Hex,
     pub kind: AtomKind,
     pub consumed: bool,
-    pub released: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,14 +137,12 @@ const fn base(at: Hex) -> Slot {
         at,
         kind: AtomKind::Base,
         consumed: false,
-        released: false,
     }
 }
 
 const TRIANGLE: [Slot; 3] = [
     Slot {
         consumed: true,
-        released: true,
         ..base(ORIGIN)
     },
     base(DIRS[0]),
@@ -154,12 +151,10 @@ const TRIANGLE: [Slot; 3] = [
 const PAIR: [Slot; 2] = [
     Slot {
         consumed: true,
-        released: true,
         ..base(ORIGIN)
     },
     Slot {
         consumed: true,
-        released: true,
         ..base(DIRS[0])
     },
 ];
@@ -282,10 +277,6 @@ impl Sim {
         self.arms.iter().position(|a| a.held == Some(id))
     }
 
-    fn component_released(&self, id: usize) -> bool {
-        !self.component(id).iter().any(|a| self.holder(*a).is_some())
-    }
-
     pub fn spawn(&mut self, atom: Atom) -> usize {
         match self.atoms.iter().position(|a| a.is_none()) {
             Some(free) => {
@@ -382,7 +373,7 @@ impl Sim {
             .slots
             .iter()
             .zip(&ids)
-            .any(|(slot, id)| slot.released && !self.component_released(*id))
+            .any(|(slot, id)| slot.consumed && self.holder(*id).is_some())
         {
             return None;
         }
@@ -798,29 +789,66 @@ mod tests {
     }
 
     #[test]
-    fn a_sacrificial_atom_bonded_into_a_held_compound_is_not_released() {
+    fn a_bonder_tears_its_sacrificial_atom_out_of_a_held_compound() {
         use Instr::*;
         let bonder = Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Grab, Wait, Drop], vec![bonder]);
+        let mut sim = bench(vec![Grab, Wait], vec![bonder]);
         sim.arms[0].pivot = Hex::new(3, 0);
         sim.arms[0].dir = 3;
         let sacrificial = put(&mut sim, 1, 0);
-        put(&mut sim, 2, -1);
-        put(&mut sim, 1, -1);
+        let a = put(&mut sim, 2, -1);
+        let b = put(&mut sim, 1, -1);
         let tail = put(&mut sim, 2, 0);
         bond(&mut sim, sacrificial, tail, BondKind::Single);
         sim.step();
-        sim.step();
         assert_eq!(sim.arms[0].held, Some(tail));
-        assert_eq!(sim.live_atoms().count(), 4);
-        sim.step();
         assert_eq!(sim.atoms[sacrificial], None);
-        assert_eq!(sim.live_atoms().count(), 3);
-        assert_eq!(sim.bonds.len(), 1);
+        assert_eq!(
+            sim.bonds,
+            vec![Bond {
+                a,
+                b,
+                kind: BondKind::Single
+            }]
+        );
+        assert_eq!(
+            sim.torn,
+            vec![(Hex::new(2, 0), Hex::new(1, 0), BondKind::Single)]
+        );
+    }
+
+    #[test]
+    fn a_grab_in_the_tick_of_the_drop_keeps_the_sacrificial_atom_only_if_the_dropper_acts_first() {
+        use Instr::*;
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(1, 0),
+            dir: 1,
+        };
+        let dropper = Arm::new(Hex::new(0, 0), 0, vec![Grab, Drop, Wait]);
+        let grabber = Arm::new(Hex::new(2, 0), 3, vec![Wait, Grab, Wait]);
+        for dropper_first in [true, false] {
+            let mut sim = Sim::empty();
+            sim.glyphs.push(bonder);
+            sim.arms = if dropper_first {
+                vec![dropper.clone(), grabber.clone()]
+            } else {
+                vec![grabber.clone(), dropper.clone()]
+            };
+            let sacrificial = put(&mut sim, 1, 0);
+            put(&mut sim, 2, -1);
+            put(&mut sim, 1, -1);
+            sim.step();
+            sim.step();
+            let held = sim.arms.iter().any(|arm| arm.held == Some(sacrificial));
+            assert_eq!(held, dropper_first);
+            assert_eq!(sim.atoms[sacrificial].is_some(), dropper_first);
+            assert_eq!(sim.bonds.len(), usize::from(!dropper_first));
+        }
     }
 
     #[test]

@@ -133,3 +133,34 @@ Questions for round 5:
 Q1: A tear can split a compound. The toy eats an atom out of the middle of a chain and leaves both halves lying where they were, each now its own compound. Is a split a tool too, or should the sacrificial slot only take an atom at the end of a compound, with one bond to sever?
 
 Q2: Within a tick, arms act before glyphs. A grab that lands on a compound the same tick a bonder would eat its sacrificial atom from it wins: the arm holds the compound and the bonder waits until the drop, then fires in the tick of the drop. Is arms-before-glyphs the order, or should glyphs read the state the tick began with?
+
+### Round 5 answers
+
+A1: Sacrificial slot destroys as many bonds as are connected to the sacrificial atom.
+A2: maybe I don't fully follow. If an arm grabs the sacrificial atom in the same tick another arm drops it then it makes sense that it doesn't get dropped. Are the drop requirements for the bonders getting too complicated? We can simplify it would make the system more workable.
+
+### Round 5, what Toy 1 now does
+
+Decided: the sacrificial slot severs every bond on the sacrificial atom, wherever it sits. An atom eaten out of the middle of a chain leaves two compounds where one lay. No code special-cased the end of a compound or a single bond; nothing was deleted for it.
+
+Round 4's Q2 was worded badly. The situation in the toy's terms: a tick runs the arms first, in arm order, then the glyphs. Take an arm holding the sacrificial atom on a bonder whose tape says drop, and a second arm whose tape says grab on that cell in the same tick. If the dropping arm comes first in arm order, it drops, the second arm grabs, and the bonder sees a held atom and does nothing: the atom is not consumed, as the answer expects. If the grabbing arm comes first, its grab stalls on an atom another hand holds, the first arm then drops, the bonder eats the atom lying loose at the end of the tick, and the grab retries next tick on an empty cell.
+
+The rule for when a bonder fires is simplified. Old rule:
+- Each slot carries two flags, consumed and released.
+- A released slot demands that no hand be on any atom of the molecule its atom belongs to.
+- The bonder and the second-bond glyph mark the sacrificial slot released; the output marks both slots.
+- So a sacrificial atom bonded into a held compound waits, though no hand is on it.
+- Arms act before glyphs, so a grab in the tick of a drop decides what the glyph sees.
+
+New rule:
+- A glyph acts at the end of the tick on what lies in its slots.
+- It never eats an atom out of a hand: a held atom on a slot the glyph consumes means it does nothing this tick.
+- Nothing else waits. A sacrificial atom bonded into a held compound is torn out, and the hand keeps the rest.
+
+The released flag and the molecule-wide hand search are deleted; consumed is the only slot flag left. Rounds 1 to 4 still hold: the atoms to be bonded may be held, an output takes only an exact compound with no hand on it since it consumes both atoms, a held sacrificial atom waits. The one scene that changed: a bonder whose sacrificial atom is bonded into a compound an arm holds now fires at once and tears the atom out, where before it waited for the drop.
+
+Questions for round 6:
+
+Q1: The simplified rule tears the sacrificial atom out of a compound an arm is holding, and the arm keeps what is left; before, that bonder waited for the drop. Is that the rule, or should a hand anywhere on the compound still keep its sacrificial atom from being eaten?
+
+Q2: The same-tick example comes out by arm order in the toy. Dropping arm first: the grab wins and the atom is kept. Grabbing arm first: the grab stalls, the atom lies loose at the end of the tick, the bonder eats it, and the grab then stalls forever on an empty cell. Is arm order a fine tiebreak here, or should a drop and a grab of one atom in one tick always pass it from hand to hand?

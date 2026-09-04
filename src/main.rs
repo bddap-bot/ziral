@@ -905,6 +905,63 @@ mod shot {
                 }
                 world.sim = sim;
             }
+            "heldtear" => {
+                let mut sim = Sim::empty();
+                sim.glyphs.push(Glyph {
+                    kind: GlyphKind::Bonder,
+                    at: Hex::new(1, -1),
+                    dir: 0,
+                });
+                let ids: Vec<usize> = [
+                    Hex::new(0, -1),
+                    Hex::new(1, -1),
+                    Hex::new(2, -1),
+                    Hex::new(2, -2),
+                ]
+                .into_iter()
+                .map(|pos| {
+                    sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos,
+                    })
+                })
+                .collect();
+                sim.bonds.push(Bond {
+                    a: ids[0],
+                    b: ids[1],
+                    kind: BondKind::Single,
+                });
+                let mut arm = Arm::new(Hex::new(-1, -1), 0, vec![Instr::Wait]);
+                arm.held = Some(ids[0]);
+                sim.arms.push(arm);
+                world.sim = sim;
+            }
+            "sametick" => {
+                let mut sim = Sim::empty();
+                sim.glyphs.push(Glyph {
+                    kind: GlyphKind::Bonder,
+                    at: Hex::new(1, -1),
+                    dir: 0,
+                });
+                sim.arms.push(Arm::new(
+                    Hex::new(1, 0),
+                    2,
+                    vec![Instr::Grab, Instr::Drop, Instr::Wait],
+                ));
+                sim.arms.push(Arm::new(
+                    Hex::new(1, -2),
+                    5,
+                    vec![Instr::Wait, Instr::Grab, Instr::Wait],
+                ));
+                for pos in [Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)] {
+                    sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos,
+                    });
+                }
+                world.sim = sim;
+                world.focus_arm(1);
+            }
             other => panic!("unknown scene {other}"),
         }
         for _ in 0..ticks {
@@ -920,7 +977,7 @@ mod shot {
         };
         assert_eq!(
             flag, "--shot",
-            "usage: ziral --shot <png> micro|wide|focus|hold|output|bonding|twohands|tear <ticks>"
+            "usage: ziral --shot <png> micro|wide|focus|hold|output|bonding|twohands|tear|heldtear|sametick <ticks>"
         );
         let ticks: u64 = ticks.parse().expect("ticks must be an integer");
         let (world, wide, keys) = scene(view, ticks);
