@@ -88,6 +88,9 @@ oh, ziral needs a delete, lift a machine and hit a key to delete, same key as de
 
 in ziral, if a machine is dropped in an invalid location, it pops back to where it was picked up, if that's not possible it pops pack into users inventory. if we don't have inventory yet that just means it disappears
 
+A1: it is the player's job to put the molecule in the correct orientation.
+A2: some processesors need release, outputs need release. Bond makers need release of the sacrificial atom but not of the atoms to be bonded (assuming the math works out)
+
 ### Round 2, what Toy 1 now does
 
 Machines never collide; only atoms do. Two glyphs on one hex was an accident of the first toy (placement never checked occupancy), kept as a rule: stacked glyphs each fire whenever their own rule matches, so a bonder under a second-bond glyph doubles a bond in two feeds.
@@ -95,3 +98,19 @@ Machines never collide; only atoms do. Two glyphs on one hex was an accident of 
 Input, output, and processing glyphs are one model: a glyph is a list of slots, each an offset from its cell plus the atom type it wants, a list of every slot pair with the bond that must be present or absent there before it fires, the bonds it writes, and the slots it consumes. The source is a one-slot glyph that spawns when empty. The bonder and the second-bond applicator are three-slot glyphs that consume slot zero. The output is a two-slot glyph that fires only when the atoms on its slots are exactly one compound, with the double bond it asks for and no other bond; a compound of the right atoms turned the wrong way, or with anything else attached, sits on the glyph untouched.
 
 Editing: a click focuses a machine; A and D turn it; Z deletes it. With an arm focused, F grab, R drop, E clockwise, Q counterclockwise, X wait write its tape at the cursor. Dragging a machine, or dragging from the palette, carries a preview under the pointer; A and D turn it, Z deletes it, and a release over the panels returns it to where it was lifted, or, from the palette, discards it. The strip along the bottom lists the tapes of the arms on screen, eight at most, and a click on one focuses that arm. Pan is right or middle drag.
+
+### Round 3, what Toy 1 now does
+
+Round 2 asked two questions. Q1: an output's slots fix an orientation; is fitting the compound to the glyph's turn the player's job, or should an output take any of its shape's six turns? Q2: bonders fire on atoms an arm still holds or that sit inside a bigger molecule; only the output waits for a released, isolated compound; should processing glyphs also wait for release? The answers above decide both.
+
+Decided: an output takes one orientation, its own. Turning the compound to fit is the player's job. Nothing in the toy hedged the other way, so nothing was deleted.
+
+Decided: release is part of a glyph's rule, slot by slot, not a property of a glyph class. Each slot may demand that no hand be on the molecule its atom belongs to. The source demands nothing. The bonder and the second-bond applicator demand it of the sacrificial slot only, so they fire on atoms an arm still holds or that sit inside a bigger molecule, and the arm that held a lone atom now holds the compound it became part of. The output demands it of every slot, and still asks for the exact shape and nothing attached.
+
+The math for the hand-held case balances: three atoms in, two atoms and a bond out, whatever hands are on the two survivors. Two cases sit at the edge of the answer. If two arms hold the two atoms being bonded, both now hold one molecule and neither can rotate until one drops. If the sacrificial atom is itself bonded into a molecule nobody holds, it is consumed out of that molecule and its bonds go with it; a sacrificial atom bonded into a held molecule waits.
+
+Questions for round 4:
+
+Q1: When two arms each hold one of the atoms a bonder joins, the molecule ends up under two hands and every rotate on it stalls until a tape drops. Is a molecule under two hands a deadlock the player programs around, as with any other stall, or should a bond that would put a second hand on a molecule wait like the sacrificial slot does?
+
+Q2: A bonder consumes a sacrificial atom out of the side of a molecule, severing its bonds, as long as no hand is on that molecule. Should the sacrificial slot also demand a lone atom, so consumption never breaks a bond the player made, or is eating an atom out of a molecule a tool?
