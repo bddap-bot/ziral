@@ -110,8 +110,15 @@ impl World {
             Focus::Arm { arm, .. } => {
                 self.sim.arms[arm].dir = dir;
                 self.sim.arms[arm].held = None;
+                self.unstall();
             }
             Focus::Glyph(i) => self.sim.glyphs[i].dir = dir,
+        }
+    }
+
+    fn unstall(&mut self) {
+        for a in &mut self.sim.arms {
+            a.stall = None;
         }
     }
 
@@ -119,6 +126,7 @@ impl World {
         match f {
             Focus::Arm { arm, .. } => {
                 self.sim.arms.remove(arm);
+                self.unstall();
             }
             Focus::Glyph(i) => {
                 self.sim.glyphs.remove(i);
