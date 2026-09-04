@@ -109,7 +109,6 @@ impl World {
         match f {
             Focus::Arm { arm, .. } => {
                 self.sim.arms[arm].dir = dir;
-                self.sim.arms[arm].holding = false;
                 self.unstall();
             }
             Focus::Glyph(i) => self.sim.glyphs[i].dir = dir,
@@ -147,10 +146,7 @@ impl World {
             (Some(f), None) => self.focus = Some(f),
             (Some(f), Some(at)) => {
                 match f {
-                    Focus::Arm { arm, .. } => {
-                        self.sim.arms[arm].pivot = at;
-                        self.sim.arms[arm].holding = false;
-                    }
+                    Focus::Arm { arm, .. } => self.sim.arms[arm].pivot = at,
                     Focus::Glyph(i) => self.sim.glyphs[i].at = at,
                 }
                 self.turn(f, held.dir);

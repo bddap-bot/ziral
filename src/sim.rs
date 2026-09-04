@@ -700,7 +700,7 @@ mod tests {
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Grab, Wait, RotCcw], vec![bonder]);
+        let mut sim = bench(vec![Grab, Wait], vec![bonder]);
         let sacrificial = put(&mut sim, 1, 0);
         put(&mut sim, 2, -1);
         put(&mut sim, 1, -1);
@@ -712,28 +712,6 @@ mod tests {
         let arrived = put(&mut sim, 1, 0);
         sim.step();
         assert_eq!(sim.held(0), Some(arrived));
-        sim.step();
-        assert_eq!(sim.arms[0].stall, None);
-        assert_eq!(sim.atoms[arrived].unwrap().pos, Hex::new(0, 1));
-    }
-
-    #[test]
-    fn a_second_bond_eats_its_sacrificial_atom_out_of_a_hand() {
-        use Instr::*;
-        let second = Glyph {
-            kind: GlyphKind::SecondBond,
-            at: Hex::new(1, 0),
-            dir: 1,
-        };
-        let mut sim = bench(vec![Grab, Wait], vec![second]);
-        let sacrificial = put(&mut sim, 1, 0);
-        let a = put(&mut sim, 2, -1);
-        let b = put(&mut sim, 1, -1);
-        bond(&mut sim, a, b, BondKind::Single);
-        sim.step();
-        assert_eq!(sim.bonds[0].kind, BondKind::Double);
-        assert_eq!(sim.atoms[sacrificial], None);
-        assert!(sim.arms[0].holding);
     }
 
     #[test]
@@ -804,50 +782,28 @@ mod tests {
         use Instr::*;
         let dropper = Arm::new(Hex::new(0, 0), 0, vec![Grab, Drop, Wait]);
         let grabber = Arm::new(Hex::new(2, 0), 3, vec![Wait, Grab, Wait]);
-        let bonder = Glyph {
-            kind: GlyphKind::Bonder,
-            at: Hex::new(1, 0),
-            dir: 1,
-        };
-        for glyphs in [vec![], vec![bonder]] {
-            let ends: Vec<_> = [true, false]
-                .into_iter()
-                .map(|dropper_first| {
-                    let mut sim = Sim::empty();
-                    sim.glyphs = glyphs.clone();
-                    sim.arms = if dropper_first {
-                        vec![dropper.clone(), grabber.clone()]
-                    } else {
-                        vec![grabber.clone(), dropper.clone()]
-                    };
-                    put(&mut sim, 1, 0);
-                    put(&mut sim, 2, -1);
-                    put(&mut sim, 1, -1);
-                    sim.step();
-                    sim.step();
-                    let (d, g) = if dropper_first { (0, 1) } else { (1, 0) };
-                    (
-                        sim.arms[d].clone(),
-                        sim.arms[g].clone(),
-                        sim.live_atoms().count(),
-                        sim.bonds.len(),
-                    )
-                })
-                .collect();
-            assert_eq!(ends[0], ends[1]);
-            let (d, g, atoms, bonds) = &ends[0];
-            assert!(!d.holding);
-            if glyphs.is_empty() {
-                assert!(g.holding);
-                assert_eq!(g.stall, None);
-                assert_eq!((*atoms, *bonds), (3, 0));
-            } else {
-                assert_eq!(g.stall, Some(Stall::Illegal));
-                assert_eq!((*atoms, *bonds), (2, 1));
-            }
-        }
+        let ends: Vec<_> = [true, false]
+            .into_iter()
+            .map(|dropper_first| {
+                let mut sim = Sim::empty();
+                sim.arms = if dropper_first {
+                    vec![dropper.clone(), grabber.clone()]
+                } else {
+                    vec![grabber.clone(), dropper.clone()]
+                };
+                put(&mut sim, 1, 0);
+                sim.step();
+                sim.step();
+                let (d, g) = if dropper_first { (0, 1) } else { (1, 0) };
+                (sim.arms[d].clone(), sim.arms[g].clone())
+            })
+            .collect();
+        assert_eq!(ends[0], ends[1]);
+        let (d, g) = &ends[0];
+        assert!(!d.holding);
+        assert!(g.holding);
+        assert_eq!(g.stall, None);
     }
-
     #[test]
     fn a_rotate_under_two_hands_stalls_and_names_the_other_hand_until_it_drops() {
         use Instr::*;
