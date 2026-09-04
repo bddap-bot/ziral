@@ -114,3 +114,22 @@ Questions for round 4:
 Q1: A molecule can end up under two hands two ways: two arms each hold one of the atoms a bonder joins, or an arm grabs an atom inside a molecule another arm already holds. Every rotate on it then stalls until a tape drops. Is a molecule under two hands a deadlock the player programs around, as with any other stall, or should the bond and the grab that would put a second hand on it wait, as a glyph waits for release?
 
 Q2: A bonder consumes a sacrificial atom out of the side of a molecule, severing its bonds, as long as no hand is on that molecule. Should the sacrificial slot also demand a lone atom, so consumption never breaks a bond the player made, or is eating an atom out of a molecule a tool?
+
+### Round 4 answers
+
+A1: stall is good in that situation
+A2: let's let it tear the sacrificial atom off of compounds, could be fun
+
+### Round 4, what Toy 1 now does
+
+Decided: a molecule under two hands stalls every rotate until a tape drops it. The bond and the grab that put the second hand on it do not wait. The stall is shown: the stalled arm's pivot carries its white ring as before, and the hand that blocks it carries a wider white ring, so the player can read which hold to drop.
+
+Decided: a bonder or second-bond glyph tears its sacrificial atom out of an unheld compound. The atom's bonds are severed in the same tick the new bond is written, and what remains is a smaller compound, or two, wherever they were. The tear is shown for that one tick: each severed bond stays drawn in dim grey from its surviving atom to the emptied slot. A sacrificial atom in a held compound still waits for release.
+
+No code hedged either rule; nothing was deleted for them.
+
+Questions for round 5:
+
+Q1: The sacrificial atom may itself be bonded to one of the two atoms the glyph joins. The toy tears that bond and writes the new one in the same tick, so a bonder can eat one atom of a compound to bond its neighbours. Is that a rule, or should the sacrificial slot refuse an atom bonded to either target?
+
+Q2: Within a tick, arms act before glyphs. A grab that lands on a compound the same tick a bonder would eat from it wins, and the bonder waits; a drop the same tick lets the bonder fire that tick. Is arms-before-glyphs the order, or should glyphs read the state the tick began with?

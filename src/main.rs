@@ -648,6 +648,7 @@ fn draw(
     let dim = Color::srgb(0.18, 0.18, 0.18);
     let pad = Color::srgb(0.75, 0.75, 0.75);
     let atom = Color::srgb(0.85, 0.85, 0.85);
+    let torn = Color::srgb(0.4, 0.4, 0.4);
     let arm_color = Color::srgb(0.55, 0.55, 0.55);
     let picked = Color::WHITE;
     let s = &world.sim;
@@ -681,6 +682,9 @@ fn draw(
         };
         draw_bond(&mut gizmos, px(a.pos), px(c.pos), b.kind, atom);
     }
+    for (kept, lost, kind) in &s.torn {
+        draw_bond(&mut gizmos, px(*kept), px(*lost), *kind, torn);
+    }
     for (_, a) in s.live_atoms() {
         gizmos.circle_2d(px(a.pos), HEX * 0.4, atom);
     }
@@ -696,6 +700,9 @@ fn draw(
         }
         if arm.stalled {
             gizmos.circle_2d(px(arm.pivot), HEX * 0.5, picked);
+            if let Some(j) = s.second_hand(i) {
+                gizmos.circle_2d(px(s.arms[j].hand()), HEX * 0.65, picked);
+            }
         }
     }
     if let (Some(held), Some(p)) = (world.held, world.pointer) {
@@ -829,6 +836,54 @@ mod shot {
                 world.sim = sim;
                 world.focus_arm(0);
             }
+            "twohands" => {
+                let mut sim = Sim::empty();
+                sim.arms
+                    .push(Arm::new(Hex::new(0, 0), 0, vec![Instr::Grab, Instr::RotCw]));
+                sim.arms
+                    .push(Arm::new(Hex::new(2, -2), 4, vec![Instr::Grab, Instr::Wait]));
+                let a = sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: Hex::new(1, 0),
+                });
+                let b = sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: Hex::new(1, -1),
+                });
+                sim.bonds.push(Bond {
+                    a,
+                    b,
+                    kind: BondKind::Single,
+                });
+                world.sim = sim;
+                world.focus_arm(0);
+            }
+            "tear" => {
+                let mut sim = Sim::empty();
+                sim.glyphs.push(Glyph {
+                    kind: GlyphKind::Bonder,
+                    at: Hex::new(1, -1),
+                    dir: 0,
+                });
+                let chain: Vec<usize> = [Hex::new(-1, -1), Hex::new(0, -1), Hex::new(1, -1)]
+                    .into_iter()
+                    .chain([Hex::new(2, -1), Hex::new(2, -2)])
+                    .map(|pos| {
+                        sim.spawn(Atom {
+                            kind: AtomKind::Base,
+                            pos,
+                        })
+                    })
+                    .collect();
+                for (k, kind) in [BondKind::Single, BondKind::Double].into_iter().enumerate() {
+                    sim.bonds.push(Bond {
+                        a: chain[k],
+                        b: chain[k + 1],
+                        kind,
+                    });
+                }
+                world.sim = sim;
+            }
             other => panic!("unknown scene {other}"),
         }
         for _ in 0..ticks {
@@ -844,7 +899,7 @@ mod shot {
         };
         assert_eq!(
             flag, "--shot",
-            "usage: ziral --shot <png> micro|wide|focus|hold|output|bonding <ticks>"
+            "usage: ziral --shot <png> micro|wide|focus|hold|output|bonding|twohands|tear <ticks>"
         );
         let ticks: u64 = ticks.parse().expect("ticks must be an integer");
         let (world, wide, keys) = scene(view, ticks);
