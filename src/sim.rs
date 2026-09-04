@@ -136,16 +136,27 @@ const fn base(at: Hex) -> Slot {
     }
 }
 
-const fn spent(at: Hex) -> Slot {
+const TRIANGLE: [Slot; 3] = [
     Slot {
         consumed: true,
         released: true,
-        ..base(at)
-    }
-}
-
-const TRIANGLE: [Slot; 3] = [spent(ORIGIN), base(DIRS[0]), base(DIRS[1])];
-const PAIR: [Slot; 2] = [spent(ORIGIN), spent(DIRS[0])];
+        ..base(ORIGIN)
+    },
+    base(DIRS[0]),
+    base(DIRS[1]),
+];
+const PAIR: [Slot; 2] = [
+    Slot {
+        consumed: true,
+        released: true,
+        ..base(ORIGIN)
+    },
+    Slot {
+        consumed: true,
+        released: true,
+        ..base(DIRS[0])
+    },
+];
 const ONE: [Slot; 1] = [base(ORIGIN)];
 
 impl GlyphKind {
