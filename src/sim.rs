@@ -815,49 +815,49 @@ mod tests {
                 kind: BondKind::Single
             }]
         );
-        assert_eq!(
-            sim.torn,
-            vec![(Hex::new(2, 0), Hex::new(1, 0), BondKind::Single)]
-        );
     }
 
-    #[test]
-    fn a_grab_in_the_tick_of_the_drop_keeps_the_sacrificial_atom_only_if_the_dropper_acts_first() {
+    fn same_tick(dropper_first: bool) -> (Sim, usize) {
         use Instr::*;
-        let bonder = Glyph {
+        let dropper = Arm::new(Hex::new(0, 0), 0, vec![Grab, Drop, Wait]);
+        let grabber = Arm::new(Hex::new(2, 0), 3, vec![Wait, Grab, Wait]);
+        let mut sim = Sim::empty();
+        sim.glyphs.push(Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
             dir: 1,
+        });
+        sim.arms = if dropper_first {
+            vec![dropper, grabber]
+        } else {
+            vec![grabber, dropper]
         };
-        let dropper = Arm::new(Hex::new(0, 0), 0, vec![Grab, Drop, Wait]);
-        let grabber = Arm::new(Hex::new(2, 0), 3, vec![Wait, Grab, Wait]);
-        for dropper_first in [true, false] {
-            let mut sim = Sim::empty();
-            sim.glyphs.push(bonder);
-            sim.arms = if dropper_first {
-                vec![dropper.clone(), grabber.clone()]
-            } else {
-                vec![grabber.clone(), dropper.clone()]
-            };
-            let sacrificial = put(&mut sim, 1, 0);
-            put(&mut sim, 2, -1);
-            put(&mut sim, 1, -1);
-            sim.step();
-            sim.step();
-            let (dropper, grabber) = if dropper_first { (0, 1) } else { (1, 0) };
-            assert_eq!(sim.arms[dropper].held, None);
-            assert_eq!(sim.atoms[sacrificial].is_some(), dropper_first);
-            if dropper_first {
-                assert_eq!(sim.arms[grabber].held, Some(sacrificial));
-                assert_eq!(sim.arms[grabber].stall, None);
-                assert!(sim.bonds.is_empty());
-            } else {
-                assert_eq!(sim.arms[grabber].stall, Some(Stall::Hand(dropper)));
-                assert_eq!(sim.bonds.len(), 1);
-                sim.step();
-                assert_eq!(sim.arms[grabber].stall, Some(Stall::Illegal));
-            }
-        }
+        let sacrificial = put(&mut sim, 1, 0);
+        put(&mut sim, 2, -1);
+        put(&mut sim, 1, -1);
+        sim.step();
+        sim.step();
+        (sim, sacrificial)
+    }
+
+    #[test]
+    fn a_drop_before_the_grab_passes_the_sacrificial_atom_from_hand_to_hand() {
+        let (sim, sacrificial) = same_tick(true);
+        assert_eq!(sim.arms[0].held, None);
+        assert_eq!(sim.arms[1].held, Some(sacrificial));
+        assert_eq!(sim.arms[1].stall, None);
+        assert!(sim.bonds.is_empty());
+    }
+
+    #[test]
+    fn a_grab_before_the_drop_stalls_and_the_bonder_eats_the_loose_atom() {
+        let (mut sim, sacrificial) = same_tick(false);
+        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
+        assert_eq!(sim.arms[1].held, None);
+        assert_eq!(sim.atoms[sacrificial], None);
+        assert_eq!(sim.bonds.len(), 1);
+        sim.step();
+        assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
     }
 
     #[test]

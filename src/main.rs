@@ -784,6 +784,27 @@ mod shot {
     #[derive(Resource)]
     struct Target(Handle<Image>);
 
+    fn bonder(extra: &[Hex]) -> (Sim, Vec<usize>) {
+        let mut sim = Sim::empty();
+        sim.glyphs.push(Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(1, -1),
+            dir: 0,
+        });
+        let ids = extra
+            .iter()
+            .copied()
+            .chain([Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)])
+            .map(|pos| {
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos,
+                })
+            })
+            .collect();
+        (sim, ids)
+    }
+
     fn scene(name: &str, ticks: u64) -> (World, bool, Vec<KeyCode>) {
         use KeyCode::*;
         let mut world = World::new();
@@ -831,20 +852,9 @@ mod shot {
                 world.sim = sim;
             }
             "bonding" => {
-                let mut sim = Sim::empty();
-                sim.glyphs.push(Glyph {
-                    kind: GlyphKind::Bonder,
-                    at: Hex::new(1, -1),
-                    dir: 0,
-                });
+                let (mut sim, _) = bonder(&[]);
                 sim.arms
                     .push(Arm::new(Hex::new(1, 0), 1, vec![Instr::Grab, Instr::Wait]));
-                for pos in [Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)] {
-                    sim.spawn(Atom {
-                        kind: AtomKind::Base,
-                        pos,
-                    });
-                }
                 world.sim = sim;
                 world.focus_arm(0);
             }
@@ -871,61 +881,22 @@ mod shot {
                 world.focus_arm(0);
             }
             "tear" => {
-                let mut sim = Sim::empty();
-                sim.glyphs.push(Glyph {
-                    kind: GlyphKind::Bonder,
-                    at: Hex::new(1, -1),
-                    dir: 0,
-                });
-                let ids: Vec<usize> = [
-                    Hex::new(-1, -1),
-                    Hex::new(0, -1),
-                    Hex::new(1, -1),
-                    Hex::new(1, 0),
-                    Hex::new(2, -1),
-                    Hex::new(2, -2),
-                ]
-                .into_iter()
-                .map(|pos| {
-                    sim.spawn(Atom {
-                        kind: AtomKind::Base,
-                        pos,
-                    })
-                })
-                .collect();
-                for (k, kind) in [BondKind::Single, BondKind::Double, BondKind::Single]
-                    .into_iter()
-                    .enumerate()
-                {
+                let (mut sim, ids) = bonder(&[Hex::new(-1, -1), Hex::new(0, -1), Hex::new(1, 0)]);
+                for (a, b, kind) in [
+                    (0, 1, BondKind::Single),
+                    (1, 3, BondKind::Double),
+                    (3, 2, BondKind::Single),
+                ] {
                     sim.bonds.push(Bond {
-                        a: ids[k],
-                        b: ids[k + 1],
+                        a: ids[a],
+                        b: ids[b],
                         kind,
                     });
                 }
                 world.sim = sim;
             }
             "heldtear" => {
-                let mut sim = Sim::empty();
-                sim.glyphs.push(Glyph {
-                    kind: GlyphKind::Bonder,
-                    at: Hex::new(1, -1),
-                    dir: 0,
-                });
-                let ids: Vec<usize> = [
-                    Hex::new(0, -1),
-                    Hex::new(1, -1),
-                    Hex::new(2, -1),
-                    Hex::new(2, -2),
-                ]
-                .into_iter()
-                .map(|pos| {
-                    sim.spawn(Atom {
-                        kind: AtomKind::Base,
-                        pos,
-                    })
-                })
-                .collect();
+                let (mut sim, ids) = bonder(&[Hex::new(0, -1)]);
                 sim.bonds.push(Bond {
                     a: ids[0],
                     b: ids[1],
@@ -937,12 +908,7 @@ mod shot {
                 world.sim = sim;
             }
             "dropfirst" | "grabfirst" => {
-                let mut sim = Sim::empty();
-                sim.glyphs.push(Glyph {
-                    kind: GlyphKind::Bonder,
-                    at: Hex::new(1, -1),
-                    dir: 0,
-                });
+                let (mut sim, _) = bonder(&[]);
                 let dropper = Arm::new(
                     Hex::new(1, 0),
                     2,
@@ -953,20 +919,14 @@ mod shot {
                     5,
                     vec![Instr::Wait, Instr::Grab, Instr::Wait],
                 );
-                let grabber_at = usize::from(name == "dropfirst");
-                sim.arms = if grabber_at == 1 {
+                let dropper_first = name == "dropfirst";
+                sim.arms = if dropper_first {
                     vec![dropper, grabber]
                 } else {
                     vec![grabber, dropper]
                 };
-                for pos in [Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)] {
-                    sim.spawn(Atom {
-                        kind: AtomKind::Base,
-                        pos,
-                    });
-                }
                 world.sim = sim;
-                world.focus_arm(grabber_at);
+                world.focus_arm(usize::from(dropper_first));
             }
             other => panic!("unknown scene {other}"),
         }
@@ -981,10 +941,7 @@ mod shot {
         let [_, flag, path, view, ticks] = args.as_slice() else {
             return false;
         };
-        assert_eq!(
-            flag, "--shot",
-            "usage: ziral --shot <png> micro|wide|focus|hold|output|bonding|twohands|tear|heldtear|dropfirst|grabfirst <ticks>"
-        );
+        assert_eq!(flag, "--shot", "usage: ziral --shot <png> <scene> <ticks>");
         let ticks: u64 = ticks.parse().expect("ticks must be an integer");
         let (world, wide, keys) = scene(view, ticks);
         app.insert_resource(world)
