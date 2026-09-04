@@ -13,6 +13,8 @@ pub const DIRS: [Hex; 6] = [
     Hex { q: 0, r: 1 },
 ];
 
+pub const ORIGIN: Hex = Hex::new(0, 0);
+
 impl Hex {
     pub const fn new(q: i32, r: i32) -> Self {
         Hex { q, r }
@@ -35,6 +37,10 @@ impl Hex {
         };
         pivot.add(d)
     }
+
+    pub fn turned(self, dir: usize) -> Hex {
+        (0..dir % 6).fold(self, |h, _| h.rotate(ORIGIN, true))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,8 +56,6 @@ pub enum Instr {
 pub enum AtomKind {
     Base,
 }
-
-pub const SACRIFICIAL: AtomKind = AtomKind::Base;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Atom {
@@ -101,8 +105,71 @@ impl Arm {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GlyphKind {
+    Source,
     Bonder,
     SecondBond,
+    Output,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Slot {
+    pub at: Hex,
+    pub kind: AtomKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rule {
+    pub slots: &'static [Slot],
+    pub before: &'static [(usize, usize, Option<BondKind>)],
+    pub after: &'static [(usize, usize, BondKind)],
+    pub consumes: &'static [usize],
+    pub whole: bool,
+}
+
+const fn base(at: Hex) -> Slot {
+    Slot {
+        at,
+        kind: AtomKind::Base,
+    }
+}
+
+const TRIANGLE: [Slot; 3] = [base(ORIGIN), base(DIRS[0]), base(DIRS[1])];
+const PAIR: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
+const ONE: [Slot; 1] = [base(ORIGIN)];
+
+impl GlyphKind {
+    pub const fn rule(self) -> Rule {
+        match self {
+            GlyphKind::Source => Rule {
+                slots: &ONE,
+                before: &[],
+                after: &[],
+                consumes: &[],
+                whole: false,
+            },
+            GlyphKind::Bonder => Rule {
+                slots: &TRIANGLE,
+                before: &[(1, 2, None)],
+                after: &[(1, 2, BondKind::Single)],
+                consumes: &[0],
+                whole: false,
+            },
+            GlyphKind::SecondBond => Rule {
+                slots: &TRIANGLE,
+                before: &[(1, 2, Some(BondKind::Single))],
+                after: &[(1, 2, BondKind::Double)],
+                consumes: &[0],
+                whole: false,
+            },
+            GlyphKind::Output => Rule {
+                slots: &PAIR,
+                before: &[(0, 1, Some(BondKind::Double))],
+                after: &[],
+                consumes: &[0, 1],
+                whole: true,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,19 +180,18 @@ pub struct Glyph {
 }
 
 impl Glyph {
-    pub fn slots(&self) -> [Hex; 3] {
-        [
-            self.at,
-            self.at.add(DIRS[self.dir % 6]),
-            self.at.add(DIRS[(self.dir + 1) % 6]),
-        ]
+    pub fn slots(&self) -> Vec<Hex> {
+        self.kind
+            .rule()
+            .slots
+            .iter()
+            .map(|s| self.at.add(s.at.turned(self.dir)))
+            .collect()
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sim {
-    pub sources: Vec<Hex>,
-    pub outputs: Vec<Hex>,
     pub glyphs: Vec<Glyph>,
     pub arms: Vec<Arm>,
     pub atoms: Vec<Option<Atom>>,
@@ -137,8 +203,6 @@ pub struct Sim {
 impl Sim {
     pub fn empty() -> Self {
         Sim {
-            sources: Vec::new(),
-            outputs: Vec::new(),
             glyphs: Vec::new(),
             arms: Vec::new(),
             atoms: Vec::new(),
@@ -217,11 +281,11 @@ impl Sim {
     }
 
     pub fn step(&mut self) {
-        for at in self.sources.clone() {
-            if self.atom_at(at).is_none() {
+        for g in self.glyphs.clone() {
+            if g.kind == GlyphKind::Source && self.atom_at(g.at).is_none() {
                 self.spawn(Atom {
                     kind: AtomKind::Base,
-                    pos: at,
+                    pos: g.at,
                 });
             }
         }
@@ -242,46 +306,64 @@ impl Sim {
         for g in self.glyphs.clone() {
             self.fire(g);
         }
-        for out in self.outputs.clone() {
-            let Some(id) = self.atom_at(out) else {
-                continue;
-            };
-            let comp = self.component(id);
-            if !comp.iter().any(|id| self.held_by_any(*id)) {
-                for id in comp {
-                    self.destroy(id);
-                }
-                self.delivered += 1;
-            }
-        }
         self.tick += 1;
     }
 
-    fn fire(&mut self, g: Glyph) {
-        let ids: Vec<usize> = g.slots().iter().filter_map(|s| self.atom_at(*s)).collect();
-        let [x, y, z] = ids[..] else { return };
-        let Some(victim) = [x, y, z]
-            .into_iter()
-            .find(|id| self.atoms[*id].unwrap().kind == SACRIFICIAL)
-        else {
-            return;
-        };
-        let pair: Vec<usize> = [x, y, z].into_iter().filter(|id| *id != victim).collect();
-        let (a, b) = (pair[0], pair[1]);
-        match (g.kind, self.bond_between(a, b)) {
-            (GlyphKind::Bonder, None) => {
-                self.bonds.push(Bond {
-                    a,
-                    b,
-                    kind: BondKind::Single,
-                });
-            }
-            (GlyphKind::SecondBond, Some(i)) if self.bonds[i].kind == BondKind::Single => {
-                self.bonds[i].kind = BondKind::Double;
-            }
-            _ => return,
+    pub fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
+        let rule = g.kind.rule();
+        let ids: Vec<usize> = g
+            .slots()
+            .iter()
+            .zip(rule.slots)
+            .map(|(at, slot)| {
+                self.atom_at(*at)
+                    .filter(|id| self.atoms[*id].unwrap().kind == slot.kind)
+            })
+            .collect::<Option<_>>()?;
+        let bonded = |a: usize, b: usize| self.bond_between(a, b).map(|i| self.bonds[i].kind);
+        if rule
+            .before
+            .iter()
+            .any(|(a, b, want)| bonded(ids[*a], ids[*b]) != *want)
+        {
+            return None;
         }
-        self.destroy(victim);
+        if rule.whole {
+            let comp = self.component(ids[0]);
+            if comp.len() != ids.len() || comp.iter().any(|id| !ids.contains(id)) {
+                return None;
+            }
+            let inside = self
+                .bonds
+                .iter()
+                .filter(|x| ids.contains(&x.a) && ids.contains(&x.b))
+                .count();
+            if inside != rule.before.iter().filter(|(_, _, w)| w.is_some()).count() {
+                return None;
+            }
+            if ids.iter().any(|id| self.held_by_any(*id)) {
+                return None;
+            }
+        }
+        Some(ids)
+    }
+
+    fn fire(&mut self, g: Glyph) {
+        let rule = g.kind.rule();
+        let Some(ids) = self.matched(g) else { return };
+        for (a, b, kind) in rule.after {
+            let (a, b) = (ids[*a], ids[*b]);
+            match self.bond_between(a, b) {
+                Some(i) => self.bonds[i].kind = *kind,
+                None => self.bonds.push(Bond { a, b, kind: *kind }),
+            }
+        }
+        for slot in rule.consumes {
+            self.destroy(ids[*slot]);
+        }
+        if rule.whole {
+            self.delivered += 1;
+        }
     }
 
     fn exec(&mut self, i: usize, instr: Instr) -> bool {
@@ -335,8 +417,6 @@ impl Sim {
     }
 
     fn place(&mut self, other: &Sim, at: Hex) {
-        self.sources.extend(other.sources.iter().map(|s| s.add(at)));
-        self.outputs.extend(other.outputs.iter().map(|o| o.add(at)));
         self.glyphs.extend(other.glyphs.iter().map(|g| Glyph {
             at: g.at.add(at),
             ..*g
@@ -368,8 +448,16 @@ fn layout() -> Sim {
     ]);
     ferry.resize(build.len(), Wait);
     let mut sim = Sim::empty();
-    sim.sources.push(Hex::new(1, 0));
-    sim.outputs.push(Hex::new(0, 1));
+    sim.glyphs.push(Glyph {
+        kind: GlyphKind::Source,
+        at: Hex::new(1, 0),
+        dir: 0,
+    });
+    sim.glyphs.push(Glyph {
+        kind: GlyphKind::Output,
+        at: Hex::new(0, 1),
+        dir: OUTPUT_DIR,
+    });
     sim.glyphs.push(Glyph {
         kind: GlyphKind::Bonder,
         at: Hex::new(1, -2),
@@ -384,6 +472,8 @@ fn layout() -> Sim {
     sim.arms.push(Arm::new(Hex::new(0, -2), 5, ferry));
     sim
 }
+
+const OUTPUT_DIR: usize = 3;
 
 pub fn preloaded() -> Sim {
     let one = layout();
@@ -416,17 +506,17 @@ mod tests {
         })
     }
 
+    fn bond(sim: &mut Sim, a: usize, b: usize, kind: BondKind) {
+        sim.bonds.push(Bond { a, b, kind });
+    }
+
     #[test]
     fn tape_wraps_and_rotation_carries_the_held_compound() {
         use Instr::*;
         let mut sim = bench(vec![Grab, RotCw], Vec::new());
         let a = put(&mut sim, 1, 0);
         let b = put(&mut sim, 1, -1);
-        sim.bonds.push(Bond {
-            a,
-            b,
-            kind: BondKind::Single,
-        });
+        bond(&mut sim, a, b, BondKind::Single);
         for _ in 0..4 {
             sim.step();
         }
@@ -495,21 +585,17 @@ mod tests {
     }
 
     #[test]
-    fn bonder_sacrifices_the_priority_slot_and_only_the_applicator_doubles() {
+    fn a_glyph_turns_with_its_dir_and_a_glyph_reads_its_own_slots() {
         let bonder = Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let second = Glyph {
-            kind: GlyphKind::SecondBond,
-            ..bonder
-        };
         assert_eq!(
             bonder.slots(),
             [Hex::new(1, 0), Hex::new(2, -1), Hex::new(1, -1)]
         );
-        let mut sim = bench(vec![Instr::Wait], vec![bonder, second]);
+        let mut sim = bench(vec![Instr::Wait], vec![bonder]);
         let first = put(&mut sim, 1, 0);
         let a = put(&mut sim, 2, -1);
         let b = put(&mut sim, 1, -1);
@@ -523,29 +609,60 @@ mod tests {
                 kind: BondKind::Single
             }]
         );
-        sim.step();
-        assert_eq!(sim.bonds.len(), 1);
-        let again = put(&mut sim, 1, 0);
-        sim.step();
-        assert_eq!(sim.atoms[again], None);
-        assert_eq!(sim.bonds[0].kind, BondKind::Double);
-        sim.glyphs = vec![bonder];
         put(&mut sim, 1, 0);
         sim.step();
         assert_eq!(sim.live_atoms().count(), 3);
+        assert_eq!(sim.bonds.len(), 1);
     }
 
     #[test]
-    fn output_consumes_the_whole_compound_only_once_released() {
-        let mut sim = bench(vec![Instr::Grab, Instr::Wait, Instr::Drop], Vec::new());
-        sim.outputs = vec![Hex::new(1, 0)];
+    fn machines_never_collide_so_stacked_glyphs_fire_in_placement_order() {
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(1, 0),
+            dir: 1,
+        };
+        let second = Glyph {
+            kind: GlyphKind::SecondBond,
+            ..bonder
+        };
+        let mut sim = bench(vec![Instr::Wait], vec![bonder, second]);
+        sim.arms
+            .push(Arm::new(Hex::new(0, 0), 0, vec![Instr::Wait]));
+        put(&mut sim, 1, 0);
+        put(&mut sim, 2, -1);
+        put(&mut sim, 1, -1);
+        sim.step();
+        assert_eq!(sim.bonds[0].kind, BondKind::Single);
+        assert_eq!(sim.live_atoms().count(), 2);
+        put(&mut sim, 1, 0);
+        sim.step();
+        assert_eq!(sim.bonds[0].kind, BondKind::Double);
+        assert_eq!(sim.live_atoms().count(), 2);
+    }
+
+    #[test]
+    fn an_output_takes_only_the_exact_shape_atoms_and_bonds_once_released() {
+        let output = Glyph {
+            kind: GlyphKind::Output,
+            at: Hex::new(1, 0),
+            dir: 5,
+        };
+        assert_eq!(output.slots(), [Hex::new(1, 0), Hex::new(1, 1)]);
+        let mut sim = bench(vec![Instr::Wait], vec![output]);
         let a = put(&mut sim, 1, 0);
-        let b = put(&mut sim, 1, -1);
-        sim.bonds.push(Bond {
-            a,
-            b,
-            kind: BondKind::Single,
-        });
+        let b = put(&mut sim, 1, 1);
+        bond(&mut sim, a, b, BondKind::Single);
+        sim.step();
+        assert_eq!(sim.delivered, 0);
+        sim.bonds[0].kind = BondKind::Double;
+        let c = put(&mut sim, 2, 0);
+        bond(&mut sim, b, c, BondKind::Single);
+        sim.step();
+        assert_eq!(sim.delivered, 0);
+        sim.destroy(c);
+        sim.arms[0].tape = vec![Instr::Grab, Instr::Wait, Instr::Drop];
+        sim.arms[0].pc = 0;
         sim.step();
         sim.step();
         assert_eq!(sim.delivered, 0);
@@ -554,6 +671,23 @@ mod tests {
         assert_eq!(sim.delivered, 1);
         assert!(sim.live_atoms().next().is_none());
         assert!(sim.bonds.is_empty());
+    }
+
+    #[test]
+    fn an_output_turned_away_from_the_compound_ignores_it() {
+        let mut sim = bench(vec![Instr::Wait], Vec::new());
+        let a = put(&mut sim, 1, 0);
+        let b = put(&mut sim, 1, 1);
+        bond(&mut sim, a, b, BondKind::Double);
+        for dir in 0..6 {
+            sim.glyphs = vec![Glyph {
+                kind: GlyphKind::Output,
+                at: Hex::new(1, 0),
+                dir,
+            }];
+            sim.step();
+            assert_eq!(sim.delivered, u64::from(dir == 5), "dir {dir}");
+        }
     }
 
     #[test]

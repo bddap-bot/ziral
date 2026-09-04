@@ -69,3 +69,29 @@ Substrate: decided, vertical slice. One source atom type, two bond types, exerci
 What if arms could grab and move arms? Actuators as ordinary matter would make placement a machine act and give the bootstrap a path; not in the toy.
 
 Bonding. Bonder glyph taking three atoms. One is destroyed, the other two become bonded. The sacrificial atom may in any of the three slots of the triangular glyph and must be of a specific atom type. If multiple atoms of that type are provided, the slots do have a priority to choose which atom is destroyed. The two bond types only differ in identity and must differ in visual appearance. Later recipes will require specific bond types. It's only counted as part of the vertical slice because it's kinda core to the data model. First bond type is single covalent. The same machine takes an additional sacrificial atom to convert the single bond to a double bond. It hurts discoverability to let the same machine do two things so early. The second-bond applicator is a different machine.
+
+## Toy 1, first run (2026-09-04)
+
+first run of ziral toy 1:
+- selecting a machine give it focus, with focus asdf keys can be used for programming, use same shortcuts as opus magnum
+- I am suprized glyphs can occupy the same hex, was that intentional? could be fun
+- output glyphs will be similar to processing glyphs like the bonders (you may even be able to use the same abstraction/data-model for output,input, and processing.)
+- where an atom goes on the glyph matters, glyph also cares about bond presence
+- our single output glyph sucks up the entire compound despite it being two atoms double bonded together, any output glyphs should need to match the compounds shape in order to accept that compound. atom and bond identities must match too, though that may change for future output-style machines
+- editing: quality of life: when holding a machine, we'll need to preview it visually
+- when holding a machine keyboard keys should rotate it (copy opus magnum de re metalica controls)
+- botom of screen should show all the tapes of machines currently on screen (up to a limit). click one tape to edit
+- click and hold drags the machine, similarly click and drag from the bottom left array drags the machine, while dragging a preview is visible
+
+
+oh, ziral needs a delete, lift a machine and hit a key to delete, same key as delete in opus magnum
+
+in ziral, if a machine is dropped in an invalid location, it pops back to where it was picked up, if that's not possible it pops pack into users inventory. if we don't have inventory yet that just means it disappears
+
+### Round 2, what Toy 1 now does
+
+Machines never collide; only atoms do. Two glyphs on one hex was an accident of the first toy (placement never checked occupancy), kept as a rule: stacked glyphs fire in placement order on the same tick, so a bonder under a second-bond glyph doubles a bond in two feeds.
+
+Input, output, and processing glyphs are one model: a glyph is a list of slots, each an offset from its cell plus the atom type it wants, a list of bonds that must be present or absent between slots before it fires, the bonds it writes, and the slots it consumes. The source is a one-slot glyph that spawns when empty. The bonder and the second-bond applicator are three-slot glyphs that consume slot zero. The output is a two-slot glyph that fires only when the atoms on its slots are exactly one compound, with the double bond it asks for and no other bond; a compound of the right atoms turned the wrong way, or with anything else attached, sits on the glyph untouched.
+
+Editing: a click focuses a machine; A and D turn it; Z deletes it. With an arm focused, F grab, R drop, E clockwise, Q counterclockwise, X wait write its tape at the cursor. Dragging a machine, or dragging from the palette, carries a preview under the pointer; A and D turn it, Z deletes it, and a release over the panels returns it to where it was lifted, or, from the palette, discards it. The strip along the bottom lists the tapes of the arms on screen, eight at most, and a click on one focuses that arm. Pan is right or middle drag.
