@@ -115,6 +115,8 @@ pub enum GlyphKind {
 pub struct Slot {
     pub at: Hex,
     pub kind: AtomKind,
+    pub consumed: bool,
+    pub released: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,8 +124,6 @@ pub struct Rule {
     pub slots: &'static [Slot],
     pub before: &'static [(usize, usize, Option<BondKind>)],
     pub after: &'static [(usize, usize, BondKind)],
-    pub consumes: &'static [usize],
-    pub released: &'static [usize],
     pub whole: bool,
 }
 
@@ -131,11 +131,21 @@ const fn base(at: Hex) -> Slot {
     Slot {
         at,
         kind: AtomKind::Base,
+        consumed: false,
+        released: false,
     }
 }
 
-const TRIANGLE: [Slot; 3] = [base(ORIGIN), base(DIRS[0]), base(DIRS[1])];
-const PAIR: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
+const fn spent(at: Hex) -> Slot {
+    Slot {
+        consumed: true,
+        released: true,
+        ..base(at)
+    }
+}
+
+const TRIANGLE: [Slot; 3] = [spent(ORIGIN), base(DIRS[0]), base(DIRS[1])];
+const PAIR: [Slot; 2] = [spent(ORIGIN), spent(DIRS[0])];
 const ONE: [Slot; 1] = [base(ORIGIN)];
 
 impl GlyphKind {
@@ -145,32 +155,24 @@ impl GlyphKind {
                 slots: &ONE,
                 before: &[],
                 after: &[],
-                consumes: &[],
-                released: &[],
                 whole: false,
             },
             GlyphKind::Bonder => Rule {
                 slots: &TRIANGLE,
                 before: &[(1, 2, None)],
                 after: &[(1, 2, BondKind::Single)],
-                consumes: &[0],
-                released: &[0],
                 whole: false,
             },
             GlyphKind::SecondBond => Rule {
                 slots: &TRIANGLE,
                 before: &[(1, 2, Some(BondKind::Single))],
                 after: &[(1, 2, BondKind::Double)],
-                consumes: &[0],
-                released: &[0],
                 whole: false,
             },
             GlyphKind::Output => Rule {
                 slots: &PAIR,
                 before: &[(0, 1, Some(BondKind::Double))],
                 after: &[],
-                consumes: &[0, 1],
-                released: &[0, 1],
                 whole: true,
             },
         }
@@ -261,8 +263,8 @@ impl Sim {
         self.arms.iter().any(|a| a.held == Some(id))
     }
 
-    fn released(&self, id: usize) -> bool {
-        !self.component(id).iter().any(|id| self.held_by_any(*id))
+    fn component_released(&self, id: usize) -> bool {
+        !self.component(id).iter().any(|a| self.held_by_any(*a))
     }
 
     pub fn spawn(&mut self, atom: Atom) -> usize {
@@ -336,7 +338,12 @@ impl Sim {
         {
             return None;
         }
-        if rule.released.iter().any(|slot| !self.released(ids[*slot])) {
+        if rule
+            .slots
+            .iter()
+            .zip(&ids)
+            .any(|(slot, id)| slot.released && !self.component_released(*id))
+        {
             return None;
         }
         if rule.whole {
@@ -358,8 +365,10 @@ impl Sim {
                 None => self.bonds.push(Bond { a, b, kind: *kind }),
             }
         }
-        for slot in rule.consumes {
-            self.destroy(ids[*slot]);
+        for (slot, id) in rule.slots.iter().zip(&ids) {
+            if slot.consumed {
+                self.destroy(*id);
+            }
         }
         if g.kind == GlyphKind::Output {
             self.delivered += 1;
@@ -682,18 +691,40 @@ mod tests {
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Grab, Wait, Drop, Wait], vec![bonder]);
-        put(&mut sim, 1, 0);
+        let mut sim = bench(vec![Grab, Wait, Drop], vec![bonder]);
+        let sacrificial = put(&mut sim, 1, 0);
         put(&mut sim, 2, -1);
         put(&mut sim, 1, -1);
         sim.step();
         sim.step();
-        assert_eq!(sim.arms[0].held, Some(0));
+        assert_eq!(sim.arms[0].held, Some(sacrificial));
         assert_eq!(sim.live_atoms().count(), 3);
         assert!(sim.bonds.is_empty());
         sim.step();
-        assert_eq!(sim.atoms[0], None);
+        assert_eq!(sim.atoms[sacrificial], None);
         assert_eq!(sim.bonds.len(), 1);
+    }
+
+    #[test]
+    fn a_second_bond_waits_for_its_sacrificial_atom_to_be_released() {
+        use Instr::*;
+        let second = Glyph {
+            kind: GlyphKind::SecondBond,
+            at: Hex::new(1, 0),
+            dir: 1,
+        };
+        let mut sim = bench(vec![Grab, Wait, Drop], vec![second]);
+        let sacrificial = put(&mut sim, 1, 0);
+        let a = put(&mut sim, 2, -1);
+        let b = put(&mut sim, 1, -1);
+        bond(&mut sim, a, b, BondKind::Single);
+        sim.step();
+        sim.step();
+        assert_eq!(sim.bonds[0].kind, BondKind::Single);
+        assert_eq!(sim.live_atoms().count(), 3);
+        sim.step();
+        assert_eq!(sim.bonds[0].kind, BondKind::Double);
+        assert_eq!(sim.atoms[sacrificial], None);
     }
 
     #[test]

@@ -811,7 +811,7 @@ mod shot {
                 }
                 world.sim = sim;
             }
-            "hand" => {
+            "grabbed" => {
                 let mut sim = Sim::empty();
                 sim.glyphs.push(Glyph {
                     kind: GlyphKind::Bonder,
@@ -844,7 +844,7 @@ mod shot {
         };
         assert_eq!(
             flag, "--shot",
-            "usage: ziral --shot <png> micro|wide|focus|hold|output|hand <ticks>"
+            "usage: ziral --shot <png> micro|wide|focus|hold|output|grabbed <ticks>"
         );
         let ticks: u64 = ticks.parse().expect("ticks must be an integer");
         let (world, wide, keys) = scene(view, ticks);
