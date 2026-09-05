@@ -355,11 +355,8 @@ impl Sim {
             } else {
                 arm.tape[arm.pc % arm.tape.len()]
             };
-            let stall = self.exec(i, instr).err();
-            let arm = &mut self.arms[i];
-            arm.stall = stall;
-            if stall.is_none() {
-                arm.pc = arm.pc.wrapping_add(1);
+            if self.act(i, instr) {
+                self.arms[i].pc = self.arms[i].pc.wrapping_add(1);
             }
         }
         for i in 0..self.glyphs.len() {
@@ -418,7 +415,13 @@ impl Sim {
         }
     }
 
-    pub fn exec(&mut self, i: usize, instr: Instr) -> Result<(), Stall> {
+    pub fn act(&mut self, i: usize, instr: Instr) -> bool {
+        let stall = self.exec(i, instr).err();
+        self.arms[i].stall = stall;
+        stall.is_none()
+    }
+
+    fn exec(&mut self, i: usize, instr: Instr) -> Result<(), Stall> {
         let hand = self.arms[i].hand();
         match instr {
             Instr::Wait => {}

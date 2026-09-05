@@ -73,9 +73,22 @@ fn instr_of(key: KeyCode) -> Option<Instr> {
 
 fn instr_help() -> String {
     KEYS.iter()
-        .map(|(_, _, c, name)| format!("  {c} {name}"))
-        .collect()
+        .map(|(_, _, c, name)| format!("{c} {name}"))
+        .collect::<Vec<_>>()
+        .join("  ")
 }
+
+const NAV: [KeyCode; 9] = [
+    KeyCode::Escape,
+    KeyCode::KeyZ,
+    KeyCode::Backspace,
+    KeyCode::KeyA,
+    KeyCode::KeyD,
+    KeyCode::ArrowLeft,
+    KeyCode::ArrowRight,
+    KeyCode::Home,
+    KeyCode::End,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
@@ -301,22 +314,22 @@ impl World {
     }
 
     fn act(&mut self, arm: usize, instr: Instr) {
-        self.sim.arms[arm].stall = self.sim.exec(arm, instr).err();
+        self.sim.act(arm, instr);
         self.prev = self.sim.clone();
     }
 
     fn key(&mut self, key: KeyCode) {
         use KeyCode::*;
-        let step = match key {
-            KeyA => Some(5),
-            KeyD => Some(1),
-            _ => None,
-        };
         if key == Escape {
             self.release(None);
             self.focus = None;
             return;
         }
+        let step = match key {
+            KeyA => Some(5),
+            KeyD => Some(1),
+            _ => None,
+        };
         if let Some(held) = &mut self.held {
             if let Some(step) = step {
                 held.turn(step);
@@ -344,20 +357,22 @@ impl World {
             Focus::Tape { arm, cursor } => {
                 let tape = &mut self.sim.arms[arm].tape;
                 let cursor = cursor.min(tape.len());
-                let cursor = match (key, instr_of(key)) {
-                    (ArrowLeft, _) => cursor.saturating_sub(1),
-                    (ArrowRight, _) => (cursor + 1).min(tape.len()),
-                    (Home, _) => 0,
-                    (End, _) => tape.len(),
-                    (KeyZ, _) if cursor > 0 => {
+                let cursor = match key {
+                    ArrowLeft => cursor.saturating_sub(1),
+                    ArrowRight => (cursor + 1).min(tape.len()),
+                    Home => 0,
+                    End => tape.len(),
+                    KeyZ | Backspace if cursor > 0 => {
                         tape.remove(cursor - 1);
                         cursor - 1
                     }
-                    (_, Some(instr)) => {
-                        tape.insert(cursor, instr);
-                        cursor + 1
-                    }
-                    _ => cursor,
+                    _ => match instr_of(key) {
+                        Some(instr) => {
+                            tape.insert(cursor, instr);
+                            cursor + 1
+                        }
+                        None => cursor,
+                    },
                 };
                 self.focus = Some(Focus::Tape { arm, cursor });
             }
@@ -640,8 +655,10 @@ fn edit(
         world.release(at.filter(|_| valid));
     }
 
-    for key in keys.get_just_pressed() {
-        world.key(*key);
+    for key in NAV.into_iter().chain(KEYS.iter().map(|k| k.0)) {
+        if keys.just_pressed(key) {
+            world.key(key);
+        }
     }
 }
 
@@ -1352,11 +1369,11 @@ fn text(world: Res<World>, mut label: Single<&mut Text, With<Hud>>) {
     } else if let Some(f) = world.focus {
         match f {
             Focus::Tape { .. } => out.push_str(&format!(
-                "tape:{}  arrows move  home/end  Z backspace  esc done\n",
+                "tape: {}  arrows move  home/end  Z backspace  esc done\n",
                 instr_help()
             )),
             Focus::Arm(_) => out.push_str(&format!(
-                "arm: A/D turn{}  Z delete  esc done  click its tape to edit\n",
+                "arm, acts now: A/D turn  {}  Z delete  esc done  click its tape to edit\n",
                 instr_help()
             )),
             Focus::Glyph(_) => out.push_str(&format!(
@@ -1466,22 +1483,17 @@ mod shot {
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
                 world.focus_tape(world.sim.arms.len() - 1);
-                keys = vec![KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ];
+                keys = vec![
+                    KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ, ArrowLeft, ArrowLeft, ArrowLeft,
+                ];
             }
-            "armfocus" | "tapefocus" => {
+            "armfocus" => {
                 world
                     .sim
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
-                let arm = world.sim.arms.len() - 1;
-                world.focus_tape(arm);
-                keys = vec![
-                    KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ, ArrowLeft, ArrowLeft, ArrowLeft,
-                ];
-                if name == "armfocus" {
-                    world.focus_arm(arm);
-                    keys = vec![KeyE, KeyE];
-                }
+                world.focus_arm(world.sim.arms.len() - 1);
+                keys = vec![KeyE, KeyE];
             }
             "hold" => {
                 world.lift(Held::fresh(Item::Glyph(GlyphKind::Bonder)));
@@ -2134,7 +2146,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_with_arm_focus_acts_on_the_arm_now_and_leaves_the_tape_alone() {
+    fn arm_focus_keys_act_now_and_leave_the_tape_alone() {
         let mut w = armed(vec![Instr::Wait]);
         w.focus_arm(0);
         w.key(KeyCode::KeyF);
@@ -2147,7 +2159,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_with_tape_focus_inserts_at_the_cursor_and_leaves_the_arm_alone() {
+    fn tape_focus_keys_insert_at_the_cursor_and_leave_the_arm_alone() {
         let mut w = armed(vec![Instr::Wait, Instr::Drop]);
         w.focus_tape(0);
         w.key(KeyCode::ArrowLeft);
@@ -2174,7 +2186,7 @@ mod tests {
         w.key(KeyCode::Home);
         w.key(KeyCode::KeyZ);
         assert_eq!(w.sim.arms[0].tape, vec![Instr::Grab, Instr::Drop]);
-        assert_eq!(w.sim.arms.len(), 1);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 0 }));
         w.key(KeyCode::End);
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
     }
