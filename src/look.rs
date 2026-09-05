@@ -405,10 +405,20 @@ mod tests {
         );
     }
 
+    fn bead(glaze: Glaze) -> Look<()> {
+        Look {
+            glaze,
+            skin: TILES[0],
+            shape: Shape::Bead,
+            marking: (),
+        }
+    }
+
     #[test]
     fn hue_alone_never_counts() {
-        let (a, b) = (Glaze::Terracotta.color(), Glaze::BlueGreen.color());
-        assert_eq!(hue_and_value_differ(a, b), [true, false]);
+        let (a, b) = (bead(Glaze::Terracotta), bead(Glaze::BlueGreen));
+        assert_eq!(differences(&a, &b), [true, false, false, false]);
+        assert!(!distinct(&a, &b));
     }
 
     #[test]
