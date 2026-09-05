@@ -18,21 +18,21 @@ Seven glazes. Every drawn thing takes its fill from this list; a new color is a 
 | plum | `#7D5BA6` | 267° | 0.15 | the second-bond glyph; the double bond |
 | ivory | `#F4EDE4` | — | 0.85 | the output cup; the pick and stall marks; UI text |
 
-Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth naming (chroma 0.06); it reads by value only. Grout is dark brass at low alpha over clay, never a new color.
+Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth naming (chroma 0.06); it reads by value only. Structure that is neither glaze nor state (grout, wells, rims, strips, borders) is dark brass lifted toward clay by some fraction, never a new color.
 
 ## 2. Language
 
 **Materials and light.** Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. One warm light, raking from the upper left: a highlight sits high-left on every bead, wear gathers at contact edges only. No second light, no cast shadows that cross a cell boundary.
 
-**Silhouette.** Stout circular pivots, one-piece links, an open horseshoe for the hand, hexagonal wells for glyph cells. Every state is readable from the outline alone: a closed hand is a small horseshoe on the atom, an open hand a wide one that fades; a stalled arm wears an ivory ring on its pivot, and when another hand is the cause that hand wears a wider one.
+**Silhouette.** Stout circular pivots, one-piece links, an open horseshoe for the hand, hexagonal wells for glyph cells. Every state is readable from the outline alone: a closed hand is a small horseshoe on the atom, an open hand a wide one; a stalled arm wears an ivory ring on its pivot, and when another hand is the cause that hand wears a wider one.
 
-**Line.** Fills carry identity; lines carry structure. Grout and rims are thin dark brass. Glyph channels are the glyph's own glaze. Ivory lines mean "look here" (picked, stalled) and nothing else.
+**Line.** Fills carry identity; lines carry structure. Grout and rims are thin dark brass. Glyph channels are the glyph's own glaze. Ivory lines mean "look here" (picked, being placed, stalled) and nothing else.
 
 **Texture.** Glaze: one flat fill, one highlight, one darker rim. Brass: flat fill with a darker rim. No noise, no grain, no gradient that could be read as a state. Texture that survives at gameplay scale (a cell about forty pixels wide) is the only texture.
 
-**Glyphs.** A glyph is an inset in the board: its cells are wells a shade darker than clay, and its channels are lines of its glaze joining slots and centre. A glyph never covers an atom; atoms sit in the wells.
+**Glyphs.** A glyph is an inset in the board: its cells are wells a shade darker than clay, and its channels are bars of its glaze joining slots and centre. A glyph never covers an atom; atoms sit in the wells, and everything of a glyph is drawn beneath them.
 
-**UI.** Dark brass strips with ivory text, brass borders; the lit tape row is the same strip in lighter brass. The strips are furniture, not board: nothing on them uses a state glaze.
+**UI.** Dark brass strips with ivory text, brass borders, the readout on its own strip; the lit tape row is the same strip in lighter brass. The strips are furniture, not board: nothing on them uses a state glaze.
 
 **Motion.** Ticks have weighted starts and soft, decisive seats. What a glyph makes or eats appears at the end of the sweep, never mid-arc. Timing is a design knob (the tick period), not an art one.
 
@@ -65,7 +65,7 @@ Single and double differ in hue (26° vs 267°) and shape.
 | item | glaze | shape | marking |
 |---|---|---|---|
 | arm | dark brass, terracotta hand | radial: pivot disc and one link | horseshoe hand |
-| source | blue-green | one-cell well | centre dot |
+| source | blue-green | one-cell well | a ring and a centre dot |
 | bonder | terracotta | three-cell well, triangle | one spoke per slot; ring on the sacrificial slot |
 | second bond | plum | three-cell well, triangle | two spokes per slot; ring on the sacrificial slot |
 | output | ivory | two-cell well | a cup with a brass rim in each cell; the demanded bond stencilled between |

@@ -1,8 +1,13 @@
+mod look;
 mod sim;
 
+use bevy::asset::RenderAssetUsages;
+use bevy::color::{Alpha, Mix};
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use look::{AtomMark, Glaze, Look, MachineMark, Shape};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
 
 const HEX: f32 = 20.0;
@@ -12,16 +17,25 @@ const MICRO_SCALE: f32 = 0.5;
 const MAX_GRID_CELLS: f32 = 6000.0;
 const STRIP_ROWS: usize = 8;
 const DRAG_PX: f32 = 6.0;
-const PANEL: Color = Color::srgb(0.12, 0.12, 0.12);
-const PANEL_LIT: Color = Color::srgb(0.3, 0.3, 0.3);
+const LINE_PX: f32 = 3.0;
 
-#[derive(Clone, Copy, PartialEq, Eq, Component)]
-enum Item {
+fn brass(lift: f32) -> Color {
+    Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
+}
+
+fn strip(lit: bool) -> Color {
+    if lit { brass(0.3) } else { brass(0.0) }
+}
+
+const IVORY: Color = Glaze::Ivory.color();
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Component)]
+pub enum Item {
     Arm,
     Glyph(GlyphKind),
 }
 
-const PALETTE: [(Item, &str); 5] = [
+pub const PALETTE: [(Item, &str); 5] = [
     (Item::Arm, "arm"),
     (Item::Glyph(GlyphKind::Bonder), "bonder"),
     (Item::Glyph(GlyphKind::SecondBond), "second bond"),
@@ -273,9 +287,12 @@ impl Viewport {
 fn main() {
     let mut app = App::new();
     app.insert_resource(World::new())
-        .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.08)))
-        .add_systems(Startup, spawn_ui)
-        .add_systems(Update, (run_ticks, view, edit, strip, draw, text).chain());
+        .insert_resource(ClearColor(brass(0.65)))
+        .add_systems(Startup, (fire_kiln, spawn_ui))
+        .add_systems(
+            Update,
+            (run_ticks, view, edit, tapes, board, draw, text).chain(),
+        );
     #[cfg(not(target_arch = "wasm32"))]
     if shot::configure(&mut app) {
         app.run();
@@ -317,8 +334,8 @@ fn button(node: Node) -> impl Bundle {
     (
         Button,
         node,
-        BorderColor::all(Color::srgb(0.5, 0.5, 0.5)),
-        BackgroundColor(PANEL),
+        BorderColor::all(brass(0.5)),
+        BackgroundColor(strip(false)),
     )
 }
 
@@ -326,13 +343,16 @@ fn spawn_ui(mut commands: Commands) {
     commands.spawn((
         Hud,
         Text::new(""),
+        TextColor(IVORY),
         TextFont::from_font_size(16.0),
         Node {
             position_type: PositionType::Absolute,
             left: Val::Px(8.0),
             top: Val::Px(8.0),
+            padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
             ..default()
         },
+        BackgroundColor(strip(false)),
     ));
     commands
         .spawn(Node {
@@ -352,7 +372,11 @@ fn spawn_ui(mut commands: Commands) {
                         border: UiRect::all(Val::Px(1.0)),
                         ..default()
                     }),
-                    children![(Text::new(name), TextFont::from_font_size(16.0))],
+                    children![(
+                        Text::new(name),
+                        TextColor(IVORY),
+                        TextFont::from_font_size(16.0)
+                    )],
                 ));
             }
         });
@@ -376,7 +400,11 @@ fn spawn_ui(mut commands: Commands) {
                         ..default()
                     }),
                     Visibility::Hidden,
-                    children![(Text::new(""), TextFont::from_font_size(15.0))],
+                    children![(
+                        Text::new(""),
+                        TextColor(IVORY),
+                        TextFont::from_font_size(15.0)
+                    )],
                 ));
             }
         });
@@ -579,7 +607,7 @@ fn tape_line(world: &World, i: usize) -> String {
     out
 }
 
-fn strip(
+fn tapes(
     world: Res<World>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<Camera2d>>,
@@ -611,53 +639,265 @@ fn strip(
             continue;
         };
         *vis = Visibility::Inherited;
-        bg.0 = if world.focus.and_then(Focus::arm) == Some(arm) {
-            PANEL_LIT
-        } else {
-            PANEL
-        };
+        bg.0 = strip(world.focus.and_then(Focus::arm) == Some(arm));
         if let Some(mut t) = children.first().and_then(|c| texts.get_mut(*c).ok()) {
             t.0 = tape_line(&world, arm);
         }
     }
 }
 
-fn draw_machine(gizmos: &mut Gizmos, item: Item, at: Hex, dir: usize, color: Color) {
-    match item {
-        Item::Arm => draw_arm(gizmos, px(at), px(at.add(DIRS[dir % 6])), color),
-        Item::Glyph(kind) => {
-            let g = Glyph { kind, at, dir };
-            let slots: Vec<Vec2> = g.slots().map(px).collect();
-            match kind {
-                GlyphKind::Source => gizmos.linestrip_2d(corners(slots[0], HEX * 0.8), color),
-                GlyphKind::Output => {
-                    for s in &slots {
-                        gizmos.linestrip_2d(corners(*s, HEX * 0.8), color);
-                        gizmos.circle_2d(*s, HEX * 0.15, color);
-                    }
-                    for (a, b, kind) in kind.rule().before {
-                        if let Some(kind) = kind {
-                            draw_bond(gizmos, slots[*a], slots[*b], *kind, color);
-                        }
-                    }
-                }
-                GlyphKind::Bonder | GlyphKind::SecondBond => {
-                    let tri: Vec<Vec2> = slots.iter().chain(&slots[..1]).copied().collect();
-                    gizmos.linestrip_2d(tri.iter().copied(), color);
-                    gizmos.circle_2d(tri[0], HEX * 0.12, color);
-                    if kind == GlyphKind::SecondBond {
-                        let c = (tri[0] + tri[1] + tri[2]) / 3.0;
-                        gizmos.linestrip_2d(tri.iter().map(|p| c + (*p - c) * 0.6), color);
-                    }
-                }
-            }
+#[derive(Component)]
+struct Fill;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tiling {
+    Cells { r0: i32, r1: i32, x0: i32, x1: i32 },
+    Slab(IVec2, IVec2),
+}
+
+#[derive(Resource)]
+struct Kiln {
+    circle: Handle<Mesh>,
+    hexagon: Handle<Mesh>,
+    bar: Handle<Mesh>,
+    rim: Handle<Mesh>,
+    ring: Handle<Mesh>,
+    tiles: Handle<Mesh>,
+    tiled: Option<Tiling>,
+    glaze: [Handle<ColorMaterial>; 7],
+    faint: [Handle<ColorMaterial>; 7],
+    well: Handle<ColorMaterial>,
+    highlight: Handle<ColorMaterial>,
+}
+
+impl Kiln {
+    fn material(&self, glaze: Glaze, faint: bool) -> &Handle<ColorMaterial> {
+        let i = Glaze::ALL
+            .iter()
+            .position(|g| *g == glaze)
+            .expect("every glaze is in ALL");
+        if faint {
+            &self.faint[i]
+        } else {
+            &self.glaze[i]
         }
     }
 }
 
-fn draw_arm(gizmos: &mut Gizmos, pivot: Vec2, hand: Vec2, color: Color) {
-    gizmos.circle_2d(pivot, HEX * 0.25, color);
-    gizmos.line_2d(pivot, hand, color);
+fn fire_kiln(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut gizmo: ResMut<GizmoConfigStore>,
+) {
+    gizmo.config_mut::<DefaultGizmoConfigGroup>().0.line.width = LINE_PX;
+    commands.insert_resource(Kiln {
+        circle: meshes.add(Circle::new(1.0)),
+        hexagon: meshes.add(RegularPolygon::new(1.0, 6)),
+        bar: meshes.add(Rectangle::new(1.0, 1.0)),
+        rim: meshes.add(Annulus::new(0.85, 1.0)),
+        ring: meshes.add(Annulus::new(0.7, 1.0)),
+        tiles: meshes.reserve_handle(),
+        tiled: None,
+        glaze: Glaze::ALL.map(|g| materials.add(g.color())),
+        faint: Glaze::ALL.map(|g| materials.add(g.color().with_alpha(0.5))),
+        well: materials.add(brass(0.8)),
+        highlight: materials.add(IVORY.with_alpha(0.7)),
+    });
+}
+
+fn fan(polygons: impl Iterator<Item = Vec<Vec2>>) -> Mesh {
+    let mut pos: Vec<[f32; 3]> = Vec::new();
+    let mut idx: Vec<u32> = Vec::new();
+    for poly in polygons {
+        let base = pos.len() as u32;
+        let n = poly.len() as u32;
+        let c = poly.iter().sum::<Vec2>() / n as f32;
+        pos.push([c.x, c.y, 0.0]);
+        pos.extend(poly.iter().map(|p| [p.x, p.y, 0.0]));
+        for k in 0..n {
+            idx.extend([base, base + 1 + k, base + 1 + (k + 1) % n]);
+        }
+    }
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    .with_inserted_indices(Indices::U32(idx))
+}
+
+fn tiles(tiling: Tiling) -> Mesh {
+    match tiling {
+        Tiling::Cells { r0, r1, x0, x1 } => fan((r0..=r1).flat_map(|r| {
+            let (q0, q1) = (x0 - r.div_euclid(2) - 2, x1 - r.div_euclid(2) + 2);
+            (q0..=q1).map(move |q| corners(px(Hex::new(q, r)), HEX * 0.95)[..6].to_vec())
+        })),
+        Tiling::Slab(lo, hi) => {
+            let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
+            fan(std::iter::once(vec![
+                lo,
+                Vec2::new(hi.x, lo.y),
+                hi,
+                Vec2::new(lo.x, hi.y),
+            ]))
+        }
+    }
+}
+
+fn unworn<M: std::fmt::Debug>(look: Look<M>) -> ! {
+    panic!("nothing draws {look:?}")
+}
+
+struct Painter<'a, 'gw, 'gs, 'cw, 'cs> {
+    gizmos: &'a mut Gizmos<'gw, 'gs>,
+    commands: &'a mut Commands<'cw, 'cs>,
+    kiln: &'a Kiln,
+}
+
+impl Painter<'_, '_, '_, '_, '_> {
+    fn fill(
+        &mut self,
+        mesh: &Handle<Mesh>,
+        material: &Handle<ColorMaterial>,
+        at: Vec2,
+        angle: f32,
+        scale: Vec2,
+        z: f32,
+    ) {
+        self.commands.spawn((
+            Fill,
+            Mesh2d(mesh.clone()),
+            MeshMaterial2d(material.clone()),
+            Transform {
+                translation: at.extend(z),
+                rotation: Quat::from_rotation_z(angle),
+                scale: scale.extend(1.0),
+            },
+        ));
+    }
+
+    fn disc(&mut self, at: Vec2, r: f32, glaze: Glaze, z: f32) {
+        let kiln = self.kiln;
+        let material = kiln.material(glaze, false);
+        self.fill(&kiln.circle, material, at, 0.0, Vec2::splat(r), z);
+    }
+
+    fn ring(&mut self, mesh: &Handle<Mesh>, at: Vec2, r: f32, glaze: Glaze, faint: bool, z: f32) {
+        let material = self.kiln.material(glaze, faint);
+        self.fill(mesh, material, at, 0.0, Vec2::splat(r), z);
+    }
+
+    fn bar(&mut self, a: Vec2, b: Vec2, width: f32, glaze: Glaze, faint: bool, z: f32) {
+        let kiln = self.kiln;
+        let d = b - a;
+        let material = kiln.material(glaze, faint);
+        let scale = Vec2::new(d.length(), width);
+        self.fill(&kiln.bar, material, (a + b) / 2.0, d.to_angle(), scale, z);
+    }
+
+    fn well(&mut self, at: Vec2) {
+        let kiln = self.kiln;
+        self.fill(
+            &kiln.hexagon,
+            &kiln.well,
+            at,
+            0.0,
+            Vec2::splat(HEX * 0.8),
+            0.1,
+        );
+    }
+
+    fn bead(&mut self, at: Vec2, look: Look<AtomMark>) {
+        let kiln = self.kiln;
+        self.disc(at, HEX * 0.4, look.glaze, 0.4);
+        self.ring(&kiln.rim, at, HEX * 0.4, Glaze::Brass, true, 0.42);
+        match look.marking {
+            AtomMark::Highlight => {
+                let up_left = at + Vec2::new(-0.15, 0.15) * HEX;
+                let scale = Vec2::splat(HEX * 0.1);
+                self.fill(&kiln.circle, &kiln.highlight, up_left, 0.0, scale, 0.45);
+            }
+        }
+    }
+
+    fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind, faint: bool) {
+        let look = look::bond(kind);
+        let Shape::Bars(n) = look.shape else {
+            unworn(look)
+        };
+        let side = (c - a).perp().normalize_or_zero() * HEX * 0.16;
+        let z = if faint { 0.12 } else { 0.2 };
+        for k in 0..n {
+            let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
+            self.bar(a + off, c + off, HEX * 0.14, look.glaze, faint, z);
+        }
+    }
+
+    fn horseshoe(&mut self, at: Vec2, r: f32, toward: Vec2, glaze: Glaze) {
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
+        let turn = toward.to_angle() - (FRAC_PI_2 + 3.0 * FRAC_PI_4);
+        let iso = Isometry2d::new(at, Rot2::radians(turn));
+        self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, glaze.color());
+    }
+
+    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
+        self.bar(pivot, hand, HEX * 0.22, look.glaze, false, 0.28);
+        self.disc(pivot, HEX * 0.3, look.glaze, 0.3);
+        self.disc(pivot, HEX * 0.1, Glaze::Clay, 0.31);
+        match look.marking {
+            MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
+            _ => unworn(look),
+        }
+    }
+
+    fn machine(&mut self, item: Item, at: Hex, dir: usize) {
+        let look = look::machine(item);
+        let kind = match (item, look.marking) {
+            (Item::Arm, MachineMark::Hand(_)) => {
+                let hand = px(at.add(DIRS[dir % 6]));
+                return self.arm(px(at), hand, RING_OPEN, look);
+            }
+            (Item::Arm, _) | (Item::Glyph(_), MachineMark::Hand(_)) => unworn(look),
+            (Item::Glyph(kind), _) => kind,
+        };
+        let kiln = self.kiln;
+        let slots: Vec<Vec2> = Glyph { kind, at, dir }.slots().map(px).collect();
+        for s in &slots {
+            self.well(*s);
+        }
+        match look.marking {
+            MachineMark::Dot => {
+                self.ring(&kiln.ring, slots[0], HEX * 0.6, look.glaze, false, 0.15);
+                self.disc(slots[0], HEX * 0.15, look.glaze, 0.15);
+            }
+            MachineMark::Spokes(n) => {
+                let c = slots.iter().sum::<Vec2>() / slots.len() as f32;
+                for (i, s) in slots.iter().enumerate() {
+                    let next = slots[(i + 1) % slots.len()];
+                    self.bar(*s, next, 2.0, look.glaze, false, 0.13);
+                    let side = (*s - c).perp().normalize_or_zero() * 2.5;
+                    for k in 0..n {
+                        let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
+                        self.bar(c + off, *s + off, 2.0, look.glaze, false, 0.13);
+                    }
+                }
+                self.ring(&kiln.ring, slots[0], HEX * 0.2, look.glaze, false, 0.14);
+            }
+            MachineMark::Cup => {
+                for s in &slots {
+                    self.disc(*s, HEX * 0.5, look.glaze, 0.15);
+                    self.ring(&kiln.rim, *s, HEX * 0.5, Glaze::Brass, false, 0.16);
+                }
+                for (a, b, kind) in kind.rule().before {
+                    if let Some(kind) = kind {
+                        self.bond(slots[*a], slots[*b], *kind, true);
+                    }
+                }
+            }
+            MachineMark::Hand(_) => unworn(look),
+        }
+    }
 }
 
 const RING_CLOSED: f32 = 0.5;
@@ -666,7 +906,7 @@ const RING_OPEN: f32 = 0.9;
 struct ArmPose {
     pivot: Vec2,
     hand: Vec2,
-    ring: Option<f32>,
+    ring: f32,
 }
 
 struct Frame<'a> {
@@ -695,7 +935,7 @@ impl Frame<'_> {
                 .map(|a| ArmPose {
                     pivot: px(a.pivot),
                     hand: px(a.hand()),
-                    ring: a.holding.then_some(RING_CLOSED),
+                    ring: grip(a.holding),
                 })
                 .collect(),
         }
@@ -713,12 +953,7 @@ impl Frame<'_> {
             let sweep = |v: Vec2| pivot + Vec2::from_angle(turn).rotate(v - pivot);
             let pose = &mut frame.arms[i];
             pose.hand = sweep(pose.hand);
-            pose.ring = match (a.holding, b.holding) {
-                (false, false) => None,
-                (true, true) => Some(RING_CLOSED),
-                (false, true) => Some(RING_OPEN + (RING_CLOSED - RING_OPEN) * e),
-                (true, false) => Some(RING_CLOSED + (RING_OPEN - RING_CLOSED) * e),
-            };
+            pose.ring = grip(a.holding) + (grip(b.holding) - grip(a.holding)) * e;
             if turn != 0.0
                 && a.holding
                 && let Some(id) = prev.atom_at(a.hand())
@@ -732,90 +967,104 @@ impl Frame<'_> {
     }
 }
 
-fn draw_bond(gizmos: &mut Gizmos, a: Vec2, c: Vec2, kind: BondKind, color: Color) {
-    match kind {
-        BondKind::Single => gizmos.line_2d(a, c, color),
-        BondKind::Double => {
-            let n = (c - a).perp().normalize() * 3.0;
-            gizmos.line_2d(a + n, c + n, color);
-            gizmos.line_2d(a - n, c - n, color);
+fn grip(holding: bool) -> f32 {
+    if holding { RING_CLOSED } else { RING_OPEN }
+}
+
+fn board(
+    mut commands: Commands,
+    mut kiln: ResMut<Kiln>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Transform, &Projection), With<Camera2d>>,
+) {
+    let (transform, projection) = camera.into_inner();
+    let Some(v) = Viewport::of(&window, transform, projection) else {
+        return;
+    };
+    let col = HEX * 3f32.sqrt();
+    let row = HEX * 1.5;
+    let (lo, hi) = (v.cam - v.half(), v.cam + v.half());
+    let tiling = if (v.size.x / col) * (v.size.y / row) < MAX_GRID_CELLS {
+        Tiling::Cells {
+            r0: (lo.y / row).floor() as i32 - 1,
+            r1: (hi.y / row).ceil() as i32 + 1,
+            x0: (lo.x / col).floor() as i32,
+            x1: (hi.x / col).ceil() as i32,
         }
+    } else {
+        Tiling::Slab(lo.floor().as_ivec2(), hi.ceil().as_ivec2())
+    };
+    if kiln.tiled == Some(tiling) {
+        return;
     }
+    meshes
+        .insert(kiln.tiles.id(), tiles(tiling))
+        .expect("the tile handle is reserved at startup");
+    if kiln.tiled.is_none() {
+        commands.spawn((
+            Mesh2d(kiln.tiles.clone()),
+            MeshMaterial2d(kiln.material(Glaze::Clay, false).clone()),
+        ));
+    }
+    kiln.tiled = Some(tiling);
 }
 
 fn draw(
     world: Res<World>,
     mut gizmos: Gizmos,
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Transform, &Projection), With<Camera2d>>,
+    mut commands: Commands,
+    kiln: Res<Kiln>,
+    fills: Query<Entity, With<Fill>>,
 ) {
-    let dim = Color::srgb(0.18, 0.18, 0.18);
-    let pad = Color::srgb(0.75, 0.75, 0.75);
-    let atom = Color::srgb(0.85, 0.85, 0.85);
-    let torn = Color::srgb(0.4, 0.4, 0.4);
-    let arm_color = Color::srgb(0.55, 0.55, 0.55);
-    let picked = Color::WHITE;
-    let s = &world.sim;
-
-    let (transform, projection) = camera.into_inner();
-    if let Some(v) = Viewport::of(&window, transform, projection) {
-        let col = HEX * 3f32.sqrt();
-        let row = HEX * 1.5;
-        if (v.size.x / col) * (v.size.y / row) < MAX_GRID_CELLS {
-            let (lo, hi) = (v.cam - v.half(), v.cam + v.half());
-            for r in ((lo.y / row).floor() as i32 - 1)..=((hi.y / row).ceil() as i32 + 1) {
-                let q0 = (lo.x / col - r as f32 / 2.0).floor() as i32 - 1;
-                let q1 = (hi.x / col - r as f32 / 2.0).ceil() as i32 + 1;
-                for q in q0..=q1 {
-                    gizmos.linestrip_2d(corners(px(Hex::new(q, r)), HEX * 0.95), dim);
-                }
-            }
-        }
+    for e in &fills {
+        commands.entity(e).despawn();
     }
+    let mut p = Painter {
+        gizmos: &mut gizmos,
+        commands: &mut commands,
+        kiln: &kiln,
+    };
+    let s = &world.sim;
     for (i, g) in s.glyphs.iter().enumerate() {
-        let color = if world.focus == Some(Focus::Glyph(i)) {
-            picked
-        } else {
-            pad
-        };
-        draw_machine(&mut gizmos, Item::Glyph(g.kind), g.at, g.dir, color);
+        p.machine(Item::Glyph(g.kind), g.at, g.dir);
+        if world.focus == Some(Focus::Glyph(i)) {
+            p.gizmos.linestrip_2d(corners(px(g.at), HEX * 0.9), IVORY);
+        }
     }
     let f = Frame::between(&world.prev, s, world.phase());
     for b in &f.sim.bonds {
         let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
             continue;
         };
-        draw_bond(&mut gizmos, a, c, b.kind, atom);
+        p.bond(a, c, b.kind, false);
     }
     for (kept, lost, kind) in &f.sim.torn {
         let (a, b) = (px(*kept), px(*lost));
-        draw_bond(&mut gizmos, a, a.lerp(b, 0.5), *kind, torn);
+        p.bond(a, a.lerp(b, 0.5), *kind, true);
     }
-    for a in f.atoms.iter().flatten() {
-        gizmos.circle_2d(*a, HEX * 0.4, atom);
+    for (at, atom) in f.atoms.iter().zip(&f.sim.atoms) {
+        if let (Some(at), Some(atom)) = (at, atom) {
+            p.bead(*at, look::atom(atom.kind));
+        }
     }
     for (i, arm) in f.arms.iter().enumerate() {
-        let color = if world.focus.and_then(Focus::arm) == Some(i) {
-            picked
-        } else {
-            arm_color
-        };
-        draw_arm(&mut gizmos, arm.pivot, arm.hand, color);
-        if let Some(ring) = arm.ring {
-            gizmos.circle_2d(arm.hand, HEX * ring, color);
+        p.arm(arm.pivot, arm.hand, arm.ring, look::machine(Item::Arm));
+        if world.focus.and_then(Focus::arm) == Some(i) {
+            p.gizmos.linestrip_2d(corners(arm.pivot, HEX * 0.9), IVORY);
         }
         let stall = f.sim.arms[i].stall;
         if stall.is_some() {
-            gizmos.circle_2d(arm.pivot, HEX * 0.5, picked);
+            p.gizmos.circle_2d(arm.pivot, HEX * 0.5, IVORY);
         }
         if let Some(Stall::Hand(j)) = stall {
-            gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, picked);
+            p.gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, IVORY);
         }
     }
-    if let (Some(held), Some(p)) = (world.held, world.pointer) {
-        let at = hex_at(p);
-        gizmos.linestrip_2d(corners(px(at), HEX * 0.9), picked);
-        draw_machine(&mut gizmos, held.item, at, held.dir, picked);
+    if let (Some(held), Some(at)) = (world.held, world.pointer) {
+        let at = hex_at(at);
+        p.gizmos.linestrip_2d(corners(px(at), HEX * 0.9), IVORY);
+        p.machine(held.item, at, held.dir);
     }
 }
 
@@ -1281,7 +1530,7 @@ mod tests {
                 .unwrap()
                 .abs_diff_eq(f.arms[0].pivot + expected, 1e-3)
         );
-        assert_eq!(f.arms[0].ring, Some(RING_CLOSED));
+        assert_eq!(f.arms[0].ring, RING_CLOSED);
     }
 
     #[test]
@@ -1312,7 +1561,7 @@ mod tests {
         });
         let mut cur = prev.clone();
         cur.step();
-        let ring = |t| Frame::between(&prev, &cur, t).arms[0].ring.unwrap();
+        let ring = |t| Frame::between(&prev, &cur, t).arms[0].ring;
         assert_eq!(ring(0.0), RING_OPEN);
         assert!(ring(0.25) > RING_OPEN + (RING_CLOSED - RING_OPEN) * 0.25);
         assert!(ring(0.5) < RING_OPEN && ring(0.5) > RING_CLOSED);

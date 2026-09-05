@@ -27,7 +27,7 @@ Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, c
 
 ## First playable
 
-One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by whatever transport the player builds from the same primitives. No readout. We might not ever need to provide an explicit goal. Graybox, circles and lines.
+One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by whatever transport the player builds from the same primitives. No readout. We might not ever need to provide an explicit goal. Graybox, circles and lines, until the art bible (art/BIBLE.md) replaced it.
 
 Status: Toy 1 (issue #1) exists to look at and play with while the design is imagined; the design is rewritten after it.
 
@@ -37,7 +37,7 @@ The bridge that should prevent that: Opus Magnum's three scores are Factorio's t
 
 ## Out of scope
 
-Art. Research tree. Enemies. Power. Fluids. Multiplayer. More than one molecule family. Save compatibility.
+Research tree. Enemies. Power. Fluids. Multiplayer. More than one molecule family. Save compatibility.
 
 ## Parking lot
 
@@ -218,6 +218,14 @@ Q2: A grab over nothing stalls until an atom arrives, then closes on it, so the 
 
 ### Toy 1 shows motion between ticks
 
-The sim is still one discrete tick after another; only the drawing changed. Between ticks the toy draws the way from the last pose to the next: an arm's rotate sweeps its 60° the way the instruction turns, the atoms in its hand ride the sweep, a grab shrinks the ring shut and a drop lets it grow and vanish, and what a glyph made or ate shows at the end of the sweep, so nothing changes hands mid-arc. One ease, smoothstep.
+The sim is still one discrete tick after another; only the drawing changed. Between ticks the toy draws the way from the last pose to the next: an arm's rotate sweeps its 60° the way the instruction turns, the atoms in its hand ride the sweep, a grab shrinks the hand shut and a drop lets it open wide, and what a glyph made or ate shows at the end of the sweep, so nothing changes hands mid-arc. One ease, smoothstep.
 
 One knob: the tick period. An instruction's duration is its animation, as in Opus Magnum. Default 400 ms; the old 167 ms was too fast to read a sweep. Videos at 0 (hard cut), 120, 250, 400, 650 and 1000 ms, and 400 ms moving for the first 60% then holding, are for choosing it.
+
+### Toy 1 wears the Fired Workshop look
+
+The owner chose the Fired Workshop direction (issue #9) and set two rules: every atom is visually distinct from every other atom, and the same for every glyph, machine, and bond type. `art/BIBLE.md` is the design ethos, palette, and the checkable form of the rules: two members of one class differ in at least two of hue, value, shape, marking, never by hue alone. The sim and the tick period are untouched; only the drawing changed.
+
+What the toy now draws. The board is glazed clay with brass grout. An atom is a blue-green bead with one highlight. A single bond is a dark brass bar, a double bond two plum bars. An arm is a brass pivot and link with a terracotta horseshoe for its hand, open and wide at rest, shut on what it holds. Glyphs are wells sunk into the board: the source a blue-green ring and dot, the bonder a terracotta triangle with one spoke per slot, the second bond a plum triangle with two spokes per slot, the output two ivory cups with brass rims and the demanded bond stencilled between them. Ivory marks mean look here: the picked machine's cell, a stalled pivot, the hand that caused the stall.
+
+The tests in `src/look.rs` hold the rule over the table the toy draws from, so a new atom, glyph, machine, or bond that collides with an old one does not land.

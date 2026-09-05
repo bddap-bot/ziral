@@ -63,6 +63,10 @@ pub enum AtomKind {
     Base,
 }
 
+impl AtomKind {
+    pub const ALL: [AtomKind; 1] = [AtomKind::Base];
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Atom {
     pub kind: AtomKind,
@@ -73,6 +77,10 @@ pub struct Atom {
 pub enum BondKind {
     Single,
     Double,
+}
+
+impl BondKind {
+    pub const ALL: [BondKind; 2] = [BondKind::Single, BondKind::Double];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,6 +123,15 @@ pub enum GlyphKind {
     Bonder,
     SecondBond,
     Output,
+}
+
+impl GlyphKind {
+    pub const ALL: [GlyphKind; 4] = [
+        GlyphKind::Source,
+        GlyphKind::Bonder,
+        GlyphKind::SecondBond,
+        GlyphKind::Output,
+    ];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
