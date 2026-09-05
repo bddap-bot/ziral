@@ -1060,27 +1060,27 @@ impl Frame<'_> {
     }
 }
 
-const CREEP_UNTIL: f32 = 0.25;
 const CREEP: f32 = 0.15;
-const CONTACT: f32 = 0.5;
-const BOUNCES: f32 = 2.5;
-const DECAY: f32 = 3.5;
+const RELEASE: f32 = 0.25;
+const ARRIVAL: f32 = 0.5;
+const HALF_BOUNCES: u32 = 5;
+const DECAY: f32 = 4.5;
 
 fn swing(t: f32) -> f32 {
-    use std::f32::consts::{FRAC_PI_2, TAU};
     if t >= 1.0 {
         return 1.0;
     }
-    if t < CREEP_UNTIL {
-        return CREEP * (FRAC_PI_2 * t / CREEP_UNTIL).sin();
+    if t < RELEASE {
+        let u = t / RELEASE;
+        return CREEP * u * u * (3.0 - 2.0 * u);
     }
-    let speed = (1.0 - CREEP) / (CONTACT - CREEP_UNTIL);
-    if t < CONTACT {
-        return CREEP + speed * (t - CREEP_UNTIL);
+    if t < ARRIVAL {
+        return CREEP.lerp(1.0, (t - RELEASE) / (ARRIVAL - RELEASE));
     }
-    let omega = TAU * BOUNCES / (1.0 - CONTACT);
-    let tau = t - CONTACT;
-    1.0 + speed / omega * (-DECAY * tau).exp() * (omega * tau).sin()
+    let speed = (1.0 - CREEP) / (ARRIVAL - RELEASE);
+    let omega = std::f32::consts::PI * HALF_BOUNCES as f32 / (1.0 - ARRIVAL);
+    let after = t - ARRIVAL;
+    1.0 + speed / omega * (-DECAY * after).exp() * (omega * after).sin()
 }
 
 fn grip(holding: bool) -> f32 {
@@ -1677,16 +1677,18 @@ mod tests {
     #[test]
     fn mid_rotate_the_hand_and_its_atom_sit_where_the_swing_says() {
         let (prev, cur) = rotating_arm_with_atom();
-        let f = Frame::between(&prev, &cur, 0.4);
         let (start, end) = (reach(&prev.arms[0]), reach(&cur.arms[0]));
-        let expected = Vec2::from_angle(start.angle_to(end) * swing(0.4)).rotate(start);
-        assert!((f.arms[0].hand - f.arms[0].pivot).abs_diff_eq(expected, 1e-3));
-        assert!(
-            f.atoms[0]
-                .unwrap()
-                .abs_diff_eq(f.arms[0].pivot + expected, 1e-3)
-        );
-        assert_eq!(f.arms[0].ring, RING_CLOSED);
+        for t in [0.4, 0.55] {
+            let f = Frame::between(&prev, &cur, t);
+            let expected = Vec2::from_angle(start.angle_to(end) * swing(t)).rotate(start);
+            assert!((f.arms[0].hand - f.arms[0].pivot).abs_diff_eq(expected, 1e-3));
+            assert!(
+                f.atoms[0]
+                    .unwrap()
+                    .abs_diff_eq(f.arms[0].pivot + expected, 1e-3)
+            );
+            assert_eq!(f.arms[0].ring, RING_CLOSED);
+        }
     }
 
     #[test]
@@ -1721,6 +1723,7 @@ mod tests {
         assert_eq!(ring(0.0), RING_OPEN);
         assert!(ring(0.25) > RING_OPEN + (RING_CLOSED - RING_OPEN) * 0.25);
         assert!(ring(0.4) < RING_OPEN && ring(0.4) > RING_CLOSED);
+        assert!(ring(0.55) < RING_CLOSED);
         assert_eq!(ring(1.0), RING_CLOSED);
     }
 
@@ -1728,7 +1731,7 @@ mod tests {
     fn the_swing_creeps_lets_go_overshoots_and_settles_exactly() {
         assert_eq!(swing(0.0), 0.0);
         assert_eq!(swing(1.0), 1.0);
-        assert_eq!(swing(1.5), 1.0);
+        assert_eq!(swing(1.23), 1.0);
         let samples: Vec<f32> = (1..1000).map(|i| swing(i as f32 / 1000.0)).collect();
         for (i, s) in samples.iter().enumerate().take(250) {
             assert!(
@@ -1744,12 +1747,17 @@ mod tests {
             .filter(|w| (w[0] - 1.0).signum() != (w[1] - 1.0).signum())
             .count();
         assert!(sign_changes >= 2, "{sign_changes} sign changes");
+        let bounces = samples[first_crossing..]
+            .windows(3)
+            .filter(|w| w[1] > w[0] && w[1] > w[2] && w[1] > 1.01)
+            .count();
+        assert!(bounces >= 2, "{bounces} visible bounces");
     }
 
     #[test]
     fn the_swing_holds_its_golden_shape() {
         let golden = [
-            0.0574, 0.13858, 0.3625, 0.7875, 1.08034, 0.97851, 0.98613, 1.02162,
+            0.02344, 0.12656, 0.3625, 0.7875, 1.07547, 0.98219, 0.98985, 1.01396,
         ];
         for (i, g) in golden.iter().enumerate() {
             let t = (2 * i + 1) as f32 / 16.0;
