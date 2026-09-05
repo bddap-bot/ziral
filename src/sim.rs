@@ -418,7 +418,7 @@ impl Sim {
         }
     }
 
-    fn exec(&mut self, i: usize, instr: Instr) -> Result<(), Stall> {
+    pub fn exec(&mut self, i: usize, instr: Instr) -> Result<(), Stall> {
         let hand = self.arms[i].hand();
         match instr {
             Instr::Wait => {}

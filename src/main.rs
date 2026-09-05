@@ -67,16 +67,27 @@ fn instr_char(instr: Instr) -> char {
     KEYS.iter().find(|k| k.1 == instr).map_or('?', |k| k.2)
 }
 
+fn instr_of(key: KeyCode) -> Option<Instr> {
+    KEYS.iter().find(|k| k.0 == key).map(|k| k.1)
+}
+
+fn instr_help() -> String {
+    KEYS.iter()
+        .map(|(_, _, c, name)| format!("  {c} {name}"))
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
-    Arm { arm: usize, cursor: usize },
+    Arm(usize),
+    Tape { arm: usize, cursor: usize },
     Glyph(usize),
 }
 
 impl Focus {
     fn arm(self) -> Option<usize> {
         match self {
-            Focus::Arm { arm, .. } => Some(arm),
+            Focus::Arm(arm) | Focus::Tape { arm, .. } => Some(arm),
             Focus::Glyph(_) => None,
         }
     }
@@ -153,27 +164,31 @@ impl World {
     }
 
     fn focus_arm(&mut self, arm: usize) {
+        self.focus = Some(Focus::Arm(arm));
+    }
+
+    fn focus_tape(&mut self, arm: usize) {
         let cursor = self.sim.arms[arm].tape.len();
-        self.focus = Some(Focus::Arm { arm, cursor });
+        self.focus = Some(Focus::Tape { arm, cursor });
     }
 
     fn item(&self, f: Focus) -> (Item, usize) {
         match f {
-            Focus::Arm { arm, .. } => (Item::Arm, self.sim.arms[arm].dir),
+            Focus::Arm(arm) | Focus::Tape { arm, .. } => (Item::Arm, self.sim.arms[arm].dir),
             Focus::Glyph(i) => (Item::Glyph(self.sim.glyphs[i].kind), self.sim.glyphs[i].dir),
         }
     }
 
     fn anchor(&self, f: Focus) -> Hex {
         match f {
-            Focus::Arm { arm, .. } => self.sim.arms[arm].pivot,
+            Focus::Arm(arm) | Focus::Tape { arm, .. } => self.sim.arms[arm].pivot,
             Focus::Glyph(i) => self.sim.glyphs[i].at,
         }
     }
 
     fn turn(&mut self, f: Focus, dir: usize) {
         match f {
-            Focus::Arm { arm, .. } => {
+            Focus::Arm(arm) | Focus::Tape { arm, .. } => {
                 self.sim.arms[arm].dir = dir;
                 self.unstall();
             }
@@ -190,7 +205,7 @@ impl World {
 
     fn remove(&mut self, f: Focus) {
         match f {
-            Focus::Arm { arm, .. } => {
+            Focus::Arm(arm) | Focus::Tape { arm, .. } => {
                 self.sim.arms.remove(arm);
                 self.unstall();
             }
@@ -242,7 +257,7 @@ impl World {
             (Some(f), None) => self.focus = Some(f),
             (Some(f), Some(at)) => {
                 match f {
-                    Focus::Arm { arm, .. } => self.sim.arms[arm].pivot = at,
+                    Focus::Arm(arm) | Focus::Tape { arm, .. } => self.sim.arms[arm].pivot = at,
                     Focus::Glyph(i) => self.sim.glyphs[i].at = at,
                 }
                 self.turn(f, held.dir);
@@ -269,16 +284,13 @@ impl World {
 
     fn covers(&self, f: Focus, cell: Hex) -> bool {
         match f {
-            Focus::Arm { arm, .. } => self.sim.arms[arm].cells().contains(&cell),
+            Focus::Arm(arm) | Focus::Tape { arm, .. } => self.sim.arms[arm].cells().contains(&cell),
             Focus::Glyph(i) => self.sim.glyphs[i].slots().any(|s| s == cell),
         }
     }
 
     fn machines(&self) -> impl Iterator<Item = Focus> + '_ {
-        let arms = self.sim.arms.iter().enumerate().map(|(arm, a)| Focus::Arm {
-            arm,
-            cursor: a.tape.len(),
-        });
+        let arms = (0..self.sim.arms.len()).map(Focus::Arm);
         arms.chain((0..self.sim.glyphs.len()).map(Focus::Glyph))
     }
 
@@ -286,6 +298,70 @@ impl World {
         self.machines()
             .find(|f| self.anchor(*f) == cell)
             .or_else(|| self.machines().find(|f| self.covers(*f, cell)))
+    }
+
+    fn act(&mut self, arm: usize, instr: Instr) {
+        self.sim.arms[arm].stall = self.sim.exec(arm, instr).err();
+        self.prev = self.sim.clone();
+    }
+
+    fn key(&mut self, key: KeyCode) {
+        use KeyCode::*;
+        let step = match key {
+            KeyA => Some(5),
+            KeyD => Some(1),
+            _ => None,
+        };
+        if key == Escape {
+            self.release(None);
+            self.focus = None;
+            return;
+        }
+        if let Some(held) = &mut self.held {
+            if let Some(step) = step {
+                held.turn(step);
+            } else if key == KeyZ {
+                let from = held.from;
+                self.held = None;
+                if let Some(f) = from {
+                    self.remove(f);
+                }
+            }
+            return;
+        }
+        let Some(focus) = self.focus else { return };
+        match focus {
+            Focus::Glyph(_) | Focus::Arm(_) => {
+                if key == KeyZ {
+                    self.remove(focus);
+                } else if let Some(step) = step {
+                    let (_, dir) = self.item(focus);
+                    self.turn(focus, (dir + step) % 6);
+                } else if let (Focus::Arm(arm), Some(instr)) = (focus, instr_of(key)) {
+                    self.act(arm, instr);
+                }
+            }
+            Focus::Tape { arm, cursor } => {
+                let tape = &mut self.sim.arms[arm].tape;
+                let cursor = cursor.min(tape.len());
+                let cursor = match (key, instr_of(key)) {
+                    (ArrowLeft, _) => cursor.saturating_sub(1),
+                    (ArrowRight, _) => (cursor + 1).min(tape.len()),
+                    (Home, _) => 0,
+                    (End, _) => tape.len(),
+                    (KeyZ, _) if cursor > 0 => {
+                        tape.remove(cursor - 1);
+                        cursor - 1
+                    }
+                    (_, Some(instr)) => {
+                        tape.insert(cursor, instr);
+                        cursor + 1
+                    }
+                    _ => cursor,
+                };
+                self.focus = Some(Focus::Tape { arm, cursor });
+            }
+        }
     }
 }
 
@@ -548,7 +624,7 @@ fn edit(
             world.lift(Held::fresh(*item));
         } else if let Some((row, _)) = rows.iter().find(|(_, i)| **i == Interaction::Pressed) {
             if let Some(arm) = row.arm.filter(|a| *a < world.sim.arms.len()) {
-                world.focus_arm(arm);
+                world.focus_tape(arm);
             }
         } else if !over_ui && let (Some(c), Some(cell)) = (screen, at) {
             world.press(c, cell);
@@ -564,77 +640,15 @@ fn edit(
         world.release(at.filter(|_| valid));
     }
 
-    if keys.just_pressed(KeyCode::Escape) {
-        world.release(None);
-        world.focus = None;
-        return;
+    for key in keys.get_just_pressed() {
+        world.key(*key);
     }
-    let turn = if keys.just_pressed(KeyCode::KeyA) {
-        Some(5)
-    } else if keys.just_pressed(KeyCode::KeyD) {
-        Some(1)
-    } else {
-        None
-    };
-    let delete = keys.just_pressed(KeyCode::KeyZ);
-    if let Some(held) = &mut world.held {
-        if let Some(step) = turn {
-            held.turn(step);
-        }
-        if delete {
-            let from = held.from;
-            world.held = None;
-            if let Some(f) = from {
-                world.remove(f);
-            }
-        }
-        return;
-    }
-    let Some(focus) = world.focus else {
-        return;
-    };
-    if delete {
-        world.remove(focus);
-        return;
-    }
-    if let Some(step) = turn {
-        let (_, dir) = world.item(focus);
-        world.turn(focus, (dir + step) % 6);
-    }
-    let Focus::Arm { arm, cursor } = focus else {
-        return;
-    };
-    let len = world.sim.arms[arm].tape.len();
-    let mut cursor = cursor.min(len);
-    if keys.just_pressed(KeyCode::ArrowLeft) {
-        cursor = cursor.saturating_sub(1);
-    }
-    if keys.just_pressed(KeyCode::ArrowRight) {
-        cursor = (cursor + 1).min(len);
-    }
-    let typed = KEYS
-        .into_iter()
-        .find(|k| keys.just_pressed(k.0))
-        .map(|k| k.1);
-    let tape = &mut world.sim.arms[arm].tape;
-    if let Some(instr) = typed {
-        if cursor < tape.len() {
-            tape[cursor] = instr;
-        } else {
-            tape.push(instr);
-        }
-        cursor += 1;
-    } else if keys.just_pressed(KeyCode::Backspace) && cursor > 0 {
-        tape.remove(cursor - 1);
-        cursor -= 1;
-    }
-    world.focus = Some(Focus::Arm { arm, cursor });
 }
 
 fn tape_line(world: &World, i: usize) -> String {
     let arm = &world.sim.arms[i];
     let cursor = match world.focus {
-        Some(Focus::Arm { arm, cursor }) if arm == i => Some(cursor),
+        Some(Focus::Tape { arm, cursor }) if arm == i => Some(cursor),
         _ => None,
     };
     let mut out = format!(
@@ -1336,16 +1350,19 @@ fn text(world: Res<World>, mut label: Single<&mut Text, With<Hud>>) {
             held.item.name()
         ));
     } else if let Some(f) = world.focus {
-        out.push_str(&format!(
-            "focus {}: A/D turn  Z delete  esc done\n",
-            world.item(f).0.name()
-        ));
-        if f.arm().is_some() {
-            out.push_str("tape");
-            for (_, _, c, name) in KEYS {
-                out.push_str(&format!("  {c} {name}"));
-            }
-            out.push_str("  arrows move  backspace remove\n");
+        match f {
+            Focus::Tape { .. } => out.push_str(&format!(
+                "tape:{}  arrows move  home/end  Z backspace  esc done\n",
+                instr_help()
+            )),
+            Focus::Arm(_) => out.push_str(&format!(
+                "arm: A/D turn{}  Z delete  esc done  click its tape to edit\n",
+                instr_help()
+            )),
+            Focus::Glyph(_) => out.push_str(&format!(
+                "{}: A/D turn  Z delete  esc done\n",
+                world.item(f).0.name()
+            )),
         }
     }
     out.push_str(
@@ -1448,8 +1465,23 @@ mod shot {
                     .sim
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
-                world.focus_arm(world.sim.arms.len() - 1);
+                world.focus_tape(world.sim.arms.len() - 1);
                 keys = vec![KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ];
+            }
+            "armfocus" | "tapefocus" => {
+                world
+                    .sim
+                    .arms
+                    .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
+                let arm = world.sim.arms.len() - 1;
+                world.focus_tape(arm);
+                keys = vec![
+                    KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ, ArrowLeft, ArrowLeft, ArrowLeft,
+                ];
+                if name == "armfocus" {
+                    world.focus_arm(arm);
+                    keys = vec![KeyE, KeyE];
+                }
             }
             "hold" => {
                 world.lift(Held::fresh(Item::Glyph(GlyphKind::Bonder)));
@@ -2068,7 +2100,7 @@ mod tests {
         );
         assert_eq!(
             lone(vec![bonder, source], vec![arm]).hit(ORIGIN),
-            Some(Focus::Arm { arm: 0, cursor: 0 })
+            Some(Focus::Arm(0))
         );
         assert_eq!(
             lone(vec![source, source], vec![]).hit(source.at),
@@ -2090,6 +2122,61 @@ mod tests {
         w.release(Some(slot));
         assert_eq!(w.focus, Some(Focus::Glyph(0)));
         assert_eq!(w.sim.glyphs, vec![bonder]);
+    }
+
+    fn armed(tape: Vec<Instr>) -> World {
+        let mut w = lone(vec![], vec![Arm::new(ORIGIN, 0, tape)]);
+        w.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: DIRS[0],
+        });
+        w
+    }
+
+    #[test]
+    fn a_key_with_arm_focus_acts_on_the_arm_now_and_leaves_the_tape_alone() {
+        let mut w = armed(vec![Instr::Wait]);
+        w.focus_arm(0);
+        w.key(KeyCode::KeyF);
+        w.key(KeyCode::KeyE);
+        assert!(w.sim.arms[0].holding);
+        assert_eq!(w.sim.arms[0].dir, 1);
+        assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[1]);
+        assert_eq!(w.sim.arms[0].tape, vec![Instr::Wait]);
+        assert_eq!(w.focus, Some(Focus::Arm(0)));
+    }
+
+    #[test]
+    fn a_key_with_tape_focus_inserts_at_the_cursor_and_leaves_the_arm_alone() {
+        let mut w = armed(vec![Instr::Wait, Instr::Drop]);
+        w.focus_tape(0);
+        w.key(KeyCode::ArrowLeft);
+        w.key(KeyCode::KeyF);
+        w.key(KeyCode::KeyE);
+        assert_eq!(
+            w.sim.arms[0].tape,
+            vec![Instr::Wait, Instr::Grab, Instr::RotCw, Instr::Drop]
+        );
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 3 }));
+        assert!(!w.sim.arms[0].holding);
+        assert_eq!(w.sim.arms[0].dir, 0);
+        assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[0]);
+    }
+
+    #[test]
+    fn z_in_tape_focus_removes_the_instruction_before_the_cursor() {
+        let mut w = armed(vec![Instr::Grab, Instr::RotCw, Instr::Drop]);
+        w.focus_tape(0);
+        w.key(KeyCode::ArrowLeft);
+        w.key(KeyCode::KeyZ);
+        assert_eq!(w.sim.arms[0].tape, vec![Instr::Grab, Instr::Drop]);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 1 }));
+        w.key(KeyCode::Home);
+        w.key(KeyCode::KeyZ);
+        assert_eq!(w.sim.arms[0].tape, vec![Instr::Grab, Instr::Drop]);
+        assert_eq!(w.sim.arms.len(), 1);
+        w.key(KeyCode::End);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
     }
 
     #[test]
