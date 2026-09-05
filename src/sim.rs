@@ -542,6 +542,14 @@ mod tests {
     }
 
     #[test]
+    fn a_grab_over_an_empty_cell_stalls() {
+        let mut sim = bench(vec![Instr::Grab], Vec::new());
+        sim.step();
+        assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
+        assert_eq!(sim.arms[0].pc, 0);
+        assert!(!sim.arms[0].holding);
+    }
+    #[test]
     fn a_rotation_into_an_occupied_cell_stalls_until_it_clears() {
         use Instr::*;
         let mut sim = bench(vec![Grab, RotCw], Vec::new());
