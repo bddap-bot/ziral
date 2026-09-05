@@ -1096,9 +1096,9 @@ impl Frame<'_> {
         if t >= 1.0 {
             return Frame::settled(cur);
         }
-        let e = swing(t);
         let mut frame = Frame::settled(prev);
         for (i, (a, b)) in prev.arms.iter().zip(&cur.arms).enumerate() {
+            let e = Swing::from_cell(a.pivot).at(t);
             let pivot = frame.arms[i].pivot;
             let turn = turn_between(a, b) * e;
             let sweep = |v: Vec2| pivot + Vec2::from_angle(turn).rotate(v - pivot);
@@ -1118,27 +1118,67 @@ impl Frame<'_> {
     }
 }
 
-const CREEP: f32 = 0.15;
-const RELEASE: f32 = 0.25;
-const ARRIVAL: f32 = 0.5;
-const HALF_BOUNCES: u32 = 5;
-const DECAY: f32 = 4.5;
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Swing {
+    creep: f32,
+    release: f32,
+    run: f32,
+    half_bounces: u32,
+    decay: f32,
+}
 
-fn swing(t: f32) -> f32 {
-    if t >= 1.0 {
-        return 1.0;
+const SWING: Swing = Swing {
+    creep: 0.15,
+    release: 0.25,
+    run: 0.25,
+    half_bounces: 5,
+    decay: 4.5,
+};
+
+const SPREAD: Swing = Swing {
+    creep: 0.025,
+    release: 0.05,
+    run: 0.03,
+    half_bounces: 1,
+    decay: 1.5,
+};
+
+impl Swing {
+    fn from_cell(cell: Hex) -> Swing {
+        fn draw(bits: &mut u32, steps: u32) -> u32 {
+            let d = *bits % steps;
+            *bits /= steps;
+            d
+        }
+        let bits = &mut look::scramble(cell);
+        let mut unit = |half: f32| half * (draw(bits, 64) as f32 / 31.5 - 1.0);
+        Swing {
+            creep: SWING.creep + unit(SPREAD.creep),
+            release: SWING.release + unit(SPREAD.release),
+            run: SWING.run + unit(SPREAD.run),
+            decay: SWING.decay + unit(SPREAD.decay),
+            half_bounces: SWING.half_bounces - SPREAD.half_bounces
+                + draw(bits, 2 * SPREAD.half_bounces + 1),
+        }
     }
-    if t < RELEASE {
-        let u = t / RELEASE;
-        return CREEP * u * u * (3.0 - 2.0 * u);
+
+    fn at(&self, t: f32) -> f32 {
+        if t >= 1.0 {
+            return 1.0;
+        }
+        if t < self.release {
+            let u = t / self.release;
+            return self.creep * u * u * (3.0 - 2.0 * u);
+        }
+        if t < self.release + self.run {
+            return self.creep.lerp(1.0, (t - self.release) / self.run);
+        }
+        let speed = (1.0 - self.creep) / self.run;
+        let omega =
+            std::f32::consts::PI * self.half_bounces as f32 / (1.0 - self.release - self.run);
+        let after = t - self.release - self.run;
+        1.0 + speed / omega * (-self.decay * after).exp() * (omega * after).sin()
     }
-    if t < ARRIVAL {
-        return CREEP.lerp(1.0, (t - RELEASE) / (ARRIVAL - RELEASE));
-    }
-    let speed = (1.0 - CREEP) / (ARRIVAL - RELEASE);
-    let omega = std::f32::consts::PI * HALF_BOUNCES as f32 / (1.0 - ARRIVAL);
-    let after = t - ARRIVAL;
-    1.0 + speed / omega * (-DECAY * after).exp() * (omega * after).sin()
 }
 
 fn grip(holding: bool) -> f32 {
@@ -1761,9 +1801,10 @@ mod tests {
     fn mid_rotate_the_hand_and_its_atom_sit_where_the_swing_says() {
         let (prev, cur) = rotating_arm_with_atom();
         let (start, end) = (reach(&prev.arms[0]), reach(&cur.arms[0]));
+        let swing = Swing::from_cell(prev.arms[0].pivot);
         for t in [0.4, 0.55] {
             let f = Frame::between(&prev, &cur, t);
-            let expected = Vec2::from_angle(start.angle_to(end) * swing(t)).rotate(start);
+            let expected = Vec2::from_angle(start.angle_to(end) * swing.at(t)).rotate(start);
             assert!((f.arms[0].hand - f.arms[0].pivot).abs_diff_eq(expected, 1e-3));
             assert!(
                 f.atoms[0]
@@ -1802,52 +1843,121 @@ mod tests {
         });
         let mut cur = prev.clone();
         cur.step();
+        let swing = Swing::from_cell(Hex::new(0, 0));
         let ring = |t| Frame::between(&prev, &cur, t).arms[0].ring;
         assert_eq!(ring(0.0), RING_OPEN);
-        assert!(ring(0.25) > RING_OPEN + (RING_CLOSED - RING_OPEN) * 0.25);
-        assert!(ring(0.4) < RING_OPEN && ring(0.4) > RING_CLOSED);
-        assert!(ring(0.55) < RING_CLOSED);
+        let creeping = swing.release / 2.0;
+        assert!(ring(creeping) > RING_OPEN + (RING_CLOSED - RING_OPEN) * creeping);
+        let running = swing.release + swing.run / 2.0;
+        assert!(ring(running) < RING_OPEN && ring(running) > RING_CLOSED);
+        let clench = argmax(&swing);
+        assert!(ring(clench) < RING_CLOSED);
+        assert!((ring(clench) - RING_OPEN.lerp(RING_CLOSED, swing.at(clench))).abs() < 1e-6);
         assert_eq!(ring(1.0), RING_CLOSED);
     }
 
-    #[test]
-    fn the_swing_creeps_lets_go_overshoots_and_settles_exactly() {
-        assert_eq!(swing(0.0), 0.0);
-        assert_eq!(swing(1.0), 1.0);
-        assert_eq!(swing(1.23), 1.0);
-        let samples: Vec<f32> = (1..1000).map(|i| swing(i as f32 / 1000.0)).collect();
-        for (i, s) in samples.iter().enumerate().take(250) {
-            assert!(
-                *s > 0.0 && *s < (i + 1) as f32 / 1000.0,
-                "creep at {i}: {s}"
-            );
-        }
-        let peak = samples.iter().cloned().fold(0.0, f32::max);
-        assert!(peak > 1.0 && peak < 1.2, "overshoot {peak}");
-        let first_crossing = samples.iter().position(|s| *s >= 1.0).unwrap();
-        let sign_changes = samples[first_crossing..]
-            .windows(2)
-            .filter(|w| (w[0] - 1.0).signum() != (w[1] - 1.0).signum())
-            .count();
-        assert!(sign_changes >= 2, "{sign_changes} sign changes");
-        let bounces = samples[first_crossing..]
-            .windows(3)
-            .filter(|w| w[1] > w[0] && w[1] > w[2] && w[1] > 1.01)
-            .count();
-        assert!(bounces >= 2, "{bounces} visible bounces");
+    fn argmax(swing: &Swing) -> f32 {
+        (1..1000)
+            .map(|i| i as f32 / 1000.0)
+            .max_by(|a, b| swing.at(*a).total_cmp(&swing.at(*b)))
+            .unwrap()
+    }
+
+    fn patch() -> Vec<Hex> {
+        (-4..4)
+            .flat_map(|q| (-4..4).map(move |r| Hex::new(q, r)))
+            .collect()
+    }
+
+    fn corners() -> Vec<Swing> {
+        (0..32u32)
+            .map(|bits| {
+                let sign = |bit: u32| if bits >> bit & 1 == 1 { 1.0 } else { -1.0 };
+                Swing {
+                    creep: SWING.creep + SPREAD.creep * sign(0),
+                    release: SWING.release + SPREAD.release * sign(1),
+                    run: SWING.run + SPREAD.run * sign(2),
+                    half_bounces: if bits >> 3 & 1 == 1 {
+                        SWING.half_bounces + SPREAD.half_bounces
+                    } else {
+                        SWING.half_bounces - SPREAD.half_bounces
+                    },
+                    decay: SWING.decay + SPREAD.decay * sign(4),
+                }
+            })
+            .collect()
+    }
+
+    fn family() -> Vec<Swing> {
+        let mut all = vec![SWING];
+        all.extend(corners());
+        all.extend(patch().into_iter().map(Swing::from_cell));
+        all
     }
 
     #[test]
-    fn the_swing_holds_its_golden_shape() {
+    fn a_cell_keeps_its_swing_and_a_patch_has_no_two_alike() {
+        let swings: Vec<Swing> = patch().into_iter().map(Swing::from_cell).collect();
+        for (cell, swing) in patch().into_iter().zip(&swings) {
+            assert_eq!(Swing::from_cell(cell), *swing);
+        }
+        for (i, a) in swings.iter().enumerate() {
+            for b in &swings[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+        let span = |f: fn(&Swing) -> f32| {
+            let v: Vec<f32> = swings.iter().map(f).collect();
+            v.iter().cloned().fold(f32::MIN, f32::max) - v.iter().cloned().fold(f32::MAX, f32::min)
+        };
+        assert!(span(|s| s.creep) > SPREAD.creep);
+        assert!(span(|s| s.release) > SPREAD.release);
+        assert!(span(|s| s.run) > SPREAD.run);
+        assert!(span(|s| s.decay) > SPREAD.decay);
+        assert!(span(|s| s.half_bounces as f32) == 2.0 * SPREAD.half_bounces as f32);
+    }
+
+    #[test]
+    fn every_swing_creeps_lets_go_overshoots_and_settles_exactly() {
+        for swing in family() {
+            assert_eq!(swing.at(0.0), 0.0);
+            assert_eq!(swing.at(1.0), 1.0);
+            assert_eq!(swing.at(1.23), 1.0);
+            let samples: Vec<f32> = (1..1000).map(|i| swing.at(i as f32 / 1000.0)).collect();
+            let released = (swing.release * 1000.0) as usize;
+            for (i, s) in samples.iter().enumerate().take(released) {
+                assert!(
+                    *s > 0.0 && *s < (i + 1) as f32 / 1000.0,
+                    "{swing:?} creep at {i}: {s}"
+                );
+            }
+            let peak = samples.iter().cloned().fold(0.0, f32::max);
+            assert!(peak > 1.04 && peak < 1.16, "{swing:?} overshoot {peak}");
+            let first_crossing = samples.iter().position(|s| *s >= 1.0).unwrap();
+            let sign_changes = samples[first_crossing..]
+                .windows(2)
+                .filter(|w| (w[0] - 1.0).signum() != (w[1] - 1.0).signum())
+                .count();
+            assert!(sign_changes >= 2, "{swing:?} {sign_changes} sign changes");
+            let bounces = samples[first_crossing..]
+                .windows(3)
+                .filter(|w| w[1] > w[0] && w[1] > w[2] && w[1] > 1.01)
+                .count();
+            assert!(bounces >= 2, "{swing:?} {bounces} visible bounces");
+        }
+    }
+
+    #[test]
+    fn the_centre_swing_holds_its_golden_shape() {
         let golden = [
             0.02344, 0.12656, 0.3625, 0.7875, 1.07547, 0.98219, 0.98985, 1.01396,
         ];
         for (i, g) in golden.iter().enumerate() {
             let t = (2 * i + 1) as f32 / 16.0;
             assert!(
-                (swing(t) - g).abs() < 1e-4,
+                (SWING.at(t) - g).abs() < 1e-4,
                 "swing({t}) = {} not {g}",
-                swing(t)
+                SWING.at(t)
             );
         }
     }
