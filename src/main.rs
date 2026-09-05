@@ -109,7 +109,7 @@ impl Held {
 #[derive(Clone, Copy)]
 struct Press {
     screen: Vec2,
-    cell: Hex,
+    grip: Hex,
 }
 
 #[derive(Resource)]
@@ -210,7 +210,8 @@ impl World {
 
     fn press(&mut self, screen: Vec2, cell: Hex) {
         self.focus = self.hit(cell);
-        self.down = Some(Press { screen, cell });
+        let grip = self.focus.map_or(ORIGIN, |f| cell.sub(self.anchor(f)));
+        self.down = Some(Press { screen, grip });
     }
 
     fn drag(&mut self, screen: Vec2) {
@@ -225,7 +226,7 @@ impl World {
             item,
             dir,
             from: Some(from),
-            grip: down.cell.sub(self.anchor(from)),
+            grip: down.grip,
         });
     }
 
@@ -282,8 +283,9 @@ impl World {
     }
 
     fn hit(&self, cell: Hex) -> Option<Focus> {
-        let first = |pick: &dyn Fn(Focus) -> bool| self.machines().find(|f| pick(*f));
-        first(&|f| self.anchor(f) == cell).or_else(|| first(&|f| self.covers(f, cell)))
+        self.machines()
+            .find(|f| self.anchor(*f) == cell)
+            .or_else(|| self.machines().find(|f| self.covers(*f, cell)))
     }
 }
 
@@ -1913,16 +1915,41 @@ mod tests {
         assert!(bonder.slots().any(|s| s == source.at));
         assert_eq!(arm.hand(), source.at);
         assert_eq!(
-            lone(vec![bonder, source], vec![arm]).hit(source.at),
+            lone(vec![bonder, source], vec![arm.clone()]).hit(source.at),
             Some(Focus::Glyph(1))
         );
         assert_eq!(
-            lone(vec![bonder, source], vec![]).hit(ORIGIN),
-            Some(Focus::Glyph(0))
+            lone(vec![bonder, source], vec![arm]).hit(ORIGIN),
+            Some(Focus::Arm { arm: 0, cursor: 0 })
         );
         assert_eq!(
             lone(vec![source, source], vec![]).hit(source.at),
             Some(Focus::Glyph(0))
         );
+    }
+
+    #[test]
+    fn a_click_on_a_body_cell_focuses_the_machine_without_moving_it() {
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(2, 2),
+            dir: 1,
+        };
+        let mut w = lone(vec![bonder], vec![]);
+        let slot = bonder.slots().nth(2).unwrap();
+        w.press(Vec2::ZERO, slot);
+        w.drag(Vec2::new(DRAG_PX / 2.0, 0.0));
+        w.release(Some(slot));
+        assert_eq!(w.focus, Some(Focus::Glyph(0)));
+        assert_eq!(w.sim.glyphs, vec![bonder]);
+    }
+
+    #[test]
+    fn a_palette_placement_lands_its_anchor_on_the_cursor_cell() {
+        let mut w = lone(vec![], vec![]);
+        w.lift(Held::fresh(Item::Arm));
+        let to = Hex::new(-2, 3);
+        w.release(Some(to));
+        assert_eq!(w.sim.arms[0].pivot, to);
     }
 }
