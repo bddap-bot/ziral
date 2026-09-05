@@ -11,7 +11,7 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
 use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin};
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Stall};
 
 const HEX: f32 = 20.0;
 const TICK_MS: f32 = 400.0;
@@ -67,7 +67,7 @@ fn instr_char(instr: Instr) -> char {
     KEYS.iter().find(|k| k.1 == instr).map_or('?', |k| k.2)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
     Arm { arm: usize, cursor: usize },
     Glyph(usize),
@@ -87,6 +87,7 @@ struct Held {
     item: Item,
     dir: usize,
     from: Option<Focus>,
+    grip: Hex,
 }
 
 #[derive(Resource)]
@@ -99,7 +100,7 @@ struct World {
     running: bool,
     focus: Option<Focus>,
     held: Option<Held>,
-    press: Option<Vec2>,
+    press: Option<(Vec2, Hex)>,
     pointer: Option<Vec2>,
 }
 
@@ -142,6 +143,13 @@ impl World {
         }
     }
 
+    fn anchor(&self, f: Focus) -> Hex {
+        match f {
+            Focus::Arm { arm, .. } => self.sim.arms[arm].pivot,
+            Focus::Glyph(i) => self.sim.glyphs[i].at,
+        }
+    }
+
     fn turn(&mut self, f: Focus, dir: usize) {
         match f {
             Focus::Arm { arm, .. } => {
@@ -174,13 +182,42 @@ impl World {
         self.press = None;
     }
 
-    fn lift(&mut self, item: Item, dir: usize, from: Option<Focus>) {
-        self.held = Some(Held { item, dir, from });
+    fn lift(&mut self, item: Item, dir: usize, from: Option<Focus>, grip: Hex) {
+        self.held = Some(Held {
+            item,
+            dir,
+            from,
+            grip,
+        });
         self.focus = None;
+    }
+
+    fn press(&mut self, screen: Vec2, cell: Hex) {
+        self.focus = self.hit(cell);
+        self.press = Some((screen, cell));
+    }
+
+    fn drag(&mut self, screen: Vec2) {
+        let (Some((press, cell)), Some(f)) = (self.press, self.focus) else {
+            return;
+        };
+        if self.held.is_some() || press.distance(screen) <= DRAG_PX {
+            return;
+        }
+        let (item, dir) = self.item(f);
+        self.lift(item, dir, Some(f), self.anchor(f).sub(cell));
+    }
+
+    fn release(&mut self, at: Option<Hex>) {
+        self.press = None;
+        if self.held.is_some() {
+            self.drop_at(at);
+        }
     }
 
     fn drop_at(&mut self, at: Option<Hex>) {
         let Some(held) = self.held.take() else { return };
+        let at = at.map(|c| c.add(held.grip));
         match (held.from, at) {
             (Some(f), None) => self.focus = Some(f),
             (Some(f), Some(at)) => {
@@ -210,21 +247,21 @@ impl World {
         self.prev = self.sim.clone();
     }
 
-    fn hit(&self, at: Vec2) -> Option<Focus> {
-        let nearest = |cells: &mut dyn Iterator<Item = Hex>| {
-            cells
-                .enumerate()
-                .map(|(i, h)| (i, px(h).distance(at)))
-                .filter(|(_, d)| *d < HEX)
-                .min_by(|x, y| x.1.total_cmp(&y.1))
-                .map(|(i, _)| i)
-        };
-        nearest(&mut self.sim.arms.iter().map(|a| a.pivot))
+    fn hit(&self, cell: Hex) -> Option<Focus> {
+        let arms = &self.sim.arms;
+        arms.iter()
+            .position(|a| a.cells().contains(&cell))
             .map(|arm| Focus::Arm {
                 arm,
-                cursor: self.sim.arms[arm].tape.len(),
+                cursor: arms[arm].tape.len(),
             })
-            .or_else(|| nearest(&mut self.sim.glyphs.iter().map(|g| g.at)).map(Focus::Glyph))
+            .or_else(|| {
+                self.sim
+                    .glyphs
+                    .iter()
+                    .position(|g| g.slots().any(|s| s == cell))
+                    .map(Focus::Glyph)
+            })
     }
 }
 
@@ -484,30 +521,23 @@ fn edit(
 
     if buttons.just_pressed(MouseButton::Left) {
         if let Some((item, _)) = palette.iter().find(|(_, i)| **i == Interaction::Pressed) {
-            world.lift(*item, 0, None);
+            world.lift(*item, 0, None, ORIGIN);
         } else if let Some((row, _)) = rows.iter().find(|(_, i)| **i == Interaction::Pressed) {
             if let Some(arm) = row.arm.filter(|a| *a < world.sim.arms.len()) {
                 world.focus_arm(arm);
             }
-        } else if !over_ui && let (Some(c), Some(p)) = (screen, world.pointer) {
-            world.focus = world.hit(p);
-            world.press = Some(c);
+        } else if !over_ui && let (Some(c), Some(cell)) = (screen, at) {
+            world.press(c, cell);
         }
     }
     if buttons.pressed(MouseButton::Left)
-        && world.held.is_none()
-        && let (Some(press), Some(c), Some(f)) = (world.press, screen, world.focus)
-        && press.distance(c) > DRAG_PX
+        && let Some(c) = screen
     {
-        let (item, dir) = world.item(f);
-        world.lift(item, dir, Some(f));
+        world.drag(c);
     }
     if buttons.just_released(MouseButton::Left) {
-        world.press = None;
-        if world.held.is_some() {
-            let valid = !over_ui && screen.is_some();
-            world.drop_at(at.filter(|_| valid));
-        }
+        let valid = !over_ui && screen.is_some();
+        world.release(at.filter(|_| valid));
     }
 
     if keys.just_pressed(KeyCode::Escape) {
@@ -526,6 +556,7 @@ fn edit(
     if let Some(held) = &mut world.held {
         if let Some(step) = turn {
             held.dir = (held.dir + step) % 6;
+            held.grip = held.grip.turned(step);
         }
         if delete {
             let from = held.from;
@@ -1213,7 +1244,7 @@ fn draw(
         }
     }
     if let (Some(held), Some(at)) = (world.held, world.pointer) {
-        let at = hex_at(at);
+        let at = hex_at(at).add(held.grip);
         p.gizmos.linestrip_2d(corners(px(at), HEX * 0.9), IVORY);
         p.machine(held.item, at, held.dir);
     }
@@ -1325,7 +1356,7 @@ mod shot {
                 keys = vec![KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ];
             }
             "hold" => {
-                world.lift(Item::Glyph(GlyphKind::Bonder), 0, None);
+                world.lift(Item::Glyph(GlyphKind::Bonder), 0, None, ORIGIN);
                 keys = vec![KeyD, KeyD];
             }
             "output" => {
@@ -1767,5 +1798,86 @@ mod tests {
                 swing(t)
             );
         }
+    }
+
+    fn lone(glyphs: Vec<Glyph>, arms: Vec<Arm>) -> World {
+        let mut w = World::new();
+        w.sim = Sim::empty();
+        w.sim.glyphs = glyphs;
+        w.sim.arms = arms;
+        w.prev = w.sim.clone();
+        w
+    }
+
+    fn drag(w: &mut World, from: Hex, to: Hex) {
+        w.press(Vec2::ZERO, from);
+        w.drag(Vec2::new(DRAG_PX * 2.0, 0.0));
+        w.release(Some(to));
+    }
+
+    #[test]
+    fn a_drag_from_a_non_anchor_slot_moves_the_glyph_and_keeps_that_slot_under_the_cursor() {
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(1, 1),
+            dir: 2,
+        };
+        let mut w = lone(vec![bonder], vec![]);
+        let slot = bonder.slots().nth(2).unwrap();
+        assert_ne!(slot, bonder.at);
+        let to = Hex::new(-4, 3);
+        drag(&mut w, slot, to);
+        let moved = w.sim.glyphs[0];
+        assert_eq!(moved.slots().nth(2), Some(to));
+        assert_eq!(moved.at, to.add(bonder.at.sub(slot)));
+        assert_eq!(w.focus, Some(Focus::Glyph(0)));
+    }
+
+    #[test]
+    fn a_drag_from_an_empty_cell_moves_nothing() {
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: ORIGIN,
+            dir: 0,
+        };
+        let arm = Arm::new(Hex::new(4, 0), 0, vec![]);
+        let mut w = lone(vec![bonder], vec![arm.clone()]);
+        drag(&mut w, Hex::new(0, 3), Hex::new(-4, 3));
+        assert_eq!(w.sim.glyphs, vec![bonder]);
+        assert_eq!(w.sim.arms, vec![arm]);
+        assert!(w.held.is_none() && w.focus.is_none());
+    }
+
+    #[test]
+    fn an_arm_is_grabbed_by_its_hand_cell_and_that_cell_lands_under_the_cursor() {
+        let arm = Arm::new(Hex::new(2, -1), 3, vec![]);
+        let mut w = lone(vec![], vec![arm.clone()]);
+        let to = Hex::new(0, 5);
+        drag(&mut w, arm.hand(), to);
+        assert_eq!(w.sim.arms[0].hand(), to);
+        assert_eq!(w.sim.arms[0].pivot, to.add(arm.pivot.sub(arm.hand())));
+    }
+
+    #[test]
+    fn stacked_glyphs_resolve_to_the_first_listed() {
+        let source = Glyph {
+            kind: GlyphKind::Source,
+            at: Hex::new(1, 0),
+            dir: 0,
+        };
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: ORIGIN,
+            dir: 0,
+        };
+        assert!(bonder.slots().any(|s| s == source.at));
+        assert_eq!(
+            lone(vec![source, bonder], vec![]).hit(source.at),
+            Some(Focus::Glyph(0))
+        );
+        assert_eq!(
+            lone(vec![bonder, source], vec![]).hit(source.at),
+            Some(Focus::Glyph(0))
+        );
     }
 }

@@ -115,6 +115,10 @@ impl Arm {
     pub fn hand(&self) -> Hex {
         self.pivot.add(DIRS[self.dir])
     }
+
+    pub fn cells(&self) -> [Hex; 2] {
+        [self.pivot, self.hand()]
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
