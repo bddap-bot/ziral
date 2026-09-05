@@ -684,9 +684,11 @@ mod tests {
                 kind: BondKind::Single
             }]
         );
+        sim.bonds[0].kind = BondKind::Double;
         sim.step();
         assert_eq!(sim.atoms.iter().flatten().count(), 2);
         assert_eq!(sim.bonds.len(), 1);
+        assert_eq!(sim.bonds[0].kind, BondKind::Double);
     }
 
     #[test]
@@ -738,7 +740,7 @@ mod tests {
     }
 
     #[test]
-    fn machines_never_collide_so_a_bonder_lies_across_a_second_bond_and_both_fire_in_one_tick() {
+    fn machines_never_collide_so_a_bonder_laid_across_a_second_bond_feeds_it() {
         let bonder = Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(2, -1),
