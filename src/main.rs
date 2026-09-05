@@ -3,10 +3,11 @@ mod sim;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
+use sim::{Arm, Bond, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
 
 const HEX: f32 = 20.0;
-const TICK_HZ: f64 = 6.0;
+const TICK_MS: f32 = 400.0;
+const MOTION: f32 = 1.0;
 const MICRO_SCALE: f32 = 0.5;
 const MAX_GRID_CELLS: f32 = 6000.0;
 const STRIP_ROWS: usize = 8;
@@ -74,6 +75,10 @@ struct Held {
 #[derive(Resource)]
 struct World {
     sim: Sim,
+    prev: Sim,
+    since: f32,
+    period: f32,
+    motion: f32,
     running: bool,
     focus: Option<Focus>,
     held: Option<Held>,
@@ -83,14 +88,29 @@ struct World {
 
 impl World {
     fn new() -> Self {
+        let sim = sim::preloaded();
         World {
-            sim: sim::preloaded(),
+            prev: sim.clone(),
+            sim,
+            since: 0.0,
+            period: TICK_MS / 1000.0,
+            motion: MOTION,
             running: true,
             focus: None,
             held: None,
             press: None,
             pointer: None,
         }
+    }
+
+    fn step(&mut self) {
+        self.prev = self.sim.clone();
+        self.sim.step();
+    }
+
+    fn phase(&self) -> f32 {
+        let span = self.period * self.motion;
+        if span > 0.0 { self.since / span } else { 1.0 }
     }
 
     fn focus_arm(&mut self, arm: usize) {
@@ -250,11 +270,9 @@ impl Viewport {
 fn main() {
     let mut app = App::new();
     app.insert_resource(World::new())
-        .insert_resource(Time::<Fixed>::from_hz(TICK_HZ))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.08)))
         .add_systems(Startup, spawn_ui)
-        .add_systems(FixedUpdate, run_ticks)
-        .add_systems(Update, (view, edit, strip, draw, text).chain());
+        .add_systems(Update, (run_ticks, view, edit, strip, draw, text).chain());
     #[cfg(not(target_arch = "wasm32"))]
     if shot::configure(&mut app) {
         app.run();
@@ -361,9 +379,11 @@ fn spawn_ui(mut commands: Commands) {
         });
 }
 
-fn run_ticks(mut world: ResMut<World>) {
-    if world.running {
-        world.sim.step();
+fn run_ticks(mut world: ResMut<World>, time: Res<Time>) {
+    world.since += time.delta_secs();
+    if world.running && world.since >= world.period {
+        world.since -= world.period;
+        world.step();
     }
 }
 
@@ -413,7 +433,8 @@ fn edit(
     }
     if keys.just_pressed(KeyCode::Period) {
         world.running = false;
-        world.sim.step();
+        world.since = 0.0;
+        world.step();
     }
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
@@ -600,11 +621,7 @@ fn strip(
 
 fn draw_machine(gizmos: &mut Gizmos, item: Item, at: Hex, dir: usize, color: Color) {
     match item {
-        Item::Arm => {
-            let pivot = px(at);
-            gizmos.circle_2d(pivot, HEX * 0.25, color);
-            gizmos.line_2d(pivot, px(at.add(DIRS[dir % 6])), color);
-        }
+        Item::Arm => draw_arm(gizmos, px(at), px(at.add(DIRS[dir % 6])), color),
         Item::Glyph(kind) => {
             let g = Glyph { kind, at, dir };
             let slots: Vec<Vec2> = g.slots().map(px).collect();
@@ -632,6 +649,93 @@ fn draw_machine(gizmos: &mut Gizmos, item: Item, at: Hex, dir: usize, color: Col
                 }
             }
         }
+    }
+}
+
+fn draw_arm(gizmos: &mut Gizmos, pivot: Vec2, hand: Vec2, color: Color) {
+    gizmos.circle_2d(pivot, HEX * 0.25, color);
+    gizmos.line_2d(pivot, hand, color);
+}
+
+const RING_CLOSED: f32 = 0.5;
+const RING_OPEN: f32 = 0.9;
+
+struct ArmPose {
+    pivot: Vec2,
+    hand: Vec2,
+    ring: Option<f32>,
+    stall: Option<Stall>,
+}
+
+struct Frame<'a> {
+    atoms: Vec<Option<Vec2>>,
+    bonds: &'a [Bond],
+    torn: &'a [(Hex, Hex, BondKind)],
+    arms: Vec<ArmPose>,
+}
+
+fn reach(arm: &Arm) -> Vec2 {
+    px(arm.hand()) - px(arm.pivot)
+}
+
+fn turn_between(from: &Arm, to: &Arm) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    (reach(to).to_angle() - reach(from).to_angle() + PI).rem_euclid(TAU) - PI
+}
+
+impl Frame<'_> {
+    fn settled(s: &Sim) -> Frame<'_> {
+        Frame {
+            atoms: s.atoms.iter().map(|a| a.map(|a| px(a.pos))).collect(),
+            bonds: &s.bonds,
+            torn: &s.torn,
+            arms: s
+                .arms
+                .iter()
+                .map(|a| ArmPose {
+                    pivot: px(a.pivot),
+                    hand: px(a.hand()),
+                    ring: a.holding.then_some(RING_CLOSED),
+                    stall: a.stall,
+                })
+                .collect(),
+        }
+    }
+
+    fn between<'a>(prev: &'a Sim, cur: &'a Sim, t: f32) -> Frame<'a> {
+        let same_shape = prev.arms.len() == cur.arms.len()
+            && prev
+                .arms
+                .iter()
+                .zip(&cur.arms)
+                .all(|(a, b)| a.pivot == b.pivot);
+        if t >= 1.0 || !same_shape {
+            return Frame::settled(cur);
+        }
+        let e = t * t * (3.0 - 2.0 * t);
+        let mut frame = Frame::settled(prev);
+        for (i, (a, b)) in prev.arms.iter().zip(&cur.arms).enumerate() {
+            let pivot = frame.arms[i].pivot;
+            let turn = turn_between(a, b) * e;
+            let sweep = |v: Vec2| pivot + Vec2::from_angle(turn).rotate(v - pivot);
+            let pose = &mut frame.arms[i];
+            pose.hand = sweep(pose.hand);
+            pose.ring = match (a.holding, b.holding) {
+                (false, false) => None,
+                (true, true) => Some(RING_CLOSED),
+                (false, true) => Some(RING_OPEN + (RING_CLOSED - RING_OPEN) * e),
+                (true, false) => Some(RING_CLOSED + (RING_OPEN - RING_CLOSED) * e),
+            };
+            if turn != 0.0
+                && a.holding
+                && let Some(id) = prev.atom_at(a.hand())
+            {
+                for id in prev.component(id) {
+                    frame.atoms[id] = frame.atoms[id].map(sweep);
+                }
+            }
+        }
+        frame
     }
 }
 
@@ -683,34 +787,35 @@ fn draw(
         };
         draw_machine(&mut gizmos, Item::Glyph(g.kind), g.at, g.dir, color);
     }
-    for b in &s.bonds {
-        let (Some(a), Some(c)) = (s.atoms[b.a], s.atoms[b.b]) else {
+    let f = Frame::between(&world.prev, s, world.phase());
+    for b in f.bonds {
+        let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
             continue;
         };
-        draw_bond(&mut gizmos, px(a.pos), px(c.pos), b.kind, atom);
+        draw_bond(&mut gizmos, a, c, b.kind, atom);
     }
-    for (kept, lost, kind) in &s.torn {
+    for (kept, lost, kind) in f.torn {
         let (a, b) = (px(*kept), px(*lost));
         draw_bond(&mut gizmos, a, a.lerp(b, 0.5), *kind, torn);
     }
-    for (_, a) in s.live_atoms() {
-        gizmos.circle_2d(px(a.pos), HEX * 0.4, atom);
+    for a in f.atoms.iter().flatten() {
+        gizmos.circle_2d(*a, HEX * 0.4, atom);
     }
-    for (i, arm) in s.arms.iter().enumerate() {
+    for (i, arm) in f.arms.iter().enumerate() {
         let color = if world.focus.and_then(Focus::arm) == Some(i) {
             picked
         } else {
             arm_color
         };
-        draw_machine(&mut gizmos, Item::Arm, arm.pivot, arm.dir, color);
-        if arm.holding {
-            gizmos.circle_2d(px(arm.hand()), HEX * 0.5, color);
+        draw_arm(&mut gizmos, arm.pivot, arm.hand, color);
+        if let Some(ring) = arm.ring {
+            gizmos.circle_2d(arm.hand, HEX * ring, color);
         }
         if arm.stall.is_some() {
-            gizmos.circle_2d(px(arm.pivot), HEX * 0.5, picked);
+            gizmos.circle_2d(arm.pivot, HEX * 0.5, picked);
         }
         if let Some(Stall::Hand(j)) = arm.stall {
-            gizmos.circle_2d(px(s.arms[j].hand()), HEX * 0.65, picked);
+            gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, picked);
         }
     }
     if let (Some(held), Some(p)) = (world.held, world.pointer) {
@@ -762,16 +867,30 @@ mod shot {
     use bevy::input::keyboard::{Key, KeyboardInput, NativeKey};
     use bevy::render::render_resource::{TextureFormat, TextureUsages};
     use bevy::render::view::window::screenshot::{Screenshot, save_to_disk};
+    use bevy::time::TimeUpdateStrategy;
     use bevy::ui::IsDefaultUiCamera;
-    use sim::{Atom, AtomKind, Bond};
+    use sim::{Atom, AtomKind};
     use std::path::PathBuf;
     use std::time::Duration;
 
     const WIDE_SCALE: f32 = 1.5;
 
+    const WARM: u32 = 12;
+    const FRAME: Duration = Duration::from_nanos(16_666_667);
+
+    enum Out {
+        Png(PathBuf),
+        Frames {
+            dir: PathBuf,
+            count: u32,
+            period: f32,
+            motion: f32,
+        },
+    }
+
     #[derive(Resource)]
     struct Shot {
-        path: PathBuf,
+        out: Out,
         wide: bool,
         keys: Vec<KeyCode>,
         frames: u32,
@@ -1022,16 +1141,34 @@ mod shot {
     }
 
     pub fn configure(app: &mut App) -> bool {
+        const USAGE: &str = "usage: ziral --shot <png> <scene> <ticks> | ziral --frames <dir> <scene> <ticks> <play> <tick_ms> <motion>";
         let args: Vec<String> = std::env::args().collect();
-        let [_, flag, path, view, ticks] = args.as_slice() else {
-            return false;
+        let num = |s: &String| s.parse::<f32>().expect(USAGE);
+        let (out, view, ticks) = match args.as_slice() {
+            [_] => return false,
+            [_, flag, path, view, ticks] if flag == "--shot" => {
+                (Out::Png(PathBuf::from(path)), view, ticks)
+            }
+            [_, flag, dir, view, ticks, play, tick_ms, motion] if flag == "--frames" => {
+                app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
+                let out = Out::Frames {
+                    dir: PathBuf::from(dir),
+                    count: (num(play) * num(tick_ms) / 1000.0 / FRAME.as_secs_f32()).round() as u32,
+                    period: num(tick_ms) / 1000.0,
+                    motion: num(motion),
+                };
+                (out, view, ticks)
+            }
+            _ => panic!("{USAGE}"),
         };
-        assert_eq!(flag, "--shot", "usage: ziral --shot <png> <scene> <ticks>");
-        let ticks: u64 = ticks.parse().expect("ticks must be an integer");
-        let (world, wide, keys) = scene(view, ticks);
+        let (mut world, wide, keys) = scene(view, ticks.parse().expect(USAGE));
+        if let Out::Frames { period, motion, .. } = out {
+            world.period = period;
+            world.motion = motion;
+        }
         app.insert_resource(world)
             .insert_resource(Shot {
-                path: PathBuf::from(path),
+                out,
                 wide,
                 keys,
                 frames: 0,
@@ -1050,7 +1187,7 @@ mod shot {
             )
             .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
             .add_systems(Startup, spawn_offscreen_camera)
-            .add_systems(Update, capture);
+            .add_systems(Update, capture.before(run_ticks));
         true
     }
 
@@ -1095,6 +1232,7 @@ mod shot {
     fn capture(
         mut commands: Commands,
         mut shot: ResMut<Shot>,
+        mut world: ResMut<World>,
         target: Res<Target>,
         window: Single<Entity, With<PrimaryWindow>>,
         mut keyboard: MessageWriter<KeyboardInput>,
@@ -1108,13 +1246,104 @@ mod shot {
         if k >= 2 && k - 2 < shot.keys.len() {
             keyboard.write(key(shot.keys[k - 2], ButtonState::Pressed, *window));
         }
-        if shot.frames == 12 {
+        let mut save = |path: PathBuf| {
             commands
                 .spawn(Screenshot::image(target.0.clone()))
-                .observe(save_to_disk(shot.path.clone()));
+                .observe(save_to_disk(path));
+        };
+        let (shoot, last) = match &shot.out {
+            Out::Png(path) => {
+                if shot.frames == WARM {
+                    save(path.clone());
+                }
+                (None, WARM + 28)
+            }
+            Out::Frames { dir, count, .. } => {
+                if shot.frames == WARM {
+                    world.running = true;
+                    world.since = 0.0;
+                }
+                let n = shot.frames.wrapping_sub(WARM);
+                (
+                    (n < *count).then(|| dir.join(format!("{n:05}.png"))),
+                    WARM + count + 28,
+                )
+            }
+        };
+        if let Some(path) = shoot {
+            save(path);
         }
-        if shot.frames == 40 {
+        if shot.frames == last {
             exit.write(AppExit::Success);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sim::{Atom, AtomKind};
+
+    fn rotating_arm_with_atom() -> (Sim, Sim) {
+        let mut prev = Sim::empty();
+        prev.arms
+            .push(Arm::new(Hex::new(0, 0), 5, vec![Instr::RotCw]));
+        prev.arms[0].holding = true;
+        prev.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: prev.arms[0].hand(),
+        });
+        let mut cur = prev.clone();
+        cur.step();
+        (prev, cur)
+    }
+
+    #[test]
+    fn halfway_through_a_rotate_the_hand_and_its_atom_sit_mid_arc() {
+        let (prev, cur) = rotating_arm_with_atom();
+        let f = Frame::between(&prev, &cur, 0.5);
+        let (start, end) = (reach(&prev.arms[0]), reach(&cur.arms[0]));
+        let expected = Vec2::from_angle(start.angle_to(end) / 2.0).rotate(start);
+        assert!((f.arms[0].hand - f.arms[0].pivot).abs_diff_eq(expected, 1e-3));
+        assert!(
+            f.atoms[0]
+                .unwrap()
+                .abs_diff_eq(f.arms[0].pivot + expected, 1e-3)
+        );
+        assert_eq!(f.arms[0].ring, Some(RING_CLOSED));
+    }
+
+    #[test]
+    fn what_a_glyph_makes_appears_only_when_the_transition_ends() {
+        let mut prev = Sim::empty();
+        prev.glyphs.push(Glyph {
+            kind: GlyphKind::Source,
+            at: Hex::new(0, 0),
+            dir: 0,
+        });
+        let mut cur = prev.clone();
+        cur.step();
+        assert!(Frame::between(&prev, &cur, 0.99).atoms.is_empty());
+        assert_eq!(
+            Frame::between(&prev, &cur, 1.0).atoms,
+            vec![Some(px(Hex::new(0, 0)))]
+        );
+    }
+
+    #[test]
+    fn a_grab_closes_the_ring_over_the_transition() {
+        let mut prev = Sim::empty();
+        prev.arms
+            .push(Arm::new(Hex::new(0, 0), 0, vec![Instr::Grab]));
+        prev.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(1, 0),
+        });
+        let mut cur = prev.clone();
+        cur.step();
+        let ring = |t| Frame::between(&prev, &cur, t).arms[0].ring.unwrap();
+        assert_eq!(ring(0.0), RING_OPEN);
+        assert!(ring(0.5) < RING_OPEN && ring(0.5) > RING_CLOSED);
+        assert_eq!(ring(1.0), RING_CLOSED);
     }
 }

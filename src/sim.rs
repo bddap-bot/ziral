@@ -238,13 +238,6 @@ impl Sim {
             .position(|a| a.is_some_and(|a| a.pos == at))
     }
 
-    pub fn live_atoms(&self) -> impl Iterator<Item = (usize, Atom)> + '_ {
-        self.atoms
-            .iter()
-            .enumerate()
-            .filter_map(|(i, a)| a.map(|a| (i, a)))
-    }
-
     pub fn bond_between(&self, a: usize, b: usize) -> Option<usize> {
         self.bonds
             .iter()
@@ -636,7 +629,7 @@ mod tests {
         );
         put(&mut sim, 1, 0);
         sim.step();
-        assert_eq!(sim.live_atoms().count(), 3);
+        assert_eq!(sim.atoms.iter().flatten().count(), 3);
         assert_eq!(sim.bonds.len(), 1);
     }
 
@@ -659,11 +652,11 @@ mod tests {
         put(&mut sim, 1, -1);
         sim.step();
         assert_eq!(sim.bonds[0].kind, BondKind::Single);
-        assert_eq!(sim.live_atoms().count(), 2);
+        assert_eq!(sim.atoms.iter().flatten().count(), 2);
         put(&mut sim, 1, 0);
         sim.step();
         assert_eq!(sim.bonds[0].kind, BondKind::Double);
-        assert_eq!(sim.live_atoms().count(), 2);
+        assert_eq!(sim.atoms.iter().flatten().count(), 2);
     }
 
     #[test]
@@ -695,7 +688,7 @@ mod tests {
         assert_eq!(sim.delivered, 1);
         assert!(sim.arms[0].holding);
         assert_eq!(sim.held(0), None);
-        assert!(sim.live_atoms().next().is_none());
+        assert!(sim.atoms.iter().flatten().next().is_none());
         assert!(sim.bonds.is_empty());
         assert!(sim.torn.is_empty());
     }

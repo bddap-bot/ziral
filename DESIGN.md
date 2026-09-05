@@ -215,3 +215,9 @@ Questions for round 8:
 Q1: A closed hand catches an atom another arm carries through its cell, and that arm stalls until one of them drops; a closed hand rotated onto an atom catches it too. Does an atom carried through, or swept onto, count as landing under the hand, or should a closed hand catch only what is set down under it?
 
 Q2: A grab over nothing stalls until an atom arrives, then closes on it, so the tape runs late by as many ticks as it waited. Since a closed hand now catches, should a grab over nothing just close the hand and let the tape run on, or is a grab with nothing to grab the mistake the stall says it is?
+
+### Toy 1 shows motion between ticks
+
+The sim is still one discrete tick after another; only the drawing changed. Between ticks the toy draws the way from the last pose to the next: an arm's rotate sweeps its 60° the way the instruction turns, the atoms in its hand ride the sweep, a grab shrinks the ring shut and a drop lets it grow and vanish, and what a glyph made or ate shows at the end of the sweep, so nothing changes hands mid-arc. One ease, smoothstep.
+
+One knob: the tick period. An instruction's duration is its animation, as in Opus Magnum. Default 400 ms, the middle of the comparison set; the old 167 ms was too fast to read a sweep. The videos for picking it: 0 (hard cut), 120, 250, 400, 650, 1000 ms, and 400 ms with the motion in the first 60% and a hold for the last 40%.
