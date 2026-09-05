@@ -985,7 +985,8 @@ fn board(
     let col = HEX * 3f32.sqrt();
     let row = HEX * 1.5;
     let (lo, hi) = (v.cam - v.half(), v.cam + v.half());
-    let tiling = if (v.size.x / col) * (v.size.y / row) < MAX_GRID_CELLS {
+    let span = hi - lo;
+    let tiling = if (span.x / col) * (span.y / row) < MAX_GRID_CELLS {
         Tiling::Cells {
             r0: (lo.y / row).floor() as i32 - 1,
             r1: (hi.y / row).ceil() as i32 + 1,
