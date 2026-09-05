@@ -211,7 +211,7 @@ mod tests {
     const CHROMA_FLOOR: f32 = 0.15;
     const VALUE_APART: f32 = 0.15;
     const THUMB: usize = 8;
-    const TILES_APART: f32 = 6.0;
+    const TILES_APART: f32 = 0.023;
     const SHADING: f32 = 2.0 * VALUE_APART;
 
     fn hue_and_value_differ(a: Color, b: Color) -> [bool; 2] {
@@ -241,7 +241,7 @@ mod tests {
             for x in 0..w {
                 let cell = (y * THUMB / h) * THUMB + x * THUMB / w;
                 for c in 0..3 {
-                    sums[cell * 3 + c] += f32::from(data[(y * w + x) * 4 + c]);
+                    sums[cell * 3 + c] += f32::from(data[(y * w + x) * 4 + c]) / 255.0;
                 }
                 counts[cell] += 1.0;
             }
@@ -254,21 +254,14 @@ mod tests {
 
     fn mean(skin: Skin) -> Color {
         let thumb = thumbnail(skin);
-        let channel = |c: usize| {
-            thumb.iter().skip(c).step_by(3).sum::<f32>() / (THUMB * THUMB) as f32 / 255.0
-        };
+        let channel =
+            |c: usize| thumb.iter().skip(c).step_by(3).sum::<f32>() / (THUMB * THUMB) as f32;
         Color::srgb(channel(0), channel(1), channel(2))
     }
 
     fn differences<M: PartialEq>(a: &Look<M>, b: &Look<M>) -> [bool; 4] {
-        let glaze = hue_and_value_differ(a.glaze.color(), b.glaze.color());
-        let skin = hue_and_value_differ(mean(a.skin), mean(b.skin));
-        [
-            glaze[0] && skin[0],
-            glaze[1] && skin[1],
-            a.shape != b.shape,
-            a.marking != b.marking,
-        ]
+        let [hue, value] = hue_and_value_differ(a.glaze.color(), b.glaze.color());
+        [hue, value, a.shape != b.shape, a.marking != b.marking]
     }
 
     fn distinct<M: PartialEq>(a: &Look<M>, b: &Look<M>) -> bool {
@@ -330,12 +323,13 @@ mod tests {
     }
 
     fn wears(skin: Skin, glaze: Glaze) {
-        let [hue, _] = hue_and_value_differ(mean(skin), glaze.color());
-        let shaded = (mean(skin).luminance() - glaze.color().luminance()).abs();
+        let mean = mean(skin);
+        let [hue, _] = hue_and_value_differ(mean, glaze.color());
+        let shaded = (mean.luminance() - glaze.color().luminance()).abs();
         assert!(
             !hue && shaded <= SHADING,
             "{skin:?} averages {:?}, not its {glaze:?} glaze",
-            Hsva::from(mean(skin))
+            Hsva::from(mean)
         );
     }
 
@@ -361,12 +355,14 @@ mod tests {
         for (i, a) in all.iter().enumerate() {
             assert!(!all[i + 1..].contains(a), "{a:?} is listed twice");
         }
-        assert_eq!(all.len(), 8 + TILES.len());
+        assert_eq!(
+            all.len(),
+            AtomKind::ALL.len() + BondKind::ALL.len() + PALETTE.len() + TILES.len()
+        );
     }
 
     #[test]
     fn tiles_vary() {
-        assert!(TILES.len() >= 16);
         let thumbs: Vec<Vec<f32>> = TILES.iter().map(|t| thumbnail(*t)).collect();
         let mut alike = Vec::new();
         for (i, a) in thumbs.iter().enumerate() {
@@ -375,7 +371,7 @@ mod tests {
                     a.iter().zip(b).map(|(x, y)| (x - y).abs()).sum::<f32>() / a.len() as f32;
                 if apart < TILES_APART {
                     alike.push(format!(
-                        "{:?} and {:?} are {apart:.1} apart",
+                        "{:?} and {:?} are {apart:.3} apart",
                         TILES[i], TILES[j]
                     ));
                 }

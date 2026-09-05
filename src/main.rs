@@ -675,18 +675,14 @@ struct Kiln {
     ring: Handle<Mesh>,
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
-    worn: Handle<ColorMaterial>,
+    patina: Handle<ColorMaterial>,
     skins: Vec<(Skin, [Handle<ColorMaterial>; 2])>,
     highlight: Handle<ColorMaterial>,
 }
 
 impl Kiln {
     fn material(&self, glaze: Glaze) -> &Handle<ColorMaterial> {
-        let i = Glaze::ALL
-            .iter()
-            .position(|g| *g == glaze)
-            .expect("every glaze is in ALL");
-        &self.glaze[i]
+        &self.glaze[glaze as usize]
     }
 
     fn skin(&self, skin: Skin, faint: bool) -> &Handle<ColorMaterial> {
@@ -738,13 +734,15 @@ fn fire(skin: Skin) -> Image {
         let mut next = Vec::with_capacity(nw * nh * 4);
         for y in 0..nh {
             for x in 0..nw {
-                for c in 0..3 {
-                    let at = |dx: usize, dy: usize| {
-                        linear[usize::from(level[((2 * y + dy) * w + 2 * x + dx) * 4 + c])]
-                    };
-                    next.push(to_srgb((at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1)) / 4.0));
+                for c in 0..4 {
+                    let at = |dx: usize, dy: usize| level[((2 * y + dy) * w + 2 * x + dx) * 4 + c];
+                    let four = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
+                    next.push(if c == 3 {
+                        (four.iter().map(|a| u32::from(*a)).sum::<u32>() / 4) as u8
+                    } else {
+                        to_srgb(four.iter().map(|a| linear[usize::from(*a)]).sum::<f32>() / 4.0)
+                    });
                 }
-                next.push(255);
             }
         }
         start += w * h * 4;
@@ -791,7 +789,7 @@ fn fire_kiln(
         ring: meshes.add(Annulus::new(0.7, 1.0)),
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
-        worn: materials.add(Glaze::Brass.color().with_alpha(0.5)),
+        patina: materials.add(Glaze::Brass.color().with_alpha(0.5)),
         skins,
         highlight: materials.add(IVORY.with_alpha(0.7)),
     });
@@ -856,19 +854,14 @@ impl Painter<'_, '_, '_, '_, '_> {
         ));
     }
 
-    fn disc(&mut self, at: Vec2, r: f32, glaze: Glaze, z: f32) {
-        let kiln = self.kiln;
-        let material = kiln.material(glaze);
-        self.fill(&kiln.circle, material, at, 0.0, Vec2::splat(r), z);
-    }
-
-    fn surface(&mut self, mesh: &Handle<Mesh>, skin: Skin, at: Vec2, r: f32, z: f32) {
-        let material = self.kiln.skin(skin, false);
-        self.fill(mesh, material, at, 0.0, Vec2::splat(r), z);
-    }
-
-    fn ring(&mut self, mesh: &Handle<Mesh>, at: Vec2, r: f32, glaze: Glaze, z: f32) {
-        let material = self.kiln.material(glaze);
+    fn stamp(
+        &mut self,
+        mesh: &Handle<Mesh>,
+        material: &Handle<ColorMaterial>,
+        at: Vec2,
+        r: f32,
+        z: f32,
+    ) {
         self.fill(mesh, material, at, 0.0, Vec2::splat(r), z);
     }
 
@@ -891,20 +884,20 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.bar(&kiln.bar, kiln.material(glaze), a, b, 2.0, z);
     }
 
-    fn well(&mut self, at: Vec2, skin: Skin) {
-        let kiln = self.kiln;
-        self.surface(&kiln.hexagon, skin, at, HEX * 0.8, 0.1);
-    }
-
     fn bead(&mut self, at: Vec2, look: Look<AtomMark>) {
         let kiln = self.kiln;
-        self.surface(&kiln.circle, look.skin, at, HEX * 0.4, 0.4);
-        self.fill(&kiln.rim, &kiln.worn, at, 0.0, Vec2::splat(HEX * 0.4), 0.42);
+        self.stamp(
+            &kiln.circle,
+            kiln.skin(look.skin, false),
+            at,
+            HEX * 0.4,
+            0.4,
+        );
+        self.stamp(&kiln.rim, &kiln.patina, at, HEX * 0.4, 0.42);
         match look.marking {
             AtomMark::Highlight => {
                 let up_left = at + Vec2::new(-0.15, 0.15) * HEX;
-                let scale = Vec2::splat(HEX * 0.1);
-                self.fill(&kiln.circle, &kiln.highlight, up_left, 0.0, scale, 0.45);
+                self.stamp(&kiln.circle, &kiln.highlight, up_left, HEX * 0.1, 0.45);
             }
         }
     }
@@ -915,11 +908,11 @@ impl Painter<'_, '_, '_, '_, '_> {
             unworn(look)
         };
         let kiln = self.kiln;
+        let material = kiln.skin(look.skin, faint);
         let side = (c - a).perp().normalize_or_zero() * HEX * 0.16;
         let z = if faint { 0.12 } else { 0.2 };
         for k in 0..n {
             let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
-            let material = kiln.skin(look.skin, faint);
             self.bar(&kiln.bond, material, a + off, c + off, HEX * BOND_WIDTH, z);
         }
     }
@@ -935,8 +928,14 @@ impl Painter<'_, '_, '_, '_, '_> {
         let kiln = self.kiln;
         let material = kiln.skin(look.skin, false);
         self.bar(&kiln.link, material, pivot, hand, HEX * LINK_WIDTH, 0.28);
-        self.surface(&kiln.circle, look.skin, pivot, HEX * 0.3, 0.3);
-        self.disc(pivot, HEX * 0.1, Glaze::Clay, 0.31);
+        self.stamp(&kiln.circle, material, pivot, HEX * 0.3, 0.3);
+        self.stamp(
+            &kiln.circle,
+            kiln.material(Glaze::Clay),
+            pivot,
+            HEX * 0.1,
+            0.31,
+        );
         match look.marking {
             MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
@@ -954,14 +953,16 @@ impl Painter<'_, '_, '_, '_, '_> {
             (Item::Glyph(kind), _) => kind,
         };
         let kiln = self.kiln;
+        let surface = kiln.skin(look.skin, false);
+        let glaze = kiln.material(look.glaze);
         let slots: Vec<Vec2> = Glyph { kind, at, dir }.slots().map(px).collect();
         for s in &slots {
-            self.well(*s, look.skin);
+            self.stamp(&kiln.hexagon, surface, *s, HEX * 0.8, 0.1);
         }
         match look.marking {
             MachineMark::Dot => {
-                self.ring(&kiln.ring, slots[0], HEX * 0.6, look.glaze, 0.15);
-                self.disc(slots[0], HEX * 0.15, look.glaze, 0.15);
+                self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.6, 0.15);
+                self.stamp(&kiln.circle, glaze, slots[0], HEX * 0.15, 0.15);
             }
             MachineMark::Spokes(n) => {
                 let c = slots.iter().sum::<Vec2>() / slots.len() as f32;
@@ -974,12 +975,12 @@ impl Painter<'_, '_, '_, '_, '_> {
                         self.channel(c + off, *s + off, look.glaze, 0.13);
                     }
                 }
-                self.ring(&kiln.ring, slots[0], HEX * 0.2, look.glaze, 0.14);
+                self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.2, 0.14);
             }
             MachineMark::Cup => {
                 for s in &slots {
-                    self.surface(&kiln.circle, look.skin, *s, HEX * 0.5, 0.15);
-                    self.ring(&kiln.rim, *s, HEX * 0.5, Glaze::Brass, 0.16);
+                    self.stamp(&kiln.circle, surface, *s, HEX * 0.5, 0.15);
+                    self.stamp(&kiln.rim, kiln.material(Glaze::Brass), *s, HEX * 0.5, 0.16);
                 }
                 for (a, b, kind) in kind.rule().before {
                     if let Some(kind) = kind {
