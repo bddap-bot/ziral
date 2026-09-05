@@ -383,11 +383,9 @@ fn spawn_ui(mut commands: Commands) {
 }
 
 fn run_ticks(mut world: ResMut<World>, time: Res<Time>) {
-    world.since += time.delta_secs();
-    if !world.running {
-        world.since = world.since.min(world.period);
-    } else if world.since >= world.period {
-        world.since -= world.period;
+    world.since = (world.since + time.delta_secs()).min(world.period);
+    if world.running && world.since >= world.period {
+        world.since = 0.0;
         world.step();
     }
 }
@@ -877,7 +875,7 @@ mod shot {
     #[derive(Resource)]
     struct Shot {
         path: PathBuf,
-        count: u32,
+        clip: Option<u32>,
         wide: bool,
         keys: Vec<KeyCode>,
         frames: u32,
@@ -1129,8 +1127,7 @@ mod shot {
     }
 
     pub fn configure(app: &mut App) -> bool {
-        const USAGE: &str =
-            "usage: ziral --shot <png> <scene> <ticks> [<dir> <play> <tick_ms> <motion>]";
+        const USAGE: &str = "usage: ziral --shot <png> <scene> <ticks> | ziral --shot <dir> <scene> <ticks> <play> <tick_ms> <motion>";
         let args: Vec<String> = std::env::args().collect();
         let num = |s: &String| s.parse::<f32>().expect(USAGE);
         let (path, view, ticks, clip) = match args.as_slice() {
@@ -1145,17 +1142,16 @@ mod shot {
             _ => panic!("{USAGE}"),
         };
         let (mut world, wide, keys) = scene(view, ticks.parse().expect(USAGE));
-        let mut count = 1;
-        if let Some((play, tick_ms, motion)) = clip {
+        let clip = clip.map(|(play, tick_ms, motion)| {
             app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
             world.period = tick_ms / 1000.0;
             world.motion = motion;
-            count = (play * world.period / FRAME.as_secs_f32()).round() as u32;
-        }
+            (play * world.period / FRAME.as_secs_f32()).round() as u32
+        });
         app.insert_resource(world)
             .insert_resource(Shot {
                 path: PathBuf::from(path),
-                count,
+                clip,
                 wide,
                 keys,
                 frames: 0,
@@ -1233,23 +1229,22 @@ mod shot {
         if k >= 2 && k - 2 < shot.keys.len() {
             keyboard.write(key(shot.keys[k - 2], ButtonState::Pressed, *window));
         }
-        let clip = shot.count > 1;
-        if shot.frames == WARM && clip {
+        if shot.frames == WARM && shot.clip.is_some() {
             world.running = true;
             world.since = 0.0;
         }
         let n = shot.frames.wrapping_sub(WARM);
-        if n < shot.count {
-            let path = if clip {
-                shot.path.join(format!("{n:05}.png"))
-            } else {
-                shot.path.clone()
+        let count = shot.clip.unwrap_or(1);
+        if n < count {
+            let path = match shot.clip {
+                Some(_) => shot.path.join(format!("{n:05}.png")),
+                None => shot.path.clone(),
             };
             commands
                 .spawn(Screenshot::image(target.0.clone()))
                 .observe(save_to_disk(path));
         }
-        if n == shot.count + 28 {
+        if n == count + 28 {
             exit.write(AppExit::Success);
         }
     }
