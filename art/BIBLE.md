@@ -66,11 +66,11 @@ Single and double differ in hue (26° vs 267°) and shape.
 |---|---|---|---|
 | arm | dark brass, terracotta hand | radial: pivot disc and one link | horseshoe hand |
 | source | blue-green | one-cell well | a ring and a centre dot |
-| bonder | terracotta | three-cell well, triangle | one spoke per slot; ring on the sacrificial slot |
+| bonder | terracotta | two-cell well, bar | one spoke per slot; no ring |
 | second bond | plum | three-cell well, triangle | two spokes per slot; ring on the sacrificial slot |
 | output | ivory | two-cell well | a cup with a brass rim in each cell; the demanded bond stencilled between |
 
-Every pair differs in at least two ways. The near cases: arm vs bonder share a hue family and value (brass 26° / 0.09 against terracotta 10° / 0.19) and are told apart by shape and marking; bonder vs second bond share a shape and are told apart by hue and marking.
+Every pair differs in at least two ways. The near cases: arm vs bonder share a hue family and value (brass 26° / 0.09 against terracotta 10° / 0.19) and are told apart by shape and marking; bonder vs second bond are told apart by hue, shape, and marking; bonder vs output share a footprint and are told apart by value and marking.
 
 ## 4. Reference
 

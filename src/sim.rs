@@ -169,7 +169,8 @@ const TRIANGLE: [Slot; 3] = [
     base(DIRS[0]),
     base(DIRS[1]),
 ];
-const PAIR: [Slot; 2] = [
+const PAIR: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
+const PRODUCT: [Slot; 2] = [
     Slot {
         consumed: true,
         ..base(ORIGIN)
@@ -191,9 +192,9 @@ impl GlyphKind {
                 whole: false,
             },
             GlyphKind::Bonder => Rule {
-                slots: &TRIANGLE,
-                before: &[(1, 2, None)],
-                after: &[(1, 2, BondKind::Single)],
+                slots: &PAIR,
+                before: &[(0, 1, None)],
+                after: &[(0, 1, BondKind::Single)],
                 whole: false,
             },
             GlyphKind::SecondBond => Rule {
@@ -203,7 +204,7 @@ impl GlyphKind {
                 whole: false,
             },
             GlyphKind::Output => Rule {
-                slots: &PAIR,
+                slots: &PRODUCT,
                 before: &[(0, 1, Some(BondKind::Double))],
                 after: &[],
                 whole: true,
@@ -448,7 +449,7 @@ impl Sim {
         Ok(())
     }
 
-    fn place(&mut self, other: &Sim, at: Hex) {
+    pub fn place(&mut self, other: &Sim, at: Hex) {
         self.glyphs.extend(other.glyphs.iter().map(|g| Glyph {
             at: g.at.add(at),
             ..*g
@@ -469,15 +470,13 @@ pub const PLACEMENTS: [Hex; 6] = [
     Hex::new(8, 9),
 ];
 
-fn layout() -> Sim {
+pub fn layout() -> Sim {
     use Instr::*;
     let supply = [Grab, RotCw, RotCw, Drop, RotCcw, RotCcw];
-    let mut build: Vec<Instr> = supply.repeat(3);
+    let mut build: Vec<Instr> = supply.repeat(2);
     build.extend([Grab, RotCw, RotCw, RotCw, RotCw, Drop, RotCw, RotCw]);
     let mut ferry = vec![Wait; 4];
-    ferry.extend([
-        Grab, RotCw, Drop, RotCcw, Wait, Wait, Grab, RotCcw, Drop, RotCw,
-    ]);
+    ferry.extend([Grab, RotCcw, Drop, RotCw]);
     ferry.resize(build.len(), Wait);
     let mut sim = Sim::empty();
     sim.glyphs.push(Glyph {
@@ -492,8 +491,8 @@ fn layout() -> Sim {
     });
     sim.glyphs.push(Glyph {
         kind: GlyphKind::Bonder,
-        at: Hex::new(1, -2),
-        dir: 4,
+        at: Hex::new(0, -1),
+        dir: 0,
     });
     sim.glyphs.push(Glyph {
         kind: GlyphKind::SecondBond,
@@ -624,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn a_glyph_turns_with_its_dir_and_a_glyph_reads_its_own_slots() {
+    fn a_glyph_turns_with_its_dir_and_the_bonder_joins_two_loose_atoms_and_eats_nothing() {
         let bonder = Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
@@ -632,14 +631,13 @@ mod tests {
         };
         assert_eq!(
             bonder.slots().collect::<Vec<_>>(),
-            [Hex::new(1, 0), Hex::new(2, -1), Hex::new(1, -1)]
+            [Hex::new(1, 0), Hex::new(2, -1)]
         );
         let mut sim = bench(vec![Instr::Wait], vec![bonder]);
-        let first = put(&mut sim, 1, 0);
-        let a = put(&mut sim, 2, -1);
-        let b = put(&mut sim, 1, -1);
+        let a = put(&mut sim, 1, 0);
+        let b = put(&mut sim, 2, -1);
         sim.step();
-        assert_eq!(sim.atoms[first], None);
+        assert_eq!(sim.atoms.iter().flatten().count(), 2);
         assert_eq!(
             sim.bonds,
             vec![Bond {
@@ -648,34 +646,81 @@ mod tests {
                 kind: BondKind::Single
             }]
         );
-        put(&mut sim, 1, 0);
         sim.step();
-        assert_eq!(sim.atoms.iter().flatten().count(), 3);
+        assert_eq!(sim.atoms.iter().flatten().count(), 2);
         assert_eq!(sim.bonds.len(), 1);
     }
 
     #[test]
-    fn machines_never_collide_so_glyphs_stack_on_one_hex() {
-        let bonder = Glyph {
-            kind: GlyphKind::Bonder,
+    fn the_second_bond_fires_only_with_its_roles_in_place() {
+        let second = Glyph {
+            kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
         };
+        assert_eq!(
+            second.slots().collect::<Vec<_>>(),
+            [Hex::new(1, 0), Hex::new(2, -1), Hex::new(1, -1)]
+        );
+        let single = |sim: &Sim| {
+            sim.bonds
+                .iter()
+                .filter(|b| b.kind == BondKind::Single)
+                .count()
+        };
+        let mut sim = bench(vec![Instr::Wait], vec![second]);
+        let sacrificial = put(&mut sim, 1, 0);
+        let a = put(&mut sim, 2, -1);
+        let b = put(&mut sim, 1, -1);
+        sim.step();
+        assert_eq!(sim.atoms.iter().flatten().count(), 3);
+        assert!(sim.bonds.is_empty());
+        bond(&mut sim, sacrificial, a, BondKind::Single);
+        sim.step();
+        assert_eq!(sim.atoms.iter().flatten().count(), 3);
+        assert_eq!(single(&sim), 1);
+        bond(&mut sim, b, sacrificial, BondKind::Single);
+        sim.step();
+        assert_eq!(sim.atoms.iter().flatten().count(), 3);
+        assert_eq!(single(&sim), 2);
+        bond(&mut sim, b, a, BondKind::Single);
+        sim.step();
+        assert_eq!(sim.atoms[sacrificial], None);
+        assert_eq!(
+            sim.bonds,
+            vec![Bond {
+                a: b,
+                b: a,
+                kind: BondKind::Double
+            }]
+        );
+        assert_eq!(sim.torn.len(), 2);
+        sim.step();
+        assert_eq!(sim.bonds.len(), 1);
+    }
+
+    #[test]
+    fn machines_never_collide_so_a_bonder_lies_across_a_second_bond_and_both_fire_in_one_tick() {
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(2, -1),
+            dir: 3,
+        };
         let second = Glyph {
             kind: GlyphKind::SecondBond,
-            ..bonder
+            at: Hex::new(1, 0),
+            dir: 1,
         };
+        assert_eq!(
+            bonder.slots().collect::<Vec<_>>(),
+            second.slots().skip(1).collect::<Vec<_>>()
+        );
         let mut sim = bench(vec![Instr::Wait], vec![bonder, second]);
-        sim.arms
-            .push(Arm::new(Hex::new(0, 0), 0, vec![Instr::Wait]));
         put(&mut sim, 1, 0);
         put(&mut sim, 2, -1);
         put(&mut sim, 1, -1);
         sim.step();
-        assert_eq!(sim.bonds[0].kind, BondKind::Single);
-        assert_eq!(sim.atoms.iter().flatten().count(), 2);
-        put(&mut sim, 1, 0);
-        sim.step();
+        assert_eq!(sim.bonds.len(), 1);
         assert_eq!(sim.bonds[0].kind, BondKind::Double);
         assert_eq!(sim.atoms.iter().flatten().count(), 2);
     }
@@ -717,15 +762,16 @@ mod tests {
     #[test]
     fn a_glyph_eats_a_held_atom_and_the_hand_stays_closed_on_whatever_comes_next() {
         use Instr::*;
-        let bonder = Glyph {
-            kind: GlyphKind::Bonder,
+        let second = Glyph {
+            kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Grab, Wait], vec![bonder]);
+        let mut sim = bench(vec![Grab, Wait], vec![second]);
         let sacrificial = put(&mut sim, 1, 0);
-        put(&mut sim, 2, -1);
-        put(&mut sim, 1, -1);
+        let a = put(&mut sim, 2, -1);
+        let b = put(&mut sim, 1, -1);
+        bond(&mut sim, a, b, BondKind::Single);
         sim.step();
         assert!(sim.arms[0].holding);
         assert_eq!(sim.held(0), None);
@@ -737,23 +783,24 @@ mod tests {
     }
 
     #[test]
-    fn a_bonder_fires_on_atoms_an_arm_holds_and_the_arm_keeps_the_compound() {
+    fn a_second_bond_fires_on_atoms_an_arm_holds_and_the_arm_keeps_the_compound() {
         use Instr::*;
-        let bonder = Glyph {
-            kind: GlyphKind::Bonder,
+        let second = Glyph {
+            kind: GlyphKind::SecondBond,
             at: Hex::new(1, -1),
             dir: 0,
         };
         assert_eq!(
-            bonder.slots().collect::<Vec<_>>(),
+            second.slots().collect::<Vec<_>>(),
             [Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)]
         );
-        let mut sim = bench(vec![Grab, RotCw], vec![bonder]);
+        let mut sim = bench(vec![Grab, RotCw], vec![second]);
         sim.arms[0].pivot = Hex::new(1, 0);
         sim.arms[0].dir = 1;
         let sacrificial = put(&mut sim, 1, -1);
         let held = put(&mut sim, 2, -1);
         let other = put(&mut sim, 2, -2);
+        bond(&mut sim, held, other, BondKind::Single);
         sim.step();
         assert_eq!(sim.held(0), Some(held));
         assert_eq!(sim.atoms[sacrificial], None);
@@ -762,7 +809,7 @@ mod tests {
             vec![Bond {
                 a: held,
                 b: other,
-                kind: BondKind::Single
+                kind: BondKind::Double
             }]
         );
         sim.step();
@@ -771,14 +818,14 @@ mod tests {
     }
 
     #[test]
-    fn a_bonder_tears_its_sacrificial_atom_out_of_a_held_compound() {
+    fn a_second_bond_tears_its_sacrificial_atom_out_of_a_held_compound() {
         use Instr::*;
-        let bonder = Glyph {
-            kind: GlyphKind::Bonder,
+        let second = Glyph {
+            kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Grab, Wait], vec![bonder]);
+        let mut sim = bench(vec![Grab, Wait], vec![second]);
         sim.arms[0].pivot = Hex::new(3, 0);
         sim.arms[0].dir = 3;
         let sacrificial = put(&mut sim, 1, 0);
@@ -786,6 +833,7 @@ mod tests {
         let b = put(&mut sim, 1, -1);
         let tail = put(&mut sim, 2, 0);
         bond(&mut sim, sacrificial, tail, BondKind::Single);
+        bond(&mut sim, a, b, BondKind::Single);
         sim.step();
         assert_eq!(sim.held(0), Some(tail));
         assert_eq!(sim.atoms[sacrificial], None);
@@ -794,7 +842,7 @@ mod tests {
             vec![Bond {
                 a,
                 b,
-                kind: BondKind::Single
+                kind: BondKind::Double
             }]
         );
     }
@@ -852,13 +900,13 @@ mod tests {
     }
 
     #[test]
-    fn a_bonder_tears_its_sacrificial_atom_out_of_an_unheld_compound_for_one_tick() {
-        let bonder = Glyph {
-            kind: GlyphKind::Bonder,
+    fn a_second_bond_tears_its_sacrificial_atom_out_of_an_unheld_compound_for_one_tick() {
+        let second = Glyph {
+            kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
         };
-        let mut sim = bench(vec![Instr::Wait], vec![bonder]);
+        let mut sim = bench(vec![Instr::Wait], vec![second]);
         let sacrificial = put(&mut sim, 1, 0);
         let a = put(&mut sim, 2, -1);
         let b = put(&mut sim, 1, -1);
@@ -866,6 +914,7 @@ mod tests {
         let end = put(&mut sim, 3, 0);
         bond(&mut sim, sacrificial, tail, BondKind::Double);
         bond(&mut sim, tail, end, BondKind::Single);
+        bond(&mut sim, a, b, BondKind::Single);
         sim.step();
         assert_eq!(sim.atoms[sacrificial], None);
         assert_eq!(
@@ -883,7 +932,7 @@ mod tests {
                 Bond {
                     a,
                     b,
-                    kind: BondKind::Single
+                    kind: BondKind::Double
                 }
             ]
         );
@@ -911,7 +960,7 @@ mod tests {
     #[test]
     fn preloaded_world_delivers_every_period_except_the_copy_that_stalls() {
         let mut sim = preloaded();
-        for _ in 0..26 * 4 {
+        for _ in 0..20 * 4 {
             sim.step();
         }
         assert_eq!(sim.delivered, 4 * (PLACEMENTS.len() as u64 - 1));

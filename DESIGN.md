@@ -68,7 +68,14 @@ Substrate: decided, vertical slice. One source atom type, two bond types, exerci
 
 What if arms could grab and move arms? Actuators as ordinary matter would make placement a machine act and give the bootstrap a path; not in the toy.
 
-Bonding. Bonder glyph taking three atoms. One is destroyed, the other two become bonded. The sacrificial atom may in any of the three slots of the triangular glyph and must be of a specific atom type. If multiple atoms of that type are provided, the slots do have a priority to choose which atom is destroyed. The two bond types only differ in identity and must differ in visual appearance. Later recipes will require specific bond types. It's only counted as part of the vertical slice because it's kinda core to the data model. First bond type is single covalent. The same machine takes an additional sacrificial atom to convert the single bond to a double bond. It hurts discoverability to let the same machine do two things so early. The second-bond applicator is a different machine.
+Bonding. Decided. Two machines, one per bond type, each a glyph whose slots have fixed roles.
+
+Directive (verbatim):
+
+> design change for bondmaker glyphs. sacrificial atom is too much work for single bond. single bond glyph changes to be a two-tile glyph.
+> the direction-agnosticism of the sacrificial atom make the rules complex without obvious benefit. change the double bonder to have dedicated slots for each input. This frees up the art department to paint a machine that more clearly indicates its usage.
+
+The bonder is a two-slot glyph on two adjacent cells. When both slots hold an atom and no bond joins them, it writes a single bond and consumes nothing. The second-bond applicator is a three-slot glyph with fixed roles: slot zero is sacrificial and must hold the sacrificial atom type, slots one and two must hold atoms that already share a single bond. It consumes slot zero, severing every bond on that atom, and upgrades the bond to double. A sacrificial atom on a bonded slot, or a bonded pair across the sacrificial slot and a bonded slot, does not fire. No slot search, no slot priority: the role is the position in the glyph's table, and the art paints each slot for its role. The two bond types differ only in identity and must differ in appearance; later recipes will require specific bond types. Consumed is the only thing a slot says; no glyph waits on a hand.
 
 ## Toy 1, first run (2026-09-04)
 
@@ -93,9 +100,9 @@ A2: some processesors need release, outputs need release. Bond makers need relea
 
 ### Round 2, what Toy 1 now does
 
-Machines never collide; only atoms do. Two glyphs on one hex was an accident of the first toy (placement never checked occupancy), kept as a rule: stacked glyphs each fire whenever their own rule matches, so a bonder under a second-bond glyph doubles a bond in two feeds.
+Machines never collide; only atoms do. Two glyphs on one hex was an accident of the first toy (placement never checked occupancy), kept as a rule: stacked glyphs each fire whenever their own rule matches, so a bonder laid across a second-bond glyph's bonded slots makes and doubles a bond in one tick.
 
-Input, output, and processing glyphs are one model: a glyph is a list of slots, each an offset from its cell plus the atom type it wants, a list of every slot pair with the bond that must be present or absent there before it fires, the bonds it writes, and the slots it consumes. The source is a one-slot glyph that spawns when empty. The bonder and the second-bond applicator are three-slot glyphs that consume slot zero. The output is a two-slot glyph that fires only when the atoms on its slots are exactly one compound, with the double bond it asks for and no other bond; a compound of the right atoms turned the wrong way, or with anything else attached, sits on the glyph untouched.
+Input, output, and processing glyphs are one model: a glyph is a list of slots, each an offset from its cell plus the atom type it wants, a list of every slot pair with the bond that must be present or absent there before it fires, the bonds it writes, and the slots it consumes. The source is a one-slot glyph that spawns when empty. The bonder is a two-slot glyph that consumes nothing. The second-bond applicator is a three-slot glyph whose slot zero is sacrificial and consumed, and whose slots one and two must already share a single bond. The output is a two-slot glyph that fires only when the atoms on its slots are exactly one compound, with the double bond it asks for and no other bond; a compound of the right atoms turned the wrong way, or with anything else attached, sits on the glyph untouched.
 
 Editing: a click focuses a machine; A and D turn it; Z deletes it. With an arm focused, F grab, R drop, E clockwise, Q counterclockwise, X wait write its tape at the cursor. Dragging a machine, or dragging from the palette, carries a preview under the pointer; A and D turn it, Z deletes it, and a release over the panels returns it to where it was lifted, or, from the palette, discards it. The strip along the bottom lists the tapes of the arms on screen, eight at most, and a click on one focuses that arm. Pan is right or middle drag.
 
