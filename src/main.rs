@@ -135,7 +135,7 @@ impl Piece {
         }
     }
 
-    fn moved(&mut self, at: Hex, dir: usize) {
+    fn pose(&mut self, at: Hex, dir: usize) {
         match self {
             Piece::Arm(a) => (a.pivot, a.dir) = (at, dir),
             Piece::Glyph(g) => (g.at, g.dir) = (at, dir),
@@ -143,9 +143,16 @@ impl Piece {
     }
 }
 
+fn label(items: &[Item]) -> String {
+    match items {
+        [item] => item.name().to_string(),
+        _ => format!("{} machines", items.len()),
+    }
+}
+
 fn turn(pieces: &mut [Piece], spin: Spin) {
     for p in pieces {
-        p.moved(p.at().rotate(ORIGIN, spin), spin.turn(p.dir()));
+        p.pose(p.at().rotate(ORIGIN, spin), spin.turn(p.dir()));
     }
 }
 
@@ -238,18 +245,27 @@ impl World {
         self.focus.as_ref().is_some_and(|f| f.picks(id))
     }
 
-    fn count(&self, items: impl ExactSizeIterator<Item = Item>) -> String {
-        let n = items.len();
-        match items.last() {
-            Some(item) if n == 1 => item.name().to_string(),
-            _ => format!("{n} machines"),
+    fn piece(&self, id: Id) -> Piece {
+        match id {
+            Id::Arm(i) => {
+                let a = &self.sim.arms[i];
+                Piece::Arm(Arm::new(a.pivot, a.dir, a.tape.clone()))
+            }
+            Id::Glyph(i) => Piece::Glyph(self.sim.glyphs[i]),
         }
     }
 
-    fn piece(&self, id: Id) -> Piece {
+    fn item(&self, id: Id) -> Item {
         match id {
-            Id::Arm(i) => Piece::Arm(self.sim.arms[i].clone()),
-            Id::Glyph(i) => Piece::Glyph(self.sim.glyphs[i]),
+            Id::Arm(_) => Item::Arm,
+            Id::Glyph(i) => Item::Glyph(self.sim.glyphs[i].kind),
+        }
+    }
+
+    fn dir(&self, id: Id) -> usize {
+        match id {
+            Id::Arm(i) => self.sim.arms[i].dir,
+            Id::Glyph(i) => self.sim.glyphs[i].dir,
         }
     }
 
@@ -289,17 +305,17 @@ impl World {
             .collect()
     }
 
-    fn take(&self, ids: &[Id], grab: Hex) -> Vec<Piece> {
+    fn lifted(&self, ids: &[Id], grab: Hex) -> Vec<Piece> {
         ids.iter()
             .map(|id| {
                 let mut p = self.piece(*id);
-                p.moved(p.at().sub(grab), p.dir());
+                p.pose(p.at().sub(grab), p.dir());
                 p
             })
             .collect()
     }
 
-    fn put(&mut self, id: Id, at: Hex, dir: usize) {
+    fn set_pose(&mut self, id: Id, at: Hex, dir: usize) {
         match id {
             Id::Arm(i) => {
                 (self.sim.arms[i].pivot, self.sim.arms[i].dir) = (at, dir);
@@ -345,20 +361,22 @@ impl World {
             .collect();
         arms.sort_unstable_by(|a, b| b.cmp(a));
         glyphs.sort_unstable_by(|a, b| b.cmp(a));
+        if !arms.is_empty() {
+            self.unstall();
+        }
         for i in arms {
             self.sim.arms.remove(i);
         }
         for i in glyphs {
             self.sim.glyphs.remove(i);
         }
-        self.unstall();
         self.prev = self.sim.clone();
         self.focus = None;
         self.down = None;
     }
 
     fn copy(&mut self, ids: &[Id]) {
-        self.clipboard = self.take(ids, self.anchor(ids[0]));
+        self.clipboard = self.lifted(ids, self.anchor(ids[0]));
     }
 
     fn paste(&mut self) {
@@ -396,7 +414,11 @@ impl World {
                 cell,
             }) if start.distance(screen) > DRAG_PX => {
                 let ids = self.focus.as_ref().map_or(Vec::new(), Focus::picked);
-                let set = self.take(&ids, cell);
+                if ids.is_empty() {
+                    self.down = None;
+                    return;
+                }
+                let set = self.lifted(&ids, cell);
                 self.lift(set, ids);
             }
             Some(Press::Ground {
@@ -439,11 +461,11 @@ impl World {
                 let (cell, dir) = (at.add(p.at()), p.dir());
                 match from.next() {
                     Some(id) => {
-                        self.put(id, cell, dir);
+                        self.set_pose(id, cell, dir);
                         id
                     }
                     None => {
-                        p.moved(cell, dir);
+                        p.pose(cell, dir);
                         self.push(p)
                     }
                 }
@@ -480,11 +502,8 @@ impl World {
                 _ => {
                     if let ([Id::Arm(arm)], Some(instr)) = (ids.as_slice(), instr) {
                         self.act(*arm, instr);
-                    } else if let Some(Instr::Rot(spin)) = instr {
-                        for id in ids {
-                            let (at, dir) = (self.anchor(id), self.piece(id).dir());
-                            self.put(id, at, spin.turn(dir));
-                        }
+                    } else if let ([id], Some(Instr::Rot(spin))) = (ids.as_slice(), instr) {
+                        self.set_pose(*id, self.anchor(*id), spin.turn(self.dir(*id)));
                         self.prev = self.sim.clone();
                     }
                 }
@@ -1504,7 +1523,7 @@ fn draw(
     }
 }
 
-fn text(world: Res<World>, mut label: Single<&mut Text, With<Hud>>) {
+fn text(world: Res<World>, mut hud: Single<&mut Text, With<Hud>>) {
     let s = &world.sim;
     let mut out = format!(
         "tick {}  delivered {}  {}\n",
@@ -1518,22 +1537,32 @@ fn text(world: Res<World>, mut label: Single<&mut Text, With<Hud>>) {
         "  V paste"
     };
     match &world.focus {
-        Some(Focus::Hold { set, .. }) => out.push_str(&format!(
-            "holding {}: A/D turn  Z delete  esc put back  let go on a hex to place\n",
-            world.count(set.iter().map(Piece::item))
-        )),
+        Some(Focus::Hold { set, from }) => {
+            let items: Vec<Item> = set.iter().map(Piece::item).collect();
+            let (esc, place) = if from.is_empty() {
+                ("esc discard", "click a hex to place")
+            } else {
+                ("esc put back", "let go on a hex to place")
+            };
+            out.push_str(&format!(
+                "holding {}: A/D turn  Z delete  {esc}  {place}\n",
+                label(&items)
+            ));
+        }
         Some(Focus::Tape { .. }) => out.push_str(&format!(
             "tape: {}  arrows move  home/end  Z backspace  esc done\n",
             instr_help()
         )),
         Some(Focus::Pick(ids)) => {
-            let turn = match ids.as_slice() {
+            let items: Vec<Item> = ids.iter().map(|id| world.item(*id)).collect();
+            let keys = match ids.as_slice() {
                 [Id::Arm(_)] => format!(", acts now: {}  click its tape to edit", instr_help()),
-                _ => "  A/D turn".to_string(),
+                [Id::Glyph(_)] => "  A/D turn".to_string(),
+                _ => String::new(),
             };
             out.push_str(&format!(
-                "{}{turn}  X cut  C copy{paste}  Z delete  esc done\n",
-                world.count(ids.iter().map(|id| world.piece(*id).item()))
+                "{}{keys}  X cut  C copy{paste}  Z delete  esc done\n",
+                label(&items)
             ));
         }
         None => {
@@ -1543,9 +1572,9 @@ fn text(world: Res<World>, mut label: Single<&mut Text, With<Hud>>) {
         }
     }
     out.push_str(
-        "space pause/run  . step  wheel zoom  right/middle-drag pan  click a machine to focus  drag from empty ground to select  hold and drag a selected machine to move  drag from the palette to place",
+        "space pause/run  . step  wheel zoom  right/middle-drag pan  click a machine to focus  drag on empty ground to select  hold-drag a selected machine to move it  drag from the palette to place",
     );
-    label.0 = out;
+    hud.0 = out;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2021,15 +2050,16 @@ mod shot {
     ) {
         shot.frames += 1;
         for (frame, act) in shot.script.clone() {
+            if let (Act::Key(code), true) = (act, frame + 1 == shot.frames) {
+                keyboard.write(key(code, ButtonState::Released, *window));
+            }
+            if frame != shot.frames {
+                continue;
+            }
             match act {
-                Act::Key(code) if frame == shot.frames => {
+                Act::Key(code) => {
                     keyboard.write(key(code, ButtonState::Pressed, *window));
                 }
-                Act::Key(code) if frame + 1 == shot.frames => {
-                    keyboard.write(key(code, ButtonState::Released, *window));
-                }
-                _ if frame != shot.frames => {}
-                Act::Key(_) => {}
                 Act::Press(cell) => {
                     world.pointer = Some(px(cell));
                     world.press(px(cell), px(cell));
@@ -2511,6 +2541,7 @@ mod tests {
             assert_eq!(dir, was_dir);
         }
         assert_eq!(w.sim.arms[1].tape, arm.tape);
+        assert_eq!(w.sim.arms[1], Arm::new(after[0].0, after[0].1, arm.tape));
         assert_eq!(w.sim.glyphs[1].kind, glyph.kind);
         assert_eq!(w.focus, picked(&pasted));
         w.key(KeyCode::KeyC);
@@ -2674,6 +2705,30 @@ mod tests {
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 0 }));
         w.key(KeyCode::End);
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
+    }
+
+    #[test]
+    fn a_copied_arm_is_a_blueprint_without_its_running_state() {
+        let mut w = cluster();
+        w.sim.arms[0].pc = 1;
+        w.sim.arms[0].holding = true;
+        w.sim.arms[0].stall = Some(Stall::Illegal);
+        w.pick(vec![Id::Arm(0)]);
+        w.key(KeyCode::KeyC);
+        w.key(KeyCode::KeyV);
+        w.press(px(Hex::new(6, 6)), px(Hex::new(6, 6)));
+        let pasted = &w.sim.arms[2];
+        assert_eq!(*pasted, Arm::new(Hex::new(6, 6), 3, pasted.tape.clone()));
+    }
+
+    #[test]
+    fn a_press_whose_selection_was_cleared_before_the_drag_lifts_nothing() {
+        let mut w = cluster();
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.key(KeyCode::Escape);
+        w.drag(px(ORIGIN) + Vec2::new(DRAG_PX * 2.0, 0.0));
+        assert_eq!(w.focus, None);
+        assert_eq!(w.down, None);
     }
 
     #[test]
