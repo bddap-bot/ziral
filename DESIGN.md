@@ -194,3 +194,24 @@ Questions for round 7:
 Q1: A hand whose atom a glyph ate stays closed on the empty cell; the toy draws its ring on nothing, and an atom that another arm drops there is carried away by it on its next rotate. Should a closed hand catch whatever arrives under it, or open when its atom is gone?
 
 Q2: An output now eats a compound an arm is holding, and the arm is left closed on the pad. That feeds an output with no drop and one instruction fewer. Is that a tool, or a trap for the player who parked a compound there meaning to come back for it?
+
+### Round 7 answers
+
+A1: oh a close hand should catch whatever lands under it, Unlike opus magnum
+A2: that should be fine, players learn game mechanics
+
+### Round 7, what Toy 1 now does
+
+Decided: a closed hand catches whatever lands under it. Unlike Opus Magnum, an arm does not remember which atom it took; its hand is open or closed, and a closed hand holds whatever is at its cell. Round 6 built exactly that, so nothing changed and nothing needed deleting: no hand opens itself, no arm checks for the atom it grabbed, and the ring on a closed hand is the same ring on an atom or on nothing.
+
+Decided: an output eats a compound an arm is holding, and the arm is left closed on the pad. Nothing changed.
+
+What catching covers. Lands under it is not only a drop: an atom another arm carries through the cell under a closed hand is caught in passing, so both hands are on it, and the other arm's next rotate stalls, with the wider ring on the hand that caught it, until one of them drops. A closed hand on nothing that rotates onto an atom catches it the same way.
+
+A grab over nothing does not make a closed hand on nothing. It stalls, retries every tick, and closes once an atom is under it, whether or not the other arm has dropped it. The program grab on the empty cell, wait, rotate does run, but its tape freezes on the grab until the atom arrives, and from then on runs late by as many ticks as it waited. A closed hand on nothing comes from a glyph eating its atom, or from turning or moving a closed arm in the editor.
+
+Questions for round 8:
+
+Q1: A closed hand catches an atom another arm carries through its cell, and that arm stalls until one of them drops; a closed hand rotated onto an atom catches it too. Does an atom carried through, or swept onto, count as landing under the hand, or should a closed hand catch only what is set down under it?
+
+Q2: A grab over nothing stalls until an atom arrives, then closes on it, so the tape runs late by as many ticks as it waited. Since a closed hand now catches, should a grab over nothing just close the hand and let the tape run on, or is a grab with nothing to grab the mistake the stall says it is?

@@ -952,6 +952,42 @@ mod shot {
                 world.sim = sim;
                 world.focus_arm(0);
             }
+            "caught" => {
+                let mut sim = Sim::empty();
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: Hex::new(3, -1),
+                });
+                let mut closed = Arm::new(Hex::new(0, 0), 0, vec![Instr::Wait]);
+                closed.holding = true;
+                sim.arms.push(closed);
+                sim.arms.push(Arm::new(
+                    Hex::new(2, 0),
+                    1,
+                    vec![Instr::Grab, Instr::RotCw, Instr::RotCw, Instr::RotCw],
+                ));
+                world.sim = sim;
+                world.focus_arm(1);
+            }
+            "grabnothing" => {
+                let mut sim = Sim::empty();
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: Hex::new(2, -1),
+                });
+                sim.arms.push(Arm::new(
+                    Hex::new(0, 0),
+                    0,
+                    vec![Instr::Grab, Instr::Wait, Instr::RotCw, Instr::Wait],
+                ));
+                sim.arms.push(Arm::new(
+                    Hex::new(2, 0),
+                    2,
+                    vec![Instr::Grab, Instr::RotCw, Instr::Drop, Instr::Wait],
+                ));
+                world.sim = sim;
+                world.focus_arm(0);
+            }
             "dropfirst" | "grabfirst" => {
                 let mut sim = Sim::empty();
                 sim.spawn(Atom {
