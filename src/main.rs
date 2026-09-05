@@ -58,8 +58,8 @@ impl Item {
 const KEYS: [(KeyCode, Instr, char, &str); 5] = [
     (KeyCode::KeyF, Instr::Grab, 'F', "grab"),
     (KeyCode::KeyR, Instr::Drop, 'R', "drop"),
-    (KeyCode::KeyA, Instr::RotCcw, 'A', "ccw"),
-    (KeyCode::KeyD, Instr::RotCw, 'D', "cw"),
+    (KeyCode::KeyA, Instr::Rot(Spin::Ccw), 'A', "ccw"),
+    (KeyCode::KeyD, Instr::Rot(Spin::Cw), 'D', "cw"),
     (KeyCode::KeyX, Instr::Wait, '.', "wait"),
 ];
 
@@ -319,9 +319,8 @@ impl World {
             return;
         }
         let instr = instr_of(key);
-        let spin = instr.and_then(Instr::spin);
         if let Some(held) = &mut self.held {
-            if let Some(spin) = spin {
+            if let Some(Instr::Rot(spin)) = instr {
                 held.turn(spin);
             } else if key == KeyZ {
                 let from = held.from;
@@ -341,7 +340,7 @@ impl World {
                 }
             }
             Focus::Glyph(i) => {
-                if let Some(spin) = spin {
+                if let Some(Instr::Rot(spin)) = instr {
                     let glyph = &mut self.sim.glyphs[i];
                     glyph.dir = spin.turn(glyph.dir);
                     self.prev = self.sim.clone();
@@ -1524,7 +1523,7 @@ mod shot {
             "chorus" => {
                 let mut sim = Sim::empty();
                 for q in [-8, -4, 0, 4, 8] {
-                    let mut arm = Arm::new(Hex::new(q, -1), 2, vec![Instr::RotCw]);
+                    let mut arm = Arm::new(Hex::new(q, -1), 2, vec![Instr::Rot(Spin::Cw)]);
                     arm.holding = true;
                     sim.spawn(Atom {
                         kind: AtomKind::Base,
@@ -1536,8 +1535,11 @@ mod shot {
             }
             "twohands" => {
                 let mut sim = Sim::empty();
-                sim.arms
-                    .push(Arm::new(Hex::new(0, 0), 0, vec![Instr::Grab, Instr::RotCw]));
+                sim.arms.push(Arm::new(
+                    Hex::new(0, 0),
+                    0,
+                    vec![Instr::Grab, Instr::Rot(Spin::Cw)],
+                ));
                 sim.arms
                     .push(Arm::new(Hex::new(2, -2), 4, vec![Instr::Grab, Instr::Wait]));
                 let a = sim.spawn(Atom {
@@ -1593,7 +1595,7 @@ mod shot {
                         Instr::Wait,
                         Instr::Wait,
                         Instr::Wait,
-                        Instr::RotCcw,
+                        Instr::Rot(Spin::Ccw),
                         Instr::Wait,
                     ],
                 );
@@ -1602,7 +1604,7 @@ mod shot {
                 sim.arms.push(Arm::new(
                     Hex::new(1, 0),
                     3,
-                    vec![Instr::Grab, Instr::RotCcw, Instr::Drop, Instr::Wait],
+                    vec![Instr::Grab, Instr::Rot(Spin::Ccw), Instr::Drop, Instr::Wait],
                 ));
                 world.sim = sim;
                 world.focus_arm(0);
@@ -1645,7 +1647,12 @@ mod shot {
                 sim.arms.push(Arm::new(
                     Hex::new(2, 0),
                     1,
-                    vec![Instr::Grab, Instr::RotCw, Instr::RotCw, Instr::RotCw],
+                    vec![
+                        Instr::Grab,
+                        Instr::Rot(Spin::Cw),
+                        Instr::Rot(Spin::Cw),
+                        Instr::Rot(Spin::Cw),
+                    ],
                 ));
                 world.sim = sim;
                 world.focus_arm(1);
@@ -1659,12 +1666,12 @@ mod shot {
                 sim.arms.push(Arm::new(
                     Hex::new(0, 0),
                     0,
-                    vec![Instr::Grab, Instr::Wait, Instr::RotCw, Instr::Wait],
+                    vec![Instr::Grab, Instr::Wait, Instr::Rot(Spin::Cw), Instr::Wait],
                 ));
                 sim.arms.push(Arm::new(
                     Hex::new(2, 0),
                     2,
-                    vec![Instr::Grab, Instr::RotCw, Instr::Drop, Instr::Wait],
+                    vec![Instr::Grab, Instr::Rot(Spin::Cw), Instr::Drop, Instr::Wait],
                 ));
                 world.sim = sim;
                 world.focus_arm(0);
@@ -1839,7 +1846,7 @@ mod tests {
     fn rotating_arm_with_atom() -> (Sim, Sim) {
         let mut prev = Sim::empty();
         prev.arms
-            .push(Arm::new(Hex::new(2, 1), 2, vec![Instr::RotCw]));
+            .push(Arm::new(Hex::new(2, 1), 2, vec![Instr::Rot(Spin::Cw)]));
         prev.arms[0].holding = true;
         prev.spawn(Atom {
             kind: AtomKind::Base,
@@ -2073,7 +2080,9 @@ mod tests {
         let slot = bonder.slots().nth(1).unwrap();
         w.press(Vec2::ZERO, slot);
         w.drag(Vec2::new(DRAG_PX * 2.0, 0.0));
-        w.held.as_mut().unwrap().turn(Spin::Ccw);
+        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyD);
         let to = Hex::new(-1, -1);
         w.release(Some(to));
         let moved = w.sim.glyphs[0];
@@ -2151,6 +2160,24 @@ mod tests {
         w.key(KeyCode::KeyA);
         assert_eq!(w.sim.arms[0].dir, 5);
         assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[5]);
+        assert_eq!(w.prev, w.sim);
+    }
+
+    #[test]
+    fn z_deletes_the_focused_machine() {
+        let mut w = armed(vec![]);
+        w.sim.glyphs.push(Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(3, 3),
+            dir: 0,
+        });
+        w.focus = Some(Focus::Glyph(0));
+        w.key(KeyCode::KeyZ);
+        assert!(w.sim.glyphs.is_empty());
+        w.focus_arm(0);
+        w.key(KeyCode::KeyZ);
+        assert!(w.sim.arms.is_empty());
+        assert_eq!(w.focus, None);
     }
 
     #[test]
@@ -2178,17 +2205,19 @@ mod tests {
         w.key(KeyCode::KeyF);
         w.key(KeyCode::KeyA);
         w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyX);
         assert_eq!(
             w.sim.arms[0].tape,
             vec![
                 Instr::Wait,
                 Instr::Grab,
-                Instr::RotCcw,
-                Instr::RotCw,
+                Instr::Rot(Spin::Ccw),
+                Instr::Rot(Spin::Cw),
+                Instr::Wait,
                 Instr::Drop
             ]
         );
-        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 4 }));
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 5 }));
         assert!(!w.sim.arms[0].holding);
         assert_eq!(w.sim.arms[0].dir, 0);
         assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[0]);
@@ -2196,6 +2225,11 @@ mod tests {
 
     #[test]
     fn q_and_e_are_unbound() {
+        assert!(
+            NAV.iter()
+                .chain(KEYS.iter().map(|k| &k.0))
+                .all(|k| !matches!(k, KeyCode::KeyQ | KeyCode::KeyE))
+        );
         let mut w = armed(vec![Instr::Wait]);
         w.focus_tape(0);
         w.key(KeyCode::KeyQ);
@@ -2206,6 +2240,19 @@ mod tests {
         w.key(KeyCode::KeyQ);
         w.key(KeyCode::KeyE);
         assert_eq!(w.sim.arms[0].dir, 0);
+        w.sim.glyphs.push(Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(3, 3),
+            dir: 2,
+        });
+        w.focus = Some(Focus::Glyph(0));
+        w.key(KeyCode::KeyQ);
+        w.key(KeyCode::KeyE);
+        assert_eq!(w.sim.glyphs[0].dir, 2);
+        w.lift(Held::fresh(Item::Arm));
+        w.key(KeyCode::KeyQ);
+        w.key(KeyCode::KeyE);
+        assert_eq!(w.held.unwrap().dir, 0);
     }
 
     #[test]
@@ -2222,6 +2269,7 @@ mod tests {
         w.key(KeyCode::KeyD);
         w.key(KeyCode::KeyD);
         assert_eq!(w.sim.glyphs[0].dir, 1);
+        assert_eq!(w.prev, w.sim);
         w.lift(Held::fresh(Item::Arm));
         w.key(KeyCode::KeyD);
         assert_eq!(w.held.unwrap().dir, 1);
@@ -2232,7 +2280,7 @@ mod tests {
 
     #[test]
     fn z_in_tape_focus_removes_the_instruction_before_the_cursor() {
-        let mut w = armed(vec![Instr::Grab, Instr::RotCw, Instr::Drop]);
+        let mut w = armed(vec![Instr::Grab, Instr::Rot(Spin::Cw), Instr::Drop]);
         w.focus_tape(0);
         w.key(KeyCode::ArrowLeft);
         w.key(KeyCode::KeyZ);

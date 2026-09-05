@@ -70,19 +70,8 @@ impl Spin {
 pub enum Instr {
     Grab,
     Drop,
-    RotCw,
-    RotCcw,
+    Rot(Spin),
     Wait,
-}
-
-impl Instr {
-    pub fn spin(self) -> Option<Spin> {
-        match self {
-            Instr::RotCw => Some(Spin::Cw),
-            Instr::RotCcw => Some(Spin::Ccw),
-            Instr::Grab | Instr::Drop | Instr::Wait => None,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -455,36 +444,32 @@ impl Sim {
                 self.arms[i].holding = true;
             }
             Instr::Drop => self.arms[i].holding = false,
-            Instr::RotCw => self.spin(i, Spin::Cw)?,
-            Instr::RotCcw => self.spin(i, Spin::Ccw)?,
-        }
-        Ok(())
-    }
-
-    fn spin(&mut self, i: usize, spin: Spin) -> Result<(), Stall> {
-        let pivot = self.arms[i].pivot;
-        if let Some(held) = self.held(i) {
-            if let Some(j) = self.other_hand(i) {
-                return Err(Stall::Hand(j));
-            }
-            let comp = self.component(held);
-            let moved: Vec<(usize, Hex)> = comp
-                .iter()
-                .map(|id| (*id, self.atoms[*id].unwrap().pos.rotate(pivot, spin)))
-                .collect();
-            let blocked = moved.iter().any(|(_, to)| {
-                self.atom_at(*to)
-                    .is_some_and(|other| !comp.contains(&other))
-            });
-            if blocked {
-                return Err(Stall::Illegal);
-            }
-            for (id, to) in moved {
-                self.atoms[id].as_mut().unwrap().pos = to;
+            Instr::Rot(spin) => {
+                let pivot = self.arms[i].pivot;
+                if let Some(held) = self.held(i) {
+                    if let Some(j) = self.other_hand(i) {
+                        return Err(Stall::Hand(j));
+                    }
+                    let comp = self.component(held);
+                    let moved: Vec<(usize, Hex)> = comp
+                        .iter()
+                        .map(|id| (*id, self.atoms[*id].unwrap().pos.rotate(pivot, spin)))
+                        .collect();
+                    let blocked = moved.iter().any(|(_, to)| {
+                        self.atom_at(*to)
+                            .is_some_and(|other| !comp.contains(&other))
+                    });
+                    if blocked {
+                        return Err(Stall::Illegal);
+                    }
+                    for (id, to) in moved {
+                        self.atoms[id].as_mut().unwrap().pos = to;
+                    }
+                }
+                let arm = &mut self.arms[i];
+                arm.dir = spin.turn(arm.dir);
             }
         }
-        let arm = &mut self.arms[i];
-        arm.dir = spin.turn(arm.dir);
         Ok(())
     }
 
@@ -528,11 +513,27 @@ pub const PLACEMENTS: [Hex; 6] = [
 
 pub fn layout() -> Sim {
     use Instr::*;
-    let supply = [Grab, RotCw, RotCw, Drop, RotCcw, RotCcw];
+    let supply = [
+        Grab,
+        Rot(Spin::Cw),
+        Rot(Spin::Cw),
+        Drop,
+        Rot(Spin::Ccw),
+        Rot(Spin::Ccw),
+    ];
     let mut build: Vec<Instr> = supply.repeat(2);
-    build.extend([Grab, RotCw, RotCw, RotCw, RotCw, Drop, RotCw, RotCw]);
+    build.extend([
+        Grab,
+        Rot(Spin::Cw),
+        Rot(Spin::Cw),
+        Rot(Spin::Cw),
+        Rot(Spin::Cw),
+        Drop,
+        Rot(Spin::Cw),
+        Rot(Spin::Cw),
+    ]);
     let mut ferry = vec![Wait; 4];
-    ferry.extend([Grab, RotCcw, Drop, RotCw]);
+    ferry.extend([Grab, Rot(Spin::Ccw), Drop, Rot(Spin::Cw)]);
     ferry.resize(build.len(), Wait);
     let mut sim = Sim::empty();
     sim.glyphs.push(Glyph {
@@ -598,7 +599,7 @@ mod tests {
     #[test]
     fn tape_wraps_and_rotation_carries_the_held_compound() {
         use Instr::*;
-        let mut sim = bench(vec![Grab, RotCw], Vec::new());
+        let mut sim = bench(vec![Grab, Rot(Spin::Cw)], Vec::new());
         let a = put(&mut sim, 1, 0);
         let b = put(&mut sim, 1, -1);
         bond(&mut sim, a, b, BondKind::Single);
@@ -621,9 +622,12 @@ mod tests {
     #[test]
     fn a_rotation_into_an_occupied_cell_stalls_until_it_clears() {
         use Instr::*;
-        let mut sim = bench(vec![Grab, RotCw], Vec::new());
-        sim.arms
-            .push(Arm::new(Hex::new(2, -2), 4, vec![Wait, Wait, Grab, RotCw]));
+        let mut sim = bench(vec![Grab, Rot(Spin::Cw)], Vec::new());
+        sim.arms.push(Arm::new(
+            Hex::new(2, -2),
+            4,
+            vec![Wait, Wait, Grab, Rot(Spin::Cw)],
+        ));
         put(&mut sim, 1, 0);
         put(&mut sim, 1, -1);
         sim.step();
@@ -642,7 +646,7 @@ mod tests {
     #[test]
     fn a_grab_of_a_held_atom_puts_a_second_hand_on_it_and_rotates_stall_until_a_drop() {
         use Instr::*;
-        let mut sim = bench(vec![Wait, Grab, RotCw], Vec::new());
+        let mut sim = bench(vec![Wait, Grab, Rot(Spin::Cw)], Vec::new());
         sim.arms
             .push(Arm::new(Hex::new(2, 0), 3, vec![Grab, Wait, Drop, Wait]));
         put(&mut sim, 1, 0);
@@ -662,9 +666,9 @@ mod tests {
     #[test]
     fn two_arms_contending_for_one_cell_resolve_in_arm_order() {
         use Instr::*;
-        let mut sim = bench(vec![Grab, RotCw, RotCw, Wait], Vec::new());
+        let mut sim = bench(vec![Grab, Rot(Spin::Cw), Rot(Spin::Cw), Wait], Vec::new());
         sim.arms
-            .push(Arm::new(Hex::new(2, -2), 3, vec![Grab, RotCw]));
+            .push(Arm::new(Hex::new(2, -2), 3, vec![Grab, Rot(Spin::Cw)]));
         put(&mut sim, 1, 0);
         put(&mut sim, 1, -2);
         sim.step();
@@ -873,7 +877,7 @@ mod tests {
             second.slots().collect::<Vec<_>>(),
             [Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)]
         );
-        let mut sim = bench(vec![Grab, RotCw], vec![second]);
+        let mut sim = bench(vec![Grab, Rot(Spin::Cw)], vec![second]);
         sim.arms[0].pivot = Hex::new(1, 0);
         sim.arms[0].dir = 1;
         let sacrificial = put(&mut sim, 1, -1);
@@ -957,7 +961,7 @@ mod tests {
     #[test]
     fn a_rotate_under_two_hands_stalls_and_names_the_other_hand_until_it_drops() {
         use Instr::*;
-        let mut sim = bench(vec![Grab, RotCw], Vec::new());
+        let mut sim = bench(vec![Grab, Rot(Spin::Cw)], Vec::new());
         sim.arms
             .push(Arm::new(Hex::new(2, -2), 4, vec![Grab, Wait, Drop, Wait]));
         let a = put(&mut sim, 1, 0);
