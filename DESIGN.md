@@ -220,4 +220,4 @@ Q2: A grab over nothing stalls until an atom arrives, then closes on it, so the 
 
 The sim is still one discrete tick after another; only the drawing changed. Between ticks the toy draws the way from the last pose to the next: an arm's rotate sweeps its 60° the way the instruction turns, the atoms in its hand ride the sweep, a grab shrinks the ring shut and a drop lets it grow and vanish, and what a glyph made or ate shows at the end of the sweep, so nothing changes hands mid-arc. One ease, smoothstep.
 
-One knob: the tick period. An instruction's duration is its animation, as in Opus Magnum. Default 400 ms, the middle of the comparison set; the old 167 ms was too fast to read a sweep. The videos for picking it: 0 (hard cut), 120, 250, 400, 650, 1000 ms, and 400 ms with the motion in the first 60% and a hold for the last 40%.
+One knob: the tick period. An instruction's duration is its animation, as in Opus Magnum. Default 400 ms; the old 167 ms was too fast to read a sweep. Videos at 0 (hard cut), 120, 250, 400, 650 and 1000 ms, and 400 ms moving for the first 60% then holding, are for choosing it.

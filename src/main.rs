@@ -3,7 +3,7 @@ mod sim;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use sim::{Arm, Bond, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
 
 const HEX: f32 = 20.0;
 const TICK_MS: f32 = 400.0;
@@ -133,6 +133,7 @@ impl World {
             }
             Focus::Glyph(i) => self.sim.glyphs[i].dir = dir,
         }
+        self.prev = self.sim.clone();
     }
 
     fn unstall(&mut self) {
@@ -151,6 +152,7 @@ impl World {
                 self.sim.glyphs.remove(i);
             }
         }
+        self.prev = self.sim.clone();
         self.focus = None;
         self.press = None;
     }
@@ -188,6 +190,7 @@ impl World {
             },
             (None, None) => {}
         }
+        self.prev = self.sim.clone();
     }
 
     fn hit(&self, at: Vec2) -> Option<Focus> {
@@ -381,7 +384,9 @@ fn spawn_ui(mut commands: Commands) {
 
 fn run_ticks(mut world: ResMut<World>, time: Res<Time>) {
     world.since += time.delta_secs();
-    if world.running && world.since >= world.period {
+    if !world.running {
+        world.since = world.since.min(world.period);
+    } else if world.since >= world.period {
         world.since -= world.period;
         world.step();
     }
@@ -664,13 +669,11 @@ struct ArmPose {
     pivot: Vec2,
     hand: Vec2,
     ring: Option<f32>,
-    stall: Option<Stall>,
 }
 
 struct Frame<'a> {
+    sim: &'a Sim,
     atoms: Vec<Option<Vec2>>,
-    bonds: &'a [Bond],
-    torn: &'a [(Hex, Hex, BondKind)],
     arms: Vec<ArmPose>,
 }
 
@@ -686,9 +689,8 @@ fn turn_between(from: &Arm, to: &Arm) -> f32 {
 impl Frame<'_> {
     fn settled(s: &Sim) -> Frame<'_> {
         Frame {
+            sim: s,
             atoms: s.atoms.iter().map(|a| a.map(|a| px(a.pos))).collect(),
-            bonds: &s.bonds,
-            torn: &s.torn,
             arms: s
                 .arms
                 .iter()
@@ -696,20 +698,13 @@ impl Frame<'_> {
                     pivot: px(a.pivot),
                     hand: px(a.hand()),
                     ring: a.holding.then_some(RING_CLOSED),
-                    stall: a.stall,
                 })
                 .collect(),
         }
     }
 
     fn between<'a>(prev: &'a Sim, cur: &'a Sim, t: f32) -> Frame<'a> {
-        let same_shape = prev.arms.len() == cur.arms.len()
-            && prev
-                .arms
-                .iter()
-                .zip(&cur.arms)
-                .all(|(a, b)| a.pivot == b.pivot);
-        if t >= 1.0 || !same_shape {
+        if t >= 1.0 {
             return Frame::settled(cur);
         }
         let e = t * t * (3.0 - 2.0 * t);
@@ -788,13 +783,13 @@ fn draw(
         draw_machine(&mut gizmos, Item::Glyph(g.kind), g.at, g.dir, color);
     }
     let f = Frame::between(&world.prev, s, world.phase());
-    for b in f.bonds {
+    for b in &f.sim.bonds {
         let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
             continue;
         };
         draw_bond(&mut gizmos, a, c, b.kind, atom);
     }
-    for (kept, lost, kind) in f.torn {
+    for (kept, lost, kind) in &f.sim.torn {
         let (a, b) = (px(*kept), px(*lost));
         draw_bond(&mut gizmos, a, a.lerp(b, 0.5), *kind, torn);
     }
@@ -811,10 +806,11 @@ fn draw(
         if let Some(ring) = arm.ring {
             gizmos.circle_2d(arm.hand, HEX * ring, color);
         }
-        if arm.stall.is_some() {
+        let stall = f.sim.arms[i].stall;
+        if stall.is_some() {
             gizmos.circle_2d(arm.pivot, HEX * 0.5, picked);
         }
-        if let Some(Stall::Hand(j)) = arm.stall {
+        if let Some(Stall::Hand(j)) = stall {
             gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, picked);
         }
     }
@@ -869,7 +865,7 @@ mod shot {
     use bevy::render::view::window::screenshot::{Screenshot, save_to_disk};
     use bevy::time::TimeUpdateStrategy;
     use bevy::ui::IsDefaultUiCamera;
-    use sim::{Atom, AtomKind};
+    use sim::{Atom, AtomKind, Bond};
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -878,19 +874,10 @@ mod shot {
     const WARM: u32 = 12;
     const FRAME: Duration = Duration::from_nanos(16_666_667);
 
-    enum Out {
-        Png(PathBuf),
-        Frames {
-            dir: PathBuf,
-            count: u32,
-            period: f32,
-            motion: f32,
-        },
-    }
-
     #[derive(Resource)]
     struct Shot {
-        out: Out,
+        path: PathBuf,
+        count: u32,
         wide: bool,
         keys: Vec<KeyCode>,
         frames: u32,
@@ -1137,38 +1124,38 @@ mod shot {
         for _ in 0..ticks {
             world.sim.step();
         }
+        world.prev = world.sim.clone();
         (world, wide, keys)
     }
 
     pub fn configure(app: &mut App) -> bool {
-        const USAGE: &str = "usage: ziral --shot <png> <scene> <ticks> | ziral --frames <dir> <scene> <ticks> <play> <tick_ms> <motion>";
+        const USAGE: &str =
+            "usage: ziral --shot <png> <scene> <ticks> [<dir> <play> <tick_ms> <motion>]";
         let args: Vec<String> = std::env::args().collect();
         let num = |s: &String| s.parse::<f32>().expect(USAGE);
-        let (out, view, ticks) = match args.as_slice() {
+        let (path, view, ticks, clip) = match args.as_slice() {
             [_] => return false,
-            [_, flag, path, view, ticks] if flag == "--shot" => {
-                (Out::Png(PathBuf::from(path)), view, ticks)
-            }
-            [_, flag, dir, view, ticks, play, tick_ms, motion] if flag == "--frames" => {
-                app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
-                let out = Out::Frames {
-                    dir: PathBuf::from(dir),
-                    count: (num(play) * num(tick_ms) / 1000.0 / FRAME.as_secs_f32()).round() as u32,
-                    period: num(tick_ms) / 1000.0,
-                    motion: num(motion),
-                };
-                (out, view, ticks)
-            }
+            [_, flag, path, view, ticks] if flag == "--shot" => (path, view, ticks, None),
+            [_, flag, path, view, ticks, play, tick_ms, motion] if flag == "--shot" => (
+                path,
+                view,
+                ticks,
+                Some((num(play), num(tick_ms), num(motion))),
+            ),
             _ => panic!("{USAGE}"),
         };
         let (mut world, wide, keys) = scene(view, ticks.parse().expect(USAGE));
-        if let Out::Frames { period, motion, .. } = out {
-            world.period = period;
+        let mut count = 1;
+        if let Some((play, tick_ms, motion)) = clip {
+            app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
+            world.period = tick_ms / 1000.0;
             world.motion = motion;
+            count = (play * world.period / FRAME.as_secs_f32()).round() as u32;
         }
         app.insert_resource(world)
             .insert_resource(Shot {
-                out,
+                path: PathBuf::from(path),
+                count,
                 wide,
                 keys,
                 frames: 0,
@@ -1187,7 +1174,7 @@ mod shot {
             )
             .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
             .add_systems(Startup, spawn_offscreen_camera)
-            .add_systems(Update, capture.before(run_ticks));
+            .add_systems(Update, capture.after(run_ticks).before(draw));
         true
     }
 
@@ -1246,34 +1233,23 @@ mod shot {
         if k >= 2 && k - 2 < shot.keys.len() {
             keyboard.write(key(shot.keys[k - 2], ButtonState::Pressed, *window));
         }
-        let mut save = |path: PathBuf| {
+        let clip = shot.count > 1;
+        if shot.frames == WARM && clip {
+            world.running = true;
+            world.since = 0.0;
+        }
+        let n = shot.frames.wrapping_sub(WARM);
+        if n < shot.count {
+            let path = if clip {
+                shot.path.join(format!("{n:05}.png"))
+            } else {
+                shot.path.clone()
+            };
             commands
                 .spawn(Screenshot::image(target.0.clone()))
                 .observe(save_to_disk(path));
-        };
-        let (shoot, last) = match &shot.out {
-            Out::Png(path) => {
-                if shot.frames == WARM {
-                    save(path.clone());
-                }
-                (None, WARM + 28)
-            }
-            Out::Frames { dir, count, .. } => {
-                if shot.frames == WARM {
-                    world.running = true;
-                    world.since = 0.0;
-                }
-                let n = shot.frames.wrapping_sub(WARM);
-                (
-                    (n < *count).then(|| dir.join(format!("{n:05}.png"))),
-                    WARM + count + 28,
-                )
-            }
-        };
-        if let Some(path) = shoot {
-            save(path);
         }
-        if shot.frames == last {
+        if n == shot.count + 28 {
             exit.write(AppExit::Success);
         }
     }
