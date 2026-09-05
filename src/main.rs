@@ -71,8 +71,9 @@ fn instr_of(key: KeyCode) -> Option<Instr> {
     KEYS.iter().find(|k| k.0 == key).map(|k| k.1)
 }
 
-fn instr_help() -> String {
+fn instr_help(acting: bool) -> String {
     KEYS.iter()
+        .filter(|k| !(acting && k.1 == Instr::Wait))
         .map(|(_, _, c, name)| format!("{c} {name}"))
         .collect::<Vec<_>>()
         .join("  ")
@@ -245,13 +246,19 @@ impl World {
         self.focus.as_ref().is_some_and(|f| f.picks(id))
     }
 
-    fn piece(&self, id: Id) -> Piece {
+    fn piece(&self, id: Id, grab: Hex) -> Piece {
         match id {
             Id::Arm(i) => {
                 let a = &self.sim.arms[i];
-                Piece::Arm(Arm::new(a.pivot, a.dir, a.tape.clone()))
+                Piece::Arm(Arm::new(a.pivot.sub(grab), a.dir, a.tape.clone()))
             }
-            Id::Glyph(i) => Piece::Glyph(self.sim.glyphs[i]),
+            Id::Glyph(i) => {
+                let g = self.sim.glyphs[i];
+                Piece::Glyph(Glyph {
+                    at: g.at.sub(grab),
+                    ..g
+                })
+            }
         }
     }
 
@@ -306,13 +313,7 @@ impl World {
     }
 
     fn lifted(&self, ids: &[Id], grab: Hex) -> Vec<Piece> {
-        ids.iter()
-            .map(|id| {
-                let mut p = self.piece(*id);
-                p.pose(p.at().sub(grab), p.dir());
-                p
-            })
-            .collect()
+        ids.iter().map(|id| self.piece(*id, grab)).collect()
     }
 
     fn set_pose(&mut self, id: Id, at: Hex, dir: usize) {
@@ -386,16 +387,17 @@ impl World {
     }
 
     fn lift(&mut self, set: Vec<Piece>, from: Vec<Id>) {
+        debug_assert!(from.is_empty() || from.len() == set.len());
         self.focus = Some(Focus::Hold { set, from });
         self.down = None;
     }
 
-    fn press(&mut self, screen: Vec2, world: Vec2) {
+    fn press(&mut self, screen: Vec2, point: Vec2) {
+        let cell = hex_at(point);
         if matches!(self.focus, Some(Focus::Hold { .. })) {
-            self.place(Some(hex_at(world)));
+            self.place(Some(cell));
             return;
         }
-        let cell = hex_at(world);
         self.down = Some(match self.hit(cell) {
             Some(id) => {
                 if !self.focus.as_ref().is_some_and(|f| f.picks(id)) {
@@ -403,7 +405,10 @@ impl World {
                 }
                 Press::Machine { screen, cell }
             }
-            None => Press::Ground { screen, world },
+            None => Press::Ground {
+                screen,
+                world: point,
+            },
         });
     }
 
@@ -434,13 +439,12 @@ impl World {
     fn release(&mut self, at: Option<Hex>) {
         match self.down.take() {
             Some(Press::Marquee { from }) => {
-                if let Some(to) = self.pointer {
-                    let ids = self.marquee(from, to);
-                    self.pick(ids);
-                }
+                let to = at.and(self.pointer);
+                let ids = to.map_or(Vec::new(), |to| self.marquee(from, to));
+                self.pick(ids);
             }
             Some(Press::Ground { .. }) => self.focus = None,
-            Some(Press::Machine { .. }) | None => self.place(at),
+            _ => self.place(at),
         }
     }
 
@@ -1551,12 +1555,12 @@ fn text(world: Res<World>, mut hud: Single<&mut Text, With<Hud>>) {
         }
         Some(Focus::Tape { .. }) => out.push_str(&format!(
             "tape: {}  arrows move  home/end  Z backspace  esc done\n",
-            instr_help()
+            instr_help(false)
         )),
         Some(Focus::Pick(ids)) => {
             let items: Vec<Item> = ids.iter().map(|id| world.item(*id)).collect();
             let keys = match ids.as_slice() {
-                [Id::Arm(_)] => format!(", acts now: {}  click its tape to edit", instr_help()),
+                [Id::Arm(_)] => format!(", acts now: {}  click its tape to edit", instr_help(true)),
                 [Id::Glyph(_)] => "  A/D turn".to_string(),
                 _ => String::new(),
             };
@@ -2322,7 +2326,7 @@ mod tests {
         let bonder = bonder(ORIGIN, 0);
         let arm = Arm::new(Hex::new(4, 0), 0, vec![]);
         let mut w = lone(vec![bonder], vec![arm.clone()]);
-        drag(&mut w, Hex::new(0, 3), Hex::new(-4, 3));
+        drag(&mut w, Hex::new(0, 3), Hex::new(-4, 4));
         assert_eq!(w.sim.glyphs, vec![bonder]);
         assert_eq!(w.sim.arms, vec![arm]);
         assert!(w.focus.is_none() && w.down.is_none());
@@ -2453,7 +2457,8 @@ mod tests {
     }
 
     #[test]
-    fn a_press_on_an_unselected_machine_picks_it_alone_and_a_press_on_the_ground_lifts_nothing() {
+    fn a_press_on_an_unselected_machine_picks_it_alone_and_a_press_on_the_ground_starts_a_marquee()
+    {
         let mut w = cluster();
         w.pick(INSIDE.to_vec());
         let lone_arm = w.sim.arms[1].pivot;
@@ -2472,9 +2477,7 @@ mod tests {
     }
 
     fn offsets(w: &World, ids: &[Id]) -> Vec<(Hex, usize)> {
-        ids.iter()
-            .map(|id| (w.anchor(*id), w.piece(*id).dir()))
-            .collect()
+        ids.iter().map(|id| (w.anchor(*id), w.dir(*id))).collect()
     }
 
     #[test]
@@ -2503,6 +2506,7 @@ mod tests {
     #[test]
     fn escape_while_holding_puts_the_set_back_untouched() {
         let mut w = cluster();
+        w.pointer = Some(px(Hex::new(5, 5)));
         w.pick(INSIDE.to_vec());
         let before = w.sim.clone();
         w.press(px(ORIGIN), px(ORIGIN));
