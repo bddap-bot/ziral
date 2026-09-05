@@ -1335,7 +1335,7 @@ mod shot {
     struct Shot {
         path: PathBuf,
         clip: Option<u32>,
-        frame: Frame,
+        wide: bool,
         keys: Vec<KeyCode>,
         frames: u32,
     }
@@ -1343,17 +1343,18 @@ mod shot {
     #[derive(Resource)]
     struct Target(Handle<Image>);
 
-    fn bonder(extra: &[Hex]) -> (Sim, Vec<usize>) {
-        let mut sim = Sim::empty();
-        sim.glyphs.push(Glyph {
+    fn second_bond(extra: &[Hex]) -> (Sim, Vec<usize>) {
+        let glyph = Glyph {
             kind: GlyphKind::SecondBond,
             at: Hex::new(1, -1),
             dir: 0,
-        });
+        };
+        let mut sim = Sim::empty();
+        sim.glyphs.push(glyph);
         let ids: Vec<usize> = extra
             .iter()
             .copied()
-            .chain([Hex::new(1, -1), Hex::new(2, -1), Hex::new(2, -2)])
+            .chain(glyph.slots())
             .map(|pos| {
                 sim.spawn(Atom {
                     kind: AtomKind::Base,
@@ -1361,83 +1362,42 @@ mod shot {
                 })
             })
             .collect();
-        let [a, b] = ids[ids.len() - 2..] else {
-            unreachable!()
-        };
+        let bonded: Vec<usize> = glyph
+            .slots()
+            .skip(1)
+            .map(|at| sim.atom_at(at).unwrap())
+            .collect();
         sim.bonds.push(Bond {
-            a,
-            b,
+            a: bonded[0],
+            b: bonded[1],
             kind: BondKind::Single,
         });
         (sim, ids)
     }
 
-    fn phased(ticks: &[u64]) -> Sim {
+    fn phased(copies: &[(Hex, u64)]) -> Sim {
         let mut world = Sim::empty();
-        for (at, ticks) in sim::PLACEMENTS.iter().zip(ticks) {
+        for (at, ticks) in copies {
             let mut one = sim::layout();
             for _ in 0..*ticks {
                 one.step();
             }
-            let ids: Vec<Option<usize>> = one
-                .atoms
-                .iter()
-                .map(|atom| {
-                    atom.map(|atom| {
-                        world.spawn(Atom {
-                            pos: atom.pos.add(*at),
-                            ..atom
-                        })
-                    })
-                })
-                .collect();
-            world.bonds.extend(one.bonds.iter().map(|bond| Bond {
-                a: ids[bond.a].unwrap(),
-                b: ids[bond.b].unwrap(),
-                ..*bond
-            }));
             world.place(&one, *at);
         }
         world
     }
 
-    #[derive(Clone, Copy)]
-    struct Frame {
-        scale: f32,
-        center: Vec2,
-    }
-
-    const MICRO: Frame = Frame {
-        scale: MICRO_SCALE,
-        center: Vec2::ZERO,
-    };
-
-    fn between(cells: &[Hex]) -> Vec2 {
-        cells.iter().map(|h| px(*h)).sum::<Vec2>() / cells.len() as f32
-    }
-
-    fn scene(name: &str, ticks: u64) -> (World, Frame, Vec<KeyCode>) {
+    fn scene(name: &str, ticks: u64) -> (World, bool, Vec<KeyCode>) {
         use KeyCode::*;
         let mut world = World::new(sim::preloaded());
         world.running = false;
         world.pointer = Some(px(Hex::new(3, -3)));
         let mut keys = Vec::new();
-        let mut frame = Frame {
-            center: px(Hex::new(0, -1)),
-            ..MICRO
-        };
+        let mut wide = false;
         match name {
             "micro" => world.focus_arm(0),
-            "wide" => {
-                frame = Frame {
-                    scale: WIDE_SCALE,
-                    center: between(&sim::PLACEMENTS),
-                }
-            }
-            "bonders" => {
-                frame.center = between(&sim::PLACEMENTS[..2]).with_y(px(Hex::new(0, -1)).y);
-                world.sim = phased(&[14, 15]);
-            }
+            "wide" => wide = true,
+            "bonders" => world.sim = phased(&[(Hex::new(-3, 0), 14), (Hex::new(3, 0), 15)]),
             "focus" => {
                 world
                     .sim
@@ -1475,7 +1435,7 @@ mod shot {
                 world.sim = sim;
             }
             "bonding" => {
-                let (mut sim, _) = bonder(&[]);
+                let (mut sim, _) = second_bond(&[]);
                 sim.arms
                     .push(Arm::new(Hex::new(1, 0), 1, vec![Instr::Grab, Instr::Wait]));
                 world.sim = sim;
@@ -1504,7 +1464,8 @@ mod shot {
                 world.focus_arm(0);
             }
             "tear" => {
-                let (mut sim, ids) = bonder(&[Hex::new(-1, -1), Hex::new(0, -1), Hex::new(1, 0)]);
+                let (mut sim, ids) =
+                    second_bond(&[Hex::new(-1, -1), Hex::new(0, -1), Hex::new(1, 0)]);
                 for (a, b, kind) in [
                     (0, 1, BondKind::Single),
                     (1, 3, BondKind::Double),
@@ -1519,7 +1480,7 @@ mod shot {
                 world.sim = sim;
             }
             "heldtear" => {
-                let (mut sim, ids) = bonder(&[Hex::new(0, -1)]);
+                let (mut sim, ids) = second_bond(&[Hex::new(0, -1)]);
                 sim.bonds.push(Bond {
                     a: ids[0],
                     b: ids[1],
@@ -1531,7 +1492,7 @@ mod shot {
                 world.sim = sim;
             }
             "heldeat" => {
-                let (mut sim, _) = bonder(&[Hex::new(0, 0)]);
+                let (mut sim, _) = second_bond(&[Hex::new(0, 0)]);
                 let mut eaten = Arm::new(
                     Hex::new(0, -1),
                     0,
@@ -1646,7 +1607,7 @@ mod shot {
             world.sim.step();
         }
         world.prev = world.sim.clone();
-        (world, frame, keys)
+        (world, wide, keys)
     }
 
     pub fn configure(app: &mut App) -> bool {
@@ -1664,7 +1625,7 @@ mod shot {
             ),
             _ => panic!("{USAGE}"),
         };
-        let (mut world, frame, keys) = scene(view, ticks.parse().expect(USAGE));
+        let (mut world, wide, keys) = scene(view, ticks.parse().expect(USAGE));
         let clip = clip.map(|(play, tick_ms, motion)| {
             app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
             world.period = tick_ms / 1000.0;
@@ -1675,7 +1636,7 @@ mod shot {
             .insert_resource(Shot {
                 path: PathBuf::from(path),
                 clip,
-                frame,
+                wide,
                 keys,
                 frames: 0,
             })
@@ -1710,8 +1671,14 @@ mod shot {
         image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
         let handle = images.add(image);
         let mut projection = OrthographicProjection::default_2d();
-        projection.scale = shot.frame.scale;
-        let center = shot.frame.center;
+        let center = if shot.wide {
+            projection.scale = WIDE_SCALE;
+            let pivots: Vec<Vec2> = sim::PLACEMENTS.iter().map(|h| px(*h)).collect();
+            pivots.iter().sum::<Vec2>() / pivots.len() as f32
+        } else {
+            projection.scale = MICRO_SCALE;
+            px(Hex::new(0, -1))
+        };
         commands.spawn((
             Camera2d,
             Projection::Orthographic(projection),

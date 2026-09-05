@@ -161,7 +161,7 @@ const fn base(at: Hex) -> Slot {
     }
 }
 
-const TRIANGLE: [Slot; 3] = [
+const SECOND_BOND: [Slot; 3] = [
     Slot {
         consumed: true,
         ..base(ORIGIN)
@@ -169,8 +169,8 @@ const TRIANGLE: [Slot; 3] = [
     base(DIRS[0]),
     base(DIRS[1]),
 ];
-const PAIR: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
-const PRODUCT: [Slot; 2] = [
+const BONDER: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
+const OUTPUT: [Slot; 2] = [
     Slot {
         consumed: true,
         ..base(ORIGIN)
@@ -180,31 +180,31 @@ const PRODUCT: [Slot; 2] = [
         ..base(DIRS[0])
     },
 ];
-const ONE: [Slot; 1] = [base(ORIGIN)];
+const SOURCE: [Slot; 1] = [base(ORIGIN)];
 
 impl GlyphKind {
     pub const fn rule(self) -> Rule {
         match self {
             GlyphKind::Source => Rule {
-                slots: &ONE,
+                slots: &SOURCE,
                 before: &[],
                 after: &[],
                 whole: false,
             },
             GlyphKind::Bonder => Rule {
-                slots: &PAIR,
+                slots: &BONDER,
                 before: &[(0, 1, None)],
                 after: &[(0, 1, BondKind::Single)],
                 whole: false,
             },
             GlyphKind::SecondBond => Rule {
-                slots: &TRIANGLE,
+                slots: &SECOND_BOND,
                 before: &[(1, 2, Some(BondKind::Single))],
                 after: &[(1, 2, BondKind::Double)],
                 whole: false,
             },
             GlyphKind::Output => Rule {
-                slots: &PRODUCT,
+                slots: &OUTPUT,
                 before: &[(0, 1, Some(BondKind::Double))],
                 after: &[],
                 whole: true,
@@ -458,6 +458,23 @@ impl Sim {
             pivot: a.pivot.add(at),
             ..a.clone()
         }));
+        let ids: Vec<Option<usize>> = other
+            .atoms
+            .iter()
+            .map(|atom| {
+                atom.map(|atom| {
+                    self.spawn(Atom {
+                        pos: atom.pos.add(at),
+                        ..atom
+                    })
+                })
+            })
+            .collect();
+        self.bonds.extend(other.bonds.iter().map(|bond| Bond {
+            a: ids[bond.a].unwrap(),
+            b: ids[bond.b].unwrap(),
+            ..*bond
+        }));
     }
 }
 
@@ -620,6 +637,27 @@ mod tests {
         sim.step();
         assert!(sim.arms[1].stall.is_none());
         assert_eq!(sim.atoms[1].unwrap().pos, Hex::new(1, -1));
+    }
+
+    #[test]
+    fn every_rule_names_only_its_own_slots_and_no_two_slots_share_a_cell() {
+        for kind in GlyphKind::ALL {
+            let rule = kind.rule();
+            let n = rule.slots.len();
+            assert!(n > 0, "{kind:?}");
+            for (i, slot) in rule.slots.iter().enumerate() {
+                assert!(
+                    !rule.slots[..i].iter().any(|s| s.at == slot.at),
+                    "{kind:?} slot {i} shares a cell"
+                );
+            }
+            for (a, b, _) in rule.before {
+                assert!(a != b && *a < n && *b < n, "{kind:?} before {a} {b}");
+            }
+            for (a, b, _) in rule.after {
+                assert!(a != b && *a < n && *b < n, "{kind:?} after {a} {b}");
+            }
+        }
     }
 
     #[test]
