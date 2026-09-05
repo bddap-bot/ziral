@@ -1,0 +1,102 @@
+TOOL SETTINGS
+Codex built-in image tool, default settings, one candidate per prompt, candidate 1 kept in the named file. Every prompt is sent by gen.sh as: "Generate exactly one square image with the image generation tool, then stop: do not judge, retry, edit, or describe it, and write no files. Prompt: <the recorded prompt, with [STYLE LOCK] expanded verbatim> No labels, text, watermark, menus, clutter, or named-game resemblance." The image is then resized to 1024x1024 and quantised (magick, pngquant --quality 70-95).
+
+STYLE LOCK (included verbatim in every prompt)
+Ethos: Fired Workshop treats the board as a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight, wear, and warm raking light make each action tactile while colored glazes keep states unmistakable. Palette and roles: board #D8C3A5 clay; arm #6B4F3A dark brass; closed hand #C8553D terracotta; atom kinds #4F8A8B blue-green and #E0A458 amber; glyph #7D5BA6 plum; product #F4EDE4 ivory.
+
+source.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of the floor of a shallow ceramic well glazed matte blue-green #4F8A8B with fine speckling, shaded darker toward every edge, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+bond-single.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of cast, matte, darkened brass #6B4F3A with a faint lengthwise grain and no scratches, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+arm.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of rubbed, darkened brass #6B4F3A, dull with fine wear scratches and brighter worn highlights, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+bonder.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of the floor of a shallow ceramic well glazed satin terracotta #C8553D with fine crazing, shaded darker toward every edge, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+atom-base.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of the glazed surface of one blue-green #4F8A8B ceramic bead, so close that its edge lies outside the frame; one soft curved highlight at the upper left from a warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+bond-double.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of glossy plum #7D5BA6 ceramic glaze with a faint lengthwise flow, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+second-bond.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of the floor of a shallow ceramic well glazed in a rich, saturated blue-violet plum #7D5BA6 with a fine crackle web, only the outermost edges shaded a little darker, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+output.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of the floor of a shallow ceramic well glazed glossy pale ivory #F4EDE4, almost white and cool, evenly lit and barely shaded, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-00.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a noticeably darker tan tone and a broad glossy pool of thick glaze across the lower right, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-01.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a mottled two-tone surface of pale cream patches over honey, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-02.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a wide chip across one corner exposing rough pale bisque, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-03.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a bold web of dark iron-stained crazing across the whole surface, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-04.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a much lighter, near-ivory tone and a scattering of dark pinholes, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-05.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5: only glaze, a wide crazing web with iron-stained lines, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-06.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a broad pale glaze drip running from the upper left across the middle, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-07.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a bold scatter of large dark iron speckles under the glaze, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-08.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a broad honey-coloured bloom across the centre on paler clay, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-09.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a large hairline crack forking across the surface, stained dark, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-10.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a light, pale greenish-grey tone and heavy crazing, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-11.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5: only glaze, darker toward the lower left where the glaze lies thicker, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-12.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a coarse, heavily bubbled orange-peel glaze in a deeper honey tone, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-15.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of pale satin-glazed clay #D8C3A5 with a wide glaze crawl leaving a large patch of light, rough, unglazed pale bisque, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-14.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5: only glaze, a warm caramel tone with the glaze pooling in the centre, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-13.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5: only glaze, a cooler and greyer tone with sparse crazing, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-16.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of pale satin-glazed clay #D8C3A5 with a soft tan scorch mark fading across one half, the rest light and even, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-17.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a light sandy tone, a cluster of small chips along one edge and a band of darker pooled glaze along the opposite edge, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-18.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a warm, deep honey tone, glossy and even, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-19.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5: only glaze, a pinkish blush toward one corner, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-20.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5: only glaze, a pale, almost ivory-toned clay glaze with sparse pinholes, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-23.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a cool greyish-tan tone with a large soft dark pool in one corner, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-21.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5: only glaze, a faint diagonal drag mark from the glaze brush, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+
+tile-22.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a pale chalky matte surface with a bold diagonal brush drag, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
+

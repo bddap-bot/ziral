@@ -2,7 +2,7 @@
 
 The board is a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight, wear, and one warm raking light make each action tactile; colored glazes keep every state unmistakable. Reference images and the prompts that made them are in [`reference/`](reference/).
 
-The owner chose this direction on 2026-09-05 and set two rules, which section 3 makes checkable: every atom is visually distinct from every other atom, and the same holds for every glyph, every machine, and every bond type.
+Two rules bind the direction, and section 3 makes them checkable: every atom is visually distinct from every other atom, and the same holds for every glyph, every machine, and every bond type.
 
 ## 1. Palette
 
@@ -28,9 +28,9 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 **Line.** Fills carry identity; lines carry structure. Grout and rims are thin dark brass. Glyph channels are the glyph's own glaze. Ivory lines mean "look here" (picked, being placed, stalled) and nothing else.
 
-**Texture.** Glaze: one flat fill, one highlight, one darker rim. Brass: flat fill with a darker rim. No noise, no grain, no gradient that could be read as a state. Texture that survives at gameplay scale (a cell about forty pixels wide) is the only texture.
+**Texture.** Every surface wears a diffusion-generated macro of its material, kept in [`textures/`](textures/) with the prompt that made it: each machine, atom kind, bond kind, and glyph kind has its own, and the board draws from twenty-four clay tiles, each cell's tile and turn fixed by a hash of its coordinate, so the variance from tile to tile is visible and still. A texture is a surface, never a state: rims, markings, and lines stay drawn fills over it, and nothing in a texture may read as a state glaze at gameplay scale (a cell about forty pixels wide).
 
-**Glyphs.** A glyph is an inset in the board: its cells are wells a shade darker than clay, and its channels are bars of its glaze joining slots and centre. A glyph never covers an atom; atoms sit in the wells, and everything of a glyph is drawn beneath them.
+**Glyphs.** A glyph is an inset in the board: its cells are wells floored in the glyph's own glaze texture, and its channels are bars of its glaze joining slots and centre. A glyph never covers an atom; atoms sit in the wells, and everything of a glyph is drawn beneath them.
 
 **UI.** Dark brass strips with ivory text, brass borders, the readout on its own strip; the lit tape row is the same strip in lighter brass. The strips are furniture, not board: nothing on them uses a state glaze.
 
@@ -40,7 +40,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 ## 3. Distinctness
 
-Two members of one class are distinct when they differ in at least two of hue, value, shape, marking, at gameplay scale. Hue counts only when both glazes have chroma at least 0.15 and their hues are at least 40° apart; value counts when luminance differs by at least 0.15; shape is the silhouette; marking is the inner drawing. Hue alone never counts, so the rule holds without color. The tests in `src/look.rs` check every pair in every class against exactly this rule, over the same table the toy draws from, so a new atom, glyph, machine, or bond that collides with an old one fails to land.
+Two members of one class are distinct when they differ in at least two of hue, value, shape, marking, at gameplay scale. Hue counts only when both glazes have chroma at least 0.15 and their hues are at least 40° apart; value counts when luminance differs by at least 0.15; both are judged on the glaze and on the mean colour of the texture together, and count only when both differ; every row wears its own texture; shape is the silhouette; marking is the inner drawing. Hue alone never counts, so the rule holds without color. The tests in `src/look.rs` check every pair in every class against exactly this rule, over the same table the toy draws from, so a new atom, glyph, machine, or bond that collides with an old one fails to land, and a texture swap that makes two of them alike fails the same way. A texture also has to average to its own glaze, and every tile has to differ from every other tile at gameplay scale.
 
 The classes: atoms, bonds, glyphs, machines. A machine is a primitive the palette can place, so the machine class is the arm plus every glyph; glyph distinctness is the machine table restricted to glyphs.
 
@@ -74,4 +74,4 @@ Every pair differs in at least two ways. The near cases: arm vs bonder share a h
 
 ## 4. Reference
 
-`reference/sheet.png` is the presentation sheet; `concept-board.png`, `concept-arm.png`, `concept-glyph.png`, `texture-sheet.png` the concepts; `restyle-*.png` the real toy restyled, with `source-*.png` the shots they restyled. `prompts.txt` records the prompt and tool settings for each, so any image can be regenerated. `in-game.png` is the toy drawing this bible.
+`reference/sheet.png` is the presentation sheet; `concept-board.png`, `concept-arm.png`, `concept-glyph.png`, `texture-sheet.png` the concepts; `restyle-*.png` the real toy restyled, with `source-*.png` the shots they restyled. `prompts.txt` records the prompt and tool settings for each, so any image can be regenerated. `in-game.png` is the toy drawing this bible. `textures/` holds every surface texture with its own `prompts.txt`, `gen.sh` to regenerate one, `sheet.png` the contact sheet, and `proof/` the toy wearing them.

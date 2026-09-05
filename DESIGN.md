@@ -224,8 +224,14 @@ One knob: the tick period. An instruction's duration is its animation, as in Opu
 
 ### Toy 1 wears the Fired Workshop look
 
-The owner chose the Fired Workshop direction (issue #9) and set two rules: every atom is visually distinct from every other atom, and the same for every glyph, machine, and bond type. `art/BIBLE.md` is the design ethos, palette, and the checkable form of the rules: two members of one class differ in at least two of hue, value, shape, marking, never by hue alone. The sim and the tick period are untouched; only the drawing changed.
+The Fired Workshop direction (issue #9) carries two rules: every atom is visually distinct from every other atom, and the same for every glyph, machine, and bond type. `art/BIBLE.md` is the design ethos, palette, and the checkable form of the rules: two members of one class differ in at least two of hue, value, shape, marking, never by hue alone. The sim and the tick period are untouched; only the drawing changed.
 
 What the toy now draws. The board is glazed clay with brass grout. An atom is a blue-green bead with one highlight. A single bond is a dark brass bar, a double bond two plum bars. An arm is a brass pivot and link with a terracotta horseshoe for its hand, open and wide at rest, shut on what it holds. Glyphs are wells sunk into the board: the source a blue-green ring and dot, the bonder a terracotta triangle with one spoke per slot, the second bond a plum triangle with two spokes per slot, the output two ivory cups with brass rims and the demanded bond stencilled between them. Ivory marks mean look here: the picked machine's cell, a stalled pivot, the hand that caused the stall.
 
 The tests in `src/look.rs` hold the rule over the table the toy draws from, so a new atom, glyph, machine, or bond that collides with an old one does not land.
+
+### Toy 1 wears diffusion textures
+
+Directive (verbatim): "I want each machine, atom and bond in ziral to have a high res diffusion-generated texture. There should be many tile textures too. I'd like to see variance from tile to tile."
+
+Every surface the toy draws now samples a 1024-square texture generated under the bible's style lock and kept in `art/textures/` with its prompt (issue #11): the arm's link and pivot, the bead, both bond bars, the well floor of every glyph kind, and twenty-four clay tiles. A cell's tile and its turn come from a hash of its coordinate, so the board varies from tile to tile and holds still under pan and zoom. The look table in `src/look.rs` names each texture beside its glaze, shape, and marking, and its tests now judge hue and value on the glaze and on the texture's mean colour together, require every row to wear its own texture, and require every tile to differ from every other at gameplay scale. Textures are compiled into the binary, so a missing one fails the build. Wells lost their flat fill; markings, rims, and ivory lines stay drawn over the textures.
