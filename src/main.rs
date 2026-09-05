@@ -1258,7 +1258,7 @@ mod tests {
     fn rotating_arm_with_atom() -> (Sim, Sim) {
         let mut prev = Sim::empty();
         prev.arms
-            .push(Arm::new(Hex::new(0, 0), 5, vec![Instr::RotCw]));
+            .push(Arm::new(Hex::new(2, 1), 2, vec![Instr::RotCw]));
         prev.arms[0].holding = true;
         prev.spawn(Atom {
             kind: AtomKind::Base,
@@ -1314,6 +1314,7 @@ mod tests {
         cur.step();
         let ring = |t| Frame::between(&prev, &cur, t).arms[0].ring.unwrap();
         assert_eq!(ring(0.0), RING_OPEN);
+        assert!(ring(0.25) > RING_OPEN + (RING_CLOSED - RING_OPEN) * 0.25);
         assert!(ring(0.5) < RING_OPEN && ring(0.5) > RING_CLOSED);
         assert_eq!(ring(1.0), RING_CLOSED);
     }
