@@ -8,6 +8,7 @@ use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseSc
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
+use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
 use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Sim, Stall};
@@ -674,22 +675,18 @@ struct Kiln {
     ring: Handle<Mesh>,
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
-    faint: [Handle<ColorMaterial>; 7],
+    worn: Handle<ColorMaterial>,
     skins: Vec<(Skin, [Handle<ColorMaterial>; 2])>,
     highlight: Handle<ColorMaterial>,
 }
 
 impl Kiln {
-    fn material(&self, glaze: Glaze, faint: bool) -> &Handle<ColorMaterial> {
+    fn material(&self, glaze: Glaze) -> &Handle<ColorMaterial> {
         let i = Glaze::ALL
             .iter()
             .position(|g| *g == glaze)
             .expect("every glaze is in ALL");
-        if faint {
-            &self.faint[i]
-        } else {
-            &self.glaze[i]
-        }
+        &self.glaze[i]
     }
 
     fn skin(&self, skin: Skin, faint: bool) -> &Handle<ColorMaterial> {
@@ -702,6 +699,24 @@ impl Kiln {
     }
 }
 
+fn to_linear(byte: u8) -> f32 {
+    let c = f32::from(byte) / 255.0;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn to_srgb(linear: f32) -> u8 {
+    let c = if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (c * 255.0).round() as u8
+}
+
 fn fire(skin: Skin) -> Image {
     let mut image = skin.decode();
     assert_eq!(
@@ -709,28 +724,31 @@ fn fire(skin: Skin) -> Image {
         TextureFormat::Rgba8UnormSrgb,
         "{skin:?} must decode to rgba8"
     );
+    let linear: [f32; 256] = std::array::from_fn(|b| to_linear(b as u8));
     let (mut w, mut h) = (image.width() as usize, image.height() as usize);
     let mut data = image
         .data
         .take()
         .expect("a decoded image carries its pixels");
-    let mut level = data.clone();
+    let mut start = 0;
     let mut levels = 1;
     while w > 1 && h > 1 {
         let (nw, nh) = (w / 2, h / 2);
+        let level = &data[start..start + w * h * 4];
         let mut next = Vec::with_capacity(nw * nh * 4);
         for y in 0..nh {
             for x in 0..nw {
-                for c in 0..4 {
+                for c in 0..3 {
                     let at = |dx: usize, dy: usize| {
-                        u32::from(level[((2 * y + dy) * w + 2 * x + dx) * 4 + c])
+                        linear[usize::from(level[((2 * y + dy) * w + 2 * x + dx) * 4 + c])]
                     };
-                    next.push(((at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1) + 2) / 4) as u8);
+                    next.push(to_srgb((at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1)) / 4.0));
                 }
+                next.push(255);
             }
         }
+        start += w * h * 4;
         data.extend_from_slice(&next);
-        level = next;
         (w, h) = (nw, nh);
         levels += 1;
     }
@@ -750,13 +768,16 @@ fn fire_kiln(
     let skins = look::skins()
         .map(|skin| {
             let texture = images.add(fire(skin));
-            let fired = [1.0, 0.5].map(|alpha| {
-                materials.add(ColorMaterial {
-                    color: Color::WHITE.with_alpha(alpha),
-                    texture: Some(texture.clone()),
-                    ..default()
-                })
-            });
+            let fired = [(1.0, AlphaMode2d::Opaque), (0.5, AlphaMode2d::Blend)].map(
+                |(alpha, alpha_mode)| {
+                    materials.add(ColorMaterial {
+                        color: Color::WHITE.with_alpha(alpha),
+                        alpha_mode,
+                        texture: Some(texture.clone()),
+                        ..default()
+                    })
+                },
+            );
             (skin, fired)
         })
         .collect();
@@ -770,94 +791,37 @@ fn fire_kiln(
         ring: meshes.add(Annulus::new(0.7, 1.0)),
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
-        faint: Glaze::ALL.map(|g| materials.add(g.color().with_alpha(0.5))),
+        worn: materials.add(Glaze::Brass.color().with_alpha(0.5)),
         skins,
         highlight: materials.add(IVORY.with_alpha(0.7)),
     });
 }
 
-type Poly = Vec<(Vec2, Vec2)>;
-
-fn fan(polygons: impl Iterator<Item = Poly>) -> Mesh {
-    let mut pos: Vec<[f32; 3]> = Vec::new();
-    let mut uv: Vec<[f32; 2]> = Vec::new();
-    let mut idx: Vec<u32> = Vec::new();
-    for poly in polygons {
-        let base = pos.len() as u32;
-        let n = poly.len() as u32;
-        let c = poly.iter().map(|(p, _)| *p).sum::<Vec2>() / n as f32;
-        let cuv = poly.iter().map(|(_, t)| *t).sum::<Vec2>() / n as f32;
-        pos.push([c.x, c.y, 0.0]);
-        uv.push(cuv.to_array());
-        pos.extend(poly.iter().map(|(p, _)| [p.x, p.y, 0.0]));
-        uv.extend(poly.iter().map(|(_, t)| t.to_array()));
-        for k in 0..n {
-            idx.extend([base, base + 1 + k, base + 1 + (k + 1) % n]);
-        }
-    }
+fn band(aspect: f32) -> Mesh {
+    let v = aspect / 2.0;
     Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::default(),
     )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv)
-    .with_inserted_indices(Indices::U32(idx))
-}
-
-fn band(aspect: f32) -> Mesh {
-    let band = aspect / 2.0;
-    fan(std::iter::once(vec![
-        (Vec2::new(-0.5, -0.5), Vec2::new(0.0, 0.5 + band)),
-        (Vec2::new(0.5, -0.5), Vec2::new(1.0, 0.5 + band)),
-        (Vec2::new(0.5, 0.5), Vec2::new(1.0, 0.5 - band)),
-        (Vec2::new(-0.5, 0.5), Vec2::new(0.0, 0.5 - band)),
-    ]))
-}
-
-fn cell(h: Hex) -> (Skin, Poly) {
-    let tile = look::tile(h);
-    let center = px(h);
-    let spin = Vec2::from_angle(((60 * tile.turn) as f32).to_radians());
-    let poly = corners(center, HEX * 0.95)[..6]
-        .iter()
-        .map(|p| {
-            let d = spin.rotate(*p - center) / (2.0 * HEX);
-            (*p, Vec2::new(0.5 + d.x, 0.5 - d.y))
-        })
-        .collect();
-    (tile.skin, poly)
-}
-
-fn tiles(tiling: Tiling) -> Vec<(Option<Skin>, Mesh)> {
-    match tiling {
-        Tiling::Cells { r0, r1, x0, x1 } => {
-            let cells = (r0..=r1).flat_map(|r| {
-                let (q0, q1) = (x0 - r.div_euclid(2) - 2, x1 - r.div_euclid(2) + 2);
-                (q0..=q1).map(move |q| cell(Hex::new(q, r)))
-            });
-            let mut by_skin: Vec<(Skin, Vec<Poly>)> = Vec::new();
-            for (skin, poly) in cells {
-                match by_skin.iter_mut().find(|(s, _)| *s == skin) {
-                    Some((_, polys)) => polys.push(poly),
-                    None => by_skin.push((skin, vec![poly])),
-                }
-            }
-            by_skin
-                .into_iter()
-                .map(|(skin, polys)| (Some(skin), fan(polys.into_iter())))
-                .collect()
-        }
-        Tiling::Slab(lo, hi) => {
-            let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
-            let slab = fan(std::iter::once(vec![
-                (lo, Vec2::ZERO),
-                (Vec2::new(hi.x, lo.y), Vec2::X),
-                (hi, Vec2::ONE),
-                (Vec2::new(lo.x, hi.y), Vec2::Y),
-            ]));
-            vec![(None, slab)]
-        }
-    }
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![
+            [-0.5, -0.5, 0.0],
+            [0.5, -0.5, 0.0],
+            [0.5, 0.5, 0.0],
+            [-0.5, 0.5, 0.0],
+        ],
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        vec![
+            [0.0, 0.5 + v],
+            [1.0, 0.5 + v],
+            [1.0, 0.5 - v],
+            [0.0, 0.5 - v],
+        ],
+    )
+    .with_inserted_indices(Indices::U32(vec![0, 1, 2, 0, 2, 3]))
 }
 
 fn unworn<M: std::fmt::Debug>(look: Look<M>) -> ! {
@@ -894,7 +858,7 @@ impl Painter<'_, '_, '_, '_, '_> {
 
     fn disc(&mut self, at: Vec2, r: f32, glaze: Glaze, z: f32) {
         let kiln = self.kiln;
-        let material = kiln.material(glaze, false);
+        let material = kiln.material(glaze);
         self.fill(&kiln.circle, material, at, 0.0, Vec2::splat(r), z);
     }
 
@@ -903,8 +867,8 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.fill(mesh, material, at, 0.0, Vec2::splat(r), z);
     }
 
-    fn ring(&mut self, mesh: &Handle<Mesh>, at: Vec2, r: f32, glaze: Glaze, faint: bool, z: f32) {
-        let material = self.kiln.material(glaze, faint);
+    fn ring(&mut self, mesh: &Handle<Mesh>, at: Vec2, r: f32, glaze: Glaze, z: f32) {
+        let material = self.kiln.material(glaze);
         self.fill(mesh, material, at, 0.0, Vec2::splat(r), z);
     }
 
@@ -924,7 +888,7 @@ impl Painter<'_, '_, '_, '_, '_> {
 
     fn channel(&mut self, a: Vec2, b: Vec2, glaze: Glaze, z: f32) {
         let kiln = self.kiln;
-        self.bar(&kiln.bar, kiln.material(glaze, false), a, b, 2.0, z);
+        self.bar(&kiln.bar, kiln.material(glaze), a, b, 2.0, z);
     }
 
     fn well(&mut self, at: Vec2, skin: Skin) {
@@ -935,7 +899,7 @@ impl Painter<'_, '_, '_, '_, '_> {
     fn bead(&mut self, at: Vec2, look: Look<AtomMark>) {
         let kiln = self.kiln;
         self.surface(&kiln.circle, look.skin, at, HEX * 0.4, 0.4);
-        self.ring(&kiln.rim, at, HEX * 0.4, Glaze::Brass, true, 0.42);
+        self.fill(&kiln.rim, &kiln.worn, at, 0.0, Vec2::splat(HEX * 0.4), 0.42);
         match look.marking {
             AtomMark::Highlight => {
                 let up_left = at + Vec2::new(-0.15, 0.15) * HEX;
@@ -996,7 +960,7 @@ impl Painter<'_, '_, '_, '_, '_> {
         }
         match look.marking {
             MachineMark::Dot => {
-                self.ring(&kiln.ring, slots[0], HEX * 0.6, look.glaze, false, 0.15);
+                self.ring(&kiln.ring, slots[0], HEX * 0.6, look.glaze, 0.15);
                 self.disc(slots[0], HEX * 0.15, look.glaze, 0.15);
             }
             MachineMark::Spokes(n) => {
@@ -1010,12 +974,12 @@ impl Painter<'_, '_, '_, '_, '_> {
                         self.channel(c + off, *s + off, look.glaze, 0.13);
                     }
                 }
-                self.ring(&kiln.ring, slots[0], HEX * 0.2, look.glaze, false, 0.14);
+                self.ring(&kiln.ring, slots[0], HEX * 0.2, look.glaze, 0.14);
             }
             MachineMark::Cup => {
                 for s in &slots {
                     self.surface(&kiln.circle, look.skin, *s, HEX * 0.5, 0.15);
-                    self.ring(&kiln.rim, *s, HEX * 0.5, Glaze::Brass, false, 0.16);
+                    self.ring(&kiln.rim, *s, HEX * 0.5, Glaze::Brass, 0.16);
                 }
                 for (a, b, kind) in kind.rule().before {
                     if let Some(kind) = kind {
@@ -1102,7 +1066,6 @@ fn grip(holding: bool) -> f32 {
 fn board(
     mut commands: Commands,
     mut kiln: ResMut<Kiln>,
-    mut meshes: ResMut<Assets<Mesh>>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<Camera2d>>,
     laid: Query<Entity, With<Board>>,
@@ -1131,16 +1094,45 @@ fn board(
     for e in &laid {
         commands.entity(e).despawn();
     }
-    for (skin, mesh) in tiles(tiling) {
-        let material = match skin {
-            Some(skin) => kiln.skin(skin, false),
-            None => kiln.material(Glaze::Clay, false),
-        };
+    let mut lay = |mesh: &Handle<Mesh>, material: &Handle<ColorMaterial>, transform: Transform| {
         commands.spawn((
             Board,
-            Mesh2d(meshes.add(mesh)),
+            Mesh2d(mesh.clone()),
             MeshMaterial2d(material.clone()),
+            transform,
         ));
+    };
+    match tiling {
+        Tiling::Cells { r0, r1, x0, x1 } => {
+            for r in r0..=r1 {
+                let (q0, q1) = (x0 - r.div_euclid(2) - 2, x1 - r.div_euclid(2) + 2);
+                for q in q0..=q1 {
+                    let h = Hex::new(q, r);
+                    let tile = look::tile(h);
+                    lay(
+                        &kiln.hexagon,
+                        kiln.skin(tile.skin, false),
+                        Transform {
+                            translation: px(h).extend(0.0),
+                            rotation: Quat::from_rotation_z(((60 * tile.turn) as f32).to_radians()),
+                            scale: Vec3::splat(HEX * 0.95),
+                        },
+                    );
+                }
+            }
+        }
+        Tiling::Slab(lo, hi) => {
+            let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
+            lay(
+                &kiln.bar,
+                kiln.material(Glaze::Clay),
+                Transform {
+                    translation: ((lo + hi) / 2.0).extend(0.0),
+                    scale: (hi - lo).extend(1.0),
+                    ..default()
+                },
+            );
+        }
     }
     kiln.tiled = Some(tiling);
 }
@@ -1243,6 +1235,7 @@ mod shot {
     use bevy::image::Image;
     use bevy::input::ButtonState;
     use bevy::input::keyboard::{Key, KeyboardInput, NativeKey};
+    use bevy::render::RenderPlugin;
     use bevy::render::render_resource::{TextureFormat, TextureUsages};
     use bevy::render::view::window::screenshot::{Screenshot, save_to_disk};
     use bevy::time::TimeUpdateStrategy;
@@ -1253,7 +1246,7 @@ mod shot {
 
     const WIDE_SCALE: f32 = 1.5;
 
-    const WARM: u32 = 60;
+    const WARM: u32 = 12;
     const FRAME: Duration = Duration::from_nanos(16_666_667);
 
     #[derive(Resource)]
@@ -1542,6 +1535,10 @@ mod shot {
             })
             .add_plugins(
                 DefaultPlugins
+                    .set(RenderPlugin {
+                        synchronous_pipeline_compilation: true,
+                        ..default()
+                    })
                     .set(WindowPlugin {
                         primary_window: Some(Window {
                             resolution: (1280, 720).into(),
