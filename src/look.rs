@@ -99,18 +99,8 @@ pub struct Tile {
     pub turn: usize,
 }
 
-pub fn scramble(h: Hex) -> u32 {
-    let mut x = (h.q as u32).wrapping_mul(0x9E37_79B1);
-    x ^= x >> 15;
-    x ^= (h.r as u32).wrapping_mul(0x85EB_CA77);
-    x = x.wrapping_mul(0x2C1B_3C6D);
-    x ^= x >> 12;
-    x = x.wrapping_mul(0x297A_2D39);
-    x ^ (x >> 15)
-}
-
 pub fn tile(h: Hex) -> Tile {
-    let x = scramble(h);
+    let x = h.scramble();
     Tile {
         skin: TILES[(x % TILES.len() as u32) as usize],
         turn: ((x >> 8) % 6) as usize,

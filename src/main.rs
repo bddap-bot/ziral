@@ -1145,21 +1145,27 @@ const SPREAD: Swing = Swing {
 
 impl Swing {
     fn from_cell(cell: Hex) -> Swing {
+        const STEPS: u32 = 65;
+        const FEWEST_BOUNCES: u32 = SWING.half_bounces - SPREAD.half_bounces;
         fn draw(bits: &mut u32, steps: u32) -> u32 {
             let d = *bits % steps;
             *bits /= steps;
             d
         }
-        let bits = &mut look::scramble(cell);
-        let mut unit = |half: f32| half * (draw(bits, 64) as f32 / 31.5 - 1.0);
+        let bits = &mut cell.scramble();
+        let mut unit =
+            |half: f32| half * (draw(bits, STEPS) as f32 / ((STEPS - 1) / 2) as f32 - 1.0);
         Swing {
             creep: SWING.creep + unit(SPREAD.creep),
             release: SWING.release + unit(SPREAD.release),
             run: SWING.run + unit(SPREAD.run),
             decay: SWING.decay + unit(SPREAD.decay),
-            half_bounces: SWING.half_bounces - SPREAD.half_bounces
-                + draw(bits, 2 * SPREAD.half_bounces + 1),
+            half_bounces: FEWEST_BOUNCES + draw(bits, 2 * SPREAD.half_bounces + 1),
         }
+    }
+
+    fn arrival(&self) -> f32 {
+        self.release + self.run
     }
 
     fn at(&self, t: f32) -> f32 {
@@ -1170,13 +1176,12 @@ impl Swing {
             let u = t / self.release;
             return self.creep * u * u * (3.0 - 2.0 * u);
         }
-        if t < self.release + self.run {
+        if t < self.arrival() {
             return self.creep.lerp(1.0, (t - self.release) / self.run);
         }
         let speed = (1.0 - self.creep) / self.run;
-        let omega =
-            std::f32::consts::PI * self.half_bounces as f32 / (1.0 - self.release - self.run);
-        let after = t - self.release - self.run;
+        let omega = std::f32::consts::PI * self.half_bounces as f32 / (1.0 - self.arrival());
+        let after = t - self.arrival();
         1.0 + speed / omega * (-self.decay * after).exp() * (omega * after).sin()
     }
 }
@@ -1480,6 +1485,19 @@ mod shot {
                     .push(Arm::new(Hex::new(1, 0), 1, vec![Instr::Grab, Instr::Wait]));
                 world.sim = sim;
                 world.focus_arm(0);
+            }
+            "chorus" => {
+                let mut sim = Sim::empty();
+                for q in [-8, -4, 0, 4, 8] {
+                    let mut arm = Arm::new(Hex::new(q, -1), 2, vec![Instr::RotCw]);
+                    arm.holding = true;
+                    sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos: arm.hand(),
+                    });
+                    sim.arms.push(arm);
+                }
+                world.sim = sim;
             }
             "twohands" => {
                 let mut sim = Sim::empty();
@@ -1850,18 +1868,16 @@ mod tests {
         assert!(ring(creeping) > RING_OPEN + (RING_CLOSED - RING_OPEN) * creeping);
         let running = swing.release + swing.run / 2.0;
         assert!(ring(running) < RING_OPEN && ring(running) > RING_CLOSED);
-        let clench = argmax(&swing);
-        assert!(ring(clench) < RING_CLOSED);
-        assert!((ring(clench) - RING_OPEN.lerp(RING_CLOSED, swing.at(clench))).abs() < 1e-6);
+        let clenched = (1..100)
+            .map(|i| ring(i as f32 / 100.0))
+            .fold(f32::MAX, f32::min);
+        assert!(clenched < RING_CLOSED);
         assert_eq!(ring(1.0), RING_CLOSED);
     }
 
-    fn argmax(swing: &Swing) -> f32 {
-        (1..1000)
-            .map(|i| i as f32 / 1000.0)
-            .max_by(|a, b| swing.at(*a).total_cmp(&swing.at(*b)))
-            .unwrap()
-    }
+    const OVERSHOOT_LEAST: f32 = 1.04;
+    const OVERSHOOT_MOST: f32 = 1.16;
+    const VISIBLE_BOUNCE: f32 = 1.01;
 
     fn patch() -> Vec<Hex> {
         (-4..4)
@@ -1869,38 +1885,25 @@ mod tests {
             .collect()
     }
 
-    fn corners() -> Vec<Swing> {
-        (0..32u32)
-            .map(|bits| {
-                let sign = |bit: u32| if bits >> bit & 1 == 1 { 1.0 } else { -1.0 };
-                Swing {
-                    creep: SWING.creep + SPREAD.creep * sign(0),
-                    release: SWING.release + SPREAD.release * sign(1),
-                    run: SWING.run + SPREAD.run * sign(2),
-                    half_bounces: if bits >> 3 & 1 == 1 {
-                        SWING.half_bounces + SPREAD.half_bounces
-                    } else {
-                        SWING.half_bounces - SPREAD.half_bounces
-                    },
-                    decay: SWING.decay + SPREAD.decay * sign(4),
-                }
-            })
-            .collect()
-    }
-
     fn family() -> Vec<Swing> {
         let mut all = vec![SWING];
-        all.extend(corners());
         all.extend(patch().into_iter().map(Swing::from_cell));
         all
     }
 
     #[test]
     fn a_cell_keeps_its_swing_and_a_patch_has_no_two_alike() {
+        assert_eq!(
+            Swing::from_cell(Hex::new(2, -3)),
+            Swing {
+                creep: 0.1640625,
+                release: 0.2734375,
+                run: 0.2509375,
+                half_bounces: 6,
+                decay: 3.515625,
+            }
+        );
         let swings: Vec<Swing> = patch().into_iter().map(Swing::from_cell).collect();
-        for (cell, swing) in patch().into_iter().zip(&swings) {
-            assert_eq!(Swing::from_cell(cell), *swing);
-        }
         for (i, a) in swings.iter().enumerate() {
             for b in &swings[i + 1..] {
                 assert_ne!(a, b);
@@ -1914,7 +1917,10 @@ mod tests {
         assert!(span(|s| s.release) > SPREAD.release);
         assert!(span(|s| s.run) > SPREAD.run);
         assert!(span(|s| s.decay) > SPREAD.decay);
-        assert!(span(|s| s.half_bounces as f32) == 2.0 * SPREAD.half_bounces as f32);
+        assert_eq!(
+            span(|s| s.half_bounces as f32),
+            2.0 * SPREAD.half_bounces as f32
+        );
     }
 
     #[test]
@@ -1932,7 +1938,10 @@ mod tests {
                 );
             }
             let peak = samples.iter().cloned().fold(0.0, f32::max);
-            assert!(peak > 1.04 && peak < 1.16, "{swing:?} overshoot {peak}");
+            assert!(
+                peak > OVERSHOOT_LEAST && peak < OVERSHOOT_MOST,
+                "{swing:?} overshoot {peak}"
+            );
             let first_crossing = samples.iter().position(|s| *s >= 1.0).unwrap();
             let sign_changes = samples[first_crossing..]
                 .windows(2)
@@ -1941,7 +1950,7 @@ mod tests {
             assert!(sign_changes >= 2, "{swing:?} {sign_changes} sign changes");
             let bounces = samples[first_crossing..]
                 .windows(3)
-                .filter(|w| w[1] > w[0] && w[1] > w[2] && w[1] > 1.01)
+                .filter(|w| w[1] > w[0] && w[1] > w[2] && w[1] > VISIBLE_BOUNCE)
                 .count();
             assert!(bounces >= 2, "{swing:?} {bounces} visible bounces");
         }

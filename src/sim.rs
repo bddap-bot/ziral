@@ -28,6 +28,14 @@ impl Hex {
         Hex::new(self.q - o.q, self.r - o.r)
     }
 
+    pub fn scramble(self) -> u32 {
+        let mut x = (self.q as u32).wrapping_mul(0x9E37_79B1);
+        x ^= x >> 15;
+        x ^= (self.r as u32).wrapping_mul(0x85EB_CA77);
+        x = x.wrapping_mul(0x2C1B_3C6D);
+        x ^ (x >> 12)
+    }
+
     pub fn rotate(self, pivot: Hex, cw: bool) -> Hex {
         let d = self.sub(pivot);
         let d = if cw {
