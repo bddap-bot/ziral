@@ -1,0 +1,20 @@
+TOOL SETTINGS
+Codex built-in image tool, default settings. One candidate generated for every prompt; candidate 1 kept in the named file. Restyles used the named local screenshot as the sole edit target.
+
+STYLE LOCK (included verbatim in every prompt)
+Ethos: Field Notes looks drawn, cut, and pinned during an inventor’s working session: graphite construction, colored-pencil state marks, and small paper repairs. Human irregularity warms the board, but repeated symbols and strong value contrast preserve exact game information. Palette and roles: board #F3EBD3 notebook; arm #3F4A52 graphite; closed hand #D95D39 vermilion; atom kinds #3A8D8F teal and #D9A441 ochre; glyph #7656A8 purple pencil; product #FFFDF5 white paper.
+
+concept-board.png — candidate 1
+Use case: stylized-concept. Asset type: game art-direction establishing shot. [STYLE LOCK] Wide top-down hex board mid-program with several radial arms, circular atoms and bonds, compact glyphs, one output; sparse readable layout. Graphite, colored pencil, cut-paper collage, light erasures and tape, diffuse daylight. No interface, labels, readable text, watermark, menus, childish doodles, muddy contrast, or named-game resemblance.
+
+concept-arm.png — candidate 1
+Use case: stylized-concept. Asset type: arm detail concept. [STYLE LOCK] Close orthographic view of one radial mechanical arm on a hex board, distinct closed hand visibly holding one circular teal atom; show pivot, one rigid link and functional hand aperture. Graphite, colored pencil and cut-paper collage, light erasures and tape, diffuse daylight. Crisp state readability. No labels, text, watermark, menus, clutter, or named-game resemblance.
+
+concept-glyph.png — candidate 1
+Use case: stylized-concept. Asset type: glyph detail concept. [STYLE LOCK] Isolated three-slot bonding glyph spanning three neighboring hex cells, with restrained atom-position cues and decisive negative space, straight-on orthographic. Graphite, colored pencil and cut-paper collage, light erasures and tape, diffuse daylight. Crisp readable geometry. No arm, labels, text, watermark, menus, clutter, or named-game resemblance.
+
+texture-sheet.png — candidate 1
+Use case: stylized-concept. Asset type: tileable texture sheet. [STYLE LOCK] Clean 2-by-2 swatch sheet of seamless game materials for board, arm, atom, glyph; equal square swatches, macro surface detail, no objects or interface. Graphite, colored pencil and cut-paper collage, light erasures and tape, diffuse daylight. No labels, text, watermark, menus, clutter, or named-game resemblance.
+
+restyle-heldeat.png / restyle-dropfirst.png — candidate 1 each; targets source-heldeat.png / source-dropfirst.png
+Use case: style-transfer. Asset type: restyled in-game screenshot. Edit target: the supplied real toy screenshot. [STYLE LOCK] Restyle only the rendering into graphite, colored pencil and cut paper, light erasures, diffuse daylight. Preserve the screenshot's exact 1280x720 composition and UI layout: same hex grid, same arm pivots/links/hands, same atoms and bonds in the same cells, same glyph positions, same top instructions, left palette, bottom tapes, and the same empty space. Keep all existing text content and placement unchanged and legible. Do not add, remove, move, multiply, or reinterpret game objects. No new text, no watermark, no menus beyond those already present, no named-game resemblance.

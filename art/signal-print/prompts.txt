@@ -1,0 +1,20 @@
+TOOL SETTINGS
+Codex built-in image tool, default settings. One candidate generated for every prompt; candidate 1 kept in the named file. Restyles used the named local screenshot as the sole edit target.
+
+STYLE LOCK (included verbatim in every prompt)
+Ethos: Signal Print makes every game state read like a crisp instructional screenprint: broad quiet fields, decisive silhouettes, and a single hot registration accent. Imperfect ink edges add life without weakening the strict visual hierarchy. Palette and roles: board #F2E8D5 warm paper; arm #17324D navy; closed hand #E4572E orange-red; atom kinds #2A9D8F teal and #E9C46A gold; glyph #6C5CE7 violet; product #F7F7F2 near-white.
+
+concept-board.png — candidate 1
+Use case: stylized-concept. Asset type: game art-direction concept, establishing shot. [STYLE LOCK] Show a wide orthographic hex board mid-program with several radial mechanical arms, circular atoms, compact glyph marks, bonds, and one output; sparse playable layout, highly legible shapes. Style/medium: editorial screenprint, subtle paper tooth and slight ink misregistration, flat graphic forms. Composition: 3:2 landscape, no interface chrome, no labels. Lighting: flat print, no gradients. Constraints: original visual language, not resembling any named game; arm, atoms, glyph and output instantly distinct; no text, no watermark, no menus, no photorealism.
+
+concept-arm.png — candidate 1
+Use case: stylized-concept. Asset type: arm detail concept. [STYLE LOCK] Close orthographic view of one radial mechanical arm on a hex board, orange-red closed hand visibly holding one teal circular atom; show pivot, single rigid link, hand aperture, crisp functional silhouette. Editorial screenprint with subtle paper tooth and imperfect ink edge, flat lighting. No labels, text, watermark, menus, photorealism, or named-game resemblance.
+
+concept-glyph.png — candidate 1
+Use case: stylized-concept. Asset type: glyph detail concept. [STYLE LOCK] Isolated three-slot bonding glyph designed as a violet geometric registration mark spanning three neighboring hex cells, with tiny teal/gold atom position cues and decisive negative space; editorial screenprint on warm paper, straight-on orthographic, flat lighting. No arm, no labels, text, watermark, menus, gradients, or named-game resemblance.
+
+texture-sheet.png — candidate 1
+Use case: stylized-concept. Asset type: tileable texture sheet. [STYLE LOCK] A clean 2-by-2 swatch sheet of seamless game materials: warm paper hex-board tooth, navy arm ink, teal-and-gold atom ink, violet glyph ink; equal square swatches, macro surface detail, restrained screenprint misregistration, no objects or interface. No labels, text, watermark, menus, photorealism, or named-game resemblance.
+
+restyle-heldeat.png / restyle-dropfirst.png — candidate 1 each; targets source-heldeat.png / source-dropfirst.png
+Use case: style-transfer. Asset type: restyled in-game screenshot. Edit target: the supplied real toy screenshot. [STYLE LOCK] Restyle only the rendering into editorial screenprint, subtle paper tooth, flat ink. Preserve the screenshot's exact 1280x720 composition and UI layout: same hex grid, same arm pivots/links/hands, same atoms and bonds in the same cells, same glyph positions, same top instructions, left palette, bottom tapes, and the same empty space. Keep all existing text content and placement unchanged and legible. Do not add, remove, move, multiply, or reinterpret game objects. No new text, no watermark, no menus beyond those already present, no named-game resemblance.

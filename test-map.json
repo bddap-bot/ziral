@@ -12,6 +12,11 @@
       "why": "prose; nothing executes it"
     },
     {
+      "paths": ["art/**"],
+      "tests": [],
+      "why": "non-executable art direction documents and raster reference assets"
+    },
+    {
       "paths": ["web/**"],
       "tests": [
         "nix-shell --run 'shellcheck web/build.sh'",

@@ -1,0 +1,20 @@
+TOOL SETTINGS
+Codex built-in image tool, default settings. One candidate generated for every prompt; candidate 1 kept in the named file. Restyles used the named local screenshot as the sole edit target.
+
+STYLE LOCK (included verbatim in every prompt)
+Ethos: Fired Workshop treats the board as a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight, wear, and warm raking light make each action tactile while colored glazes keep states unmistakable. Palette and roles: board #D8C3A5 clay; arm #6B4F3A dark brass; closed hand #C8553D terracotta; atom kinds #4F8A8B blue-green and #E0A458 amber; glyph #7D5BA6 plum; product #F4EDE4 ivory.
+
+concept-board.png — candidate 1
+Use case: stylized-concept. Asset type: game art-direction establishing shot. [STYLE LOCK] Wide orthographic hex board mid-program, several radial arms, circular atoms and bonds, compact glyphs, one output, sparse playable layout. Handmade ceramic and brass maquette, warm raking studio light, restrained wear. No interface, labels, text, watermark, menus, excessive steampunk clutter, or named-game resemblance.
+
+concept-arm.png — candidate 1
+Use case: stylized-concept. Asset type: arm detail concept. [STYLE LOCK] Close orthographic view of one radial mechanical arm on a hex board, distinct closed hand visibly holding one circular blue-green atom; show pivot, one rigid link and functional hand aperture. Handmade glazed ceramic and darkened brass, warm raking studio light, restrained wear. Crisp state readability. No labels, text, watermark, menus, clutter, or named-game resemblance.
+
+concept-glyph.png — candidate 1
+Use case: stylized-concept. Asset type: glyph detail concept. [STYLE LOCK] Isolated three-slot bonding glyph spanning three neighboring hex cells, with restrained atom-position cues and decisive negative space, straight-on orthographic. Handmade glazed ceramic and darkened brass, warm raking studio light, restrained wear. Crisp readable geometry. No arm, labels, text, watermark, menus, clutter, or named-game resemblance.
+
+texture-sheet.png — candidate 1
+Use case: stylized-concept. Asset type: tileable texture sheet. [STYLE LOCK] Clean 2-by-2 swatch sheet of seamless game materials for board, arm, atom, glyph; equal square swatches, macro surface detail, no objects or interface. Handmade glazed ceramic and darkened brass, warm raking studio light, restrained wear. No labels, text, watermark, menus, clutter, or named-game resemblance.
+
+restyle-heldeat.png / restyle-dropfirst.png — candidate 1 each; targets source-heldeat.png / source-dropfirst.png
+Use case: style-transfer. Asset type: restyled in-game screenshot. Edit target: the supplied real toy screenshot. [STYLE LOCK] Restyle only the rendering into glazed ceramic board and atoms, darkened brass arms, warm raking light. Preserve the screenshot's exact 1280x720 composition and UI layout: same hex grid, same arm pivots/links/hands, same atoms and bonds in the same cells, same glyph positions, same top instructions, left palette, bottom tapes, and the same empty space. Keep all existing text content and placement unchanged and legible. Do not add, remove, move, multiply, or reinterpret game objects. No new text, no watermark, no menus beyond those already present, no named-game resemblance.
