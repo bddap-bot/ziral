@@ -36,18 +36,33 @@ impl Hex {
         x ^ (x >> 12)
     }
 
-    pub fn rotate(self, pivot: Hex, cw: bool) -> Hex {
+    pub fn rotate(self, pivot: Hex, spin: Spin) -> Hex {
         let d = self.sub(pivot);
-        let d = if cw {
-            Hex::new(d.q + d.r, -d.q)
-        } else {
-            Hex::new(-d.r, d.q + d.r)
+        let d = match spin {
+            Spin::Cw => Hex::new(d.q + d.r, -d.q),
+            Spin::Ccw => Hex::new(-d.r, d.q + d.r),
         };
         pivot.add(d)
     }
 
     pub fn turned(self, dir: usize) -> Hex {
-        (0..dir % 6).fold(self, |h, _| h.rotate(ORIGIN, true))
+        (0..dir % 6).fold(self, |h, _| h.rotate(ORIGIN, Spin::Cw))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Spin {
+    Cw,
+    Ccw,
+}
+
+impl Spin {
+    pub fn turn(self, dir: usize) -> usize {
+        let step = match self {
+            Spin::Cw => 1,
+            Spin::Ccw => 5,
+        };
+        (dir + step) % 6
     }
 }
 
@@ -58,6 +73,16 @@ pub enum Instr {
     RotCw,
     RotCcw,
     Wait,
+}
+
+impl Instr {
+    pub fn spin(self) -> Option<Spin> {
+        match self {
+            Instr::RotCw => Some(Spin::Cw),
+            Instr::RotCcw => Some(Spin::Ccw),
+            Instr::Grab | Instr::Drop | Instr::Wait => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -430,33 +455,36 @@ impl Sim {
                 self.arms[i].holding = true;
             }
             Instr::Drop => self.arms[i].holding = false,
-            Instr::RotCw | Instr::RotCcw => {
-                let cw = instr == Instr::RotCw;
-                let pivot = self.arms[i].pivot;
-                if let Some(held) = self.held(i) {
-                    if let Some(j) = self.other_hand(i) {
-                        return Err(Stall::Hand(j));
-                    }
-                    let comp = self.component(held);
-                    let moved: Vec<(usize, Hex)> = comp
-                        .iter()
-                        .map(|id| (*id, self.atoms[*id].unwrap().pos.rotate(pivot, cw)))
-                        .collect();
-                    let blocked = moved.iter().any(|(_, to)| {
-                        self.atom_at(*to)
-                            .is_some_and(|other| !comp.contains(&other))
-                    });
-                    if blocked {
-                        return Err(Stall::Illegal);
-                    }
-                    for (id, to) in moved {
-                        self.atoms[id].as_mut().unwrap().pos = to;
-                    }
-                }
-                let arm = &mut self.arms[i];
-                arm.dir = (arm.dir + if cw { 1 } else { 5 }) % 6;
+            Instr::RotCw => self.spin(i, Spin::Cw)?,
+            Instr::RotCcw => self.spin(i, Spin::Ccw)?,
+        }
+        Ok(())
+    }
+
+    fn spin(&mut self, i: usize, spin: Spin) -> Result<(), Stall> {
+        let pivot = self.arms[i].pivot;
+        if let Some(held) = self.held(i) {
+            if let Some(j) = self.other_hand(i) {
+                return Err(Stall::Hand(j));
+            }
+            let comp = self.component(held);
+            let moved: Vec<(usize, Hex)> = comp
+                .iter()
+                .map(|id| (*id, self.atoms[*id].unwrap().pos.rotate(pivot, spin)))
+                .collect();
+            let blocked = moved.iter().any(|(_, to)| {
+                self.atom_at(*to)
+                    .is_some_and(|other| !comp.contains(&other))
+            });
+            if blocked {
+                return Err(Stall::Illegal);
+            }
+            for (id, to) in moved {
+                self.atoms[id].as_mut().unwrap().pos = to;
             }
         }
+        let arm = &mut self.arms[i];
+        arm.dir = spin.turn(arm.dir);
         Ok(())
     }
 

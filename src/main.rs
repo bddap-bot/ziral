@@ -11,7 +11,7 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
 use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin};
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Stall};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
 
 const HEX: f32 = 20.0;
 const TICK_MS: f32 = 400.0;
@@ -58,8 +58,8 @@ impl Item {
 const KEYS: [(KeyCode, Instr, char, &str); 5] = [
     (KeyCode::KeyF, Instr::Grab, 'F', "grab"),
     (KeyCode::KeyR, Instr::Drop, 'R', "drop"),
-    (KeyCode::KeyE, Instr::RotCw, 'E', "cw"),
-    (KeyCode::KeyQ, Instr::RotCcw, 'Q', "ccw"),
+    (KeyCode::KeyA, Instr::RotCcw, 'A', "ccw"),
+    (KeyCode::KeyD, Instr::RotCw, 'D', "cw"),
     (KeyCode::KeyX, Instr::Wait, '.', "wait"),
 ];
 
@@ -78,12 +78,10 @@ fn instr_help() -> String {
         .join("  ")
 }
 
-const NAV: [KeyCode; 9] = [
+const NAV: [KeyCode; 7] = [
     KeyCode::Escape,
     KeyCode::KeyZ,
     KeyCode::Backspace,
-    KeyCode::KeyA,
-    KeyCode::KeyD,
     KeyCode::ArrowLeft,
     KeyCode::ArrowRight,
     KeyCode::Home,
@@ -124,9 +122,9 @@ impl Held {
         }
     }
 
-    fn turn(&mut self, step: usize) {
-        self.dir = (self.dir + step) % 6;
-        self.grip = self.grip.turned(step);
+    fn turn(&mut self, spin: Spin) {
+        self.dir = spin.turn(self.dir);
+        self.grip = self.grip.rotate(ORIGIN, spin);
     }
 }
 
@@ -199,17 +197,6 @@ impl World {
         }
     }
 
-    fn turn(&mut self, f: Focus, dir: usize) {
-        match f {
-            Focus::Arm(arm) | Focus::Tape { arm, .. } => {
-                self.sim.arms[arm].dir = dir;
-                self.unstall();
-            }
-            Focus::Glyph(i) => self.sim.glyphs[i].dir = dir,
-        }
-        self.prev = self.sim.clone();
-    }
-
     fn unstall(&mut self) {
         for a in &mut self.sim.arms {
             a.stall = None;
@@ -270,10 +257,16 @@ impl World {
             (Some(f), None) => self.focus = Some(f),
             (Some(f), Some(at)) => {
                 match f {
-                    Focus::Arm(arm) | Focus::Tape { arm, .. } => self.sim.arms[arm].pivot = at,
-                    Focus::Glyph(i) => self.sim.glyphs[i].at = at,
+                    Focus::Arm(arm) | Focus::Tape { arm, .. } => {
+                        self.sim.arms[arm].pivot = at;
+                        self.sim.arms[arm].dir = held.dir;
+                        self.unstall();
+                    }
+                    Focus::Glyph(i) => {
+                        self.sim.glyphs[i].at = at;
+                        self.sim.glyphs[i].dir = held.dir;
+                    }
                 }
-                self.turn(f, held.dir);
                 self.focus = Some(f);
             }
             (None, Some(at)) => match held.item {
@@ -325,14 +318,11 @@ impl World {
             self.focus = None;
             return;
         }
-        let step = match key {
-            KeyA => Some(5),
-            KeyD => Some(1),
-            _ => None,
-        };
+        let instr = instr_of(key);
+        let spin = instr.and_then(Instr::spin);
         if let Some(held) = &mut self.held {
-            if let Some(step) = step {
-                held.turn(step);
+            if let Some(spin) = spin {
+                held.turn(spin);
             } else if key == KeyZ {
                 let from = held.from;
                 self.held = None;
@@ -344,14 +334,17 @@ impl World {
         }
         let Some(focus) = self.focus else { return };
         match focus {
-            Focus::Glyph(_) | Focus::Arm(_) => {
-                if key == KeyZ {
-                    self.remove(focus);
-                } else if let Some(step) = step {
-                    let (_, dir) = self.item(focus);
-                    self.turn(focus, (dir + step) % 6);
-                } else if let (Focus::Arm(arm), Some(instr)) = (focus, instr_of(key)) {
+            Focus::Arm(_) | Focus::Glyph(_) if key == KeyZ => self.remove(focus),
+            Focus::Arm(arm) => {
+                if let Some(instr) = instr {
                     self.act(arm, instr);
+                }
+            }
+            Focus::Glyph(i) => {
+                if let Some(spin) = spin {
+                    let glyph = &mut self.sim.glyphs[i];
+                    glyph.dir = spin.turn(glyph.dir);
+                    self.prev = self.sim.clone();
                 }
             }
             Focus::Tape { arm, cursor } => {
@@ -366,7 +359,7 @@ impl World {
                         tape.remove(cursor - 1);
                         cursor - 1
                     }
-                    _ => match instr_of(key) {
+                    _ => match instr {
                         Some(instr) => {
                             tape.insert(cursor, instr);
                             cursor + 1
@@ -1373,7 +1366,7 @@ fn text(world: Res<World>, mut label: Single<&mut Text, With<Hud>>) {
                 instr_help()
             )),
             Focus::Arm(_) => out.push_str(&format!(
-                "arm, acts now: A/D turn  {}  Z delete  esc done  click its tape to edit\n",
+                "arm, acts now: {}  Z delete  esc done  click its tape to edit\n",
                 instr_help()
             )),
             Focus::Glyph(_) => out.push_str(&format!(
@@ -1483,9 +1476,7 @@ mod shot {
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
                 world.focus_tape(world.sim.arms.len() - 1);
-                keys = vec![
-                    KeyF, KeyE, KeyE, KeyR, KeyQ, KeyQ, ArrowLeft, ArrowLeft, ArrowLeft,
-                ];
+                keys = vec![KeyA, KeyD, KeyF];
             }
             "armfocus" => {
                 world
@@ -1493,7 +1484,7 @@ mod shot {
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
                 world.focus_arm(world.sim.arms.len() - 1);
-                keys = vec![KeyE, KeyE];
+                keys = vec![KeyD, KeyD];
             }
             "hold" => {
                 world.lift(Held::fresh(Item::Glyph(GlyphKind::Bonder)));
@@ -2082,7 +2073,7 @@ mod tests {
         let slot = bonder.slots().nth(1).unwrap();
         w.press(Vec2::ZERO, slot);
         w.drag(Vec2::new(DRAG_PX * 2.0, 0.0));
-        w.held.as_mut().unwrap().turn(5);
+        w.held.as_mut().unwrap().turn(Spin::Ccw);
         let to = Hex::new(-1, -1);
         w.release(Some(to));
         let moved = w.sim.glyphs[0];
@@ -2150,12 +2141,33 @@ mod tests {
         let mut w = armed(vec![Instr::Wait]);
         w.focus_arm(0);
         w.key(KeyCode::KeyF);
-        w.key(KeyCode::KeyE);
+        w.key(KeyCode::KeyD);
         assert!(w.sim.arms[0].holding);
         assert_eq!(w.sim.arms[0].dir, 1);
         assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[1]);
         assert_eq!(w.sim.arms[0].tape, vec![Instr::Wait]);
         assert_eq!(w.focus, Some(Focus::Arm(0)));
+        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyA);
+        assert_eq!(w.sim.arms[0].dir, 5);
+        assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[5]);
+    }
+
+    #[test]
+    fn arm_focus_rotate_stalls_when_the_held_atom_would_sweep_into_another() {
+        let mut w = armed(vec![]);
+        w.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: DIRS[1],
+        });
+        w.focus_arm(0);
+        w.key(KeyCode::KeyF);
+        w.key(KeyCode::KeyD);
+        assert_eq!(w.sim.arms[0].dir, 0);
+        assert_eq!(w.sim.arms[0].stall, Some(Stall::Illegal));
+        w.key(KeyCode::KeyA);
+        assert_eq!(w.sim.arms[0].dir, 5);
+        assert_eq!(w.sim.arms[0].stall, None);
     }
 
     #[test]
@@ -2164,15 +2176,58 @@ mod tests {
         w.focus_tape(0);
         w.key(KeyCode::ArrowLeft);
         w.key(KeyCode::KeyF);
-        w.key(KeyCode::KeyE);
+        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyD);
         assert_eq!(
             w.sim.arms[0].tape,
-            vec![Instr::Wait, Instr::Grab, Instr::RotCw, Instr::Drop]
+            vec![
+                Instr::Wait,
+                Instr::Grab,
+                Instr::RotCcw,
+                Instr::RotCw,
+                Instr::Drop
+            ]
         );
-        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 3 }));
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 4 }));
         assert!(!w.sim.arms[0].holding);
         assert_eq!(w.sim.arms[0].dir, 0);
         assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[0]);
+    }
+
+    #[test]
+    fn q_and_e_are_unbound() {
+        let mut w = armed(vec![Instr::Wait]);
+        w.focus_tape(0);
+        w.key(KeyCode::KeyQ);
+        w.key(KeyCode::KeyE);
+        assert_eq!(w.sim.arms[0].tape, vec![Instr::Wait]);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 1 }));
+        w.focus_arm(0);
+        w.key(KeyCode::KeyQ);
+        w.key(KeyCode::KeyE);
+        assert_eq!(w.sim.arms[0].dir, 0);
+    }
+
+    #[test]
+    fn glyph_focus_and_a_held_item_turn_with_a_and_d() {
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: ORIGIN,
+            dir: 0,
+        };
+        let mut w = lone(vec![bonder], vec![]);
+        w.focus = Some(Focus::Glyph(0));
+        w.key(KeyCode::KeyA);
+        assert_eq!(w.sim.glyphs[0].dir, 5);
+        w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyD);
+        assert_eq!(w.sim.glyphs[0].dir, 1);
+        w.lift(Held::fresh(Item::Arm));
+        w.key(KeyCode::KeyD);
+        assert_eq!(w.held.unwrap().dir, 1);
+        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyA);
+        assert_eq!(w.held.unwrap().dir, 5);
     }
 
     #[test]
