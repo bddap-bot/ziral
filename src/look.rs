@@ -42,7 +42,7 @@ impl Glaze {
 #[derive(Clone, Copy)]
 pub struct Skin {
     pub name: &'static str,
-    png: &'static [u8],
+    pub(crate) png: &'static [u8],
 }
 
 impl PartialEq for Skin {
@@ -55,7 +55,7 @@ impl Eq for Skin {}
 
 impl std::fmt::Debug for Skin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.png", self.name)
+        write!(f, "art/{}.png", self.name)
     }
 }
 
@@ -63,14 +63,15 @@ macro_rules! skin {
     ($name:expr) => {
         Skin {
             name: $name,
-            png: include_bytes!(concat!("../art/textures/", $name, ".png")),
+            png: include_bytes!(concat!("../art/", $name, ".png")),
         }
     };
 }
+pub(crate) use skin;
 
 macro_rules! tiles {
     ($($n:literal),*) => {
-        [$(skin!(concat!("tile-", $n))),*]
+        [$(skin!(concat!("textures/tile-", $n))),*]
     };
 }
 
@@ -89,7 +90,7 @@ impl Skin {
             ImageSampler::linear(),
             RenderAssetUsages::RENDER_WORLD,
         )
-        .unwrap_or_else(|e| panic!("art/textures/{}.png does not decode: {e}", self.name))
+        .unwrap_or_else(|e| panic!("{self:?} does not decode: {e}"))
     }
 }
 
@@ -140,7 +141,7 @@ pub fn atom(kind: AtomKind) -> Look<AtomMark> {
     match kind {
         AtomKind::Base => Look {
             glaze: Glaze::BlueGreen,
-            skin: skin!("atom-base"),
+            skin: skin!("textures/atom-base"),
             shape: Shape::Bead,
             marking: AtomMark::Highlight,
         },
@@ -149,8 +150,8 @@ pub fn atom(kind: AtomKind) -> Look<AtomMark> {
 
 pub fn bond(kind: BondKind) -> Look<()> {
     let (glaze, skin, bars) = match kind {
-        BondKind::Single => (Glaze::Brass, skin!("bond-single"), 1),
-        BondKind::Double => (Glaze::Plum, skin!("bond-double"), 2),
+        BondKind::Single => (Glaze::Brass, skin!("textures/bond-single"), 1),
+        BondKind::Double => (Glaze::Plum, skin!("textures/bond-double"), 2),
     };
     Look {
         glaze,
@@ -165,7 +166,7 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         Item::Arm => {
             return Look {
                 glaze: Glaze::Brass,
-                skin: skin!("arm"),
+                skin: skin!("textures/arm"),
                 shape: Shape::Radial,
                 marking: MachineMark::Hand(Glaze::Terracotta),
             };
@@ -173,10 +174,18 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         Item::Glyph(kind) => kind,
     };
     let (glaze, skin, marking) = match kind {
-        GlyphKind::Source => (Glaze::BlueGreen, skin!("source"), MachineMark::Dot),
-        GlyphKind::Bonder => (Glaze::Terracotta, skin!("bonder"), MachineMark::Spokes(1)),
-        GlyphKind::SecondBond => (Glaze::Plum, skin!("second-bond"), MachineMark::Spokes(2)),
-        GlyphKind::Output => (Glaze::Ivory, skin!("output"), MachineMark::Cup),
+        GlyphKind::Source => (Glaze::BlueGreen, skin!("textures/source"), MachineMark::Dot),
+        GlyphKind::Bonder => (
+            Glaze::Terracotta,
+            skin!("textures/bonder"),
+            MachineMark::Spokes(1),
+        ),
+        GlyphKind::SecondBond => (
+            Glaze::Plum,
+            skin!("textures/second-bond"),
+            MachineMark::Spokes(2),
+        ),
+        GlyphKind::Output => (Glaze::Ivory, skin!("textures/output"), MachineMark::Cup),
     };
     Look {
         glaze,
@@ -197,11 +206,12 @@ pub fn skins() -> impl Iterator<Item = Skin> {
                 .map(|(item, _)| machine(item).skin),
         )
         .chain(TILES)
+        .chain(crate::KEYS.iter().map(|k| k.symbol))
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PALETTE;
+    use crate::{KEYS, PALETTE};
     use bevy::color::{Hsva, Luminance};
 
     const HUE_APART: f32 = 40.0;
@@ -344,6 +354,9 @@ mod tests {
         for tile in TILES {
             wears(tile, Glaze::Clay);
         }
+        for key in KEYS {
+            wears(key.symbol, Glaze::Brass);
+        }
     }
 
     #[test]
@@ -354,8 +367,52 @@ mod tests {
         }
         assert_eq!(
             all.len(),
-            AtomKind::ALL.len() + BondKind::ALL.len() + PALETTE.len() + TILES.len()
+            AtomKind::ALL.len() + BondKind::ALL.len() + PALETTE.len() + TILES.len() + KEYS.len()
         );
+    }
+
+    #[test]
+    fn every_instruction_has_its_own_symbol() {
+        for (i, a) in KEYS.iter().enumerate() {
+            let (w, h, _) = pixels(a.symbol);
+            assert_eq!((w, h), (512, 512), "{:?} is not 512 square", a.symbol);
+            assert!(
+                skins().any(|s| s == a.symbol),
+                "{:?} is never fired",
+                a.symbol
+            );
+            let mine = thumbnail(a.symbol);
+            for b in &KEYS[i + 1..] {
+                assert_ne!(
+                    a.symbol, b.symbol,
+                    "{:?} and {:?} share a symbol",
+                    a.instr, b.instr
+                );
+                let theirs = thumbnail(b.symbol);
+                let apart = mine
+                    .iter()
+                    .zip(&theirs)
+                    .map(|(x, y)| (x - y).abs())
+                    .sum::<f32>()
+                    / mine.len() as f32;
+                assert!(
+                    apart >= TILES_APART,
+                    "{:?} and {:?} look alike: {apart:.3} apart",
+                    a.symbol,
+                    b.symbol
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "does not decode")]
+    fn a_symbol_that_is_not_a_png_panics_at_load() {
+        Skin {
+            name: "symbols/none",
+            png: b"",
+        }
+        .decode();
     }
 
     #[test]

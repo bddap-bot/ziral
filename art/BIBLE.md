@@ -32,7 +32,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 **Glyphs.** A glyph is an inset in the board: its cells are wells floored in the glyph's own glaze texture, and its channels are bars of its glaze joining slots and centre. A glyph never covers an atom; atoms sit in the wells, and everything of a glyph is drawn beneath them.
 
-**UI.** Dark brass strips with ivory text, brass borders, the readout on its own strip; the lit tape row is the same strip in lighter brass. The strips are furniture, not board: nothing on them uses a state glaze.
+**UI.** Dark brass strips with ivory text, brass borders, the readout on its own strip; the lit tape row is the same strip in lighter brass. An instruction on a tape is a symbol token pressed into the strip, one per key, letter and action fused in one mark (art/SYMBOLS.md); the controls line shows each key beside its token. The strips are furniture, not board: nothing on them uses a state glaze.
 
 **Motion.** Ticks have weighted starts and soft, decisive seats. What a glyph makes or eats appears at the end of the sweep, never mid-arc. Timing is a design knob (the tick period), not an art one.
 
