@@ -938,7 +938,8 @@ fn edit(
     if let Some(c) = screen {
         world.pointer = Some(viewport.world(c));
     }
-    let over_ui = palette.iter().any(|(_, i)| *i != Interaction::None)
+    let over_ui = keys.pressed(KeyCode::Tab)
+        || palette.iter().any(|(_, i)| *i != Interaction::None)
         || rows.iter().any(|(_, i)| *i != Interaction::None);
     let at = world.pointer.map(hex_at);
 

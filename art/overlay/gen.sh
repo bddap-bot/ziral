@@ -6,7 +6,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$here"
 slot=128
 slots=('f 96 128' 'r 544 128' 'a 96 352' 'd 544 352' 'q 96 576' 'e 544 576' 'x 96 800')
-inputs=(../symbols/{f,r,a,d,q,e,x}.png gen.sh)
+inputs=(../symbols/{f,r,a,d,q,e,x}.png prompt.txt)
 count=1
 keep=
 check=
@@ -36,8 +36,9 @@ if [ -z "$keep" ]; then
   [ "$count" -gt 1 ] && exit 0
   keep=controls.png
 else
-  keep=candidates/controls-$keep.png
-  cp "$keep" controls.png
+  keep=candidates/controls-.png
+  cp "" controls.png.part
+  mv controls.png.part controls.png
 fi
 
 args=()

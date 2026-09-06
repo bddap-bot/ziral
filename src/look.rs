@@ -554,7 +554,7 @@ mod tests {
                 .expect("gen.sh runs");
         assert!(
             status.success(),
-            "{MANUAL:?} was generated over other symbols than those in art/symbols; run art/overlay/gen.sh"
+            "{MANUAL:?} was not generated over the symbols and prompt on disk; run art/overlay/gen.sh"
         );
     }
 
