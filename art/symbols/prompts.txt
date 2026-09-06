@@ -13,10 +13,10 @@ Use case: game-texture. Asset type: instruction token icon for a tape strip, one
 a.png — round one, candidates 1 to 3, none kept
 Use case: game-texture. Asset type: instruction token icon for a tape strip, one bold simple mark centred and filling most of the frame, readable as a tiny thumbnail. Straight-on view of a capital letter A in darkened brass hung at its apex from a round brass pivot pin, the whole letter swung counterclockwise so it leans to the left, with a short worn arc of lighter brass behind it sweeping counterclockwise to show the turn, on a flat matte darkened brass #6B4F3A strip that fills the entire square frame edge to edge, warm raking light from the upper left, one soft consistent highlight.
 
-d.png — candidate 3 of 3
+d.png — round one, candidates 1 to 3, none kept
 Use case: game-texture. Asset type: instruction token icon for a tape strip, one bold simple mark centred and filling most of the frame, readable as a tiny thumbnail. Straight-on view of a capital letter D in darkened brass pinned at the top of its straight stem on a round brass pivot pin, the whole letter swung clockwise so it leans to the right with its bowl bulging into the turn, with a short worn arc of lighter brass behind it sweeping clockwise to show the turn, on a flat matte darkened brass #6B4F3A strip that fills the entire square frame edge to edge, warm raking light from the upper left, one soft consistent highlight.
 
-x.png — candidate 1 of 3
+x.png — round one, candidates 1 to 3, none kept
 Use case: game-texture. Asset type: instruction token icon for a tape strip, one bold simple mark centred and filling most of the frame, readable as a tiny thumbnail. Straight-on view of a capital letter X pressed down into the brass strip itself as a shallow sunken stamped impression, no token, no glaze, no added material, only the recessed edges of the X catching the raking light, on a flat matte darkened brass #6B4F3A strip that fills the entire square frame edge to edge, warm raking light from the upper left, one soft consistent highlight.
 
 r.png — round two, candidate 1 of 3, kept
@@ -24,4 +24,10 @@ Use case: game-texture. Asset type: instruction token icon for a tape strip, one
 
 a.png — round two, candidate 2 of 3, kept
 Use case: game-texture. Asset type: instruction token icon for a tape strip, one bold simple mark centred and filling most of the frame, readable as a tiny thumbnail. Straight-on view of a capital letter A in darkened brass hung from a round brass pivot pin at its apex and swung hard counterclockwise, the whole letter tilted a full thirty degrees to the left, with a short curved brass arrow behind it whose head points counterclockwise, on a flat matte darkened brass #6B4F3A strip that fills the entire square frame edge to edge, warm raking light from the upper left, one soft consistent highlight.
+
+d.png — round two, candidate 1 of 3, kept
+Use case: game-texture. Asset type: instruction token icon for a tape strip, one bold simple mark centred and filling most of the frame, readable as a tiny thumbnail. Straight-on view of a capital letter D in darkened brass hung from a round brass pivot pin at the top of its straight stem and swung hard clockwise, the whole letter tilted a full thirty degrees to the right with its bowl bulging into the turn, with a short curved brass arrow behind it whose head points clockwise, on a flat matte darkened brass #6B4F3A strip that fills the entire square frame edge to edge, warm raking light from the upper left, one soft consistent highlight.
+
+x.png — round two, candidate 1 of 3, kept
+Use case: game-texture. Asset type: instruction token icon for a tape strip, one bold simple mark centred and filling most of the frame, readable as a tiny thumbnail. Straight-on view of a large capital letter X stamped deep into the brass strip itself as a sunken impression with strong dark shadowed inner edges and a bright rim on the lit side so it reads clearly at a glance, no token, no glaze, no added material, on a flat matte darkened brass #6B4F3A strip that fills the entire square frame edge to edge, warm raking light from the upper left, one soft consistent highlight.
 

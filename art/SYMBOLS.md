@@ -16,8 +16,8 @@ A brass capital A hung from a round brass pivot pin at its apex and swung counte
 
 ## D, clockwise: the same pivot, the other way
 
-A brass capital D pinned at the top of its stem and swung clockwise, leaning right, its bowl bulging into the turn, with a worn arc sweeping the other way. A and D are the one action in two directions, so both marks hang a letter from a pivot pin and trail the sweep; the letters differ and the lean differs.
+A brass capital D hung from a round brass pivot pin at the top of its stem and swung clockwise, leaning right, its bowl bulging into the turn, with a worn brass arc behind it whose head points the way it went. A and D are the one action in two directions, so both marks hang a letter from a pivot pin and trail the sweep, mirrored; the letters differ and the lean differs.
 
 ## X, wait: a mark sunk into the tape
 
-A capital X pressed down into the strip itself: a shallow, sunken impression with no token, no glaze, only its recessed edges catching the raking light. Wait adds nothing to the board, so its mark adds nothing to the tape but a dent; it is the strip showing where a step was struck out.
+A capital X cut down into the strip itself: a sunken impression with no token, no glaze, only its shadowed inner edges and lit rim to show it. Wait adds nothing to the board, so its mark adds nothing to the tape but a dent; it is the strip showing where a step was struck out.
