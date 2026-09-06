@@ -12,11 +12,11 @@ The source is a single blue-green ceramic feed hopper with one unmistakable seat
 
 ## Bonder
 
-The bonder spans two adjacent cells as equal terracotta seats joined by a heavy compression bridge. Opposed clamps and shared pressure plumbing say that both atoms survive and leave joined; there is no third or sacrificial intake. `proposal-bonder-2.png` is landed for its equal seats and strong two-cell silhouette; `proposal-bonder-1.png` is the enclosed variant.
+The bonder spans two adjacent cells as equal terracotta seats joined by a heavy compression bridge. Opposed clamps and shared pressure plumbing say that both atoms survive and leave joined; there is no third or sacrificial intake. `proposal-bonder-2.png` is landed for its equal seats and strong two-cell silhouette; its selected diffusion output is mirrored across the bridge so both seats carry exactly the same treatment. `proposal-bonder-1.png` is the enclosed variant.
 
 ## Second bond
 
-The second-bond applicator is a triangular plum manifold with two matching bond seats and one different sacrificial feed. Paired rails connect the bond seats while the feed uses a funnel, one-way valve, and more severe collar, making the fixed roles legible before an atom arrives. `proposal-second-bond-2.png` is landed for the clearest three-seat hierarchy; `proposal-second-bond-1.png` is the more ceremonial variant.
+The second-bond applicator is a triangular plum manifold with two matching bond seats and one different sacrificial feed. Paired rails connect the bond seats while the feed uses a funnel, one-way valve, and more severe collar, making the fixed roles legible before an atom arrives. `proposal-second-bond-2.png` is landed for the clearest three-seat hierarchy; its selected diffusion output is mirrored across the feed so the surviving seats match exactly. `proposal-second-bond-1.png` is the more ceremonial variant.
 
 ## Output
 

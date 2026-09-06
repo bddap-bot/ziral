@@ -1337,7 +1337,14 @@ impl Painter<'_, '_, '_, '_, '_> {
         }
     }
 
-    fn arm(&mut self, pivot: Vec2, hand: Vec2, _ring: f32, look: Look<MachineMark>) {
+    fn horseshoe(&mut self, at: Vec2, r: f32, toward: Vec2, glaze: Glaze) {
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
+        let turn = toward.to_angle() - (FRAC_PI_2 + 3.0 * FRAC_PI_4);
+        let iso = Isometry2d::new(at, Rot2::radians(turn));
+        self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, glaze.color());
+    }
+
+    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
         let kiln = self.kiln;
         let material = kiln.skin(look.skin, false);
         self.fill(
@@ -1348,8 +1355,9 @@ impl Painter<'_, '_, '_, '_, '_> {
             Vec2::splat(HEX * 3.5),
             0.28,
         );
-        let MachineMark::Hand(_) = look.marking else {
-            unworn(look)
+        match look.marking {
+            MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
+            _ => unworn(look),
         };
     }
 
