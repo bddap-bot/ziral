@@ -11,7 +11,7 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
 use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin, skin};
-use sim::{Arm, BondKind, Centre, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
 
 const HEX: f32 = 20.0;
 const TICK_MS: f32 = 400.0;
@@ -1431,9 +1431,7 @@ impl Frame<'_> {
                 continue;
             };
             let swept = sweep(px(a.centre(about)), spin, e);
-            if about == Centre::Pivot {
-                pose.hand = swept(pose.hand);
-            }
+            pose.hand = swept(pose.hand);
             if a.holding
                 && let Some(id) = prev.atom_at(a.hand())
             {
@@ -2318,6 +2316,50 @@ mod tests {
                     .abs_diff_eq(f.arms[0].pivot + expected, 1e-3)
             );
             assert_eq!(f.arms[0].ring, RING_CLOSED);
+        }
+    }
+
+    #[test]
+    fn between_ticks_only_the_turn_an_arm_just_ran_sweeps() {
+        let mut prev = Sim::empty();
+        prev.arms.push(Arm::new(
+            Hex::new(0, 0),
+            0,
+            vec![Instr::Pivot(Spin::Cw), Instr::Wait],
+        ));
+        prev.arms
+            .push(Arm::new(Hex::new(4, 0), 0, vec![Instr::Rot(Spin::Cw)]));
+        prev.arms.push(Arm::new(Hex::new(8, 0), 0, Vec::new()));
+        for arm in &mut prev.arms {
+            arm.holding = true;
+            prev.atoms.push(Some(Atom {
+                kind: AtomKind::Base,
+                pos: arm.hand(),
+            }));
+        }
+        prev.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(5, -1),
+        });
+        let far = prev.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(2, -1),
+        });
+        prev.bonds.push(sim::Bond {
+            a: 0,
+            b: far,
+            kind: BondKind::Single,
+        });
+        prev.step();
+        let mut cur = prev.clone();
+        cur.step();
+        assert_eq!(prev.arms[0].pc, 1);
+        assert_eq!(cur.arms[1].stall, Some(Stall::Illegal));
+        let f = Frame::between(&prev, &cur, 0.5);
+        let still = Frame::settled(&prev);
+        assert_eq!(f.atoms, still.atoms);
+        for (a, b) in f.arms.iter().zip(&still.arms) {
+            assert_eq!(a.hand, b.hand);
         }
     }
 
