@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
-use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin, Token, skin};
+use look::{Glaze, Look, MachineMark, Shape, Skin, Token, skin};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent, Spin, Stall};
 
 const HEX: f32 = 20.0;
@@ -1309,7 +1309,7 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.fill(mesh, material, (a + b) / 2.0, d.to_angle(), scale, z);
     }
 
-    fn bead(&mut self, at: Vec2, look: Look<AtomMark>) {
+    fn bead(&mut self, at: Vec2, look: Look<()>) {
         let kiln = self.kiln;
         self.stamp(
             &kiln.circle,
@@ -1319,7 +1319,6 @@ impl Painter<'_, '_, '_, '_, '_> {
             0.4,
         );
         self.stamp(&kiln.rim, &kiln.patina, at, HEX * 0.4, 0.42);
-        let AtomMark::Highlight = look.marking;
     }
 
     fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind, faint: bool) {
@@ -1369,14 +1368,22 @@ impl Painter<'_, '_, '_, '_, '_> {
                 return self.arm(px(at), hand, RING_OPEN, look);
             }
             (Item::Arm, _) | (Item::Glyph(_), MachineMark::Hand(_)) => unworn(look),
-            (Item::Glyph(kind), _) => kind,
+            (Item::Glyph(kind), MachineMark::Sprite) => kind,
         };
         let kiln = self.kiln;
         let surface = kiln.skin(look.skin, false);
         let slots: Vec<Vec2> = Glyph { kind, at, dir }.slots().map(px).collect();
         let c = slots.iter().sum::<Vec2>() / slots.len() as f32;
-        let side = if slots.len() == 1 { 2.0 } else { 4.0 } * HEX;
-        let angle = px(DIRS[dir % 6]).to_angle();
+        let radius = slots
+            .iter()
+            .map(|slot| slot.distance(c))
+            .fold(0.0, f32::max);
+        let side = 2.0 * (radius + 0.8 * HEX);
+        let angle = if slots.len() == 1 {
+            0.0
+        } else {
+            px(DIRS[dir % 6]).to_angle()
+        };
         self.fill(&kiln.bar, surface, c, angle, Vec2::splat(side), 0.1);
     }
 }
@@ -1567,7 +1574,7 @@ fn board(
                         kiln.skin(tile.skin, false),
                         Transform {
                             translation: px(h).extend(0.0),
-                            rotation: Quat::from_rotation_z(((60 * tile.turn) as f32).to_radians()),
+                            rotation: Quat::IDENTITY,
                             scale: Vec3::splat(HEX * 0.95),
                         },
                     );

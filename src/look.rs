@@ -113,14 +113,12 @@ impl Skin {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tile {
     pub skin: Skin,
-    pub turn: usize,
 }
 
 pub fn tile(h: Hex) -> Tile {
     let x = h.scramble();
     Tile {
         skin: TILES[(x % TILES.len() as u32) as usize],
-        turn: ((x >> 8) % 6) as usize,
     }
 }
 
@@ -133,17 +131,9 @@ pub enum Shape {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AtomMark {
-    Highlight,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MachineMark {
     Hand(Glaze),
-    Dot,
-    Spokes(usize),
-    Cup,
-    Void,
+    Sprite,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,13 +144,13 @@ pub struct Look<M> {
     pub marking: M,
 }
 
-pub fn atom(kind: AtomKind) -> Look<AtomMark> {
+pub fn atom(kind: AtomKind) -> Look<()> {
     match kind {
         AtomKind::Base => Look {
             glaze: Glaze::BlueGreen,
             skin: skin!("textures/atom-base"),
             shape: Shape::Bead,
-            marking: AtomMark::Highlight,
+            marking: (),
         },
     }
 }
@@ -190,30 +180,18 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         }
         Item::Glyph(kind) => kind,
     };
-    let (glaze, skin, marking) = match kind {
-        GlyphKind::Source => (
-            Glaze::BlueGreen,
-            sprite!("textures/source"),
-            MachineMark::Dot,
-        ),
-        GlyphKind::Bonder => (
-            Glaze::Terracotta,
-            sprite!("textures/bonder"),
-            MachineMark::Spokes(1),
-        ),
-        GlyphKind::SecondBond => (
-            Glaze::Plum,
-            sprite!("textures/second-bond"),
-            MachineMark::Spokes(2),
-        ),
-        GlyphKind::Output => (Glaze::Ivory, sprite!("textures/output"), MachineMark::Cup),
-        GlyphKind::Cleanup => (Glaze::Brass, sprite!("textures/cleanup"), MachineMark::Void),
+    let (glaze, skin) = match kind {
+        GlyphKind::Source => (Glaze::BlueGreen, sprite!("textures/source")),
+        GlyphKind::Bonder => (Glaze::Terracotta, sprite!("textures/bonder")),
+        GlyphKind::SecondBond => (Glaze::Plum, sprite!("textures/second-bond")),
+        GlyphKind::Output => (Glaze::Ivory, sprite!("textures/output")),
+        GlyphKind::Cleanup => (Glaze::Brass, sprite!("textures/cleanup")),
     };
     Look {
         glaze,
         skin,
         shape: Shape::Cells(kind.rule().slots.len()),
-        marking,
+        marking: MachineMark::Sprite,
     }
 }
 
@@ -268,11 +246,14 @@ mod tests {
         assert!(w >= side && h >= side, "{skin:?} is under {side} px");
         let mut sums = vec![0f32; side * side * 3];
         let mut counts = vec![0f32; side * side];
+        let clay = [0xD8, 0xC3, 0xA5].map(crate::to_linear);
         for y in 0..h {
             for x in 0..w {
                 let cell = (y * side / h) * side + x * side / w;
+                let alpha = f32::from(data[(y * w + x) * 4 + 3]) / 255.0;
                 for c in 0..3 {
-                    sums[cell * 3 + c] += crate::to_linear(data[(y * w + x) * 4 + c]);
+                    let color = crate::to_linear(data[(y * w + x) * 4 + c]);
+                    sums[cell * 3 + c] += alpha * color + (1.0 - alpha) * clay[c];
                 }
                 counts[cell] += 1.0;
             }
@@ -354,22 +335,26 @@ mod tests {
         Pressed { face, field }
     }
 
-    fn differences<M: PartialEq>(a: &Look<M>, b: &Look<M>) -> [bool; 4] {
+    fn differences<M>(a: &Look<M>, b: &Look<M>) -> [bool; 4] {
         let [hue, value] = hue_and_value_differ(a.glaze.color(), b.glaze.color());
-        [hue, value, a.shape != b.shape, a.marking != b.marking]
+        let x = thumbnail(a.skin, THUMB);
+        let y = thumbnail(b.skin, THUMB);
+        let texture = x.iter().zip(y).map(|(x, y)| (x - y).abs()).sum::<f32>() / x.len() as f32
+            >= TILES_APART;
+        [hue, value, a.shape != b.shape, texture]
     }
 
-    fn distinct<M: PartialEq>(a: &Look<M>, b: &Look<M>) -> bool {
+    fn distinct<M>(a: &Look<M>, b: &Look<M>) -> bool {
         differences(a, b).iter().filter(|d| **d).count() >= 2
     }
 
-    fn pairwise<M: PartialEq>(class: &str, looks: &[(String, Look<M>)]) {
+    fn pairwise<M>(class: &str, looks: &[(String, Look<M>)]) {
         for (i, (a, x)) in looks.iter().enumerate() {
             for (b, y) in &looks[i + 1..] {
                 assert_ne!(x.skin, y.skin, "{class}: {a} and {b} wear the same texture");
                 assert!(
                     distinct(x, y),
-                    "{class}: {a} and {b} differ in fewer than two of hue, value, shape, marking: {:?}",
+                    "{class}: {a} and {b} differ in fewer than two of hue, value, shape, texture: {:?}",
                     differences(x, y)
                 );
             }
@@ -457,7 +442,7 @@ mod tests {
                 + (color.green - clay.green).powi(2)
                 + (color.blue - clay.blue).powi(2))
             .sqrt();
-            assert!(gap <= 0.28, "{a:?} leaves the clay family by {gap:.3}");
+            assert!(gap <= 0.26, "{a:?} leaves the clay family by {gap:.3}");
             let a_body = tile_body(*a);
             for b in &TILES[i + 1..] {
                 assert!(a.png != b.png, "{a:?} and {b:?} are the same batch");
@@ -621,22 +606,16 @@ mod tests {
     #[test]
     fn a_cell_keeps_its_tile_and_a_patch_shows_every_tile() {
         let mut seen = vec![false; TILES.len()];
-        let mut turns = vec![false; 6];
         for q in -6..6 {
             for r in -6..6 {
                 let t = tile(Hex::new(q, r));
                 assert_eq!(t, tile(Hex::new(q, r)));
                 seen[TILES.iter().position(|s| *s == t.skin).unwrap()] = true;
-                turns[t.turn] = true;
             }
         }
         assert!(
             seen.iter().all(|s| *s),
             "a 12 by 12 patch misses a tile: {seen:?}"
-        );
-        assert!(
-            turns.iter().all(|s| *s),
-            "a 12 by 12 patch misses a turn: {turns:?}"
         );
     }
 
