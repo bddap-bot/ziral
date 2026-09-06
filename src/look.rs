@@ -200,11 +200,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .into_iter()
         .map(|k| atom(k).skin)
         .chain(BondKind::ALL.into_iter().map(|k| bond(k).skin))
-        .chain(
-            crate::PALETTE
-                .into_iter()
-                .map(|(item, _)| machine(item).skin),
-        )
+        .chain(crate::PALETTE.into_iter().map(|item| machine(item).skin))
         .chain(TILES)
         .chain(crate::KEYS.iter().map(|k| k.symbol))
 }
@@ -383,7 +379,7 @@ mod tests {
 
     #[test]
     fn every_glyph_is_distinct() {
-        let glyphs = PALETTE.iter().filter_map(|(item, _)| match item {
+        let glyphs = PALETTE.iter().filter_map(|item| match item {
             Item::Glyph(kind) => Some(*kind),
             Item::Arm => None,
         });
@@ -392,13 +388,13 @@ mod tests {
 
     #[test]
     fn every_machine_is_distinct() {
-        pairwise("machines", &named(PALETTE.map(|(item, _)| item), machine));
+        pairwise("machines", &named(PALETTE, machine));
     }
 
     #[test]
     fn every_glyph_kind_is_on_the_palette() {
         for kind in GlyphKind::ALL {
-            assert!(PALETTE.iter().any(|(item, _)| *item == Item::Glyph(kind)));
+            assert!(PALETTE.contains(&Item::Glyph(kind)));
         }
     }
 
@@ -462,7 +458,7 @@ mod tests {
 
     #[test]
     fn every_machine_sprite_has_visible_art_and_real_transparency() {
-        for (item, _) in PALETTE {
+        for item in PALETTE {
             let skin = machine(item).skin;
             let (_, _, data) = pixels(skin);
             let visible = data.chunks_exact(4).filter(|pixel| pixel[3] > 230).count();

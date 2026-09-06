@@ -23,6 +23,7 @@ const DRAG_PX: f32 = 6.0;
 const LINE_PX: f32 = 3.0;
 const SYMBOL_PX: f32 = 26.0;
 const CURSOR_PX: f32 = 2.0;
+const PALETTE_PX: f32 = 48.0;
 
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
@@ -40,13 +41,13 @@ pub enum Item {
     Glyph(GlyphKind),
 }
 
-pub const PALETTE: [(Item, &str); 6] = [
-    (Item::Arm, "arm"),
-    (Item::Glyph(GlyphKind::Bonder), "bonder"),
-    (Item::Glyph(GlyphKind::SecondBond), "second bond"),
-    (Item::Glyph(GlyphKind::Source), "source"),
-    (Item::Glyph(GlyphKind::Output), "output"),
-    (Item::Glyph(GlyphKind::Cleanup), "cleanup"),
+pub const PALETTE: [Item; 6] = [
+    Item::Arm,
+    Item::Glyph(GlyphKind::Bonder),
+    Item::Glyph(GlyphKind::SecondBond),
+    Item::Glyph(GlyphKind::Source),
+    Item::Glyph(GlyphKind::Output),
+    Item::Glyph(GlyphKind::Cleanup),
 ];
 
 #[derive(Clone, Copy)]
@@ -773,7 +774,7 @@ fn cursor() -> impl Bundle {
     )
 }
 
-fn spawn_ui(mut commands: Commands) {
+fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
     commands
         .spawn(Node {
             position_type: PositionType::Absolute,
@@ -784,7 +785,7 @@ fn spawn_ui(mut commands: Commands) {
             ..default()
         })
         .with_children(|col| {
-            for (item, name) in PALETTE {
+            for item in PALETTE {
                 col.spawn((
                     item,
                     button(Node {
@@ -793,9 +794,12 @@ fn spawn_ui(mut commands: Commands) {
                         ..default()
                     }),
                     children![(
-                        Text::new(name),
-                        TextColor(IVORY),
-                        TextFont::from_font_size(16.0)
+                        ImageNode::new(kiln.image(look::machine(item).skin)),
+                        Node {
+                            width: Val::Px(PALETTE_PX),
+                            height: Val::Px(PALETTE_PX),
+                            ..default()
+                        }
                     )],
                 ));
             }
@@ -803,7 +807,7 @@ fn spawn_ui(mut commands: Commands) {
     commands
         .spawn(Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(140.0),
+            left: Val::Px(PALETTE_PX + 34.0),
             right: Val::Px(8.0),
             bottom: Val::Px(8.0),
             flex_direction: FlexDirection::Column,
@@ -979,7 +983,7 @@ fn tapes(
             .despawn_children()
             .with_children(|strip| {
                 let stalled = if line.stalled { "!" } else { " " };
-                strip.spawn(caption(format!("arm {arm:<3}{stalled}"), 15.0));
+                strip.spawn(caption(format!("{arm:<3}{stalled}"), 15.0));
                 for (k, instr) in line.tape.iter().enumerate() {
                     if line.cursor == Some(k) {
                         strip.spawn(cursor());
