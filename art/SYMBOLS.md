@@ -6,17 +6,17 @@ Each instruction on a tape is one token pressed into the brass strip, in the Fir
 
 A closed hand in terracotta glaze, the colour of every closed hand on the board, curls into a capital F: the stem is the wrist, the two bars are two fingers closing on a blue-green bead in the crook. The letter is not held by the hand; the hand is the letter, so the mark reads as F and as a grip in one glance, and the bead names what a grab closes on.
 
-## R, drop: the letter lets go
+## R, drop: the hand is the bowl
 
-A brass capital R whose bowl is an open terracotta hand, released, with a blue-green bead falling free down the line of the leg. The leg kicks away from the body of the letter, so it is the line of the fall; the open bowl is the hand that let go. Grab and drop share the hand and the bead, so the pair reads as one verb and its undo.
+A brass capital R whose bowl is no stroke at all but an open terracotta hand, palm out, fingers curled into the curve the bowl would have made, with a blue-green bead dropped free below it. The hand is a piece of the letter, not a passenger in it; the R only closes because the hand is open. Grab and drop share the hand and the bead, so the pair reads as one verb and its undo: the F is fingers closed on the bead, the R is fingers opened and the bead gone.
 
 ## A, counterclockwise: the letter is the arm on its pivot
 
-A brass capital A hung from a round brass pivot pin at its apex, the whole letter swung counterclockwise so it leans left, with a short worn arc of lighter brass behind it showing the sweep. The arm on the board is brass on a pivot and turns about it; the A is that arm, pinned where the arm is pinned, caught mid-turn in the direction the key turns it.
+A brass capital A hung from a round brass pivot pin at its apex and swung counterclockwise, leaning left, with a worn brass arc behind it whose head points the way it went. The arm on the board is brass on a pivot and turns about it; the A is that arm, pinned where the arm is pinned, caught mid-turn in the direction the key turns it.
 
 ## D, clockwise: the same pivot, the other way
 
-A brass capital D pinned at the top of its stem and swung clockwise so it leans right, its bowl bulging into the turn, with the same worn arc sweeping the other way. A and D are the one action in two directions, so the two marks are one construction, the pivot pin and the wear arc, mirrored; the letters differ, the lean differs, everything else is shared.
+A brass capital D pinned at the top of its stem and swung clockwise, leaning right, its bowl bulging into the turn, with a worn arc sweeping the other way. A and D are the one action in two directions, so both marks hang a letter from a pivot pin and trail the sweep; the letters differ and the lean differs.
 
 ## X, wait: a mark sunk into the tape
 
