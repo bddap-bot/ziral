@@ -65,7 +65,7 @@ pub struct Key {
     pub symbol: Skin,
 }
 
-pub const KEYS: [Key; 5] = [
+pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyF,
         instr: Instr::Grab,
@@ -89,6 +89,18 @@ pub const KEYS: [Key; 5] = [
         instr: Instr::Rot(Spin::Cw),
         letter: 'D',
         symbol: skin!("symbols/d"),
+    },
+    Key {
+        code: KeyCode::KeyQ,
+        instr: Instr::Pivot(Spin::Ccw),
+        letter: 'Q',
+        symbol: skin!("symbols/q"),
+    },
+    Key {
+        code: KeyCode::KeyE,
+        instr: Instr::Pivot(Spin::Cw),
+        letter: 'E',
+        symbol: skin!("symbols/e"),
     },
     Key {
         code: KeyCode::KeyX,
@@ -1418,22 +1430,43 @@ impl Frame<'_> {
         for (i, (a, b)) in prev.arms.iter().zip(&cur.arms).enumerate() {
             let e = Swing::from_cell(a.pivot).at(t);
             let pivot = frame.arms[i].pivot;
-            let turn = turn_between(a, b) * e;
-            let sweep = |v: Vec2| pivot + Vec2::from_angle(turn).rotate(v - pivot);
+            let turn = turn_between(a, b);
             let pose = &mut frame.arms[i];
-            pose.hand = sweep(pose.hand);
+            pose.hand = sweep(pivot, turn * e)(pose.hand);
             pose.ring = grip(a.holding) + (grip(b.holding) - grip(a.holding)) * e;
-            if turn != 0.0
-                && a.holding
-                && let Some(id) = prev.atom_at(a.hand())
-            {
-                for id in prev.component(id) {
-                    frame.atoms[id] = frame.atoms[id].map(sweep);
-                }
+            if !a.holding {
+                continue;
+            }
+            let Some(id) = prev.atom_at(a.hand()) else {
+                continue;
+            };
+            let comp = prev.component(id);
+            let (centre, angle) = if turn != 0.0 {
+                (pivot, turn)
+            } else {
+                let hand = px(a.hand());
+                (hand, spun(prev, cur, &comp, hand))
+            };
+            for id in comp {
+                frame.atoms[id] = frame.atoms[id].map(sweep(centre, angle * e));
             }
         }
         frame
     }
+}
+
+fn sweep(centre: Vec2, angle: f32) -> impl Fn(Vec2) -> Vec2 {
+    move |v| centre + Vec2::from_angle(angle).rotate(v - centre)
+}
+
+fn spun(prev: &Sim, cur: &Sim, ids: &[usize], centre: Vec2) -> f32 {
+    ids.iter()
+        .find_map(|id| {
+            let from = px(prev.atoms[*id]?.pos) - centre;
+            let to = px(cur.atoms[*id]?.pos) - centre;
+            (from != to).then(|| from.angle_to(to))
+        })
+        .unwrap_or(0.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1830,7 +1863,7 @@ mod shot {
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
                 world.focus_tape(world.sim.arms.len() - 1);
-                keys = vec![KeyA, KeyD, KeyF];
+                keys = vec![KeyA, KeyD, KeyQ, KeyE, KeyF];
             }
             "armfocus" => {
                 world
@@ -1914,6 +1947,35 @@ mod shot {
                     });
                     sim.arms.push(arm);
                 }
+                world.sim = sim;
+            }
+            "pivot" => {
+                let mut sim = Sim::empty();
+                let mut arm = Arm::new(
+                    Hex::new(0, 0),
+                    0,
+                    vec![
+                        Instr::Rot(Spin::Ccw),
+                        Instr::Pivot(Spin::Cw),
+                        Instr::Pivot(Spin::Cw),
+                        Instr::Rot(Spin::Cw),
+                    ],
+                );
+                arm.holding = true;
+                let a = sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: arm.hand(),
+                });
+                let b = sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: arm.hand().add(DIRS[0]),
+                });
+                sim.bonds.push(Bond {
+                    a,
+                    b,
+                    kind: BondKind::Single,
+                });
+                sim.arms.push(arm);
                 world.sim = sim;
             }
             "twohands" => {
@@ -2278,6 +2340,40 @@ mod tests {
                     .abs_diff_eq(f.arms[0].pivot + expected, 1e-3)
             );
             assert_eq!(f.arms[0].ring, RING_CLOSED);
+        }
+    }
+
+    #[test]
+    fn mid_pivot_the_far_atom_sweeps_about_the_still_hand() {
+        let mut prev = Sim::empty();
+        prev.arms
+            .push(Arm::new(Hex::new(2, 1), 2, vec![Instr::Pivot(Spin::Cw)]));
+        prev.arms[0].holding = true;
+        let hand = prev.arms[0].hand();
+        prev.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: hand,
+        });
+        prev.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: hand.add(DIRS[3]),
+        });
+        prev.bonds.push(sim::Bond {
+            a: 0,
+            b: 1,
+            kind: BondKind::Single,
+        });
+        let mut cur = prev.clone();
+        cur.step();
+        let (start, end) = (px(DIRS[3]), px(DIRS[4]));
+        let swing = Swing::from_cell(prev.arms[0].pivot);
+        for t in [0.4, 0.55] {
+            let f = Frame::between(&prev, &cur, t);
+            let expected = Vec2::from_angle(start.angle_to(end) * swing.at(t)).rotate(start);
+            assert_eq!(f.arms[0].hand, px(hand));
+            assert_eq!(f.atoms[0], Some(px(hand)));
+            assert!(f.atoms[1].unwrap().abs_diff_eq(px(hand) + expected, 1e-3));
+            assert!(!f.atoms[1].unwrap().abs_diff_eq(px(hand) + start, 1e-3));
         }
     }
 
@@ -2786,22 +2882,33 @@ mod tests {
     }
 
     #[test]
-    fn q_and_e_are_unbound() {
-        assert!(
-            NAV.iter()
-                .chain(KEYS.iter().map(|k| &k.code))
-                .all(|k| !matches!(k, KeyCode::KeyQ | KeyCode::KeyE))
-        );
+    fn q_and_e_pivot_a_focused_arm_write_to_a_focused_tape_and_turn_nothing_else() {
         let mut w = armed(vec![Instr::Wait]);
+        let far = w.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(2, -1),
+        });
+        w.sim.bonds.push(sim::Bond {
+            a: 0,
+            b: far,
+            kind: BondKind::Single,
+        });
         w.focus_tape(0);
         w.key(KeyCode::KeyQ);
         w.key(KeyCode::KeyE);
-        assert_eq!(w.sim.arms[0].tape, vec![Instr::Wait]);
-        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 1 }));
+        assert_eq!(
+            w.sim.arms[0].tape,
+            vec![Instr::Wait, Instr::Pivot(Spin::Ccw), Instr::Pivot(Spin::Cw)]
+        );
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 3 }));
         w.focus_arm(0);
-        w.key(KeyCode::KeyQ);
+        w.key(KeyCode::KeyF);
         w.key(KeyCode::KeyE);
         assert_eq!(w.sim.arms[0].dir, 0);
+        assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[0]);
+        assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(1, -1));
+        w.key(KeyCode::KeyQ);
+        assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(2, -1));
         w.sim.glyphs.push(Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(3, 3),

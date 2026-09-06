@@ -42,6 +42,7 @@ fi
 for i in $(seq 1 "$count"); do
   target=$dir/$name.png
   [ "$count" -eq 1 ] || target=$dir/$name-$i.png
-  one "$target"
+  for _ in 1 2 3 4; do one "$target" && break; done
+  [ -s "$target" ]
 done
 printf '%s — %s\n%s\n\n' "$name.png" "$kept" "$subject" >> "$out/prompts.txt"

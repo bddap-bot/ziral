@@ -71,6 +71,7 @@ pub enum Instr {
     Grab,
     Drop,
     Rot(Spin),
+    Pivot(Spin),
     Wait,
 }
 
@@ -445,30 +446,36 @@ impl Sim {
             }
             Instr::Drop => self.arms[i].holding = false,
             Instr::Rot(spin) => {
-                let pivot = self.arms[i].pivot;
-                if let Some(held) = self.held(i) {
-                    if let Some(j) = self.other_hand(i) {
-                        return Err(Stall::Hand(j));
-                    }
-                    let comp = self.component(held);
-                    let moved: Vec<(usize, Hex)> = comp
-                        .iter()
-                        .map(|id| (*id, self.atoms[*id].unwrap().pos.rotate(pivot, spin)))
-                        .collect();
-                    let blocked = moved.iter().any(|(_, to)| {
-                        self.atom_at(*to)
-                            .is_some_and(|other| !comp.contains(&other))
-                    });
-                    if blocked {
-                        return Err(Stall::Illegal);
-                    }
-                    for (id, to) in moved {
-                        self.atoms[id].as_mut().unwrap().pos = to;
-                    }
-                }
+                self.swing(i, self.arms[i].pivot, spin)?;
                 let arm = &mut self.arms[i];
                 arm.dir = spin.turn(arm.dir);
             }
+            Instr::Pivot(spin) => self.swing(i, hand, spin)?,
+        }
+        Ok(())
+    }
+
+    fn swing(&mut self, i: usize, centre: Hex, spin: Spin) -> Result<(), Stall> {
+        let Some(held) = self.held(i) else {
+            return Ok(());
+        };
+        if let Some(j) = self.other_hand(i) {
+            return Err(Stall::Hand(j));
+        }
+        let comp = self.component(held);
+        let moved: Vec<(usize, Hex)> = comp
+            .iter()
+            .map(|id| (*id, self.atoms[*id].unwrap().pos.rotate(centre, spin)))
+            .collect();
+        let blocked = moved.iter().any(|(_, to)| {
+            self.atom_at(*to)
+                .is_some_and(|other| !comp.contains(&other))
+        });
+        if blocked {
+            return Err(Stall::Illegal);
+        }
+        for (id, to) in moved {
+            self.atoms[id].as_mut().unwrap().pos = to;
         }
         Ok(())
     }
@@ -956,6 +963,67 @@ mod tests {
         assert!(!d.holding);
         assert!(g.holding);
         assert_eq!(g.stall, None);
+    }
+
+    fn held_pair(tape: Vec<Instr>) -> (Sim, usize, usize) {
+        let mut sim = bench(tape, Vec::new());
+        let a = put(&mut sim, 1, 0);
+        let b = put(&mut sim, 2, -1);
+        bond(&mut sim, a, b, BondKind::Single);
+        (sim, a, b)
+    }
+
+    #[test]
+    fn a_pivot_turns_the_held_pair_about_the_hand_and_leaves_the_arm_still() {
+        use Instr::*;
+        let (mut sim, a, b) = held_pair(vec![Grab, Pivot(Spin::Cw), Pivot(Spin::Ccw)]);
+        sim.step();
+        sim.step();
+        assert_eq!(sim.arms[0].stall, None);
+        assert_eq!(sim.arms[0].dir, 0);
+        assert_eq!(sim.atoms[a].unwrap().pos, Hex::new(1, 0));
+        assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(1, -1));
+        sim.step();
+        assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
+        assert_eq!(sim.arms[0].pc, 3);
+    }
+
+    #[test]
+    fn a_pivot_with_an_open_hand_moves_nothing_and_advances_the_tape() {
+        use Instr::*;
+        let (mut sim, _, b) = held_pair(vec![Pivot(Spin::Cw), Wait]);
+        sim.step();
+        assert_eq!(sim.arms[0].stall, None);
+        assert_eq!(sim.arms[0].pc, 1);
+        assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
+    }
+
+    #[test]
+    fn a_pivot_into_an_occupied_cell_stalls() {
+        use Instr::*;
+        let (mut sim, _, b) = held_pair(vec![Grab, Pivot(Spin::Cw)]);
+        put(&mut sim, 1, -1);
+        sim.step();
+        sim.step();
+        assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
+        assert_eq!(sim.arms[0].pc, 1);
+        assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
+    }
+
+    #[test]
+    fn a_pivot_under_two_hands_stalls_and_names_the_other_hand() {
+        use Instr::*;
+        let (mut sim, _, b) = held_pair(vec![Grab, Pivot(Spin::Cw)]);
+        sim.arms
+            .push(Arm::new(Hex::new(3, -1), 3, vec![Grab, Wait, Drop, Wait]));
+        sim.step();
+        sim.step();
+        assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
+        assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
+        sim.step();
+        sim.step();
+        assert_eq!(sim.arms[0].stall, None);
+        assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(1, -1));
     }
 
     #[test]
