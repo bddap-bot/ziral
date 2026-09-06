@@ -9,7 +9,6 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
-use bevy::ui::FocusPolicy;
 use bevy::window::PrimaryWindow;
 use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin, skin};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
@@ -727,7 +726,6 @@ fn caption(text: impl Into<String>, size: f32) -> impl Bundle {
         Text::new(text),
         TextColor(IVORY),
         TextFont::from_font_size(size),
-        FocusPolicy::Pass,
     )
 }
 
@@ -752,7 +750,6 @@ fn symbol(kiln: &Kiln, skin: Skin, lit: bool) -> impl Bundle {
             offset: Val::ZERO,
             color: if lit { IVORY } else { Color::NONE },
         },
-        FocusPolicy::Pass,
     )
 }
 
@@ -764,7 +761,6 @@ fn cursor() -> impl Bundle {
             ..default()
         },
         BackgroundColor(IVORY),
-        FocusPolicy::Pass,
     )
 }
 
@@ -1003,8 +999,8 @@ fn tapes(
             .entity(entity)
             .despawn_children()
             .with_children(|strip| {
-                let stalled = if line.stalled { " !" } else { "" };
-                strip.spawn(caption(format!("arm {arm}{stalled}"), 15.0));
+                let stalled = if line.stalled { "!" } else { " " };
+                strip.spawn(caption(format!("arm {arm:<3}{stalled}"), 15.0));
                 for (k, instr) in line.tape.iter().enumerate() {
                     if line.cursor == Some(k) {
                         strip.spawn(cursor());
