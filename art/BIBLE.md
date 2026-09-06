@@ -1,6 +1,6 @@
 # ziral art bible — Fired Workshop
 
-The board is a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight, wear, and one warm raking light make each action tactile; colored glazes keep every state unmistakable. Reference images and the prompts that made them are in [`reference/`](reference/).
+The board is a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight and wear make each action tactile; colored glazes keep every state unmistakable. Reference images and the prompts that made them are in [`reference/`](reference/).
 
 Two rules bind the direction, and section 3 makes them checkable: every atom is visually distinct from every other atom, and the same holds for every glyph, every machine, and every bond type.
 
@@ -22,15 +22,15 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 ## 2. Language
 
-**Materials and light.** Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. One warm light, raking from the upper left: a highlight sits high-left on every bead, wear gathers at contact edges only. No second light, no cast shadows that cross a cell boundary.
+**Materials and light.** Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. Rotatable art is captured as albedo under even, diffuse, non-directional light: curvature comes from symmetric tonal structure, wear gathers at contact edges only, and there is no cast shadow or directional highlight to swing with a turn.
 
 **Silhouette.** Stout circular pivots, one-piece links, an open horseshoe for the hand, hexagonal wells for glyph cells. Every state is readable from the outline alone: a closed hand is a small horseshoe on the atom, an open hand a wide one; a stalled arm wears an ivory ring on its pivot, and when another hand is the cause that hand wears a wider one.
 
 **Line.** Fills carry identity; lines carry structure. Grout and rims are thin dark brass. Glyph channels are the glyph's own glaze. Ivory lines mean "look here" (picked, being placed, stalled) and nothing else.
 
-**Texture.** Every atom and bond wears a diffusion-generated macro of its material, while every machine uses a complete diffusion-generated top-down object sprite; all are kept in [`textures/`](textures/) with the prompt that made them. The board draws from twenty-four scaffolded clay hexes generated from one prompt, each cell's tile and turn fixed by a hash of its coordinate, so one clay family carries handmade batch variation while its generated grout remains visible and still. Machine seats, rims, markings, and lines remain drawn over the object art for operational clarity at gameplay scale (a cell about forty pixels wide).
+**Texture.** Every atom and bond wears a diffusion-generated macro of its material, while every machine uses one complete diffusion-generated top-down object sprite; all are kept in [`textures/`](textures/) with the prompt that made them. The board draws from twenty-four scaffolded clay hexes generated from one prompt, each cell's tile and turn fixed by a hash of its coordinate, so one clay family carries handmade batch variation while its generated grout remains visible and still. Static seats, rims, markings, channels, and hands belong to the machine sprite rather than a second drawing over it.
 
-**Glyphs.** A glyph is a compact kiln-floor machine whose complete sprite spans its footprint. Its circular seats and functional channels remain drawn over the sprite, beneath atoms, so the machine story never obscures how it is used.
+**Glyphs.** A glyph is a compact kiln-floor machine whose complete sprite spans its footprint. Its circular seats and functional channels remain broad and unobstructed beneath atoms, so the machine story never obscures how it is used.
 
 **UI.** Dark brass strips with ivory text, brass borders, the readout on its own strip; the lit tape row is the same strip in lighter brass. An instruction on a tape is a symbol token pressed into the strip, one per key, letter and action fused in one mark (art/SYMBOLS.md); the controls line shows each key beside its token. The strips are furniture, not board: the strip itself never wears a state glaze; the tokens on it do, two glazes each, so they can be told apart at tape size.
 

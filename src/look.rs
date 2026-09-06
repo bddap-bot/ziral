@@ -294,12 +294,26 @@ mod tests {
         average(&thumb, &(0..THUMB * THUMB).collect::<Vec<usize>>())
     }
 
+    fn tile_body(skin: Skin) -> Vec<[f32; 3]> {
+        let (w, h, data) = pixels(skin);
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|(x, y)| {
+                let x = (2.0 * *x as f32 / (w - 1) as f32 - 1.0).abs() / 0.82;
+                let y = (2.0 * *y as f32 / (h - 1) as f32 - 1.0).abs() / 0.82;
+                x <= 3f32.sqrt() / 2.0 && x / 3f32.sqrt() + y / 2.0 <= 0.5
+            })
+            .map(|(x, y)| {
+                let i = (y * w + x) * 4;
+                [0, 1, 2].map(|c| f32::from(data[i + c]) / 255.0)
+            })
+            .collect()
+    }
+
     fn tile_mean(skin: Skin) -> Color {
-        let thumb = thumbnail(skin, THUMB);
-        let interior = (2..THUMB - 2)
-            .flat_map(|y| (2..THUMB - 2).map(move |x| y * THUMB + x))
-            .collect::<Vec<usize>>();
-        average(&thumb, &interior)
+        let body = tile_body(skin);
+        let channel = |c: usize| body.iter().map(|pixel| pixel[c]).sum::<f32>() / body.len() as f32;
+        Color::srgb(channel(0), channel(1), channel(2))
     }
 
     struct Pressed {
@@ -444,9 +458,33 @@ mod tests {
                 + (color.blue - clay.blue).powi(2))
             .sqrt();
             assert!(gap <= 0.28, "{a:?} leaves the clay family by {gap:.3}");
+            let a_body = tile_body(*a);
             for b in &TILES[i + 1..] {
-                assert_ne!(a.png, b.png, "{a:?} and {b:?} are the same batch");
+                assert!(a.png != b.png, "{a:?} and {b:?} are the same batch");
+                let apart = a_body
+                    .iter()
+                    .zip(tile_body(*b))
+                    .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+                    .sum::<f32>()
+                    / (a_body.len() * 3) as f32;
+                assert!(
+                    apart >= 0.01,
+                    "{a:?} and {b:?} lack character at {apart:.3}"
+                );
             }
+        }
+    }
+
+    #[test]
+    fn every_machine_sprite_has_visible_art_and_real_transparency() {
+        for (item, _) in PALETTE {
+            let skin = machine(item).skin;
+            let (_, _, data) = pixels(skin);
+            let visible = data.chunks_exact(4).filter(|pixel| pixel[3] > 230).count();
+            let clear = data.chunks_exact(4).filter(|pixel| pixel[3] < 25).count();
+            let area = data.len() / 4;
+            assert!(visible > area / 20, "{skin:?} has no visible machine");
+            assert!(clear > area / 20, "{skin:?} has no transparent surround");
         }
     }
 
@@ -465,7 +503,7 @@ mod tests {
         for (i, a) in semantic.iter().enumerate() {
             for b in &semantic[i + 1..] {
                 assert_ne!(a, b, "{a:?} and {b:?} reference one texture");
-                assert_ne!(a.png, b.png, "{a:?} and {b:?} contain one image");
+                assert!(a.png != b.png, "{a:?} and {b:?} contain one image");
             }
         }
     }

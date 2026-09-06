@@ -1098,12 +1098,10 @@ struct Kiln {
     bar: Handle<Mesh>,
     bond: Handle<Mesh>,
     rim: Handle<Mesh>,
-    ring: Handle<Mesh>,
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
     patina: Handle<ColorMaterial>,
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
-    highlight: Handle<ColorMaterial>,
 }
 
 impl Kiln {
@@ -1220,12 +1218,10 @@ fn fire_kiln(
         bar: meshes.add(Rectangle::new(1.0, 1.0)),
         bond: meshes.add(band(BOND_WIDTH / 3f32.sqrt())),
         rim: meshes.add(Annulus::new(0.85, 1.0)),
-        ring: meshes.add(Annulus::new(0.7, 1.0)),
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: materials.add(Glaze::Brass.color().with_alpha(0.5)),
         skins,
-        highlight: materials.add(IVORY.with_alpha(0.7)),
     });
 }
 
@@ -1313,11 +1309,6 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.fill(mesh, material, (a + b) / 2.0, d.to_angle(), scale, z);
     }
 
-    fn channel(&mut self, a: Vec2, b: Vec2, glaze: Glaze, z: f32) {
-        let kiln = self.kiln;
-        self.bar(&kiln.bar, kiln.material(glaze), a, b, 2.0, z);
-    }
-
     fn bead(&mut self, at: Vec2, look: Look<AtomMark>) {
         let kiln = self.kiln;
         self.stamp(
@@ -1328,12 +1319,7 @@ impl Painter<'_, '_, '_, '_, '_> {
             0.4,
         );
         self.stamp(&kiln.rim, &kiln.patina, at, HEX * 0.4, 0.42);
-        match look.marking {
-            AtomMark::Highlight => {
-                let up_left = at + Vec2::new(-0.15, 0.15) * HEX;
-                self.stamp(&kiln.circle, &kiln.highlight, up_left, HEX * 0.1, 0.45);
-            }
-        }
+        let AtomMark::Highlight = look.marking;
     }
 
     fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind, faint: bool) {
@@ -1351,14 +1337,7 @@ impl Painter<'_, '_, '_, '_, '_> {
         }
     }
 
-    fn horseshoe(&mut self, at: Vec2, r: f32, toward: Vec2, glaze: Glaze) {
-        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
-        let turn = toward.to_angle() - (FRAC_PI_2 + 3.0 * FRAC_PI_4);
-        let iso = Isometry2d::new(at, Rot2::radians(turn));
-        self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, glaze.color());
-    }
-
-    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
+    fn arm(&mut self, pivot: Vec2, hand: Vec2, _ring: f32, look: Look<MachineMark>) {
         let kiln = self.kiln;
         let material = kiln.skin(look.skin, false);
         self.fill(
@@ -1369,10 +1348,9 @@ impl Painter<'_, '_, '_, '_, '_> {
             Vec2::splat(HEX * 3.5),
             0.28,
         );
-        match look.marking {
-            MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
-            _ => unworn(look),
-        }
+        let MachineMark::Hand(_) = look.marking else {
+            unworn(look)
+        };
     }
 
     fn machine(&mut self, item: Item, at: Hex, dir: usize) {
@@ -1387,47 +1365,11 @@ impl Painter<'_, '_, '_, '_, '_> {
         };
         let kiln = self.kiln;
         let surface = kiln.skin(look.skin, false);
-        let glaze = kiln.material(look.glaze);
         let slots: Vec<Vec2> = Glyph { kind, at, dir }.slots().map(px).collect();
         let c = slots.iter().sum::<Vec2>() / slots.len() as f32;
         let side = if slots.len() == 1 { 2.0 } else { 4.0 } * HEX;
         let angle = px(DIRS[dir % 6]).to_angle();
         self.fill(&kiln.bar, surface, c, angle, Vec2::splat(side), 0.1);
-        match look.marking {
-            MachineMark::Dot => {
-                self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.6, 0.15);
-                self.stamp(&kiln.circle, glaze, slots[0], HEX * 0.15, 0.15);
-            }
-            MachineMark::Spokes(n) => {
-                for (i, s) in slots.iter().enumerate() {
-                    let next = slots[(i + 1) % slots.len()];
-                    self.channel(*s, next, look.glaze, 0.13);
-                    let side = (*s - c).perp().normalize_or_zero() * 2.5;
-                    for k in 0..n {
-                        let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
-                        self.channel(c + off, *s + off, look.glaze, 0.13);
-                    }
-                }
-                for (s, slot) in slots.iter().zip(kind.rule().slots) {
-                    if slot.consumed {
-                        self.stamp(&kiln.ring, glaze, *s, HEX * 0.2, 0.14);
-                    }
-                }
-            }
-            MachineMark::Cup => {
-                for s in &slots {
-                    self.stamp(&kiln.circle, surface, *s, HEX * 0.5, 0.15);
-                    self.stamp(&kiln.rim, kiln.material(Glaze::Brass), *s, HEX * 0.5, 0.16);
-                }
-                for (a, b, kind) in kind.rule().before {
-                    if let Some(kind) = kind {
-                        self.bond(slots[*a], slots[*b], *kind, true);
-                    }
-                }
-            }
-            MachineMark::Void => self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.55, 0.16),
-            MachineMark::Hand(_) => unworn(look),
-        }
     }
 }
 
@@ -1897,6 +1839,26 @@ mod shot {
                 });
                 world.sim = sim;
                 world.focus_arm(0);
+            }
+            "texture-wide" => {
+                let mut sim = Sim::empty();
+                for (k, pivot) in sim::PLACEMENTS.into_iter().enumerate() {
+                    let dir = k % 6;
+                    let mut arm = Arm::new(pivot, dir, Vec::new());
+                    arm.holding = true;
+                    sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos: arm.hand(),
+                    });
+                    sim.arms.push(arm);
+                    sim.glyphs.push(Glyph {
+                        kind: GlyphKind::ALL[k % GlyphKind::ALL.len()],
+                        at: pivot.add(DIRS[(dir + 2) % 6]),
+                        dir,
+                    });
+                }
+                world.sim = sim;
+                wide = true;
             }
             "wide" => wide = true,
             "bonders" => world.sim = phased(&[(Hex::new(-3, 0), 14), (Hex::new(3, 0), 15)]),
