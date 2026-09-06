@@ -49,20 +49,10 @@ pub const PALETTE: [(Item, &str); 6] = [
     (Item::Glyph(GlyphKind::Cleanup), "cleanup"),
 ];
 
-impl Item {
-    fn name(self) -> &'static str {
-        PALETTE
-            .iter()
-            .find(|(i, _)| *i == self)
-            .map_or("", |(_, n)| n)
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct Key {
     code: KeyCode,
     instr: Instr,
-    letter: char,
     pub symbol: Skin,
     pub token: Token,
 }
@@ -71,7 +61,6 @@ pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyF,
         instr: Instr::Grab,
-        letter: 'F',
         symbol: skin!("symbols/f"),
         token: Token {
             face: Glaze::Terracotta,
@@ -81,7 +70,6 @@ pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyR,
         instr: Instr::Drop,
-        letter: 'R',
         symbol: skin!("symbols/r"),
         token: Token {
             face: Glaze::BlueGreen,
@@ -91,7 +79,6 @@ pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyA,
         instr: Instr::Rot(Spin::Ccw),
-        letter: 'A',
         symbol: skin!("symbols/a"),
         token: Token {
             face: Glaze::Amber,
@@ -101,7 +88,6 @@ pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyD,
         instr: Instr::Rot(Spin::Cw),
-        letter: 'D',
         symbol: skin!("symbols/d"),
         token: Token {
             face: Glaze::Brass,
@@ -111,7 +97,6 @@ pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyQ,
         instr: Instr::Pivot(Spin::Ccw),
-        letter: 'Q',
         symbol: skin!("symbols/q"),
         token: Token {
             face: Glaze::Plum,
@@ -121,7 +106,6 @@ pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyE,
         instr: Instr::Pivot(Spin::Cw),
-        letter: 'E',
         symbol: skin!("symbols/e"),
         token: Token {
             face: Glaze::Ivory,
@@ -131,7 +115,6 @@ pub const KEYS: [Key; 7] = [
     Key {
         code: KeyCode::KeyX,
         instr: Instr::Wait,
-        letter: 'X',
         symbol: skin!("symbols/x"),
         token: Token {
             face: Glaze::Ivory,
@@ -213,13 +196,6 @@ impl Piece {
             Piece::Arm(a) => (a.pivot, a.dir) = (at, dir),
             Piece::Glyph(g) => (g.at, g.dir) = (at, dir),
         }
-    }
-}
-
-fn label(items: &[Item]) -> String {
-    match items {
-        [item] => item.name().to_string(),
-        _ => format!("{} machines", items.len()),
     }
 }
 
@@ -351,13 +327,6 @@ impl World {
                     ..g
                 })
             }
-        }
-    }
-
-    fn item(&self, id: Id) -> Item {
-        match id {
-            Id::Arm(_) => Item::Arm,
-            Id::Glyph(i) => Item::Glyph(self.sim.glyphs[i].kind),
         }
     }
 
@@ -703,10 +672,7 @@ fn main() {
     app.insert_resource(World::new(sim::preloaded()))
         .insert_resource(ClearColor(brass(0.65)))
         .add_systems(Startup, (fire_kiln, spawn_ui).chain())
-        .add_systems(
-            Update,
-            (run_ticks, view, edit, tapes, board, draw, text).chain(),
-        );
+        .add_systems(Update, (run_ticks, view, edit, tapes, board, draw).chain());
     #[cfg(not(target_arch = "wasm32"))]
     if shot::configure(&mut app) {
         app.run();
@@ -764,25 +730,6 @@ fn button(node: Node) -> impl Bundle {
         BackgroundColor(strip(false)),
     )
 }
-
-#[derive(Component, Clone, Copy, PartialEq, Eq)]
-enum HudSlot {
-    Status,
-    Controls,
-    Lead,
-    Key(Instr),
-    Trail,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Keys {
-    All,
-    Acting,
-    Hidden,
-}
-
-const HELP: &str = "space pause/run  . step  wheel zoom  right/middle-drag pan  click a machine to focus  drag on empty ground to select  hold-drag a selected machine to move it  drag from the palette to place";
-
 fn caption(text: impl Into<String>, size: f32) -> impl Bundle {
     (
         Text::new(text),
@@ -826,37 +773,7 @@ fn cursor() -> impl Bundle {
     )
 }
 
-fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(8.0),
-                top: Val::Px(8.0),
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(2.0),
-                ..default()
-            },
-            BackgroundColor(strip(false)),
-        ))
-        .with_children(|col| {
-            col.spawn((HudSlot::Status, caption("", 16.0)));
-            col.spawn((HudSlot::Controls, row(8.0)))
-                .with_children(|controls| {
-                    controls.spawn((HudSlot::Lead, caption("", 16.0)));
-                    for key in KEYS {
-                        controls
-                            .spawn((HudSlot::Key(key.instr), row(3.0)))
-                            .with_children(|pair| {
-                                pair.spawn(caption(key.letter.to_string(), 16.0));
-                                pair.spawn(symbol(&kiln, key.symbol, false));
-                            });
-                    }
-                    controls.spawn((HudSlot::Trail, caption("", 16.0)));
-                });
-            col.spawn(caption(HELP, 16.0));
-        });
+fn spawn_ui(mut commands: Commands) {
     commands
         .spawn(Node {
             position_type: PositionType::Absolute,
@@ -1660,85 +1577,6 @@ fn draw(
     if let Some(Press::Marquee { from }) = world.down {
         let centre = Isometry2d::from_translation((from + pointer) / 2.0);
         p.gizmos.rect_2d(centre, (pointer - from).abs(), IVORY);
-    }
-}
-
-fn text(world: Res<World>, mut hud: Query<(&HudSlot, &mut Node, Option<&mut Text>)>) {
-    let s = &world.sim;
-    let status = format!(
-        "tick {}  delivered {}  {}",
-        s.tick,
-        s.delivered,
-        if world.running { "running" } else { "paused" }
-    );
-    let paste = if world.clipboard.is_empty() {
-        ""
-    } else {
-        "  V paste"
-    };
-    let (lead, keys, trail) = match &world.focus {
-        Some(Focus::Hold { set, from }) => {
-            let items: Vec<Item> = set.iter().map(Piece::item).collect();
-            let (esc, place) = if from.is_empty() {
-                ("esc discard", "click a hex to place")
-            } else {
-                ("esc put back", "let go on a hex to place")
-            };
-            let lead = format!(
-                "holding {}: A/D turn  Z delete  {esc}  {place}",
-                label(&items)
-            );
-            (lead, Keys::Hidden, String::new())
-        }
-        Some(Focus::Tape { .. }) => (
-            "tape:".to_string(),
-            Keys::All,
-            "arrows move  home/end  Z backspace  esc done".to_string(),
-        ),
-        Some(Focus::Pick(ids)) => {
-            let items: Vec<Item> = ids.iter().map(|id| world.item(*id)).collect();
-            let name = label(&items);
-            let tail = format!("X cut  C copy{paste}  Z delete  esc done");
-            match ids.as_slice() {
-                [Id::Arm(_)] => (
-                    format!("{name}, acts now:"),
-                    Keys::Acting,
-                    format!("click its tape to edit  {tail}"),
-                ),
-                [Id::Glyph(_)] => (
-                    format!("{name}  A/D turn  {tail}"),
-                    Keys::Hidden,
-                    String::new(),
-                ),
-                _ => (format!("{name}  {tail}"), Keys::Hidden, String::new()),
-            }
-        }
-        None => (paste.trim().to_string(), Keys::Hidden, String::new()),
-    };
-    for (slot, mut node, text) in &mut hud {
-        let (shown, string) = match slot {
-            HudSlot::Status => (true, Some(&status)),
-            HudSlot::Controls => (!lead.is_empty(), None),
-            HudSlot::Lead => (true, Some(&lead)),
-            HudSlot::Key(instr) => (
-                match keys {
-                    Keys::All => true,
-                    Keys::Acting => *instr != Instr::Wait,
-                    Keys::Hidden => false,
-                },
-                None,
-            ),
-            HudSlot::Trail => (true, Some(&trail)),
-        };
-        let display = if shown { Display::Flex } else { Display::None };
-        if node.display != display {
-            node.display = display;
-        }
-        if let (Some(mut text), Some(string)) = (text, string)
-            && text.0 != *string
-        {
-            text.0 = string.clone();
-        }
     }
 }
 
