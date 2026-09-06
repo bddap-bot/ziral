@@ -217,58 +217,66 @@ const fn base(at: Hex) -> Slot {
     }
 }
 
-const fn eaten(at: Hex) -> Slot {
+const fn consumed(at: Hex) -> Slot {
     Slot {
         consumed: true,
         ..base(at)
     }
 }
 
-const SECOND_BOND: [Slot; 3] = [eaten(ORIGIN), base(DIRS[0]), base(DIRS[1])];
+const SECOND_BOND: [Slot; 3] = [consumed(ORIGIN), base(DIRS[0]), base(DIRS[1])];
 const BONDER: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
-const OUTPUT: [Slot; 2] = [eaten(ORIGIN), eaten(DIRS[0])];
+const OUTPUT: [Slot; 2] = [consumed(ORIGIN), consumed(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
-const CLEANUP: [Slot; 1] = [eaten(ORIGIN)];
+const CLEANUP: [Slot; 1] = [consumed(ORIGIN)];
+
+const fn plain(slots: &'static [Slot]) -> Rule {
+    Rule {
+        slots,
+        before: &[],
+        after: &[],
+        whole: false,
+        spent: false,
+    }
+}
 
 impl GlyphKind {
     pub const fn rule(self) -> Rule {
         match self {
-            GlyphKind::Source => Rule {
-                slots: &SOURCE,
-                before: &[],
-                after: &[],
-                whole: false,
-                spent: false,
-            },
+            GlyphKind::Source => plain(&SOURCE),
             GlyphKind::Bonder => Rule {
-                slots: &BONDER,
                 before: &[(0, 1, None)],
                 after: &[(0, 1, BondKind::Single)],
-                whole: false,
-                spent: false,
+                ..plain(&BONDER)
             },
             GlyphKind::SecondBond => Rule {
-                slots: &SECOND_BOND,
                 before: &[(1, 2, Some(BondKind::Single))],
                 after: &[(1, 2, BondKind::Double)],
-                whole: false,
-                spent: false,
+                ..plain(&SECOND_BOND)
             },
             GlyphKind::Output => Rule {
-                slots: &OUTPUT,
                 before: &[(0, 1, Some(BondKind::Double))],
-                after: &[],
                 whole: true,
-                spent: false,
+                ..plain(&OUTPUT)
             },
             GlyphKind::Cleanup => Rule {
-                slots: &CLEANUP,
-                before: &[],
-                after: &[],
-                whole: false,
                 spent: true,
+                ..plain(&CLEANUP)
             },
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Spent(Vec<usize>);
+
+impl Spent {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn remap(&self, i: usize) -> Option<usize> {
+        (!self.0.contains(&i)).then(|| i - self.0.iter().filter(|s| **s < i).count())
     }
 }
 
@@ -388,7 +396,7 @@ impl Sim {
         }
     }
 
-    pub fn step(&mut self) -> Vec<usize> {
+    pub fn step(&mut self) -> Spent {
         self.torn.clear();
         for i in 0..self.glyphs.len() {
             let g = self.glyphs[i];
@@ -410,14 +418,18 @@ impl Sim {
                 self.arms[i].pc = self.arms[i].pc.wrapping_add(1);
             }
         }
-        let glyphs = std::mem::take(&mut self.glyphs);
-        let (kept, spent): (Vec<_>, Vec<_>) = glyphs
-            .into_iter()
-            .enumerate()
-            .partition(|(_, g)| self.fire(*g));
-        self.glyphs = kept.into_iter().map(|(_, g)| g).collect();
+        let mut spent = Vec::new();
+        for i in 0..self.glyphs.len() {
+            let g = self.glyphs[i];
+            if self.fire(g) && g.kind.rule().spent {
+                spent.push(i);
+            }
+        }
+        for i in spent.iter().rev() {
+            self.glyphs.remove(*i);
+        }
         self.tick += 1;
-        spent.into_iter().map(|(i, _)| i).collect()
+        Spent(spent)
     }
 
     fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
@@ -450,7 +462,7 @@ impl Sim {
     fn fire(&mut self, g: Glyph) -> bool {
         let rule = g.kind.rule();
         let Some(ids) = self.matched(g) else {
-            return true;
+            return false;
         };
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
@@ -470,7 +482,7 @@ impl Sim {
         if g.kind == GlyphKind::Output {
             self.delivered += 1;
         }
-        !rule.spent
+        true
     }
 
     pub fn act(&mut self, i: usize, instr: Instr) -> bool {
@@ -1207,7 +1219,8 @@ mod tests {
         });
         sim.glyphs.push(cleanup(ORIGIN));
         put(&mut sim, 0, 0);
-        assert_eq!(sim.step(), vec![1]);
+        let spent = sim.step();
+        assert_eq!((spent.remap(0), spent.remap(1)), (Some(0), None));
         assert_eq!(sim.glyphs.len(), 1);
         assert_eq!(sim.glyphs[0].kind, GlyphKind::Source);
         let later = put(&mut sim, 0, 0);

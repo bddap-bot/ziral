@@ -11,7 +11,7 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
 use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin, skin};
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent, Spin, Stall};
 
 const HEX: f32 = 20.0;
 const TICK_MS: f32 = 400.0;
@@ -224,20 +224,21 @@ impl Focus {
         }
     }
 
-    fn survive(&mut self, spent: &[usize]) -> bool {
-        let ids = match self {
+    fn survive(mut self, spent: &Spent) -> Option<Focus> {
+        let lost = |id: &Id| matches!(id, Id::Glyph(i) if spent.remap(*i).is_none());
+        let ids = match &mut self {
+            Focus::Tape { .. } => return Some(self),
+            Focus::Hold { from, .. } if from.iter().any(lost) => return None,
             Focus::Pick(ids) | Focus::Hold { from: ids, .. } => ids,
-            Focus::Tape { .. } => return true,
         };
         ids.retain_mut(|id| match id {
             Id::Arm(_) => true,
-            Id::Glyph(i) if spent.contains(i) => false,
-            Id::Glyph(i) => {
-                *i -= spent.iter().filter(|s| **s < *i).count();
+            Id::Glyph(i) => spent.remap(*i).is_some_and(|j| {
+                *i = j;
                 true
-            }
+            }),
         });
-        !ids.is_empty() || matches!(self, Focus::Hold { .. })
+        (!ids.is_empty() || matches!(self, Focus::Hold { .. })).then_some(self)
     }
 }
 
@@ -281,8 +282,8 @@ impl World {
     fn step(&mut self) {
         self.prev = self.sim.clone();
         let spent = self.sim.step();
-        if !spent.is_empty() && !self.focus.as_mut().is_none_or(|f| f.survive(&spent)) {
-            self.focus = None;
+        if !spent.is_empty() {
+            self.focus = self.focus.take().and_then(|f| f.survive(&spent));
         }
     }
 
@@ -1629,12 +1630,11 @@ fn draw(
         commands: &mut commands,
         kiln: &kiln,
     };
-    let s = &world.sim;
-    let f = Frame::between(&world.prev, s, world.phase());
+    let f = Frame::between(&world.prev, &world.sim, world.phase());
     for g in &f.sim.glyphs {
         p.machine(Item::Glyph(g.kind), g.at, g.dir);
     }
-    for (i, g) in s.glyphs.iter().enumerate() {
+    for (i, g) in world.sim.glyphs.iter().enumerate() {
         if world.picks(Id::Glyph(i)) {
             p.gizmos.linestrip_2d(corners(px(g.at), HEX * 0.9), IVORY);
         }
@@ -2182,7 +2182,7 @@ mod shot {
             other => panic!("unknown scene {other}"),
         }
         for _ in 0..ticks {
-            world.sim.step();
+            world.step();
         }
         world.prev = world.sim.clone();
         script.extend(
@@ -3102,6 +3102,23 @@ mod tests {
         assert_eq!(w.focus, picked(&[Id::Glyph(0), Id::Glyph(1)]));
         assert_eq!(w.sim.glyphs[1].kind, GlyphKind::Bonder);
         assert_eq!(w.prev.glyphs.len(), 3);
+    }
+
+    #[test]
+    fn a_hold_follows_its_glyph_down_the_index_and_a_hold_on_a_spent_glyph_cancels() {
+        let mut w = fed_cleanup();
+        w.lift(w.lifted(&[Id::Glyph(2)], ORIGIN), vec![Id::Glyph(2)]);
+        w.step();
+        let Some(Focus::Hold { from, set }) = w.focus.clone() else {
+            panic!("{:?}", w.focus)
+        };
+        assert_eq!(from, vec![Id::Glyph(1)]);
+        assert_eq!(set.len(), 1);
+        let mut w = fed_cleanup();
+        let ids = [Id::Glyph(1), Id::Glyph(2)];
+        w.lift(w.lifted(&ids, ORIGIN), ids.to_vec());
+        w.step();
+        assert_eq!(w.focus, None);
     }
 
     #[test]
