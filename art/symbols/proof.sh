@@ -3,7 +3,8 @@ set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 shot=$(mktemp -d)
-trap 'rm -rf "$shot"' EXIT
+trap 'rm -rf "$shot" "$here/proof/tape-26px.png.part"' EXIT
+cd "$here/../.."
 cargo run -- --shot "$shot/focus.png" focus 8
 magick "$shot/focus.png" -crop 330x98+140+590 +repage "$shot/crop.png"
 magick "$shot/crop.png" -filter point -resize 400% "$shot/big.png"

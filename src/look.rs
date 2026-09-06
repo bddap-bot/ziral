@@ -39,7 +39,7 @@ impl Glaze {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub struct Token {
     pub face: Glaze,
     pub field: Glaze,
@@ -439,21 +439,21 @@ mod tests {
 
     #[test]
     fn every_symbol_is_told_apart_at_tape_size() {
-        let pressed: Vec<Pressed> = KEYS.iter().map(|k| pressed(k.symbol)).collect();
+        let tokens: Vec<Pressed> = KEYS.iter().map(|k| pressed(k.symbol)).collect();
         let mut alike = Vec::new();
         for (i, a) in KEYS.iter().enumerate() {
             for (j, b) in KEYS.iter().enumerate().skip(i + 1) {
-                let letters = hue_and_value_differ(pressed[i].face, pressed[j].face);
-                let fields = hue_and_value_differ(pressed[i].field, pressed[j].field);
+                let letters = hue_and_value_differ(tokens[i].face, tokens[j].face);
+                let fields = hue_and_value_differ(tokens[i].field, tokens[j].field);
                 if !letters.contains(&true) && !fields.contains(&true) {
                     alike.push(format!(
                         "{:?} and {:?}: letters {:?} {:?}, fields {:?} {:?}",
                         a.symbol,
                         b.symbol,
-                        Hsva::from(pressed[i].face),
-                        Hsva::from(pressed[j].face),
-                        Hsva::from(pressed[i].field),
-                        Hsva::from(pressed[j].field)
+                        Hsva::from(tokens[i].face),
+                        Hsva::from(tokens[j].face),
+                        Hsva::from(tokens[i].field),
+                        Hsva::from(tokens[j].field)
                     ));
                 }
             }
