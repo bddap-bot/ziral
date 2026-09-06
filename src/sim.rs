@@ -180,14 +180,16 @@ pub enum GlyphKind {
     Bonder,
     SecondBond,
     Output,
+    Cleanup,
 }
 
 impl GlyphKind {
-    pub const ALL: [GlyphKind; 4] = [
+    pub const ALL: [GlyphKind; 5] = [
         GlyphKind::Source,
         GlyphKind::Bonder,
         GlyphKind::SecondBond,
         GlyphKind::Output,
+        GlyphKind::Cleanup,
     ];
 }
 
@@ -204,6 +206,7 @@ pub struct Rule {
     pub before: &'static [(usize, usize, Option<BondKind>)],
     pub after: &'static [(usize, usize, BondKind)],
     pub whole: bool,
+    pub spent: bool,
 }
 
 const fn base(at: Hex) -> Slot {
@@ -214,26 +217,18 @@ const fn base(at: Hex) -> Slot {
     }
 }
 
-const SECOND_BOND: [Slot; 3] = [
+const fn eaten(at: Hex) -> Slot {
     Slot {
         consumed: true,
-        ..base(ORIGIN)
-    },
-    base(DIRS[0]),
-    base(DIRS[1]),
-];
+        ..base(at)
+    }
+}
+
+const SECOND_BOND: [Slot; 3] = [eaten(ORIGIN), base(DIRS[0]), base(DIRS[1])];
 const BONDER: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
-const OUTPUT: [Slot; 2] = [
-    Slot {
-        consumed: true,
-        ..base(ORIGIN)
-    },
-    Slot {
-        consumed: true,
-        ..base(DIRS[0])
-    },
-];
+const OUTPUT: [Slot; 2] = [eaten(ORIGIN), eaten(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
+const CLEANUP: [Slot; 1] = [eaten(ORIGIN)];
 
 impl GlyphKind {
     pub const fn rule(self) -> Rule {
@@ -243,24 +238,35 @@ impl GlyphKind {
                 before: &[],
                 after: &[],
                 whole: false,
+                spent: false,
             },
             GlyphKind::Bonder => Rule {
                 slots: &BONDER,
                 before: &[(0, 1, None)],
                 after: &[(0, 1, BondKind::Single)],
                 whole: false,
+                spent: false,
             },
             GlyphKind::SecondBond => Rule {
                 slots: &SECOND_BOND,
                 before: &[(1, 2, Some(BondKind::Single))],
                 after: &[(1, 2, BondKind::Double)],
                 whole: false,
+                spent: false,
             },
             GlyphKind::Output => Rule {
                 slots: &OUTPUT,
                 before: &[(0, 1, Some(BondKind::Double))],
                 after: &[],
                 whole: true,
+                spent: false,
+            },
+            GlyphKind::Cleanup => Rule {
+                slots: &CLEANUP,
+                before: &[],
+                after: &[],
+                whole: false,
+                spent: true,
             },
         }
     }
@@ -382,7 +388,7 @@ impl Sim {
         }
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> Vec<usize> {
         self.torn.clear();
         for i in 0..self.glyphs.len() {
             let g = self.glyphs[i];
@@ -404,10 +410,14 @@ impl Sim {
                 self.arms[i].pc = self.arms[i].pc.wrapping_add(1);
             }
         }
-        for i in 0..self.glyphs.len() {
-            self.fire(self.glyphs[i]);
-        }
+        let glyphs = std::mem::take(&mut self.glyphs);
+        let (kept, spent): (Vec<_>, Vec<_>) = glyphs
+            .into_iter()
+            .enumerate()
+            .partition(|(_, g)| self.fire(*g));
+        self.glyphs = kept.into_iter().map(|(_, g)| g).collect();
         self.tick += 1;
+        spent.into_iter().map(|(i, _)| i).collect()
     }
 
     fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
@@ -437,9 +447,11 @@ impl Sim {
         Some(ids)
     }
 
-    fn fire(&mut self, g: Glyph) {
+    fn fire(&mut self, g: Glyph) -> bool {
         let rule = g.kind.rule();
-        let Some(ids) = self.matched(g) else { return };
+        let Some(ids) = self.matched(g) else {
+            return true;
+        };
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
             match self.bond_between(a, b) {
@@ -458,6 +470,7 @@ impl Sim {
         if g.kind == GlyphKind::Output {
             self.delivered += 1;
         }
+        !rule.spent
     }
 
     pub fn act(&mut self, i: usize, instr: Instr) -> bool {
@@ -1157,5 +1170,49 @@ mod tests {
             .collect();
         assert_eq!(stalled, vec![sim.arms.len() - 2, sim.arms.len() - 1]);
         assert!(sim.atoms.len() < 40);
+    }
+
+    fn cleanup(at: Hex) -> Glyph {
+        Glyph {
+            kind: GlyphKind::Cleanup,
+            at,
+            dir: 0,
+        }
+    }
+
+    #[test]
+    fn a_cleanup_eats_the_middle_of_a_chain_and_leaves_the_ends_where_they_lay_unbonded() {
+        let mut sim = Sim::empty();
+        sim.glyphs.push(cleanup(ORIGIN));
+        let left = put(&mut sim, -1, 0);
+        let mid = put(&mut sim, 0, 0);
+        let right = put(&mut sim, 1, 0);
+        bond(&mut sim, left, mid, BondKind::Single);
+        bond(&mut sim, mid, right, BondKind::Double);
+        sim.step();
+        assert!(sim.bonds.is_empty());
+        assert_eq!(sim.atoms[mid], None);
+        assert_eq!(sim.atoms[left].unwrap().pos, Hex::new(-1, 0));
+        assert_eq!(sim.atoms[right].unwrap().pos, Hex::new(1, 0));
+        assert_eq!(sim.torn.len(), 2);
+    }
+
+    #[test]
+    fn a_cleanup_is_spent_by_its_first_meal_and_a_later_atom_on_its_cell_survives() {
+        let mut sim = Sim::empty();
+        sim.glyphs.push(Glyph {
+            kind: GlyphKind::Source,
+            at: Hex::new(-3, 0),
+            dir: 0,
+        });
+        sim.glyphs.push(cleanup(ORIGIN));
+        put(&mut sim, 0, 0);
+        assert_eq!(sim.step(), vec![1]);
+        assert_eq!(sim.glyphs.len(), 1);
+        assert_eq!(sim.glyphs[0].kind, GlyphKind::Source);
+        let later = put(&mut sim, 0, 0);
+        assert!(sim.step().is_empty());
+        assert_eq!(sim.atoms[later].unwrap().pos, ORIGIN);
+        assert!(sim.atom_at(Hex::new(-3, 0)).is_some());
     }
 }

@@ -40,12 +40,13 @@ pub enum Item {
     Glyph(GlyphKind),
 }
 
-pub const PALETTE: [(Item, &str); 5] = [
+pub const PALETTE: [(Item, &str); 6] = [
     (Item::Arm, "arm"),
     (Item::Glyph(GlyphKind::Bonder), "bonder"),
     (Item::Glyph(GlyphKind::SecondBond), "second bond"),
     (Item::Glyph(GlyphKind::Source), "source"),
     (Item::Glyph(GlyphKind::Output), "output"),
+    (Item::Glyph(GlyphKind::Cleanup), "cleanup"),
 ];
 
 impl Item {
@@ -222,6 +223,22 @@ impl Focus {
             Focus::Hold { .. } => Vec::new(),
         }
     }
+
+    fn survive(&mut self, spent: &[usize]) -> bool {
+        let ids = match self {
+            Focus::Pick(ids) | Focus::Hold { from: ids, .. } => ids,
+            Focus::Tape { .. } => return true,
+        };
+        ids.retain_mut(|id| match id {
+            Id::Arm(_) => true,
+            Id::Glyph(i) if spent.contains(i) => false,
+            Id::Glyph(i) => {
+                *i -= spent.iter().filter(|s| **s < *i).count();
+                true
+            }
+        });
+        !ids.is_empty() || matches!(self, Focus::Hold { .. })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -263,7 +280,10 @@ impl World {
 
     fn step(&mut self) {
         self.prev = self.sim.clone();
-        self.sim.step();
+        let spent = self.sim.step();
+        if !spent.is_empty() && !self.focus.as_mut().is_none_or(|f| f.survive(&spent)) {
+            self.focus = None;
+        }
     }
 
     fn phase(&self) -> f32 {
@@ -1376,6 +1396,10 @@ impl Painter<'_, '_, '_, '_, '_> {
                     }
                 }
             }
+            MachineMark::Void => {
+                self.stamp(&kiln.circle, surface, slots[0], HEX * 0.55, 0.15);
+                self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.55, 0.16);
+            }
             MachineMark::Hand(_) => unworn(look),
         }
     }
@@ -1606,13 +1630,15 @@ fn draw(
         kiln: &kiln,
     };
     let s = &world.sim;
-    for (i, g) in s.glyphs.iter().enumerate() {
+    let f = Frame::between(&world.prev, s, world.phase());
+    for g in &f.sim.glyphs {
         p.machine(Item::Glyph(g.kind), g.at, g.dir);
+    }
+    for (i, g) in s.glyphs.iter().enumerate() {
         if world.picks(Id::Glyph(i)) {
             p.gizmos.linestrip_2d(corners(px(g.at), HEX * 0.9), IVORY);
         }
     }
-    let f = Frame::between(&world.prev, s, world.phase());
     for b in &f.sim.bonds {
         let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
             continue;
@@ -1922,6 +1948,38 @@ mod shot {
                     });
                     sim.arms.push(arm);
                 }
+                world.sim = sim;
+            }
+            "cleanup" => {
+                let mut sim = Sim::empty();
+                let mut arm = Arm::new(
+                    Hex::new(0, 0),
+                    0,
+                    vec![Instr::Rot(Spin::Cw), Instr::Drop, Instr::Wait],
+                );
+                arm.holding = true;
+                sim.glyphs.push(Glyph {
+                    kind: GlyphKind::Cleanup,
+                    at: arm.hand().rotate(arm.pivot, Spin::Cw),
+                    dir: 0,
+                });
+                let chain: Vec<usize> = [DIRS[1], ORIGIN, DIRS[4]]
+                    .iter()
+                    .map(|off| {
+                        sim.spawn(Atom {
+                            kind: AtomKind::Base,
+                            pos: arm.hand().add(*off),
+                        })
+                    })
+                    .collect();
+                for pair in chain.windows(2) {
+                    sim.bonds.push(Bond {
+                        a: pair[0],
+                        b: pair[1],
+                        kind: BondKind::Single,
+                    });
+                }
+                sim.arms.push(arm);
                 world.sim = sim;
             }
             "pivot" => {
@@ -3015,5 +3073,42 @@ mod tests {
         w.release(Some(to));
         assert_eq!(w.sim.arms[0].pivot, to);
         assert_eq!(w.focus, picked(&[Id::Arm(0)]));
+    }
+
+    fn fed_cleanup() -> World {
+        let mut w = World::new(Sim::empty());
+        let glyph = |kind, q| Glyph {
+            kind,
+            at: Hex::new(q, 0),
+            dir: 0,
+        };
+        w.sim.glyphs = vec![
+            glyph(GlyphKind::Source, -4),
+            glyph(GlyphKind::Cleanup, 0),
+            glyph(GlyphKind::Bonder, 4),
+        ];
+        w.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: ORIGIN,
+        });
+        w
+    }
+
+    #[test]
+    fn a_spent_glyph_leaves_the_pick_and_the_rest_still_name_their_glyphs() {
+        let mut w = fed_cleanup();
+        w.pick(vec![Id::Glyph(0), Id::Glyph(1), Id::Glyph(2)]);
+        w.step();
+        assert_eq!(w.focus, picked(&[Id::Glyph(0), Id::Glyph(1)]));
+        assert_eq!(w.sim.glyphs[1].kind, GlyphKind::Bonder);
+        assert_eq!(w.prev.glyphs.len(), 3);
+    }
+
+    #[test]
+    fn focus_on_a_spent_glyph_alone_clears() {
+        let mut w = fed_cleanup();
+        w.pick(vec![Id::Glyph(1)]);
+        w.step();
+        assert_eq!(w.focus, None);
     }
 }

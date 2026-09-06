@@ -100,3 +100,6 @@ Use case: game-texture. Asset type: flat material swatch, surface only. Straight
 tile-22.png — candidate 1
 Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of satin-glazed clay #D8C3A5 with a pale chalky matte surface with a bold diagonal brush drag, the difference from plain clay obvious at a glance, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge. [STYLE LOCK]
 
+cleanup.png — candidate 1
+Use case: game-texture. Asset type: flat material swatch, surface only. Straight-on macro of the floor of a deep unglazed ceramic well fired almost black, sooted and matte, the faintest darkened-brass #6B4F3A undertone at the very edges, drinking the light so nothing reflects, warm raking light from the upper left. No objects, figures, motifs, emblems, borders, rims, or edges anywhere: the surface fills the entire square frame edge to edge.
+

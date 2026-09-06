@@ -127,6 +127,7 @@ pub enum MachineMark {
     Dot,
     Spokes(usize),
     Cup,
+    Void,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,6 +187,7 @@ pub fn machine(item: Item) -> Look<MachineMark> {
             MachineMark::Spokes(2),
         ),
         GlyphKind::Output => (Glaze::Ivory, skin!("textures/output"), MachineMark::Cup),
+        GlyphKind::Cleanup => (Glaze::Brass, skin!("textures/cleanup"), MachineMark::Void),
     };
     Look {
         glaze,
