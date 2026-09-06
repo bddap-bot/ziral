@@ -1397,10 +1397,7 @@ impl Painter<'_, '_, '_, '_, '_> {
                     }
                 }
             }
-            MachineMark::Void => {
-                self.stamp(&kiln.circle, surface, slots[0], HEX * 0.55, 0.15);
-                self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.55, 0.16);
-            }
+            MachineMark::Void => self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.55, 0.16),
             MachineMark::Hand(_) => unworn(look),
         }
     }

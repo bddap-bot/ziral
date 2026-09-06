@@ -276,7 +276,10 @@ impl Spent {
     }
 
     pub fn remap(&self, i: usize) -> Option<usize> {
-        (!self.0.contains(&i)).then(|| i - self.0.iter().filter(|s| **s < i).count())
+        match self.0.binary_search(&i) {
+            Ok(_) => None,
+            Err(k) => Some(i - k),
+        }
     }
 }
 
