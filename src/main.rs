@@ -11,7 +11,7 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
 use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin, skin};
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
+use sim::{Arm, BondKind, Centre, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
 
 const HEX: f32 = 20.0;
 const TICK_MS: f32 = 400.0;
@@ -1396,13 +1396,9 @@ struct Frame<'a> {
     arms: Vec<ArmPose>,
 }
 
-fn reach(arm: &Arm) -> Vec2 {
-    px(arm.hand()) - px(arm.pivot)
-}
-
-fn turn_between(from: &Arm, to: &Arm) -> f32 {
-    use std::f32::consts::{PI, TAU};
-    (reach(to).to_angle() - reach(from).to_angle() + PI).rem_euclid(TAU) - PI
+fn sweep(centre: Vec2, spin: Spin, e: f32) -> impl Fn(Vec2) -> Vec2 {
+    let angle = px(DIRS[0]).angle_to(px(DIRS[spin.turn(0)])) * e;
+    move |v| centre + Vec2::from_angle(angle).rotate(v - centre)
 }
 
 impl Frame<'_> {
@@ -1429,44 +1425,25 @@ impl Frame<'_> {
         let mut frame = Frame::settled(prev);
         for (i, (a, b)) in prev.arms.iter().zip(&cur.arms).enumerate() {
             let e = Swing::from_cell(a.pivot).at(t);
-            let pivot = frame.arms[i].pivot;
-            let turn = turn_between(a, b);
             let pose = &mut frame.arms[i];
-            pose.hand = sweep(pivot, turn * e)(pose.hand);
             pose.ring = grip(a.holding) + (grip(b.holding) - grip(a.holding)) * e;
-            if !a.holding {
+            let Some((about, spin)) = a.swung(b) else {
                 continue;
+            };
+            let swept = sweep(px(a.centre(about)), spin, e);
+            if about == Centre::Pivot {
+                pose.hand = swept(pose.hand);
             }
-            let Some(id) = prev.atom_at(a.hand()) else {
-                continue;
-            };
-            let comp = prev.component(id);
-            let (centre, angle) = if turn != 0.0 {
-                (pivot, turn)
-            } else {
-                let hand = px(a.hand());
-                (hand, spun(prev, cur, &comp, hand))
-            };
-            for id in comp {
-                frame.atoms[id] = frame.atoms[id].map(sweep(centre, angle * e));
+            if a.holding
+                && let Some(id) = prev.atom_at(a.hand())
+            {
+                for id in prev.component(id) {
+                    frame.atoms[id] = frame.atoms[id].map(&swept);
+                }
             }
         }
         frame
     }
-}
-
-fn sweep(centre: Vec2, angle: f32) -> impl Fn(Vec2) -> Vec2 {
-    move |v| centre + Vec2::from_angle(angle).rotate(v - centre)
-}
-
-fn spun(prev: &Sim, cur: &Sim, ids: &[usize], centre: Vec2) -> f32 {
-    ids.iter()
-        .find_map(|id| {
-            let from = px(prev.atoms[*id]?.pos) - centre;
-            let to = px(cur.atoms[*id]?.pos) - centre;
-            (from != to).then(|| from.angle_to(to))
-        })
-        .unwrap_or(0.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2328,6 +2305,7 @@ mod tests {
     #[test]
     fn mid_rotate_the_hand_and_its_atom_sit_where_the_swing_says() {
         let (prev, cur) = rotating_arm_with_atom();
+        let reach = |arm: &Arm| px(arm.hand()) - px(arm.pivot);
         let (start, end) = (reach(&prev.arms[0]), reach(&cur.arms[0]));
         let swing = Swing::from_cell(prev.arms[0].pivot);
         for t in [0.4, 0.55] {

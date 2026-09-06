@@ -76,6 +76,22 @@ pub enum Instr {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Centre {
+    Pivot,
+    Hand,
+}
+
+impl Instr {
+    pub fn swing(self) -> Option<(Centre, Spin)> {
+        match self {
+            Instr::Rot(spin) => Some((Centre::Pivot, spin)),
+            Instr::Pivot(spin) => Some((Centre::Hand, spin)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stall {
     Illegal,
     Hand(usize),
@@ -137,6 +153,20 @@ impl Arm {
 
     pub fn hand(&self) -> Hex {
         self.pivot.add(DIRS[self.dir])
+    }
+
+    pub fn centre(&self, about: Centre) -> Hex {
+        match about {
+            Centre::Pivot => self.pivot,
+            Centre::Hand => self.hand(),
+        }
+    }
+
+    pub fn swung(&self, after: &Arm) -> Option<(Centre, Spin)> {
+        if self.tape.is_empty() || after.pc == self.pc {
+            return None;
+        }
+        self.tape[self.pc % self.tape.len()].swing()
     }
 
     pub fn cells(&self) -> [Hex; 2] {
@@ -446,19 +476,20 @@ impl Sim {
             }
             Instr::Drop => self.arms[i].holding = false,
             Instr::Rot(spin) => {
-                self.swing(i, self.arms[i].pivot, spin)?;
+                self.swing(i, Centre::Pivot, spin)?;
                 let arm = &mut self.arms[i];
                 arm.dir = spin.turn(arm.dir);
             }
-            Instr::Pivot(spin) => self.swing(i, hand, spin)?,
+            Instr::Pivot(spin) => self.swing(i, Centre::Hand, spin)?,
         }
         Ok(())
     }
 
-    fn swing(&mut self, i: usize, centre: Hex, spin: Spin) -> Result<(), Stall> {
+    fn swing(&mut self, i: usize, about: Centre, spin: Spin) -> Result<(), Stall> {
         let Some(held) = self.held(i) else {
             return Ok(());
         };
+        let centre = self.arms[i].centre(about);
         if let Some(j) = self.other_hand(i) {
             return Err(Stall::Hand(j));
         }
@@ -989,12 +1020,18 @@ mod tests {
     }
 
     #[test]
-    fn a_pivot_with_an_open_hand_moves_nothing_and_advances_the_tape() {
+    fn a_pivot_with_an_open_hand_or_a_hand_closed_on_nothing_moves_nothing_and_advances_the_tape() {
         use Instr::*;
-        let (mut sim, _, b) = held_pair(vec![Pivot(Spin::Cw), Wait]);
+        let (mut sim, a, b) = held_pair(vec![Pivot(Spin::Cw)]);
         sim.step();
         assert_eq!(sim.arms[0].stall, None);
         assert_eq!(sim.arms[0].pc, 1);
+        assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
+        sim.atoms[a] = None;
+        sim.arms[0].holding = true;
+        sim.step();
+        assert_eq!(sim.arms[0].stall, None);
+        assert_eq!(sim.arms[0].pc, 2);
         assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
     }
 

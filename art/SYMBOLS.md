@@ -24,8 +24,8 @@ A capital X cut down into the strip itself: a sunken impression with no token, n
 
 ## Q, pivot counterclockwise: the hand is the pin
 
-A brass capital Q held at the centre of its bowl by a small closed terracotta hand and turned counterclockwise about it, leaning left, its tail trailing the turn, with a curved brass arrow behind it whose head points the way it went. A pivot turns the molecule about the hand while the arm stays, so where A and D hang their letter from the arm's pivot pin, Q and E hold theirs by the hand: the same lean and the same arc as the rotates, but the fixed point is a hand, not a pin.
+A brass capital Q held at the centre of its bowl by a small terracotta horseshoe, the open hand the board draws, and turned counterclockwise about it, leaning left, its tail trailing the turn, with a curved brass arrow behind it whose head points the way it went. A pivot turns the molecule about the hand while the arm stays, so where A and D hang their letter from the arm's pivot pin, Q and E hold theirs by the hand: the same lean and the same arc as the rotates, but the fixed point is a hand, not a pin.
 
 ## E, pivot clockwise: the same hand, the other way
 
-A brass capital E held at the tip of its middle bar by a small closed terracotta hand and turned clockwise about it, leaning right, its top and bottom bars trailing the turn, with a curved brass arrow behind it whose head points the way it went. Q and E are one action in two directions, as A and D are; the hand at the centre tells the pair apart from the rotates at a glance.
+A brass capital E held at the tip of its middle bar by the same terracotta horseshoe and turned clockwise about it, leaning right, its top and bottom bars trailing the turn, with a curved brass arrow behind it whose head points the way it went. Q and E are one action in two directions, as A and D are; the hand at the centre tells the pair apart from the rotates at a glance.
