@@ -30,13 +30,16 @@ one() {
   magick "${srcs[0]}" -resize "${size}x${size}!" -strip png:- | pngquant --quality 70-95 --speed 1 - > "$target"
 }
 
-if [ "$count" -eq 1 ]; then
-  one "$out/$name.png"
-  printf '%s — candidate 1\n%s\n\n' "$name.png" "$subject" >> "$out/prompts.txt"
-else
-  mkdir -p "$out/candidates"
-  for i in $(seq 1 "$count"); do
-    one "$out/candidates/$name-$i.png"
-  done
-  printf '%s — candidates 1 to %s\n%s\n\n' "$name.png" "$count" "$subject" >> "$out/prompts.txt"
+dir=$out
+kept="candidate 1"
+if [ "$count" -gt 1 ]; then
+  dir=$out/candidates
+  kept="candidates 1 to $count"
+  mkdir -p "$dir"
 fi
+for i in $(seq 1 "$count"); do
+  target=$dir/$name.png
+  [ "$count" -eq 1 ] || target=$dir/$name-$i.png
+  one "$target"
+done
+printf '%s — %s\n%s\n\n' "$name.png" "$kept" "$subject" >> "$out/prompts.txt"

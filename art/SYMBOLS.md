@@ -8,7 +8,7 @@ A closed hand in terracotta glaze, the colour of every closed hand on the board,
 
 ## R, drop: the letter lets go
 
-A brass capital R whose bowl is an open terracotta hand, released, with a blue-green bead falling free down the line of the leg. The R's leg is the only stroke in the alphabet that kicks away from its body, so it is the fall; the open bowl is the hand that let go. Grab and drop share the hand and the bead, so the pair reads as one verb and its undo.
+A brass capital R whose bowl is an open terracotta hand, released, with a blue-green bead falling free down the line of the leg. The leg kicks away from the body of the letter, so it is the line of the fall; the open bowl is the hand that let go. Grab and drop share the hand and the bead, so the pair reads as one verb and its undo.
 
 ## A, counterclockwise: the letter is the arm on its pivot
 

@@ -22,7 +22,7 @@ const MAX_GRID_CELLS: f32 = 6000.0;
 const STRIP_ROWS: usize = 8;
 const DRAG_PX: f32 = 6.0;
 const LINE_PX: f32 = 3.0;
-const SYMBOL_PX: f32 = 22.0;
+const SYMBOL_PX: f32 = 26.0;
 const CURSOR_PX: f32 = 2.0;
 
 fn brass(lift: f32) -> Color {
@@ -674,11 +674,8 @@ fn spawn_camera(mut commands: Commands) {
     ));
 }
 
-#[derive(Component)]
-struct Hud;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Line {
+struct TapeLine {
     arm: usize,
     stalled: bool,
     tape: Vec<Instr>,
@@ -689,7 +686,7 @@ struct Line {
 #[derive(Component)]
 struct TapeRow {
     slot: usize,
-    line: Option<Line>,
+    line: Option<TapeLine>,
 }
 
 impl TapeRow {
@@ -716,9 +713,16 @@ enum HudSlot {
     Trail,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Keys {
+    All,
+    Acting,
+    Hidden,
+}
+
 const HELP: &str = "space pause/run  . step  wheel zoom  right/middle-drag pan  click a machine to focus  drag on empty ground to select  hold-drag a selected machine to move it  drag from the palette to place";
 
-fn ivory(text: impl Into<String>, size: f32) -> impl Bundle {
+fn caption(text: impl Into<String>, size: f32) -> impl Bundle {
     (
         Text::new(text),
         TextColor(IVORY),
@@ -767,7 +771,6 @@ fn cursor() -> impl Bundle {
 fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
     commands
         .spawn((
-            Hud,
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(8.0),
@@ -780,21 +783,21 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             BackgroundColor(strip(false)),
         ))
         .with_children(|col| {
-            col.spawn((HudSlot::Status, ivory("", 16.0)));
+            col.spawn((HudSlot::Status, caption("", 16.0)));
             col.spawn((HudSlot::Controls, row(8.0)))
                 .with_children(|controls| {
-                    controls.spawn((HudSlot::Lead, ivory("", 16.0)));
+                    controls.spawn((HudSlot::Lead, caption("", 16.0)));
                     for key in KEYS {
                         controls
                             .spawn((HudSlot::Key(key.instr), row(3.0)))
                             .with_children(|pair| {
-                                pair.spawn(ivory(key.letter.to_string(), 16.0));
+                                pair.spawn(caption(key.letter.to_string(), 16.0));
                                 pair.spawn(symbol(&kiln, key.symbol, false));
                             });
                     }
-                    controls.spawn((HudSlot::Trail, ivory("", 16.0)));
+                    controls.spawn((HudSlot::Trail, caption("", 16.0)));
                 });
-            col.spawn(ivory(HELP, 16.0));
+            col.spawn(caption(HELP, 16.0));
         });
     commands
         .spawn(Node {
@@ -944,13 +947,13 @@ fn edit(
     }
 }
 
-fn line(world: &World, i: usize) -> Line {
+fn tape_line(world: &World, i: usize) -> TapeLine {
     let arm = &world.sim.arms[i];
     let cursor = match &world.focus {
         Some(Focus::Tape { arm, cursor }) if *arm == i => Some(*cursor),
         _ => None,
     };
-    Line {
+    TapeLine {
         arm: i,
         stalled: arm.stall.is_some(),
         tape: arm.tape.clone(),
@@ -992,7 +995,7 @@ fn tapes(
         };
         *vis = Visibility::Inherited;
         bg.0 = strip(world.picks(Id::Arm(arm)));
-        let line = line(&world, arm);
+        let line = tape_line(&world, arm);
         if row.line.as_ref() == Some(&line) {
             continue;
         }
@@ -1001,7 +1004,7 @@ fn tapes(
             .despawn_children()
             .with_children(|strip| {
                 let stalled = if line.stalled { " !" } else { "" };
-                strip.spawn(ivory(format!("arm {arm}{stalled}"), 15.0));
+                strip.spawn(caption(format!("arm {arm}{stalled}"), 15.0));
                 for (k, instr) in line.tape.iter().enumerate() {
                     if line.cursor == Some(k) {
                         strip.spawn(cursor());
@@ -1673,11 +1676,11 @@ fn text(world: Res<World>, mut hud: Query<(&HudSlot, &mut Node, Option<&mut Text
                 "holding {}: A/D turn  Z delete  {esc}  {place}",
                 label(&items)
             );
-            (lead, None, String::new())
+            (lead, Keys::Hidden, String::new())
         }
         Some(Focus::Tape { .. }) => (
             "tape:".to_string(),
-            Some(true),
+            Keys::All,
             "arrows move  home/end  Z backspace  esc done".to_string(),
         ),
         Some(Focus::Pick(ids)) => {
@@ -1687,21 +1690,32 @@ fn text(world: Res<World>, mut hud: Query<(&HudSlot, &mut Node, Option<&mut Text
             match ids.as_slice() {
                 [Id::Arm(_)] => (
                     format!("{name}, acts now:"),
-                    Some(false),
+                    Keys::Acting,
                     format!("click its tape to edit  {tail}"),
                 ),
-                [Id::Glyph(_)] => (format!("{name}  A/D turn  {tail}"), None, String::new()),
-                _ => (format!("{name}  {tail}"), None, String::new()),
+                [Id::Glyph(_)] => (
+                    format!("{name}  A/D turn  {tail}"),
+                    Keys::Hidden,
+                    String::new(),
+                ),
+                _ => (format!("{name}  {tail}"), Keys::Hidden, String::new()),
             }
         }
-        None => (paste.trim().to_string(), None, String::new()),
+        None => (paste.trim().to_string(), Keys::Hidden, String::new()),
     };
     for (slot, mut node, text) in &mut hud {
         let (shown, string) = match slot {
             HudSlot::Status => (true, Some(&status)),
             HudSlot::Controls => (!lead.is_empty(), None),
             HudSlot::Lead => (true, Some(&lead)),
-            HudSlot::Key(instr) => (keys.is_some_and(|wait| wait || *instr != Instr::Wait), None),
+            HudSlot::Key(instr) => (
+                match keys {
+                    Keys::All => true,
+                    Keys::Acting => *instr != Instr::Wait,
+                    Keys::Hidden => false,
+                },
+                None,
+            ),
             HudSlot::Trail => (true, Some(&trail)),
         };
         let display = if shown { Display::Flex } else { Display::None };
