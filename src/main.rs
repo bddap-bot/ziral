@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
-use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin, skin};
+use look::{AtomMark, Glaze, Look, MachineMark, Shape, Skin, Token, skin};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent, Spin, Stall};
 
 const HEX: f32 = 20.0;
@@ -64,6 +64,7 @@ pub struct Key {
     instr: Instr,
     letter: char,
     pub symbol: Skin,
+    pub token: Token,
 }
 
 pub const KEYS: [Key; 7] = [
@@ -72,42 +73,70 @@ pub const KEYS: [Key; 7] = [
         instr: Instr::Grab,
         letter: 'F',
         symbol: skin!("symbols/f"),
+        token: Token {
+            face: Glaze::Terracotta,
+            field: Glaze::Ivory,
+        },
     },
     Key {
         code: KeyCode::KeyR,
         instr: Instr::Drop,
         letter: 'R',
         symbol: skin!("symbols/r"),
+        token: Token {
+            face: Glaze::BlueGreen,
+            field: Glaze::Ivory,
+        },
     },
     Key {
         code: KeyCode::KeyA,
         instr: Instr::Rot(Spin::Ccw),
         letter: 'A',
         symbol: skin!("symbols/a"),
+        token: Token {
+            face: Glaze::Amber,
+            field: Glaze::Brass,
+        },
     },
     Key {
         code: KeyCode::KeyD,
         instr: Instr::Rot(Spin::Cw),
         letter: 'D',
         symbol: skin!("symbols/d"),
+        token: Token {
+            face: Glaze::Brass,
+            field: Glaze::Amber,
+        },
     },
     Key {
         code: KeyCode::KeyQ,
         instr: Instr::Pivot(Spin::Ccw),
         letter: 'Q',
         symbol: skin!("symbols/q"),
+        token: Token {
+            face: Glaze::Plum,
+            field: Glaze::Ivory,
+        },
     },
     Key {
         code: KeyCode::KeyE,
         instr: Instr::Pivot(Spin::Cw),
         letter: 'E',
         symbol: skin!("symbols/e"),
+        token: Token {
+            face: Glaze::Ivory,
+            field: Glaze::Plum,
+        },
     },
     Key {
         code: KeyCode::KeyX,
         instr: Instr::Wait,
         letter: 'X',
         symbol: skin!("symbols/x"),
+        token: Token {
+            face: Glaze::Ivory,
+            field: Glaze::Brass,
+        },
     },
 ];
 
@@ -1861,7 +1890,7 @@ mod shot {
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
                 world.focus_tape(world.sim.arms.len() - 1);
-                keys = vec![KeyA, KeyD, KeyQ, KeyE, KeyF];
+                keys = vec![KeyF, KeyR, KeyA, KeyD, KeyQ, KeyE, KeyX];
             }
             "armfocus" => {
                 world

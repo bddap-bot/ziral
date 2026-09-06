@@ -39,6 +39,12 @@ impl Glaze {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Token {
+    pub face: Glaze,
+    pub field: Glaze,
+}
+
 #[derive(Clone, Copy)]
 pub struct Skin {
     pub name: &'static str,
@@ -213,7 +219,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KEYS, PALETTE};
+    use crate::{KEYS, PALETTE, SYMBOL_PX};
     use bevy::color::{Hsva, Luminance};
 
     const HUE_APART: f32 = 40.0;
@@ -222,6 +228,7 @@ mod tests {
     const THUMB: usize = 8;
     const TILES_APART: f32 = 0.023;
     const SHADING: f32 = 2.0 * VALUE_APART;
+    const SPLIT_ROUNDS: usize = 8;
 
     fn hue_and_value_differ(a: Color, b: Color) -> [bool; 2] {
         let (ca, cb) = (Hsva::from(a), Hsva::from(b));
@@ -242,30 +249,73 @@ mod tests {
         (w, h, data)
     }
 
-    fn thumbnail(skin: Skin) -> Vec<f32> {
+    fn thumbnail(skin: Skin, side: usize) -> Vec<f32> {
         let (w, h, data) = pixels(skin);
-        let mut sums = vec![0f32; THUMB * THUMB * 3];
-        let mut counts = vec![0f32; THUMB * THUMB];
+        assert!(w >= side && h >= side, "{skin:?} is under {side} px");
+        let mut sums = vec![0f32; side * side * 3];
+        let mut counts = vec![0f32; side * side];
         for y in 0..h {
             for x in 0..w {
-                let cell = (y * THUMB / h) * THUMB + x * THUMB / w;
+                let cell = (y * side / h) * side + x * side / w;
                 for c in 0..3 {
-                    sums[cell * 3 + c] += f32::from(data[(y * w + x) * 4 + c]) / 255.0;
+                    sums[cell * 3 + c] += crate::to_linear(data[(y * w + x) * 4 + c]);
                 }
                 counts[cell] += 1.0;
             }
         }
         sums.iter()
             .enumerate()
-            .map(|(i, s)| s / counts[i / 3])
+            .map(|(i, s)| f32::from(crate::to_srgb(s / counts[i / 3])) / 255.0)
             .collect()
     }
 
-    fn mean(skin: Skin) -> Color {
-        let thumb = thumbnail(skin);
+    fn average(thumb: &[f32], cells: &[usize]) -> Color {
         let channel =
-            |c: usize| thumb.iter().skip(c).step_by(3).sum::<f32>() / (THUMB * THUMB) as f32;
+            |c: usize| cells.iter().map(|i| thumb[i * 3 + c]).sum::<f32>() / cells.len() as f32;
         Color::srgb(channel(0), channel(1), channel(2))
+    }
+
+    fn mean(skin: Skin) -> Color {
+        let thumb = thumbnail(skin, THUMB);
+        average(&thumb, &(0..THUMB * THUMB).collect::<Vec<usize>>())
+    }
+
+    struct Pressed {
+        face: Color,
+        field: Color,
+    }
+
+    fn pressed(skin: Skin) -> Pressed {
+        let side = SYMBOL_PX as usize;
+        let thumb = thumbnail(skin, side);
+        let apart = |i: usize, c: Color| {
+            let c = c.to_srgba();
+            (thumb[i * 3] - c.red).powi(2)
+                + (thumb[i * 3 + 1] - c.green).powi(2)
+                + (thumb[i * 3 + 2] - c.blue).powi(2)
+        };
+        let rim: Vec<usize> = (0..side * side)
+            .filter(|i| {
+                [i % side, i / side]
+                    .iter()
+                    .any(|c| *c == 0 || *c == side - 1)
+            })
+            .collect();
+        let mut field = average(&thumb, &rim);
+        let farthest = (0..side * side)
+            .max_by(|a, b| apart(*a, field).total_cmp(&apart(*b, field)))
+            .expect("a thumbnail has cells");
+        let mut face = average(&thumb, &[farthest]);
+        for _ in 0..SPLIT_ROUNDS {
+            let (letter, ground): (Vec<usize>, Vec<usize>) =
+                (0..side * side).partition(|i| apart(*i, face) < apart(*i, field));
+            if letter.is_empty() || ground.is_empty() {
+                break;
+            }
+            face = average(&thumb, &letter);
+            field = average(&thumb, &ground);
+        }
+        Pressed { face, field }
     }
 
     fn differences<M: PartialEq>(a: &Look<M>, b: &Look<M>) -> [bool; 4] {
@@ -331,34 +381,87 @@ mod tests {
         }
     }
 
-    fn wears(skin: Skin, glaze: Glaze) {
-        let mean = mean(skin);
-        let [hue, _] = hue_and_value_differ(mean, glaze.color());
-        let shaded = (mean.luminance() - glaze.color().luminance()).abs();
+    fn wears(what: impl std::fmt::Display, color: Color, glaze: Glaze) {
+        let [hue, _] = hue_and_value_differ(color, glaze.color());
+        let shaded = (color.luminance() - glaze.color().luminance()).abs();
         assert!(
             !hue && shaded <= SHADING,
-            "{skin:?} averages {:?}, not its {glaze:?} glaze",
-            Hsva::from(mean)
+            "{what} is {:?}, not its {glaze:?} glaze",
+            Hsva::from(color)
         );
+    }
+
+    fn skin_wears(skin: Skin, glaze: Glaze) {
+        wears(format!("{skin:?} on average"), mean(skin), glaze);
     }
 
     #[test]
     fn every_skin_wears_its_glaze() {
         for kind in AtomKind::ALL {
-            wears(atom(kind).skin, atom(kind).glaze);
+            skin_wears(atom(kind).skin, atom(kind).glaze);
         }
         for kind in BondKind::ALL {
-            wears(bond(kind).skin, bond(kind).glaze);
+            skin_wears(bond(kind).skin, bond(kind).glaze);
         }
         for (item, _) in PALETTE {
-            wears(machine(item).skin, machine(item).glaze);
+            skin_wears(machine(item).skin, machine(item).glaze);
         }
         for tile in TILES {
-            wears(tile, Glaze::Clay);
+            skin_wears(tile, Glaze::Clay);
         }
+    }
+
+    #[test]
+    fn every_symbol_wears_its_token_at_tape_size() {
         for key in KEYS {
-            wears(key.symbol, Glaze::Brass);
+            let Pressed { face, field } = pressed(key.symbol);
+            wears(format!("{:?} letter", key.symbol), face, key.token.face);
+            wears(format!("{:?} field", key.symbol), field, key.token.field);
         }
+    }
+
+    #[test]
+    fn every_symbol_keeps_its_letter_edge_at_tape_size() {
+        let dissolved: Vec<String> = KEYS
+            .iter()
+            .filter_map(|key| {
+                let Pressed { face, field } = pressed(key.symbol);
+                let [_, apart] = hue_and_value_differ(face, field);
+                let gap = (face.luminance() - field.luminance()).abs();
+                (!apart).then(|| format!("{:?} letter is {gap:.3} from its field", key.symbol))
+            })
+            .collect();
+        assert!(
+            dissolved.is_empty(),
+            "letters under {VALUE_APART} in value at {SYMBOL_PX} px: {dissolved:#?}"
+        );
+    }
+
+    #[test]
+    fn every_symbol_is_told_apart_at_tape_size() {
+        let pressed: Vec<Pressed> = KEYS.iter().map(|k| pressed(k.symbol)).collect();
+        let mut alike = Vec::new();
+        for (i, a) in KEYS.iter().enumerate() {
+            for (j, b) in KEYS.iter().enumerate().skip(i + 1) {
+                let letters = hue_and_value_differ(pressed[i].face, pressed[j].face);
+                let fields = hue_and_value_differ(pressed[i].field, pressed[j].field);
+                if !letters.contains(&true) && !fields.contains(&true) {
+                    alike.push(format!(
+                        "{:?} and {:?}: letters {:?} {:?}, fields {:?} {:?}",
+                        a.symbol,
+                        b.symbol,
+                        Hsva::from(pressed[i].face),
+                        Hsva::from(pressed[j].face),
+                        Hsva::from(pressed[i].field),
+                        Hsva::from(pressed[j].field)
+                    ));
+                }
+            }
+        }
+        assert!(
+            alike.is_empty(),
+            "symbols alike in hue and value at {SYMBOL_PX} px: {alike:#?}"
+        );
     }
 
     #[test]
@@ -383,14 +486,14 @@ mod tests {
                 "{:?} is never fired",
                 a.symbol
             );
-            let mine = thumbnail(a.symbol);
+            let mine = thumbnail(a.symbol, THUMB);
             for b in &KEYS[i + 1..] {
                 assert_ne!(
                     a.symbol, b.symbol,
                     "{:?} and {:?} share a symbol",
                     a.instr, b.instr
                 );
-                let theirs = thumbnail(b.symbol);
+                let theirs = thumbnail(b.symbol, THUMB);
                 let apart = mine
                     .iter()
                     .zip(&theirs)
@@ -419,7 +522,7 @@ mod tests {
 
     #[test]
     fn tiles_vary() {
-        let thumbs: Vec<Vec<f32>> = TILES.iter().map(|t| thumbnail(*t)).collect();
+        let thumbs: Vec<Vec<f32>> = TILES.iter().map(|t| thumbnail(*t, THUMB)).collect();
         let mut alike = Vec::new();
         for (i, a) in thumbs.iter().enumerate() {
             for (j, b) in thumbs.iter().enumerate().skip(i + 1) {

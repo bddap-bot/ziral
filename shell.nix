@@ -22,6 +22,9 @@ pkgs.mkShell {
     wayland
     lld
     wasm-bindgen-cli
+    imagemagick
+    pngquant
+    dejavu_fonts
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
