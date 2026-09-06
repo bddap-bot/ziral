@@ -248,3 +248,9 @@ Every surface the toy draws now samples a 1024-square texture generated under th
 Directive (verbatim): "we'll still need atom pivot."
 
 Pivot is the arm's second rotation, as in Opus Magnum: the held molecule turns 60° about the hand cell and the arm stays where it is. Q pivots counterclockwise, E clockwise. An open hand, or a closed hand on nothing, pivots nothing and the tape advances. With a held atom every atom of its component turns one step about the hand; the hand atom is the centre and stays put, and the arm's direction does not change. It stalls as a rotate stalls: a destination cell holding an atom outside the component freezes the tape on the instruction, and a molecule under two hands stalls with the wider ring on the other hand. Rotate and pivot are one motion, a rotation of the held component about a centre; rotate passes the arm's pivot and also turns the arm, pivot passes the hand. Between ticks the held atoms sweep their 60° about the hand under the one ease, the arm still. The tokens are Q and E in art/SYMBOLS.md.
+
+### Toy 1 cleans up
+
+Directive (verbatim): "add an atom cleanup machine. it consumes an atom then both the machine and the atom dissapear into the void. it breaks any bonds that were attached to the atom"
+
+The cleanup glyph is a one-slot, single-use well: the tick an atom lies on it, every bond on that atom is severed, the atom is eaten, and the glyph is spent and leaves the board with it, the rest of the molecule lying where it was.
