@@ -24,7 +24,6 @@ const LINE_PX: f32 = 3.0;
 const SYMBOL_PX: f32 = 26.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
-const MANUAL_VMIN: f32 = 92.0;
 
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
@@ -735,14 +734,6 @@ fn button(node: Node) -> impl Bundle {
         BackgroundColor(strip(false)),
     )
 }
-fn caption(text: impl Into<String>, size: f32) -> impl Bundle {
-    (
-        Text::new(text),
-        TextColor(IVORY),
-        TextFont::from_font_size(size),
-    )
-}
-
 fn row(gap: f32) -> Node {
     Node {
         align_items: AlignItems::Center,
@@ -813,8 +804,8 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             page.spawn((
                 ImageNode::new(kiln.image(MANUAL)),
                 Node {
-                    width: Val::VMin(MANUAL_VMIN),
-                    height: Val::VMin(MANUAL_VMIN),
+                    width: Val::VMin(92.0),
+                    height: Val::VMin(92.0),
                     ..default()
                 },
             ));
@@ -1028,7 +1019,11 @@ fn tapes(
             .despawn_children()
             .with_children(|strip| {
                 let stalled = if line.stalled { "!" } else { " " };
-                strip.spawn(caption(format!("{arm:<3}{stalled}"), 15.0));
+                strip.spawn((
+                    Text::new(format!("{arm:<3}{stalled}")),
+                    TextColor(IVORY),
+                    TextFont::from_font_size(15.0),
+                ));
                 for (k, instr) in line.tape.iter().enumerate() {
                     if line.cursor == Some(k) {
                         strip.spawn(cursor());

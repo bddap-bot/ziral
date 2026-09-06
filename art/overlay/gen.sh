@@ -6,11 +6,17 @@ cd "$here"
 trap 'rm -f scaffold.png.part manual.png.part inputs.sha256.part proof/slots.png.part' EXIT
 slot=128
 slots=('f 96 128' 'r 544 128' 'a 96 352' 'd 544 352' 'q 96 576' 'e 544 576' 'x 96 800')
-inputs=(prompt.txt)
-for row in "${slots[@]}"; do
-  read -r key _ _ <<< "$row"
-  inputs+=("../symbols/$key.png")
-done
+inputs=(prompt.txt scaffold.png)
+
+scaffold() {
+  local args=(-size 1024x1024 "xc:#D8C3A5") row key x y
+  for row in "${slots[@]}"; do
+    read -r key x y <<< "$row"
+    args+=(\( "../symbols/$key.png" -resize "${slot}x${slot}" \) -geometry "+$x+$y" -composite)
+  done
+  magick "${args[@]}" -depth 8 -strip png:scaffold.png.part
+  mv scaffold.png.part scaffold.png
+}
 count=1
 keep=
 check=
@@ -30,17 +36,12 @@ if [ ${#mode} -gt 1 ]; then
 fi
 
 if [ -n "$check" ]; then
+  scaffold
   exec sha256sum --check --quiet --strict inputs.sha256
 fi
 
 if [ -z "$keep" ]; then
-  args=(-size 1024x1024 "xc:#D8C3A5")
-  for row in "${slots[@]}"; do
-    read -r key x y <<< "$row"
-    args+=(\( "../symbols/$key.png" -resize "${slot}x${slot}" \) -geometry "+$x+$y" -composite)
-  done
-  magick "${args[@]}" -depth 8 -strip png:scaffold.png.part
-  mv scaffold.png.part scaffold.png
+  scaffold
   read -r -d '' subject < prompt.txt || true
   ../textures/gen.sh -o "$here" -n "$count" -i "$here/scaffold.png" manual "$subject"
   if [ "$count" -gt 1 ]; then

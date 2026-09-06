@@ -12,14 +12,14 @@
       "why": "prose; nothing executes it"
     },
     {
+      "paths": ["art/symbols/*.png", "art/overlay/**"],
+      "tests": ["nix-shell --run 'shellcheck art/overlay/*.sh && art/overlay/gen.sh -c'"],
+      "why": "the manual page is generated over the symbols at their slots and its prompt; the check rebuilds the scaffold and says whether the shipped page still matches them"
+    },
+    {
       "paths": ["art/**/*.sh"],
       "tests": ["nix-shell --run 'shellcheck art/*.sh art/*/*.sh'"],
       "why": "the art scripts drive the image tool and the shot renderer; shellcheck is the one static check they have"
-    },
-    {
-      "paths": ["art/symbols/*.png", "art/overlay/**"],
-      "tests": ["art/overlay/gen.sh -c"],
-      "why": "the manual page is generated over the symbols and its prompt; the check says whether the shipped page still matches them"
     },
     {
       "paths": ["art/**"],
