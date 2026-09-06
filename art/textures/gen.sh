@@ -6,12 +6,14 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 out=$here
 count=1
 size=1024
-while getopts 'o:n:s:' opt; do
+input=
+while getopts 'o:n:s:i:' opt; do
   case $opt in
   o) out=$OPTARG ;;
   n) count=$OPTARG ;;
   s) size=$OPTARG ;;
-  *) echo "usage: gen.sh [-o DIR] [-n COUNT] [-s SIZE] NAME SUBJECT" >&2; exit 2 ;;
+  i) input=$OPTARG ;;
+  *) echo "usage: gen.sh [-o DIR] [-n COUNT] [-s SIZE] [-i IMAGE] NAME SUBJECT" >&2; exit 2 ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -23,7 +25,9 @@ prompt="Generate exactly one square image with the image generation tool, then s
 one() {
   local target=$1
   local events thread srcs
-  events=$(codex exec --skip-git-repo-check --json "$prompt" </dev/null)
+  local args=(exec --skip-git-repo-check --json "$prompt")
+  [ -z "$input" ] || args+=(--image "$input")
+  events=$(codex "${args[@]}" </dev/null)
   thread=$(printf '%s\n' "$events" | jq -r 'select(.type == "thread.started") | .thread_id' | head -1)
   [ -n "$thread" ] || { printf '%s\n' "$events" >&2; return 1; }
   srcs=("$HOME/.codex/generated_images/$thread"/*.png)
@@ -34,6 +38,7 @@ one() {
 
 dir=$out
 kept="candidate 1"
+mkdir -p "$dir"
 if [ "$count" -gt 1 ]; then
   dir=$out/candidates
   kept="candidates 1 to $count"

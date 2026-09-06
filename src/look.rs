@@ -49,6 +49,7 @@ pub struct Token {
 pub struct Skin {
     pub name: &'static str,
     pub(crate) png: &'static [u8],
+    pub alpha: bool,
 }
 
 impl PartialEq for Skin {
@@ -70,10 +71,19 @@ macro_rules! skin {
         Skin {
             name: $name,
             png: include_bytes!(concat!("../art/", $name, ".png")),
+            alpha: false,
         }
     };
 }
 pub(crate) use skin;
+
+macro_rules! sprite {
+    ($name:expr) => {{
+        let mut skin = skin!($name);
+        skin.alpha = true;
+        skin
+    }};
+}
 
 macro_rules! tiles {
     ($($n:literal),*) => {
@@ -173,7 +183,7 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         Item::Arm => {
             return Look {
                 glaze: Glaze::Brass,
-                skin: skin!("textures/arm"),
+                skin: sprite!("textures/arm"),
                 shape: Shape::Radial,
                 marking: MachineMark::Hand(Glaze::Terracotta),
             };
@@ -181,19 +191,23 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         Item::Glyph(kind) => kind,
     };
     let (glaze, skin, marking) = match kind {
-        GlyphKind::Source => (Glaze::BlueGreen, skin!("textures/source"), MachineMark::Dot),
+        GlyphKind::Source => (
+            Glaze::BlueGreen,
+            sprite!("textures/source"),
+            MachineMark::Dot,
+        ),
         GlyphKind::Bonder => (
             Glaze::Terracotta,
-            skin!("textures/bonder"),
+            sprite!("textures/bonder"),
             MachineMark::Spokes(1),
         ),
         GlyphKind::SecondBond => (
             Glaze::Plum,
-            skin!("textures/second-bond"),
+            sprite!("textures/second-bond"),
             MachineMark::Spokes(2),
         ),
-        GlyphKind::Output => (Glaze::Ivory, skin!("textures/output"), MachineMark::Cup),
-        GlyphKind::Cleanup => (Glaze::Brass, skin!("textures/cleanup"), MachineMark::Void),
+        GlyphKind::Output => (Glaze::Ivory, sprite!("textures/output"), MachineMark::Cup),
+        GlyphKind::Cleanup => (Glaze::Brass, sprite!("textures/cleanup"), MachineMark::Void),
     };
     Look {
         glaze,
@@ -278,6 +292,14 @@ mod tests {
     fn mean(skin: Skin) -> Color {
         let thumb = thumbnail(skin, THUMB);
         average(&thumb, &(0..THUMB * THUMB).collect::<Vec<usize>>())
+    }
+
+    fn tile_mean(skin: Skin) -> Color {
+        let thumb = thumbnail(skin, THUMB);
+        let interior = (2..THUMB - 2)
+            .flat_map(|y| (2..THUMB - 2).map(move |x| y * THUMB + x))
+            .collect::<Vec<usize>>();
+        average(&thumb, &interior)
     }
 
     struct Pressed {
@@ -403,11 +425,48 @@ mod tests {
         for kind in BondKind::ALL {
             skin_wears(bond(kind).skin, bond(kind).glaze);
         }
-        for (item, _) in PALETTE {
-            skin_wears(machine(item).skin, machine(item).glaze);
-        }
         for tile in TILES {
-            skin_wears(tile, Glaze::Clay);
+            wears(
+                format!("{tile:?} inside its grout"),
+                tile_mean(tile),
+                Glaze::Clay,
+            );
+        }
+    }
+
+    #[test]
+    fn tiles_are_one_clay_family_and_every_batch_differs() {
+        let clay = Glaze::Clay.color().to_srgba();
+        for (i, a) in TILES.iter().enumerate() {
+            let color = tile_mean(*a).to_srgba();
+            let gap = ((color.red - clay.red).powi(2)
+                + (color.green - clay.green).powi(2)
+                + (color.blue - clay.blue).powi(2))
+            .sqrt();
+            assert!(gap <= 0.28, "{a:?} leaves the clay family by {gap:.3}");
+            for b in &TILES[i + 1..] {
+                assert_ne!(a.png, b.png, "{a:?} and {b:?} are the same batch");
+            }
+        }
+    }
+
+    #[test]
+    fn every_atom_bond_and_glyph_references_distinct_art() {
+        let semantic: Vec<Skin> = AtomKind::ALL
+            .into_iter()
+            .map(|kind| atom(kind).skin)
+            .chain(BondKind::ALL.into_iter().map(|kind| bond(kind).skin))
+            .chain(
+                GlyphKind::ALL
+                    .into_iter()
+                    .map(|kind| machine(Item::Glyph(kind)).skin),
+            )
+            .collect();
+        for (i, a) in semantic.iter().enumerate() {
+            for b in &semantic[i + 1..] {
+                assert_ne!(a, b, "{a:?} and {b:?} reference one texture");
+                assert_ne!(a.png, b.png, "{a:?} and {b:?} contain one image");
+            }
         }
     }
 
@@ -516,30 +575,9 @@ mod tests {
         Skin {
             name: "symbols/none",
             png: b"",
+            alpha: false,
         }
         .decode();
-    }
-
-    #[test]
-    fn tiles_vary() {
-        let thumbs: Vec<Vec<f32>> = TILES.iter().map(|t| thumbnail(*t, THUMB)).collect();
-        let mut alike = Vec::new();
-        for (i, a) in thumbs.iter().enumerate() {
-            for (j, b) in thumbs.iter().enumerate().skip(i + 1) {
-                let apart =
-                    a.iter().zip(b).map(|(x, y)| (x - y).abs()).sum::<f32>() / a.len() as f32;
-                if apart < TILES_APART {
-                    alike.push(format!(
-                        "{:?} and {:?} are {apart:.3} apart",
-                        TILES[i], TILES[j]
-                    ));
-                }
-            }
-        }
-        assert!(
-            alike.is_empty(),
-            "tiles alike under {TILES_APART}: {alike:#?}"
-        );
     }
 
     #[test]

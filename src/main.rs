@@ -1089,7 +1089,6 @@ enum Tiling {
     Slab(IVec2, IVec2),
 }
 
-const LINK_WIDTH: f32 = 0.22;
 const BOND_WIDTH: f32 = 0.14;
 
 #[derive(Resource)]
@@ -1097,7 +1096,6 @@ struct Kiln {
     circle: Handle<Mesh>,
     hexagon: Handle<Mesh>,
     bar: Handle<Mesh>,
-    link: Handle<Mesh>,
     bond: Handle<Mesh>,
     rim: Handle<Mesh>,
     ring: Handle<Mesh>,
@@ -1200,16 +1198,19 @@ fn fire_kiln(
     let skins = look::skins()
         .map(|skin| {
             let texture = images.add(fire(skin));
-            let fired = [(1.0, AlphaMode2d::Opaque), (0.5, AlphaMode2d::Blend)].map(
-                |(alpha, alpha_mode)| {
-                    materials.add(ColorMaterial {
-                        color: Color::WHITE.with_alpha(alpha),
-                        alpha_mode,
-                        texture: Some(texture.clone()),
-                        ..default()
-                    })
-                },
-            );
+            let solid = if skin.alpha {
+                AlphaMode2d::Blend
+            } else {
+                AlphaMode2d::Opaque
+            };
+            let fired = [(1.0, solid), (0.5, AlphaMode2d::Blend)].map(|(alpha, alpha_mode)| {
+                materials.add(ColorMaterial {
+                    color: Color::WHITE.with_alpha(alpha),
+                    alpha_mode,
+                    texture: Some(texture.clone()),
+                    ..default()
+                })
+            });
             (skin, texture, fired)
         })
         .collect();
@@ -1217,7 +1218,6 @@ fn fire_kiln(
         circle: meshes.add(Circle::new(1.0)),
         hexagon: meshes.add(RegularPolygon::new(1.0, 6)),
         bar: meshes.add(Rectangle::new(1.0, 1.0)),
-        link: meshes.add(band(LINK_WIDTH / 3f32.sqrt())),
         bond: meshes.add(band(BOND_WIDTH / 3f32.sqrt())),
         rim: meshes.add(Annulus::new(0.85, 1.0)),
         ring: meshes.add(Annulus::new(0.7, 1.0)),
@@ -1361,14 +1361,13 @@ impl Painter<'_, '_, '_, '_, '_> {
     fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
         let kiln = self.kiln;
         let material = kiln.skin(look.skin, false);
-        self.bar(&kiln.link, material, pivot, hand, HEX * LINK_WIDTH, 0.28);
-        self.stamp(&kiln.circle, material, pivot, HEX * 0.3, 0.3);
-        self.stamp(
-            &kiln.circle,
-            kiln.material(Glaze::Clay),
-            pivot,
-            HEX * 0.1,
-            0.31,
+        self.fill(
+            &kiln.bar,
+            material,
+            (pivot + hand) / 2.0,
+            (hand - pivot).to_angle(),
+            Vec2::splat(HEX * 3.5),
+            0.28,
         );
         match look.marking {
             MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
@@ -1390,16 +1389,16 @@ impl Painter<'_, '_, '_, '_, '_> {
         let surface = kiln.skin(look.skin, false);
         let glaze = kiln.material(look.glaze);
         let slots: Vec<Vec2> = Glyph { kind, at, dir }.slots().map(px).collect();
-        for s in &slots {
-            self.stamp(&kiln.hexagon, surface, *s, HEX * 0.8, 0.1);
-        }
+        let c = slots.iter().sum::<Vec2>() / slots.len() as f32;
+        let side = if slots.len() == 1 { 2.0 } else { 4.0 } * HEX;
+        let angle = px(DIRS[dir % 6]).to_angle();
+        self.fill(&kiln.bar, surface, c, angle, Vec2::splat(side), 0.1);
         match look.marking {
             MachineMark::Dot => {
                 self.stamp(&kiln.ring, glaze, slots[0], HEX * 0.6, 0.15);
                 self.stamp(&kiln.circle, glaze, slots[0], HEX * 0.15, 0.15);
             }
             MachineMark::Spokes(n) => {
-                let c = slots.iter().sum::<Vec2>() / slots.len() as f32;
                 for (i, s) in slots.iter().enumerate() {
                     let next = slots[(i + 1) % slots.len()];
                     self.channel(*s, next, look.glaze, 0.13);
@@ -1882,6 +1881,23 @@ mod shot {
         let mut wide = false;
         match name {
             "micro" => world.focus_arm(0),
+            "texture-micro" => {
+                let mut sim = Sim::empty();
+                let mut arm = Arm::new(Hex::new(-1, 0), 0, Vec::new());
+                arm.holding = true;
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: arm.hand(),
+                });
+                sim.arms.push(arm);
+                sim.glyphs.push(Glyph {
+                    kind: GlyphKind::Bonder,
+                    at: Hex::new(0, 0),
+                    dir: 0,
+                });
+                world.sim = sim;
+                world.focus_arm(0);
+            }
             "wide" => wide = true,
             "bonders" => world.sim = phased(&[(Hex::new(-3, 0), 14), (Hex::new(3, 0), 15)]),
             "focus" => {
@@ -1973,6 +1989,40 @@ mod shot {
                         pos: arm.hand(),
                     });
                     sim.arms.push(arm);
+                }
+                world.sim = sim;
+            }
+            "rotation" => {
+                let mut sim = Sim::empty();
+                for (q, dir) in [(-4, 0), (4, 2)] {
+                    let pivot = Hex::new(q, 0);
+                    let mut arm = Arm::new(pivot, dir, Vec::new());
+                    arm.holding = true;
+                    sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos: arm.hand(),
+                    });
+                    sim.arms.push(arm);
+                    let glyph = Glyph {
+                        kind: GlyphKind::Bonder,
+                        at: Hex::new(q, 2),
+                        dir,
+                    };
+                    sim.glyphs.push(glyph);
+                    let ends: Vec<usize> = glyph
+                        .slots()
+                        .map(|pos| {
+                            sim.spawn(Atom {
+                                kind: AtomKind::Base,
+                                pos,
+                            })
+                        })
+                        .collect();
+                    sim.bonds.push(Bond {
+                        a: ends[0],
+                        b: ends[1],
+                        kind: BondKind::Single,
+                    });
                 }
                 world.sim = sim;
             }
