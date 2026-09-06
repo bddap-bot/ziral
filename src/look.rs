@@ -96,6 +96,8 @@ pub const TILES: [Skin; 24] = tiles![
     "16", "17", "18", "19", "20", "21", "22", "23"
 ];
 
+pub const MANUAL: Skin = skin!("overlay/controls");
+
 impl Skin {
     pub fn decode(self) -> Image {
         Image::from_buffer(
@@ -203,6 +205,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .chain(crate::PALETTE.into_iter().map(|item| machine(item).skin))
         .chain(TILES)
         .chain(crate::KEYS.iter().map(|k| k.symbol))
+        .chain([MANUAL])
 }
 #[cfg(test)]
 mod tests {
@@ -543,6 +546,19 @@ mod tests {
     }
 
     #[test]
+    fn the_manual_was_generated_from_the_symbols_on_disk() {
+        let status =
+            std::process::Command::new(concat!(env!("CARGO_MANIFEST_DIR"), "/art/overlay/gen.sh"))
+                .arg("-c")
+                .status()
+                .expect("gen.sh runs");
+        assert!(
+            status.success(),
+            "{MANUAL:?} was generated over other symbols than those in art/symbols; run art/overlay/gen.sh"
+        );
+    }
+
+    #[test]
     fn every_skin_is_fired_once() {
         let all: Vec<Skin> = skins().collect();
         for (i, a) in all.iter().enumerate() {
@@ -550,7 +566,12 @@ mod tests {
         }
         assert_eq!(
             all.len(),
-            AtomKind::ALL.len() + BondKind::ALL.len() + PALETTE.len() + TILES.len() + KEYS.len()
+            AtomKind::ALL.len()
+                + BondKind::ALL.len()
+                + PALETTE.len()
+                + TILES.len()
+                + KEYS.len()
+                + 1
         );
     }
 

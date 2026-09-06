@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
-use look::{Glaze, Look, MachineMark, Shape, Skin, Token, skin};
+use look::{Glaze, Look, MANUAL, MachineMark, Shape, Skin, Token, skin};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent, Spin, Stall};
 
 const HEX: f32 = 20.0;
@@ -24,6 +24,7 @@ const LINE_PX: f32 = 3.0;
 const SYMBOL_PX: f32 = 26.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
+const MANUAL_PERCENT: f32 = 92.0;
 
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
@@ -673,7 +674,10 @@ fn main() {
     app.insert_resource(World::new(sim::preloaded()))
         .insert_resource(ClearColor(brass(0.65)))
         .add_systems(Startup, (fire_kiln, spawn_ui).chain())
-        .add_systems(Update, (run_ticks, view, edit, tapes, board, draw).chain());
+        .add_systems(
+            Update,
+            (run_ticks, view, edit, tapes, board, draw, manual).chain(),
+        );
     #[cfg(not(target_arch = "wasm32"))]
     if shot::configure(&mut app) {
         app.run();
@@ -763,6 +767,20 @@ fn symbol(kiln: &Kiln, skin: Skin, lit: bool) -> impl Bundle {
     )
 }
 
+#[derive(Component)]
+struct Manual;
+
+fn manual(keys: Res<ButtonInput<KeyCode>>, mut page: Single<&mut Node, With<Manual>>) {
+    let display = if keys.pressed(KeyCode::Tab) {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    if page.display != display {
+        page.display = display;
+    }
+}
+
 fn cursor() -> impl Bundle {
     (
         Node {
@@ -775,6 +793,32 @@ fn cursor() -> impl Bundle {
 }
 
 fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
+    commands
+        .spawn((
+            Manual,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::ZERO,
+                right: Val::ZERO,
+                top: Val::ZERO,
+                bottom: Val::ZERO,
+                display: Display::None,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            GlobalZIndex(1),
+        ))
+        .with_children(|page| {
+            page.spawn((
+                ImageNode::new(kiln.image(MANUAL)),
+                Node {
+                    height: Val::Percent(MANUAL_PERCENT),
+                    aspect_ratio: Some(1.0),
+                    ..default()
+                },
+            ));
+        });
     commands
         .spawn(Node {
             position_type: PositionType::Absolute,
@@ -1609,6 +1653,7 @@ mod shot {
     #[derive(Clone, Copy)]
     enum Act {
         Key(KeyCode),
+        Hold(KeyCode),
         Press(Hex),
         Drag(Hex),
         Release(Hex),
@@ -1680,6 +1725,8 @@ mod shot {
         let mut wide = false;
         match name {
             "micro" => world.focus_arm(0),
+            "tab-held" => script.push((2, Act::Hold(Tab))),
+            "tab-released" => keys = vec![Tab],
             "texture-micro" => {
                 let mut sim = Sim::empty();
                 let mut arm = Arm::new(Hex::new(-1, 0), 0, Vec::new());
@@ -2196,7 +2243,7 @@ mod shot {
                 continue;
             }
             match act {
-                Act::Key(code) => {
+                Act::Key(code) | Act::Hold(code) => {
                     keyboard.write(key(code, ButtonState::Pressed, *window));
                 }
                 Act::Press(cell) => {
