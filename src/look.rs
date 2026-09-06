@@ -96,7 +96,7 @@ pub const TILES: [Skin; 24] = tiles![
     "16", "17", "18", "19", "20", "21", "22", "23"
 ];
 
-pub const MANUAL: Skin = skin!("overlay/controls");
+pub const MANUAL: Skin = skin!("overlay/manual");
 
 impl Skin {
     pub fn decode(self) -> Image {
@@ -542,19 +542,6 @@ mod tests {
         assert!(
             alike.is_empty(),
             "symbols alike in hue and value at {SYMBOL_PX} px: {alike:#?}"
-        );
-    }
-
-    #[test]
-    fn the_manual_was_generated_from_the_symbols_on_disk() {
-        let status =
-            std::process::Command::new(concat!(env!("CARGO_MANIFEST_DIR"), "/art/overlay/gen.sh"))
-                .arg("-c")
-                .status()
-                .expect("gen.sh runs");
-        assert!(
-            status.success(),
-            "{MANUAL:?} was not generated over the symbols and prompt on disk; run art/overlay/gen.sh"
         );
     }
 

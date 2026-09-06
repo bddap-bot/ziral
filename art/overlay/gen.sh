@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-shopt -s nullglob
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$here"
@@ -15,7 +14,7 @@ while getopts 'n:k:c' opt; do
   n) count=$OPTARG ;;
   k) keep=$OPTARG ;;
   c) check=1 ;;
-  *) echo "usage: gen.sh [-n COUNT] | gen.sh -k CANDIDATE | gen.sh -c" >&2; exit 2 ;;
+  *) echo "usage: gen.sh [-n COUNT] | gen.sh -k INDEX | gen.sh -c" >&2; exit 2 ;;
   esac
 done
 
@@ -31,24 +30,22 @@ if [ -z "$keep" ]; then
   done
   magick "${args[@]}" -depth 8 -strip png:scaffold.png.part
   mv scaffold.png.part scaffold.png
+  sha256sum "${inputs[@]}" > inputs.sha256.part
   read -r -d '' subject < prompt.txt || true
-  ../textures/gen.sh -o "$here" -n "$count" -i "$here/scaffold.png" controls "$subject"
+  ../textures/gen.sh -o "$here" -n "$count" -i "$here/scaffold.png" manual "$subject"
+  mv inputs.sha256.part inputs.sha256
   [ "$count" -gt 1 ] && exit 0
-  keep=controls.png
 else
-  keep=candidates/controls-.png
-  cp "" controls.png.part
-  mv controls.png.part controls.png
+  cp "candidates/manual-$keep.png" manual.png.part
+  mv manual.png.part manual.png
+  printf 'kept manual-%s\n\n' "$keep" >> prompts.txt
 fi
 
 args=()
 for row in "${slots[@]}"; do
   read -r key x y <<< "$row"
-  args+=(\( "../symbols/$key.png" -resize "${slot}x${slot}" \) \( controls.png -crop "${slot}x${slot}+$x+$y" +repage \))
+  args+=(\( "../symbols/$key.png" -resize "${slot}x${slot}" \) \( manual.png -crop "${slot}x${slot}+$x+$y" +repage \))
 done
 mkdir -p proof
 magick montage "${args[@]}" -font "${FONT:-DejaVu-Sans}" -tile 2x -geometry +4+4 -background '#6B4F3A' png:- | pngquant --quality 70-95 - > proof/slots.png.part
 mv proof/slots.png.part proof/slots.png
-sha256sum "${inputs[@]}" > inputs.sha256.part
-mv inputs.sha256.part inputs.sha256
-printf 'kept %s\n\n' "$keep" >> prompts.txt

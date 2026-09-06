@@ -24,7 +24,7 @@ const LINE_PX: f32 = 3.0;
 const SYMBOL_PX: f32 = 26.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
-const MANUAL_PERCENT: f32 = 92.0;
+const MANUAL_VMIN: f32 = 92.0;
 
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
@@ -813,8 +813,8 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             page.spawn((
                 ImageNode::new(kiln.image(MANUAL)),
                 Node {
-                    height: Val::Percent(MANUAL_PERCENT),
-                    aspect_ratio: Some(1.0),
+                    width: Val::VMin(MANUAL_VMIN),
+                    height: Val::VMin(MANUAL_VMIN),
                     ..default()
                 },
             ));
@@ -1653,11 +1653,15 @@ mod shot {
 
     #[derive(Clone, Copy)]
     enum Act {
-        Key(KeyCode),
-        Hold(KeyCode),
+        Down(KeyCode),
+        Up(KeyCode),
         Press(Hex),
         Drag(Hex),
         Release(Hex),
+    }
+
+    fn tap(frame: u32, key: KeyCode) -> [(u32, Act); 2] {
+        [(frame, Act::Down(key)), (frame + 1, Act::Up(key))]
     }
 
     #[derive(Resource)]
@@ -1726,7 +1730,7 @@ mod shot {
         let mut wide = false;
         match name {
             "micro" => world.focus_arm(0),
-            "tab-held" => script.push((2, Act::Hold(Tab))),
+            "tab-held" => script.push((2, Act::Down(Tab))),
             "tab-released" => keys = vec![Tab],
             "texture-micro" => {
                 let mut sim = Sim::empty();
@@ -1811,8 +1815,8 @@ mod shot {
                     &[(1, -1), (2, -1), (3, -2), (4, -2), (5, -2)],
                     Act::Drag,
                 ));
-                script.push((114, Act::Key(KeyD)));
-                script.push((132, Act::Key(KeyD)));
+                script.extend(tap(114, KeyD));
+                script.extend(tap(132, KeyD));
                 script.push((152, Act::Release(Hex::new(5, -2))));
             }
             "output" => {
@@ -2131,7 +2135,7 @@ mod shot {
         script.extend(
             keys.into_iter()
                 .enumerate()
-                .map(|(k, key)| (2 + k as u32, Act::Key(key))),
+                .flat_map(|(k, key)| tap(2 + k as u32, key)),
         );
         (world, wide, script)
     }
@@ -2237,15 +2241,15 @@ mod shot {
     ) {
         shot.frames += 1;
         for (frame, act) in shot.script.clone() {
-            if let (Act::Key(code), true) = (act, frame + 1 == shot.frames) {
-                keyboard.write(key(code, ButtonState::Released, *window));
-            }
             if frame != shot.frames {
                 continue;
             }
             match act {
-                Act::Key(code) | Act::Hold(code) => {
+                Act::Down(code) => {
                     keyboard.write(key(code, ButtonState::Pressed, *window));
+                }
+                Act::Up(code) => {
+                    keyboard.write(key(code, ButtonState::Released, *window));
                 }
                 Act::Press(cell) => {
                     world.pointer = Some(px(cell));
