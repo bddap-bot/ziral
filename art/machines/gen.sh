@@ -26,7 +26,7 @@ plan=$("$ziral" --plan)
 row() { printf '%s\n' "$plan" | awk -F'\t' -v k="$1" -v n="$2" '$1 == k && $2 == n'; }
 
 machine() {
-  local name=$1 keep=$2 dir=art/machines/$1 count prompt size i
+  local name=$1 keep=$2 dir=art/machines/$1 count prompt size i from relight edits=()
   IFS=$'\t' read -r _ _ count _ prompt < <(row machine "$name")
   size=$("$ziral" --scaffold "$name")
   if [ -z "$keep" ]; then
@@ -39,6 +39,20 @@ machine() {
     [ -n "$keep" ] || { echo "$name: no candidate passes; see $dir/scores.tsv" >&2; return 1; }
   fi
   flock "$here/manifest.toml" "$ziral" --keep "$name" "$keep"
+  for _ in 1 2 3; do
+    edits=()
+    for from in $(printf '%s\n' "$plan" | awk -F'\t' '$1 == "relight" { print $2 }'); do
+      IFS=$'\t' read -r _ _ relight < <(row relight "$from")
+      art/paint.sh -s "$size" -i "$dir/relit/master.png" "$dir/relit/$from.png" "$relight"
+      edits+=("$dir/relit/$from.png")
+    done
+    if "$ziral" --normals "$name" "${edits[@]}" > "$dir/relit/lights.txt"; then
+      cat "$dir/relit/lights.txt"
+      return 0
+    fi
+    cat "$dir/relit/lights.txt"
+  done
+  return 1
 }
 
 status=0

@@ -9,8 +9,10 @@ use bevy::image::Image;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
+use bevy::render::render_resource::AsBindGroup;
 use bevy::render::render_resource::TextureFormat;
-use bevy::sprite_render::AlphaMode2d;
+use bevy::shader::ShaderRef;
+use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::window::PrimaryWindow;
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent, Spin, Stall};
@@ -677,21 +679,23 @@ fn main() {
         return;
     }
     #[cfg(not(target_arch = "wasm32"))]
-    if shot::configure(&mut app) {
-        app.run();
-        return;
-    }
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "ziral".into(),
-            canvas: Some("#ziral".into()),
-            fit_canvas_to_parent: true,
+    let shot = shot::configure(&mut app);
+    #[cfg(target_arch = "wasm32")]
+    let shot = false;
+    if !shot {
+        app.add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "ziral".into(),
+                canvas: Some("#ziral".into()),
+                fit_canvas_to_parent: true,
+                ..default()
+            }),
             ..default()
-        }),
-        ..default()
-    }))
-    .add_systems(Startup, spawn_camera)
-    .run();
+        }))
+        .add_systems(Startup, spawn_camera);
+    }
+    lit_plugin(&mut app);
+    app.run();
 }
 
 fn spawn_camera(mut commands: Commands) {
@@ -1062,6 +1066,37 @@ struct Kiln {
     glaze: [Handle<ColorMaterial>; 7],
     patina: Handle<ColorMaterial>,
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
+    lit: Vec<(Skin, Handle<Lit>)>,
+}
+
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+struct Lit {
+    #[uniform(0)]
+    light: Vec4,
+    #[texture(1)]
+    #[sampler(2)]
+    albedo: Handle<Image>,
+    #[texture(3)]
+    #[sampler(4)]
+    relief: Handle<Image>,
+}
+
+impl Material2d for Lit {
+    fn fragment_shader() -> ShaderRef {
+        ShaderRef::Path(
+            bevy::asset::AssetPath::from_path_buf(bevy::asset::embedded_path!("lit.wgsl"))
+                .with_source("embedded"),
+        )
+    }
+
+    fn alpha_mode(&self) -> AlphaMode2d {
+        AlphaMode2d::Blend
+    }
+}
+
+fn lit_plugin(app: &mut App) {
+    bevy::asset::embedded_asset!(app, "lit.wgsl");
+    app.add_plugins(Material2dPlugin::<Lit>::default());
 }
 
 impl Kiln {
@@ -1082,6 +1117,14 @@ impl Kiln {
 
     fn image(&self, skin: Skin) -> Handle<Image> {
         self.fired(skin).1.clone()
+    }
+
+    fn lit(&self, skin: Skin) -> &Handle<Lit> {
+        self.lit
+            .iter()
+            .find(|(s, _)| *s == skin)
+            .map(|(_, lit)| lit)
+            .unwrap_or_else(|| panic!("{skin:?} carries no relief"))
     }
 }
 
@@ -1110,6 +1153,10 @@ fn fire(skin: Skin) -> Image {
         TextureFormat::Rgba8UnormSrgb,
         "{skin:?} must decode to rgba8"
     );
+    let relief = skin.finish == Finish::Relief;
+    if relief {
+        image.texture_descriptor.format = TextureFormat::Rgba8Unorm;
+    }
     let linear: [f32; 256] = std::array::from_fn(|b| to_linear(b as u8));
     let (mut w, mut h) = (image.width() as usize, image.height() as usize);
     let mut data = image
@@ -1127,7 +1174,7 @@ fn fire(skin: Skin) -> Image {
                 for c in 0..4 {
                     let at = |dx: usize, dy: usize| level[((2 * y + dy) * w + 2 * x + dx) * 4 + c];
                     let four = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
-                    next.push(if c == 3 {
+                    next.push(if c == 3 || relief {
                         (four.iter().map(|a| u32::from(*a)).sum::<u32>() / 4) as u8
                     } else {
                         to_srgb(four.iter().map(|a| linear[usize::from(*a)]).sum::<f32>() / 4.0)
@@ -1149,11 +1196,12 @@ fn fire_kiln(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut lits: ResMut<Assets<Lit>>,
     mut images: ResMut<Assets<Image>>,
     mut gizmo: ResMut<GizmoConfigStore>,
 ) {
     gizmo.config_mut::<DefaultGizmoConfigGroup>().0.line.width = LINE_PX;
-    let skins = look::skins()
+    let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
         .map(|skin| {
             let texture = images.add(fire(skin));
             let solid = if skin.finish == Finish::Sprite {
@@ -1172,16 +1220,41 @@ fn fire_kiln(
             (skin, texture, fired)
         })
         .collect();
+    let image = |skin: Skin| {
+        skins
+            .iter()
+            .find(|(s, _, _)| *s == skin)
+            .map(|(_, image, _)| image.clone())
+            .unwrap_or_else(|| panic!("{skin:?} was never fired"))
+    };
+    let lit = PALETTE
+        .into_iter()
+        .map(|item| {
+            let look = look::machine(item);
+            let lit = lits.add(Lit {
+                light: look::light().extend(look::AMBIENT),
+                albedo: image(look.skin),
+                relief: image(look.marking.normal()),
+            });
+            (look.skin, lit)
+        })
+        .collect();
     commands.insert_resource(Kiln {
         circle: meshes.add(Circle::new(1.0)),
         hexagon: meshes.add(RegularPolygon::new(1.0, 6)),
-        bar: meshes.add(Rectangle::new(1.0, 1.0)),
+        bar: meshes.add(
+            Rectangle::new(1.0, 1.0)
+                .mesh()
+                .build()
+                .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, vec![[1.0, 0.0, 0.0, 1.0]; 4]),
+        ),
         bond: meshes.add(band(BOND_WIDTH / 3f32.sqrt())),
         rim: meshes.add(Annulus::new(0.85, 1.0)),
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: materials.add(Glaze::Brass.color().with_alpha(0.5)),
         skins,
+        lit,
     });
 }
 
@@ -1223,10 +1296,10 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs> {
 }
 
 impl Painter<'_, '_, '_, '_, '_> {
-    fn fill(
+    fn fill<M: Material2d>(
         &mut self,
         mesh: &Handle<Mesh>,
-        material: &Handle<ColorMaterial>,
+        material: &Handle<M>,
         at: Vec2,
         angle: f32,
         scale: Vec2,
@@ -1307,7 +1380,7 @@ impl Painter<'_, '_, '_, '_, '_> {
         let quad = look::quad(&look::footprint(item));
         let centre = origin + Vec2::from_angle(angle).rotate(quad.centre);
         let kiln = self.kiln;
-        let material = kiln.skin(skin, false);
+        let material = kiln.lit(skin);
         self.fill(
             &kiln.bar,
             material,
@@ -1321,7 +1394,7 @@ impl Painter<'_, '_, '_, '_, '_> {
     fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
         self.sprite(Item::Arm, look.skin, pivot, (hand - pivot).to_angle(), 0.28);
         match look.marking {
-            MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
+            MachineMark::Hand(glaze, _) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
         };
     }
@@ -1329,11 +1402,11 @@ impl Painter<'_, '_, '_, '_, '_> {
     fn machine(&mut self, item: Item, at: Hex, dir: usize) {
         let look = look::machine(item);
         match (item, look.marking) {
-            (Item::Arm, MachineMark::Hand(_)) => {
+            (Item::Arm, MachineMark::Hand(_, _)) => {
                 let hand = px(at.add(DIRS[dir % 6]));
                 self.arm(px(at), hand, RING_OPEN, look);
             }
-            (Item::Glyph(_), MachineMark::Sprite) => {
+            (Item::Glyph(_), MachineMark::Sprite(_)) => {
                 self.sprite(item, look.skin, px(at), look::turn(dir), 0.1);
             }
             _ => unworn(look),

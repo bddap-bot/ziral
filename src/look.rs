@@ -2,11 +2,16 @@ use crate::Item;
 use crate::sim::{Arm, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
-use bevy::math::Vec2;
+use bevy::math::{Vec2, Vec3};
 use bevy::prelude::Color;
 
 pub const HEX: f32 = 20.0;
 pub const MARGIN: f32 = 1.0;
+pub fn light() -> Vec3 {
+    Vec3::new(-1.0, 1.0, 1.4).normalize()
+}
+
+pub const AMBIENT: f32 = 0.25;
 
 pub fn px(h: Hex) -> Vec2 {
     let q = h.q as f32;
@@ -124,6 +129,7 @@ pub struct Token {
 pub enum Finish {
     Glaze,
     Sprite,
+    Relief,
 }
 
 #[derive(Clone, Copy)]
@@ -215,13 +221,24 @@ pub enum Shape {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MachineMark {
-    Hand(Glaze),
-    Sprite,
+    Hand(Glaze, Skin),
+    Sprite(Skin),
+}
+
+impl MachineMark {
+    pub fn normal(self) -> Skin {
+        match self {
+            MachineMark::Hand(_, normal) | MachineMark::Sprite(normal) => normal,
+        }
+    }
 }
 
 macro_rules! machine {
     ($name:literal) => {
-        finish!(concat!("machines/", $name, "/albedo"), Finish::Sprite)
+        (
+            finish!(concat!("machines/", $name, "/albedo"), Finish::Sprite),
+            finish!(concat!("machines/", $name, "/normal"), Finish::Relief),
+        )
     };
 }
 
@@ -260,16 +277,17 @@ pub fn bond(kind: BondKind) -> Look<()> {
 pub fn machine(item: Item) -> Look<MachineMark> {
     let kind = match item {
         Item::Arm => {
+            let (skin, normal) = machine!("arm");
             return Look {
                 glaze: Glaze::Brass,
-                skin: machine!("arm"),
+                skin,
                 shape: Shape::Radial,
-                marking: MachineMark::Hand(Glaze::Terracotta),
+                marking: MachineMark::Hand(Glaze::Terracotta, normal),
             };
         }
         Item::Glyph(kind) => kind,
     };
-    let (glaze, skin) = match kind {
+    let (glaze, (skin, normal)) = match kind {
         GlyphKind::Source => (Glaze::BlueGreen, machine!("source")),
         GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
         GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
@@ -280,7 +298,7 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         glaze,
         skin,
         shape: Shape::Cells(kind.rule().slots.len()),
-        marking: MachineMark::Sprite,
+        marking: MachineMark::Sprite(normal),
     }
 }
 
@@ -290,6 +308,11 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .map(|k| atom(k).skin)
         .chain(BondKind::ALL.into_iter().map(|k| bond(k).skin))
         .chain(crate::PALETTE.into_iter().map(|item| machine(item).skin))
+        .chain(
+            crate::PALETTE
+                .into_iter()
+                .map(|item| machine(item).marking.normal()),
+        )
         .chain(TILES)
         .chain(crate::KEYS.iter().map(|k| k.symbol))
         .chain([MANUAL])
@@ -642,7 +665,7 @@ mod tests {
             all.len(),
             AtomKind::ALL.len()
                 + BondKind::ALL.len()
-                + PALETTE.len()
+                + 2 * PALETTE.len()
                 + TILES.len()
                 + KEYS.len()
                 + 1

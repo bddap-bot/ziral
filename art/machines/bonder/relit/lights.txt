@@ -1,0 +1,5 @@
+art/machines/bonder/relit/right.png	light=(+0.97,+0.24,-0.01)	ambient=0.59
+art/machines/bonder/relit/top.png	light=(-0.08,+0.99,+0.13)	ambient=0.31
+art/machines/bonder/relit/left.png	light=(-0.87,+0.44,+0.22)	ambient=0.40
+art/machines/bonder/relit/bottom.png	light=(-0.51,-0.86,+0.00)	ambient=0.56
+sphere error 20.2 degrees

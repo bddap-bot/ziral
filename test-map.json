@@ -22,7 +22,7 @@
         "nix-shell --run 'shellcheck art/paint.sh art/machines/gen.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"
       ],
-      "why": "the machine textures are made by gen.sh over the binary's scaffold and scoring; the tests check the shipped scaffolds, kept candidates and albedos against the manifest"
+      "why": "the machine textures are made by gen.sh over the binary's scaffold and scoring; the tests check the shipped scaffolds, kept candidates and maps against the manifest"
     },
     {
       "paths": ["art/**/*.sh"],
@@ -51,6 +51,11 @@
       "paths": ["shell.nix"],
       "tests": ["nix-instantiate --parse shell.nix", "nix-shell --run 'cargo build --tests'"],
       "why": "a parse catches syntax; a build inside the shell catches a missing package"
+    },
+    {
+      "paths": ["src/*.wgsl"],
+      "tests": ["nix-shell --run 'shellcheck art/machines/proof.sh && art/machines/proof.sh'"],
+      "why": "a shader only compiles when a scene is drawn; the proof shot draws lit machines at two turns and fails on a shader error"
     },
     {
       "paths": ["**/*.rs", "Cargo.toml", "Cargo.lock"],

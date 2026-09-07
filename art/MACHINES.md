@@ -10,6 +10,9 @@ The game owns geometry and judgement; the generator only paints. `machines/gen.s
 2. **Paint.** The image tool edits the scaffold in place, `candidates` times, with the manifest's shared prompt and the machine's own; the candidates stay under `NAME/candidates/`.
 3. **Score.** `ziral --score` measures each candidate by code: `outside`, how far the clay outside the footprint drifted from clay; `seat`, the least contrast between any seat disc and the ring around it; `palette`, the distance from the sprite's mean colour to the nearest bible glaze. The thresholds are the manifest's; the best passing candidate is kept, its index recorded in the manifest, and `NAME/scores.tsv` keeps every number. The contact sheet `sheet.png` shows every candidate with its scores and the survivor.
 4. **Cut.** `ziral --keep` cuts the kept candidate by the footprint mask into `NAME/albedo.png`, the flat base colour with baked ambient occlusion.
+5. **Relief.** The kept candidate gets a matte grey sphere composited into the band (`NAME/relit/master.png`) and is relit four times by the image tool, from the right, top, left and bottom. `ziral --normals` reads each light's true direction and ambient share off the sphere, solves every pixel's normal by least squares, and writes `NAME/normal.png`; the sphere must come back as a sphere within the manifest's `sphere` degrees, else the four edits are painted again, three sets at most, before the run fails. `relit/lights.txt` records the recovered lights.
+
+At runtime the sprite is a mesh with a tangent, drawn by `Lit`: albedo times a Lambert term under one fixed world light, with the normal rotated by the sprite's turn in the shader, so a rotated machine keeps its lit side on the world's light side and the arm's swing sweeps its highlight continuously.
 
 ## Arm
 
