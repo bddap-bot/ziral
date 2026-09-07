@@ -7,6 +7,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::color::{Alpha, Mix};
 use bevy::image::Image;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
+use bevy::math::Affine2;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
@@ -20,6 +21,7 @@ use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent,
 const TICK_MS: f32 = 400.0;
 const MOTION: f32 = 1.0;
 const MICRO_SCALE: f32 = 0.5;
+const FOCUS: Hex = Hex::new(0, -1);
 const MAX_GRID_CELLS: f32 = 6000.0;
 const STRIP_ROWS: usize = 8;
 const DRAG_PX: f32 = 6.0;
@@ -710,7 +712,7 @@ fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Projection::Orthographic(projection),
-        Transform::from_translation(px(Hex::new(0, -1)).extend(0.0)),
+        Transform::from_translation(px(FOCUS).extend(0.0)),
     ));
 }
 
@@ -1152,8 +1154,7 @@ fn to_srgb(linear: f32) -> u8 {
     (c * 255.0).round() as u8
 }
 
-fn fire(skin: Skin) -> Image {
-    let mut image = skin.decode();
+fn fire(mut image: Image, skin: Skin) -> Image {
     assert_eq!(
         image.texture_descriptor.format,
         TextureFormat::Rgba8UnormSrgb,
@@ -1209,7 +1210,12 @@ fn fire_kiln(
     gizmo.config_mut::<DefaultGizmoConfigGroup>().0.line.width = LINE_PX;
     let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
         .map(|skin| {
-            let texture = images.add(fire(skin));
+            let image = skin.decode();
+            let crop = match skin.finish {
+                Finish::Grouted => look::crop(look::face(&image)),
+                _ => 1.0,
+            };
+            let texture = images.add(fire(image, skin));
             let solid = if skin.finish == Finish::Sprite {
                 AlphaMode2d::Blend
             } else {
@@ -1220,7 +1226,11 @@ fn fire_kiln(
                     color: Color::WHITE.with_alpha(alpha),
                     alpha_mode,
                     texture: Some(texture.clone()),
-                    ..default()
+                    uv_transform: Affine2::from_scale_angle_translation(
+                        Vec2::splat(crop),
+                        0.0,
+                        Vec2::splat(0.5 * (1.0 - crop)),
+                    ),
                 })
             });
             (skin, texture, fired)
@@ -1616,7 +1626,7 @@ fn board(
                         Transform {
                             translation: px(h).extend(0.0),
                             rotation: Quat::IDENTITY,
-                            scale: Vec3::splat(HEX * 0.95),
+                            scale: Vec3::splat(HEX),
                         },
                     );
                 }
@@ -1862,6 +1872,7 @@ mod shot {
                 wide = true;
             }
             "wide" => wide = true,
+            "board" => world.sim = Sim::empty(),
             "bonders" => world.sim = phased(&[(Hex::new(-3, 0), 14), (Hex::new(3, 0), 15)]),
             "focus" => {
                 world
@@ -2319,7 +2330,7 @@ mod shot {
             pivots.iter().sum::<Vec2>() / pivots.len() as f32
         } else {
             projection.scale = MICRO_SCALE;
-            px(Hex::new(0, -1))
+            px(FOCUS)
         };
         commands.spawn((
             Camera2d,
@@ -2403,25 +2414,31 @@ mod tests {
     use super::*;
     use sim::{Atom, AtomKind};
 
-    #[test]
-    fn two_frames_of_a_still_scene_with_overlapping_arms_are_pixel_identical() {
-        let dir = std::env::temp_dir().join(format!("ziral-still-{}", std::process::id()));
+    const SEAM_TOLERANCE: f32 = 0.15;
+    const BLUR_PX: f32 = 1.0;
+
+    fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
+        let dir = std::env::temp_dir().join(format!("ziral-{view}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut app = shot::still("wide", dir.clone(), 2);
+        let mut app = shot::still(view, dir.clone(), n);
         lit_plugin(&mut app);
         let exit = app.run();
-        let frames: Vec<_> = (0..2)
-            .map(|n| std::fs::read(dir.join(format!("{n:05}.png"))))
+        let frames: Vec<_> = (0..n)
+            .map(|k| std::fs::read(dir.join(format!("{k:05}.png"))))
             .collect();
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(exit, bevy::app::AppExit::Success);
-        let frame = |n: usize| {
-            image::load_from_memory(frames[n].as_ref().unwrap())
-                .unwrap()
-                .into_rgba8()
-        };
-        let (a, b) = (frame(0), frame(1));
+        frames
+            .into_iter()
+            .map(|png| image::load_from_memory(&png.unwrap()).unwrap().into_rgba8())
+            .collect()
+    }
+
+    #[test]
+    fn two_frames_of_a_still_scene_with_overlapping_arms_are_pixel_identical() {
+        let frames = still_frames("wide", 2);
+        let (a, b) = (&frames[0], &frames[1]);
         let changed = a
             .enumerate_pixels()
             .zip(b.pixels())
@@ -2433,6 +2450,45 @@ mod tests {
             "{} pixels differ between two frames of a still scene, first at {:?}",
             changed.len(),
             changed[0]
+        );
+    }
+
+    #[test]
+    fn the_seam_between_two_tiles_is_grout() {
+        let frame = &still_frames("board", 1)[0];
+        let seam = (px(FOCUS.add(DIRS[0])) - px(FOCUS)) / 2.0 / MICRO_SCALE;
+        let grout_px = HEX * 3f32.sqrt() / 2.0 * look::grout() / MICRO_SCALE;
+        let half_edge = HEX / 2.0 / MICRO_SCALE;
+        let centre = Vec2::new(frame.width() as f32, frame.height() as f32) / 2.0;
+        let expected = look::tests::grout_color().to_srgba();
+        let sampled: Vec<_> = frame
+            .enumerate_pixels()
+            .filter(|(x, y, _)| {
+                let at = Vec2::new(*x as f32 + 0.5, *y as f32 + 0.5) - centre - seam;
+                at.x.abs() <= grout_px - BLUR_PX && at.y.abs() <= half_edge - 2.0 * BLUR_PX
+            })
+            .map(|(x, y, p)| {
+                let apart = [expected.red, expected.green, expected.blue]
+                    .into_iter()
+                    .zip(p.0)
+                    .map(|(e, c)| (e - f32::from(c) / 255.0).abs())
+                    .fold(0.0, f32::max);
+                (x, y, p.0, apart)
+            })
+            .collect();
+        assert!(
+            sampled.len() as f32 >= 2.0 * (half_edge - 2.0 * BLUR_PX),
+            "only {} seam pixels sampled",
+            sampled.len()
+        );
+        let worst = sampled.iter().max_by(|a, b| a.3.total_cmp(&b.3)).unwrap();
+        assert!(
+            worst.3 <= SEAM_TOLERANCE,
+            "seam pixel {:?} is {:?}, {:.3} from grout {:?}",
+            (worst.0, worst.1),
+            worst.2,
+            worst.3,
+            expected
         );
     }
 

@@ -7,6 +7,51 @@ use bevy::prelude::Color;
 
 pub const HEX: f32 = 20.0;
 const MARGIN: f32 = 1.0;
+pub fn grout() -> f32 {
+    34.0 / 512.0 * 2.0 / 3f32.sqrt()
+}
+
+fn hex_distance(w: usize, h: usize, x: usize, y: usize) -> f32 {
+    let x = (2.0 * x as f32 / (w - 1) as f32 - 1.0).abs();
+    let y = (2.0 * y as f32 / (h - 1) as f32 - 1.0).abs();
+    f32::max(2.0 * x / 3f32.sqrt(), x / 3f32.sqrt() + y)
+}
+
+pub fn face(image: &Image) -> f32 {
+    const BINS: usize = 512;
+    const STRIDE: usize = 4;
+    let (w, h) = (image.width() as usize, image.height() as usize);
+    let data = image
+        .data
+        .as_ref()
+        .expect("a decoded image carries its pixels");
+    let mut sum = [0f32; BINS + 1];
+    let mut count = [0u32; BINS + 1];
+    for y in (0..h).step_by(STRIDE) {
+        for x in (0..w).step_by(STRIDE) {
+            let bin = (hex_distance(w, h, x, y) * BINS as f32) as usize;
+            if bin <= BINS {
+                let i = (y * w + x) * 4;
+                sum[bin] +=
+                    data[i..i + 3].iter().map(|c| f32::from(*c)).sum::<f32>() / (3.0 * 255.0);
+                count[bin] += 1;
+            }
+        }
+    }
+    let shade = |bin: usize| (count[bin] > 0).then(|| sum[bin] / count[bin] as f32);
+    let inner: Vec<f32> = (BINS / 4..=BINS / 2).filter_map(shade).collect();
+    let clay = inner.iter().sum::<f32>() / inner.len() as f32;
+    let darkest = (BINS / 2..=BINS).filter_map(shade).fold(f32::MAX, f32::min);
+    (BINS / 2..=BINS)
+        .find(|bin| shade(*bin).is_some_and(|s| s < (clay + darkest) / 2.0))
+        .expect("a tile ends in grout") as f32
+        / BINS as f32
+}
+
+pub fn crop(face: f32) -> f32 {
+    (face + grout()).min(1.0)
+}
+
 pub fn light() -> Vec3 {
     Vec3::new(-1.0, 1.0, 1.4).normalize()
 }
@@ -134,6 +179,7 @@ pub struct Token {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Finish {
     Plain,
+    Grouted,
     Sprite,
     Relief,
 }
@@ -180,7 +226,7 @@ macro_rules! finish {
 
 macro_rules! tiles {
     ($($n:literal),*) => {
-        [$(skin!(concat!("textures/tile-", $n))),*]
+        [$(finish!(concat!("textures/tile-", $n), Finish::Grouted)),*]
     };
 }
 
@@ -324,7 +370,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .chain([MANUAL])
 }
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::{KEYS, PALETTE, SYMBOL_PX};
     use bevy::color::{Hsva, Luminance};
@@ -334,6 +380,9 @@ mod tests {
     const VALUE_APART: f32 = 0.15;
     const THUMB: usize = 8;
     const TILES_APART: f32 = 0.023;
+    const FACE: f32 = 458.0 / 512.0;
+    const BODY_OF_FACE: f32 = 0.95;
+    const GROUT_AT_MOST: f32 = 0.65;
     const SHADING: f32 = 2.0 * VALUE_APART;
     const SPLIT_ROUNDS: usize = 8;
 
@@ -390,15 +439,11 @@ mod tests {
         average(&thumb, &(0..THUMB * THUMB).collect::<Vec<usize>>())
     }
 
-    fn tile_body(skin: Skin) -> Vec<[f32; 3]> {
+    fn tile_band(skin: Skin, band: std::ops::RangeInclusive<f32>) -> Vec<[f32; 3]> {
         let (w, h, data) = pixels(skin);
         (0..h)
             .flat_map(|y| (0..w).map(move |x| (x, y)))
-            .filter(|(x, y)| {
-                let x = (2.0 * *x as f32 / (w - 1) as f32 - 1.0).abs() / 0.82;
-                let y = (2.0 * *y as f32 / (h - 1) as f32 - 1.0).abs() / 0.82;
-                x <= 3f32.sqrt() / 2.0 && x / 3f32.sqrt() + y / 2.0 <= 0.5
-            })
+            .filter(|(x, y)| band.contains(&hex_distance(w, h, *x, *y)))
             .map(|(x, y)| {
                 let i = (y * w + x) * 4;
                 [0, 1, 2].map(|c| f32::from(data[i + c]) / 255.0)
@@ -406,10 +451,64 @@ mod tests {
             .collect()
     }
 
-    fn tile_mean(skin: Skin) -> Color {
-        let body = tile_body(skin);
-        let channel = |c: usize| body.iter().map(|pixel| pixel[c]).sum::<f32>() / body.len() as f32;
+    fn body_edge() -> f32 {
+        (FACE - grout() / 2.0) * BODY_OF_FACE
+    }
+
+    fn tile_body(skin: Skin) -> Vec<[f32; 3]> {
+        tile_band(skin, 0.0..=body_edge())
+    }
+
+    fn mean_color(pixels: &[[f32; 3]]) -> Color {
+        let channel =
+            |c: usize| pixels.iter().map(|pixel| pixel[c]).sum::<f32>() / pixels.len() as f32;
         Color::srgb(channel(0), channel(1), channel(2))
+    }
+
+    fn tile_mean(skin: Skin) -> Color {
+        mean_color(&tile_body(skin))
+    }
+
+    fn grout_band(skin: Skin) -> (f32, Vec<[f32; 3]>) {
+        let edge = face(&skin.decode());
+        (edge, tile_band(skin, edge..=crop(edge)))
+    }
+
+    pub fn grout_color() -> Color {
+        let band: Vec<[f32; 3]> = TILES.iter().flat_map(|t| grout_band(*t).1).collect();
+        mean_color(&band)
+    }
+
+    #[test]
+    fn face_and_grout_are_the_scaffold_hex_and_its_stroke() {
+        let svg = include_str!("../art/textures/hex-scaffold.svg");
+        let after = |key: &str| svg.split(key).nth(1).unwrap();
+        let top: f32 = after("M512 ").split(' ').next().unwrap().parse().unwrap();
+        let stroke: f32 = after("stroke-width=\"")
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(FACE, (512.0 - top) / 512.0);
+        assert!((grout() - stroke / 512.0 * 2.0 / 3f32.sqrt()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn every_tile_ends_in_a_stroke_of_grout_around_its_face() {
+        let shade =
+            |band: Vec<[f32; 3]>| band.iter().flatten().sum::<f32>() / (3 * band.len()) as f32;
+        let strays: Vec<String> = TILES
+            .iter()
+            .filter_map(|tile| {
+                let (edge, band) = grout_band(*tile);
+                let (body, band) = (shade(tile_body(*tile)), shade(band));
+                (edge < body_edge() || band >= body * GROUT_AT_MOST).then(|| {
+                    format!("{tile:?} ends at {edge:.3}; its grout is {band:.2} bright against a {body:.2} face")
+                })
+            })
+            .collect();
+        assert!(strays.is_empty(), "{}", strays.join("\n"));
     }
 
     struct Pressed {
