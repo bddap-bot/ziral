@@ -1,4 +1,4 @@
-use crate::look::{self, Cell, Glaze, HEX, Quad, Role, px};
+use crate::look::{self, AMBIENT, Cell, Glaze, HEX, Quad, Role, px};
 use crate::sim::Slot;
 use crate::{Item, PALETTE};
 use bevy::math::{Vec2, Vec3};
@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 
 const PX_PER_HEX: f32 = 256.0;
 const BAND: f32 = 0.5;
-const WELL: f32 = 0.95;
+const KEY: [f32; 3] = [0.0, 1.0, 0.0];
+const SPILL: [f32; 2] = [0.1, 0.6];
 const SEAT: f32 = 0.4;
 const SEAT_RING: f32 = 0.32;
 const SEAT_DOT: f32 = 0.12;
@@ -18,6 +19,8 @@ const SPHERE: f32 = 0.75;
 const SPHERE_ALBEDO: f32 = 0.6;
 const SPHERE_LIT: f32 = 0.15;
 const SPHERE_CAP: f32 = 0.5;
+const PAD: f32 = 1.6;
+const PAD_ALBEDO: f32 = 0.45;
 const SAMPLES: usize = 4;
 
 #[derive(Serialize, Deserialize)]
@@ -204,13 +207,8 @@ impl Scaffold {
     }
 
     fn paint(&self, world: Vec2) -> Rgba<u8> {
-        let Some(cell) = self.in_cell(world, WELL * HEX) else {
-            return rgba(Glaze::Clay.rgb(), 1.0);
-        };
-        match self.mark(cell, world) {
-            Some(glaze) => rgba(glaze.rgb(), 1.0),
-            None => rgba(mix(Glaze::Brass.rgb(), Glaze::Clay.rgb(), 0.85), 1.0),
-        }
+        let glaze = self.in_cell(world, HEX).and_then(|c| self.mark(c, world));
+        rgba(glaze.map_or(KEY, Glaze::rgb), 1.0)
     }
 
     fn render(&self) -> RgbaImage {
@@ -219,35 +217,36 @@ impl Scaffold {
         })
     }
 
-    fn cut(&self, candidate: &RgbaImage) -> RgbaImage {
-        let (origin, side) = self.crop();
-        let n = self.canvas as usize;
-        RgbaImage::from_fn(side, side, |x, y| {
-            let (cx, cy) = (x + origin, y + origin);
-            let Rgba([r, g, b, _]) = *candidate.get_pixel(cx, cy);
-            let alpha = self.mask[cy as usize * n + cx as usize];
-            Rgba([r, g, b, (alpha * 255.0).round() as u8])
-        })
-    }
-
-    fn score(&self, candidate: &RgbaImage) -> Score {
+    fn alpha(&self, candidate: &RgbaImage) -> Vec<f32> {
         assert_eq!(
             (candidate.width(), candidate.height()),
             (self.canvas, self.canvas),
             "a candidate is painted over the whole scaffold"
         );
+        candidate.pixels().map(|p| opacity(rgb(p))).collect()
+    }
+
+    fn cut(&self, candidate: &RgbaImage) -> RgbaImage {
+        let (origin, side) = self.crop();
+        RgbaImage::from_fn(side, side, |x, y| {
+            let c = rgb(candidate.get_pixel(x + origin, y + origin));
+            rgba(unspill(c), opacity(c))
+        })
+    }
+
+    fn score(&self, candidate: &RgbaImage) -> Score {
+        let alpha = self.alpha(candidate);
         let (origin, side) = self.crop();
         let n = self.canvas as usize;
-        let clay = Glaze::Clay.rgb();
         let mut outside = Mean::default();
         let mut inside = Mean::default();
         for y in origin..origin + side {
             for x in origin..origin + side {
+                let i = y as usize * n + x as usize;
                 let c = rgb(candidate.get_pixel(x, y));
-                let m = self.mask[y as usize * n + x as usize];
-                if m == 0.0 {
-                    outside.add(apart(c, clay));
-                } else if m == 1.0 {
+                if self.mask[i] == 0.0 {
+                    outside.add(alpha[i]);
+                } else if self.mask[i] == 1.0 && alpha[i] == 1.0 {
                     inside.add_rgb(c);
                 }
             }
@@ -273,11 +272,14 @@ impl Scaffold {
                 apart(mark.rgb(), around.rgb()).max(apart(centre.rgb(), around.rgb()))
             })
             .fold(f32::INFINITY, f32::min);
-        let mean = inside.rgb();
-        let palette = Glaze::ALL
-            .iter()
-            .map(|g| apart(mean, g.rgb()))
-            .fold(f32::INFINITY, f32::min);
+        let palette = if inside.n > 0.0 {
+            Glaze::ALL
+                .iter()
+                .map(|g| apart(inside.rgb(), g.rgb()))
+                .fold(f32::INFINITY, f32::min)
+        } else {
+            f32::INFINITY
+        };
         Score {
             outside: outside.value(),
             seat,
@@ -290,11 +292,19 @@ impl Scaffold {
         ball(centre, radius, x, y)
     }
 
-    fn master(&self, candidate: &RgbaImage) -> RgbaImage {
+    fn master(&self, candidate: &RgbaImage, light: Option<Vec3>) -> RgbaImage {
+        let (centre, radius) = self.sphere();
         let mut out = candidate.clone();
         for (x, y, p) in out.enumerate_pixels_mut() {
-            if self.sphere_normal(x, y).is_some() {
-                *p = grey(SPHERE_ALBEDO);
+            if let Some(n) = self.sphere_normal(x, y) {
+                let lit = light.map_or(1.0, |l| AMBIENT + (1.0 - AMBIENT) * n.dot(l).max(0.0));
+                *p = grey(SPHERE_ALBEDO * lit);
+            } else if (Vec2::new(x as f32 + 0.5, y as f32 + 0.5) - centre)
+                .abs()
+                .max_element()
+                < radius * PAD
+            {
+                *p = grey(PAD_ALBEDO);
             }
         }
         out
@@ -328,6 +338,7 @@ impl Scaffold {
     }
 
     fn normals(&self, master: &RgbaImage, edits: &[RgbaImage]) -> Relief {
+        let master = &self.master(master, None);
         for edit in std::iter::once(master).chain(edits) {
             assert_eq!(
                 (edit.width(), edit.height()),
@@ -343,6 +354,7 @@ impl Scaffold {
             .collect();
         let solver = invert(gram(rows.iter().map(|r| (*r, 0.0))).0);
         let n = self.canvas as usize;
+        let alpha = self.alpha(master);
         let mut normals = vec![Vec3::Z; n * n];
         let mut mean = Vec3::ZERO;
         for (i, out) in normals.iter_mut().enumerate() {
@@ -361,7 +373,7 @@ impl Scaffold {
                 Vec2::ZERO
             };
             *out = tangent.extend((1.0 - tangent.length_squared()).max(0.0).sqrt());
-            if self.mask[i] == 1.0 {
+            if self.mask[i] == 1.0 && alpha[i] == 1.0 {
                 mean += *out;
             }
         }
@@ -370,12 +382,12 @@ impl Scaffold {
         let (origin, side) = self.crop();
         let normal = RgbaImage::from_fn(side, side, |x, y| {
             let i = (y + origin) as usize * n + (x + origin) as usize;
-            let v = if self.mask[i] > 0.0 {
+            let v = if alpha[i] > 0.0 {
                 flatten * normals[i]
             } else {
                 Vec3::Z
             };
-            encode(v.normalize_or(Vec3::Z))
+            encode(v.normalize_or(Vec3::Z), alpha[i])
         });
         Relief {
             normal,
@@ -423,10 +435,10 @@ fn ball(centre: Vec2, radius: f32, x: u32, y: u32) -> Option<Vec3> {
     (rr < 1.0).then(|| Vec3::new(d.x, d.y, (1.0 - rr).sqrt()))
 }
 
-fn encode(v: Vec3) -> Rgba<u8> {
+fn encode(v: Vec3, alpha: f32) -> Rgba<u8> {
     rgba(
         [(v.x + 1.0) / 2.0, (v.y + 1.0) / 2.0, (v.z + 1.0) / 2.0],
-        1.0,
+        alpha,
     )
 }
 
@@ -569,8 +581,16 @@ fn apart(a: [f32; 3], b: [f32; 3]) -> f32 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
-fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)
+fn spill(c: [f32; 3]) -> f32 {
+    c[1] - c[0].max(c[2])
+}
+
+fn opacity(c: [f32; 3]) -> f32 {
+    1.0 - ((spill(c) - SPILL[0]) / (SPILL[1] - SPILL[0])).clamp(0.0, 1.0)
+}
+
+fn unspill(c: [f32; 3]) -> [f32; 3] {
+    [c[0], c[1] - spill(c).max(0.0), c[2]]
 }
 
 fn open(path: impl AsRef<Path>) -> RgbaImage {
@@ -629,11 +649,13 @@ pub fn configure(args: &[String]) -> bool {
             let mut manifest = Manifest::read();
             manifest.machine_mut(name).kept = Some(index);
             manifest.write();
-            let _ = std::fs::remove_file(dir.join("normal.png"));
             let _ = std::fs::remove_dir_all(dir.join("relit"));
             std::fs::create_dir_all(dir.join("relit")).expect("the relit dir is creatable");
             save(&scaffold.cut(&candidate), &dir.join("albedo.png"));
-            save(&scaffold.master(&candidate), &dir.join("relit/master.png"));
+            save(
+                &scaffold.master(&candidate, Some(Vec3::Z)),
+                &dir.join("relit/master.png"),
+            );
         }
         (Some("--normals"), [name, pngs @ ..]) => {
             let thresholds = Manifest::read().thresholds;
@@ -689,13 +711,14 @@ fn plan() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::look::{AMBIENT, light};
+    use crate::look::light;
     use crate::sim::{Arm, Glyph, Hex, ORIGIN};
 
     const BUMP: f32 = 0.3;
     const RELIEF: f32 = 0.1;
     const TILT: f32 = 0.15;
     const ASPECT: f32 = 0.02;
+    const KEYED: f32 = 0.01;
 
     fn shade(n: Vec3) -> f32 {
         (AMBIENT + (1.0 - AMBIENT) * n.dot(light()).max(0.0))
@@ -769,6 +792,25 @@ mod tests {
             let score = scaffold.score(&candidate);
             assert!(score.passes(&manifest.thresholds), "{name}: {score:?}");
             let (_, side) = scaffold.crop();
+            let albedo = open(dir.join("albedo.png"));
+            let cut = scaffold.cut(&candidate);
+            assert_eq!(
+                (albedo.width(), albedo.height()),
+                (side, side),
+                "{name}/albedo.png"
+            );
+            for map in ["albedo", "normal"] {
+                let png = open(dir.join(format!("{map}.png")));
+                let mut drift = Mean::default();
+                for (shipped, keyed) in png.pixels().zip(cut.pixels()) {
+                    drift.add((f32::from(shipped[3]) - f32::from(keyed[3])).abs() / 255.0);
+                }
+                assert!(
+                    drift.value() <= KEYED,
+                    "{name}/{map}.png is not the kept candidate keyed: alpha drifts {:.3}",
+                    drift.value()
+                );
+            }
             for map in ["albedo", "normal"] {
                 let png = open(dir.join(format!("{map}.png")));
                 let placed = scaffold.quad.size();
@@ -851,7 +893,7 @@ mod tests {
     #[test]
     fn a_lambertian_sphere_returns_its_own_lights_and_a_bump_its_own_normals() {
         let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::Source));
-        let base = scaffold.render();
+        let base = RgbaImage::from_pixel(scaffold.canvas, scaffold.canvas, grey(SPHERE_ALBEDO));
         let bump = scaffold.pixel(px(scaffold.cells[0].at));
         let radius = BUMP * HEX * scale();
         let lights = [
@@ -875,7 +917,7 @@ mod tests {
                 e
             })
             .collect();
-        let relief = scaffold.normals(&scaffold.master(&base), &edits);
+        let relief = scaffold.normals(&scaffold.master(&base, None), &edits);
         for (got, want) in relief.lights.iter().zip(lights) {
             assert!(got.direction.dot(want) > 0.999, "{got:?} vs {want:?}");
             assert!((got.ambient - AMBIENT).abs() < 0.02, "{got:?}");

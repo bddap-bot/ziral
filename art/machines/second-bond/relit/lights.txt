@@ -1,5 +1,5 @@
-art/machines/second-bond/relit/right.png	light=(+0.70,+0.61,+0.36)	ambient=0.31
-art/machines/second-bond/relit/top.png	light=(+0.08,+0.99,+0.09)	ambient=0.74
-art/machines/second-bond/relit/left.png	light=(-0.88,+0.46,+0.11)	ambient=0.54
-art/machines/second-bond/relit/bottom.png	light=(-0.45,-0.59,-0.67)	ambient=0.51
-sphere error 18.7 degrees
+art/machines/second-bond/relit/right.png	light=(+0.85,+0.52,+0.03)	ambient=0.29
+art/machines/second-bond/relit/top.png	light=(+0.08,+0.06,+1.00)	ambient=0.95
+art/machines/second-bond/relit/left.png	light=(-0.70,+0.59,+0.41)	ambient=0.51
+art/machines/second-bond/relit/bottom.png	light=(+0.18,-0.78,+0.60)	ambient=0.68
+sphere error 21.8 degrees

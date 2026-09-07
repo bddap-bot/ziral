@@ -1,4 +1,4 @@
-art/machines/arm/candidates/arm-1.png	0.041	0.356	0.272	0.042	pass
-art/machines/arm/candidates/arm-2.png	0.080	0.238	0.272	-0.114	pass
-art/machines/arm/candidates/arm-3.png	0.034	0.307	0.283	-0.010	pass
-art/machines/arm/candidates/arm-4.png	0.045	0.455	0.254	0.156	pass
+art/machines/arm/candidates/arm-1.png	0.020	0.070	0.068	-0.017	fail
+art/machines/arm/candidates/arm-2.png	0.000	0.051	0.085	-0.034	fail
+art/machines/arm/candidates/arm-3.png	0.000	0.108	0.033	0.075	pass
+art/machines/arm/candidates/arm-4.png	0.004	0.037	0.076	-0.042	fail
