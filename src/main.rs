@@ -1377,14 +1377,7 @@ impl Painter<'_, '_, '_, '_, '_> {
         let centre = origin + Vec2::from_angle(angle).rotate(quad.centre);
         let kiln = self.kiln;
         let material = kiln.lit(look::machine(item).skin);
-        self.fill(
-            &kiln.bar,
-            material,
-            centre,
-            angle,
-            Vec2::splat(quad.side),
-            z,
-        );
+        self.fill(&kiln.bar, material, centre, angle, quad.size(), z);
     }
 
     fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {

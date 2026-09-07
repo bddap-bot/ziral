@@ -79,6 +79,12 @@ pub fn quad(item: Item) -> Quad {
     }
 }
 
+impl Quad {
+    pub fn size(self) -> Vec2 {
+        Vec2::splat(self.side)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Glaze {
     Clay,

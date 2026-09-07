@@ -695,6 +695,7 @@ mod tests {
     const BUMP: f32 = 0.3;
     const RELIEF: f32 = 0.1;
     const TILT: f32 = 0.15;
+    const ASPECT: f32 = 0.02;
 
     fn shade(n: Vec3) -> f32 {
         (AMBIENT + (1.0 - AMBIENT) * n.dot(light()).max(0.0))
@@ -770,6 +771,14 @@ mod tests {
             let (_, side) = scaffold.crop();
             for map in ["albedo", "normal"] {
                 let png = open(dir.join(format!("{map}.png")));
+                let placed = scaffold.quad.size();
+                let aspect = png.width() as f32 / png.height() as f32 / (placed.x / placed.y);
+                assert!(
+                    (aspect - 1.0).abs() <= ASPECT,
+                    "{name}/{map}.png is {}x{} on a {placed} quad",
+                    png.width(),
+                    png.height()
+                );
                 assert_eq!(
                     (png.width(), png.height()),
                     (side, side),

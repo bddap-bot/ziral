@@ -19,7 +19,7 @@ lock='Ethos: Fired Workshop treats the board as a tabletop instrument assembled 
 prompt="Generate exactly one square image with the image generation tool, then stop: do not judge, retry, edit, or describe it, and write no files. Prompt: $subject $lock No labels, watermark, menus, clutter, or named-game resemblance."
 
 one() {
-  local events thread srcs
+  local events thread srcs w h
   local args=(exec --skip-git-repo-check --json "$prompt")
   [ -z "$input" ] || args+=(--image "$input")
   events=$(codex "${args[@]}" </dev/null)
@@ -27,7 +27,9 @@ one() {
   [ -n "$thread" ] || { printf '%s\n' "$events" >&2; return 1; }
   srcs=("$HOME/.codex/generated_images/$thread"/*.png)
   [ "${#srcs[@]}" -eq 1 ] || { echo "thread $thread holds ${#srcs[@]} images, not one" >&2; return 1; }
-  magick "${srcs[0]}" -resize "${size}x${size}!" -strip png:- | pngquant --quality 70-95 --speed 1 - > "$target.part"
+  read -r w h < <(identify -format '%w %h\n' "${srcs[0]}")
+  [ -n "$h" ] && [ "$w" = "$h" ] || { echo "thread $thread painted ${w}x${h}, not a square" >&2; return 1; }
+  magick "${srcs[0]}" -resize "${size}x${size}" -strip png:- | pngquant --quality 70-95 --speed 1 - > "$target.part"
   mv "$target.part" "$target"
 }
 
