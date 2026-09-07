@@ -6,7 +6,7 @@ use bevy::math::{Vec2, Vec3};
 use bevy::prelude::Color;
 
 pub const HEX: f32 = 20.0;
-pub const MARGIN: f32 = 1.0;
+const MARGIN: f32 = 1.0;
 pub fn light() -> Vec3 {
     Vec3::new(-1.0, 1.0, 1.4).normalize()
 }
@@ -69,8 +69,8 @@ pub struct Quad {
     pub side: f32,
 }
 
-pub fn quad(cells: &[Cell]) -> Quad {
-    let at: Vec<Vec2> = cells.iter().map(|c| px(c.at)).collect();
+pub fn quad(item: Item) -> Quad {
+    let at: Vec<Vec2> = footprint(item).iter().map(|c| px(c.at)).collect();
     let centre = at.iter().sum::<Vec2>() / at.len() as f32;
     let radius = at.iter().map(|p| p.distance(centre)).fold(0.0, f32::max);
     Quad {
@@ -127,7 +127,7 @@ pub struct Token {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Finish {
-    Glaze,
+    Plain,
     Sprite,
     Relief,
 }
@@ -158,7 +158,7 @@ macro_rules! skin {
         Skin {
             name: $name,
             png: include_bytes!(concat!("../art/", $name, ".png")),
-            finish: Finish::Glaze,
+            finish: Finish::Plain,
         }
     };
 }
@@ -712,7 +712,7 @@ mod tests {
         Skin {
             name: "symbols/none",
             png: b"",
-            finish: Finish::Glaze,
+            finish: Finish::Plain,
         }
         .decode();
     }

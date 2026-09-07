@@ -1,15 +1,16 @@
+candidates = 4
+
 [style]
 shared = "Use case: game-texture. Restyle the supplied scaffold while preserving its exact framing, its flat straight-down view and its plain clay background. The scaffold shows the footprint of one machine as slightly darker hexagonal wells sunk into the board, each seat marked by role: a blue-green ring is an empty atom seat, a terracotta ring with a centre dot is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand. Turn those marks into the machine described next, built into those wells only, every seat still centred on its mark, empty and unobstructed. Everything outside the wells stays the plain flat clay of the scaffold: no table, no room, no board game, no beads, no atoms, no fist, no fingers, no text, numerals, logos or exposed clockwork. Flat base-colour capture with baked ambient occlusion only: photoreal glazed ceramic, darkened brass and worn rubber, no directional light, highlight, specular or cast shadow, so the sprite is correct at every 60-degree turn."
-relights = [
+edges = [
     "right",
     "top",
     "left",
     "bottom",
 ]
-relight = "Use case: precise-object-edit. Edit target: the attached image. Keep the same image with identical geometry, materials, colours, texture detail and framing, and the matte grey sphere in the lower-right corner kept exactly where it is; only the lighting changes: it is now lit by one warm raking light coming from the {from}, the light source sitting low at the {from} edge of the picture and shining across the surface, so the {from} half of the sphere is bright and its opposite half dark, and every ridge, seam and rim is lit on its {from} side."
+relight = "Use case: precise-object-edit. Edit target: the attached image. Keep the same image with identical geometry, materials, colours, texture detail and framing, and the matte grey sphere in the lower-right corner kept exactly where it is; only the lighting changes: it is now lit by one warm raking light coming from the {edge}, the light source sitting low at the {edge} edge of the picture and shining across the surface, so the {edge} half of the sphere is bright and its opposite half dark, and every ridge, seam and rim is lit on its {edge} side."
 
 [thresholds]
-candidates = 4
 outside = 0.12
 seat = 0.1
 palette = 0.35

@@ -5,7 +5,11 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 shot=$(mktemp -d)
 trap 'rm -rf "$shot" "$here"/proof/*.part' EXIT
 cd "$here/../.."
-cargo run -- --shot "$shot/rotation.png" rotation 8
+log=$(cargo run -- --shot "$shot/rotation.png" rotation 8 2>&1) || { printf '%s\n' "$log" >&2; exit 1; }
+if printf '%s\n' "$log" | grep -q ERROR; then
+  printf '%s\n' "$log" >&2
+  exit 1
+fi
 mkdir -p "$here/proof"
 pngquant --quality 70-95 "$shot/rotation.png" --output "$here/proof/rotation.png.part"
 magick "$shot/rotation.png" -crop 260x240+370+120 +repage -filter point -resize 200% "$shot/turn0.png"

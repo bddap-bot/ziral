@@ -678,11 +678,7 @@ fn main() {
     if machines::configure(&std::env::args().collect::<Vec<String>>()) {
         return;
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    let shot = shot::configure(&mut app);
-    #[cfg(target_arch = "wasm32")]
-    let shot = false;
-    if !shot {
+    if !shot::configure(&mut app) {
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "ziral".into(),
@@ -1376,11 +1372,11 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, glaze.color());
     }
 
-    fn sprite(&mut self, item: Item, skin: Skin, origin: Vec2, angle: f32, z: f32) {
-        let quad = look::quad(&look::footprint(item));
+    fn sprite(&mut self, item: Item, origin: Vec2, angle: f32, z: f32) {
+        let quad = look::quad(item);
         let centre = origin + Vec2::from_angle(angle).rotate(quad.centre);
         let kiln = self.kiln;
-        let material = kiln.lit(skin);
+        let material = kiln.lit(look::machine(item).skin);
         self.fill(
             &kiln.bar,
             material,
@@ -1392,7 +1388,7 @@ impl Painter<'_, '_, '_, '_, '_> {
     }
 
     fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
-        self.sprite(Item::Arm, look.skin, pivot, (hand - pivot).to_angle(), 0.28);
+        self.sprite(Item::Arm, pivot, (hand - pivot).to_angle(), 0.28);
         match look.marking {
             MachineMark::Hand(glaze, _) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
@@ -1407,7 +1403,7 @@ impl Painter<'_, '_, '_, '_, '_> {
                 self.arm(px(at), hand, RING_OPEN, look);
             }
             (Item::Glyph(_), MachineMark::Sprite(_)) => {
-                self.sprite(item, look.skin, px(at), look::turn(dir), 0.1);
+                self.sprite(item, px(at), look::turn(dir), 0.1);
             }
             _ => unworn(look),
         }
@@ -1686,6 +1682,13 @@ fn draw(
     if let Some(Press::Marquee { from }) = world.down {
         let centre = Isometry2d::from_translation((from + pointer) / 2.0);
         p.gizmos.rect_2d(centre, (pointer - from).abs(), IVORY);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+mod shot {
+    pub fn configure(_: &mut super::App) -> bool {
+        false
     }
 }
 

@@ -12,6 +12,7 @@ while getopts 's:i:' opt; do
   esac
 done
 shift $((OPTIND - 1))
+[ $# -eq 2 ] || { echo "usage: paint.sh [-s SIZE] [-i IMAGE] OUT.png PROMPT" >&2; exit 2; }
 target=$1
 subject=$2
 lock='Ethos: Fired Workshop treats the board as a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight, wear, and warm raking light make each action tactile while colored glazes keep states unmistakable. Palette and roles: board #D8C3A5 clay; arm #6B4F3A dark brass; closed hand #C8553D terracotta; atom kinds #4F8A8B blue-green and #E0A458 amber; glyph #7D5BA6 plum; product #F4EDE4 ivory.'

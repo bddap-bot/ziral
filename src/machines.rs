@@ -14,39 +14,39 @@ const SEAT: f32 = 0.4;
 const SEAT_RING: f32 = 0.32;
 const SEAT_DOT: f32 = 0.12;
 const SEAT_AROUND: [f32; 2] = [0.45, 0.65];
-const SPHERE_R: f32 = 48.0;
+const SPHERE: f32 = 0.75;
 const SPHERE_ALBEDO: f32 = 0.6;
 const SPHERE_LIT: f32 = 0.15;
 const SPHERE_CAP: f32 = 0.5;
 const SAMPLES: usize = 4;
 
 #[derive(Serialize, Deserialize)]
-pub struct Manifest {
-    pub style: Style,
-    pub thresholds: Thresholds,
-    pub machine: BTreeMap<String, Machine>,
+struct Manifest {
+    candidates: u32,
+    style: Style,
+    thresholds: Thresholds,
+    machine: BTreeMap<String, Machine>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Style {
-    pub shared: String,
-    pub relights: Vec<String>,
-    pub relight: String,
+struct Style {
+    shared: String,
+    edges: Vec<String>,
+    relight: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
-pub struct Thresholds {
-    pub candidates: u32,
-    pub outside: f32,
-    pub seat: f32,
-    pub palette: f32,
-    pub sphere: f32,
+struct Thresholds {
+    outside: f32,
+    seat: f32,
+    palette: f32,
+    sphere: f32,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Machine {
-    pub prompt: String,
-    pub kept: Option<u32>,
+struct Machine {
+    prompt: String,
+    kept: Option<u32>,
 }
 
 fn manifest_path() -> PathBuf {
@@ -54,14 +54,14 @@ fn manifest_path() -> PathBuf {
 }
 
 impl Manifest {
-    pub fn read() -> Manifest {
+    fn read() -> Manifest {
         let path = manifest_path();
         let text =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
     }
 
-    pub fn write(&self) {
+    fn write(&self) {
         let text = toml::to_string_pretty(self).expect("a manifest serialises");
         let path = manifest_path();
         let part = path.with_extension("toml.part");
@@ -69,14 +69,20 @@ impl Manifest {
         std::fs::rename(&part, &path).expect("the manifest is replaceable");
     }
 
-    pub fn machine(&self, name: &str) -> &Machine {
+    fn machine(&self, name: &str) -> &Machine {
         self.machine
             .get(name)
             .unwrap_or_else(|| panic!("manifest has no [machine.{name}]"))
     }
+
+    fn machine_mut(&mut self, name: &str) -> &mut Machine {
+        self.machine
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("manifest has no [machine.{name}]"))
+    }
 }
 
-pub fn name(item: Item) -> &'static str {
+fn name(item: Item) -> &'static str {
     look::machine(item)
         .skin
         .name
@@ -85,7 +91,7 @@ pub fn name(item: Item) -> &'static str {
         .expect("a machine skin lives in art/machines/<name>/")
 }
 
-pub fn item(name: &str) -> Item {
+fn item(name: &str) -> Item {
     PALETTE
         .into_iter()
         .find(|item| self::name(*item) == name)
@@ -93,25 +99,34 @@ pub fn item(name: &str) -> Item {
 }
 
 #[derive(Debug)]
-pub struct Scaffold {
-    pub cells: Vec<Cell>,
-    pub quad: Quad,
-    pub canvas: u32,
+struct Scaffold {
+    cells: Vec<Cell>,
+    quad: Quad,
+    canvas: u32,
+    mask: Vec<f32>,
 }
 
 const fn scale() -> f32 {
     PX_PER_HEX / HEX
 }
 
+const fn band() -> f32 {
+    BAND * HEX * scale()
+}
+
 impl Scaffold {
-    pub fn of(item: Item) -> Scaffold {
+    fn of(item: Item) -> Scaffold {
         let cells = look::footprint(item);
-        let quad = look::quad(&cells);
-        Scaffold {
+        let quad = look::quad(item);
+        let canvas = (quad.side * scale() + 2.0 * band()).round() as u32;
+        let mut scaffold = Scaffold {
             cells,
             quad,
-            canvas: ((quad.side + 2.0 * BAND * HEX) * scale()).round() as u32,
-        }
+            canvas,
+            mask: Vec::new(),
+        };
+        scaffold.mask = scaffold.mask();
+        scaffold
     }
 
     #[cfg(test)]
@@ -126,16 +141,16 @@ impl Scaffold {
         self.quad.centre + Vec2::new(pixel.x - half, half - pixel.y) / scale()
     }
 
-    pub fn crop(&self) -> (u32, u32) {
+    fn crop(&self) -> (u32, u32) {
         let side = (self.quad.side * scale()).round() as u32;
-        let band = self.canvas - side;
-        assert_eq!(band, 2 * (BAND * HEX * scale()) as u32);
-        (band / 2, side)
+        let origin = (self.canvas - side) / 2;
+        assert_eq!(origin, band() as u32);
+        (origin, side)
     }
 
-    fn sphere(&self) -> Vec2 {
-        let inset = BAND * HEX * scale() / 2.0;
-        Vec2::splat(self.canvas as f32 - inset)
+    fn sphere(&self) -> (Vec2, f32) {
+        let inset = band() / 2.0;
+        (Vec2::splat(self.canvas as f32 - inset), inset * SPHERE)
     }
 
     fn in_cell(&self, world: Vec2, radius: f32) -> Option<&Cell> {
@@ -198,31 +213,29 @@ impl Scaffold {
         }
     }
 
-    pub fn render(&self) -> RgbaImage {
+    fn render(&self) -> RgbaImage {
         RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
             self.paint(self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)))
         })
     }
 
-    pub fn cut(&self, candidate: &RgbaImage) -> RgbaImage {
-        let mask = self.mask();
+    fn cut(&self, candidate: &RgbaImage) -> RgbaImage {
         let (origin, side) = self.crop();
         let n = self.canvas as usize;
         RgbaImage::from_fn(side, side, |x, y| {
             let (cx, cy) = (x + origin, y + origin);
             let Rgba([r, g, b, _]) = *candidate.get_pixel(cx, cy);
-            let alpha = mask[cy as usize * n + cx as usize];
+            let alpha = self.mask[cy as usize * n + cx as usize];
             Rgba([r, g, b, (alpha * 255.0).round() as u8])
         })
     }
 
-    pub fn score(&self, candidate: &RgbaImage) -> Score {
+    fn score(&self, candidate: &RgbaImage) -> Score {
         assert_eq!(
             (candidate.width(), candidate.height()),
             (self.canvas, self.canvas),
             "a candidate is painted over the whole scaffold"
         );
-        let mask = self.mask();
         let (origin, side) = self.crop();
         let n = self.canvas as usize;
         let clay = Glaze::Clay.rgb();
@@ -231,7 +244,7 @@ impl Scaffold {
         for y in origin..origin + side {
             for x in origin..origin + side {
                 let c = rgb(candidate.get_pixel(x, y));
-                let m = mask[y as usize * n + x as usize];
+                let m = self.mask[y as usize * n + x as usize];
                 if m == 0.0 {
                     outside.add(apart(c, clay));
                 } else if m == 1.0 {
@@ -249,10 +262,10 @@ impl Scaffold {
                 for (x, y, p) in candidate.enumerate_pixels() {
                     let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
                     let r = (world - px(cell.at)).length() / HEX;
-                    if self.mark(cell, world).is_some() {
-                        mark.add_rgb(rgb(p));
-                    } else if r <= SEAT_DOT {
+                    if r <= SEAT_DOT {
                         centre.add_rgb(rgb(p));
+                    } else if self.mark(cell, world).is_some() {
+                        mark.add_rgb(rgb(p));
                     } else if (SEAT_AROUND[0]..=SEAT_AROUND[1]).contains(&r) {
                         around.add_rgb(rgb(p));
                     }
@@ -273,18 +286,15 @@ impl Scaffold {
     }
 
     fn sphere_normal(&self, x: u32, y: u32) -> Option<Vec3> {
-        let c = self.sphere();
-        let d = (Vec2::new(x as f32 + 0.5, y as f32 + 0.5) - c) / SPHERE_R;
-        let d = Vec2::new(d.x, -d.y);
-        let rr = d.length_squared();
-        (rr < 1.0).then(|| Vec3::new(d.x, d.y, (1.0 - rr).sqrt()))
+        let (centre, radius) = self.sphere();
+        ball(centre, radius, x, y)
     }
 
-    pub fn master(&self, candidate: &RgbaImage) -> RgbaImage {
+    fn master(&self, candidate: &RgbaImage) -> RgbaImage {
         let mut out = candidate.clone();
         for (x, y, p) in out.enumerate_pixels_mut() {
             if self.sphere_normal(x, y).is_some() {
-                *p = rgba([SPHERE_ALBEDO; 3], 1.0);
+                *p = grey(SPHERE_ALBEDO);
             }
         }
         out
@@ -293,11 +303,7 @@ impl Scaffold {
     fn light(&self, edit: &RgbaImage) -> Light {
         let pixels: Vec<(Vec3, f32)> = edit
             .enumerate_pixels()
-            .filter_map(|(x, y, p)| {
-                let n = self.sphere_normal(x, y)?;
-                let c = rgb(p);
-                Some((n, (c[0] + c[1] + c[2]) / 3.0))
-            })
+            .filter_map(|(x, y, p)| Some((self.sphere_normal(x, y)?, luminance(p))))
             .collect();
         let mut lit: Vec<bool> = pixels.iter().map(|(n, _)| n.z > SPHERE_LIT).collect();
         let mut coef = [0f32; 4];
@@ -321,7 +327,7 @@ impl Scaffold {
         }
     }
 
-    pub fn normals(&self, master: &RgbaImage, edits: &[RgbaImage]) -> Relief {
+    fn normals(&self, master: &RgbaImage, edits: &[RgbaImage]) -> Relief {
         for edit in std::iter::once(master).chain(edits) {
             assert_eq!(
                 (edit.width(), edit.height()),
@@ -331,33 +337,31 @@ impl Scaffold {
         }
         assert!(edits.len() >= 2, "two relit edits span the tangent plane");
         let lights: Vec<Light> = edits.iter().map(|e| self.light(e)).collect();
-        let edits: Vec<&RgbaImage> = std::iter::once(master).chain(edits).collect();
+        let images: Vec<&RgbaImage> = std::iter::once(master).chain(edits).collect();
         let rows: Vec<[f32; 3]> = std::iter::once([0.0, 0.0, 1.0])
             .chain(lights.iter().map(Light::row))
             .collect();
-        let solve = invert(gram(rows.iter().map(|r| (*r, 0.0))).0);
-        let mask = self.mask();
+        let solver = invert(gram(rows.iter().map(|r| (*r, 0.0))).0);
         let n = self.canvas as usize;
         let mut normals = vec![Vec3::Z; n * n];
         let mut mean = Vec3::ZERO;
         for (i, out) in normals.iter_mut().enumerate() {
             let (x, y) = ((i % n) as u32, (i / n) as u32);
             let mut rhs = [0f64; 3];
-            for (e, row) in edits.iter().zip(&rows) {
-                let c = rgb(e.get_pixel(x, y));
-                let lum = f64::from((c[0] + c[1] + c[2]) / 3.0);
+            for (image, row) in images.iter().zip(&rows) {
+                let lum = f64::from(luminance(image.get_pixel(x, y)));
                 for (r, a) in rhs.iter_mut().zip(row) {
                     *r += f64::from(*a) * lum;
                 }
             }
-            let [gx, gy, rho] = apply(&solve, &rhs);
+            let [gx, gy, rho] = apply(&solver, &rhs);
             let tangent = if rho > 0.0 {
                 (Vec2::new(gx as f32, gy as f32) / rho as f32).clamp_length_max(1.0)
             } else {
                 Vec2::ZERO
             };
             *out = tangent.extend((1.0 - tangent.length_squared()).max(0.0).sqrt());
-            if mask[i] == 1.0 {
+            if self.mask[i] == 1.0 {
                 mean += *out;
             }
         }
@@ -366,16 +370,12 @@ impl Scaffold {
         let (origin, side) = self.crop();
         let normal = RgbaImage::from_fn(side, side, |x, y| {
             let i = (y + origin) as usize * n + (x + origin) as usize;
-            let v = if mask[i] > 0.0 {
+            let v = if self.mask[i] > 0.0 {
                 flatten * normals[i]
             } else {
                 Vec3::Z
             };
-            let v = v.normalize_or(Vec3::Z);
-            rgba(
-                [(v.x + 1.0) / 2.0, (v.y + 1.0) / 2.0, (v.z + 1.0) / 2.0],
-                1.0,
-            )
+            encode(v.normalize_or(Vec3::Z))
         });
         Relief {
             normal,
@@ -397,16 +397,16 @@ impl Scaffold {
     }
 }
 
-pub struct Relief {
-    pub normal: RgbaImage,
-    pub lights: Vec<Light>,
-    pub sphere: f32,
+struct Relief {
+    normal: RgbaImage,
+    lights: Vec<Light>,
+    sphere: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Light {
-    pub direction: Vec3,
-    pub ambient: f32,
+struct Light {
+    direction: Vec3,
+    ambient: f32,
 }
 
 impl Light {
@@ -414,6 +414,26 @@ impl Light {
         let d = self.direction * (1.0 - self.ambient);
         [d.x, d.y, self.ambient]
     }
+}
+
+fn ball(centre: Vec2, radius: f32, x: u32, y: u32) -> Option<Vec3> {
+    let d = (Vec2::new(x as f32 + 0.5, y as f32 + 0.5) - centre) / radius;
+    let d = Vec2::new(d.x, -d.y);
+    let rr = d.length_squared();
+    (rr < 1.0).then(|| Vec3::new(d.x, d.y, (1.0 - rr).sqrt()))
+}
+
+fn encode(v: Vec3) -> Rgba<u8> {
+    rgba(
+        [(v.x + 1.0) / 2.0, (v.y + 1.0) / 2.0, (v.z + 1.0) / 2.0],
+        1.0,
+    )
+}
+
+#[cfg(test)]
+fn decode(p: &Rgba<u8>) -> Vec3 {
+    let c = rgb(p);
+    Vec3::new(c[0] * 2.0 - 1.0, c[1] * 2.0 - 1.0, c[2] * 2.0 - 1.0)
 }
 
 fn gram<const N: usize>(rows: impl Iterator<Item = ([f32; N], f32)>) -> ([[f64; N]; N], [f64; N]) {
@@ -478,18 +498,18 @@ fn rotation_to_z(from: Vec3) -> bevy::math::Mat3 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Score {
-    pub outside: f32,
-    pub seat: f32,
-    pub palette: f32,
+struct Score {
+    outside: f32,
+    seat: f32,
+    palette: f32,
 }
 
 impl Score {
-    pub fn passes(&self, t: &Thresholds) -> bool {
+    fn passes(&self, t: &Thresholds) -> bool {
         self.outside <= t.outside && self.seat >= t.seat && self.palette <= t.palette
     }
 
-    pub fn total(&self) -> f32 {
+    fn total(&self) -> f32 {
         self.seat - self.outside - self.palette
     }
 }
@@ -513,7 +533,8 @@ impl Mean {
     }
 
     fn rgb(&self) -> [f32; 3] {
-        self.sum.map(|s| s / self.n.max(1.0))
+        assert!(self.n > 0.0, "a mean of nothing");
+        self.sum.map(|s| s / self.n)
     }
 
     fn value(&self) -> f32 {
@@ -530,6 +551,15 @@ fn rgb(p: &Rgba<u8>) -> [f32; 3] {
     [p[0], p[1], p[2]].map(|c| f32::from(c) / 255.0)
 }
 
+fn luminance(p: &Rgba<u8>) -> f32 {
+    let c = rgb(p);
+    (c[0] + c[1] + c[2]) / 3.0
+}
+
+fn grey(v: f32) -> Rgba<u8> {
+    rgba([v; 3], 1.0)
+}
+
 fn rgba(c: [f32; 3], alpha: f32) -> Rgba<u8> {
     let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     Rgba([q(c[0]), q(c[1]), q(c[2]), q(alpha)])
@@ -543,9 +573,10 @@ fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)
 }
 
-fn open(path: &str) -> RgbaImage {
+fn open(path: impl AsRef<Path>) -> RgbaImage {
+    let path = path.as_ref();
     image::open(path)
-        .unwrap_or_else(|e| panic!("{path}: {e}"))
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         .into_rgba8()
 }
 
@@ -572,8 +603,7 @@ pub fn configure(args: &[String]) -> bool {
             println!("{}", scaffold.canvas);
         }
         (Some("--score"), [name, pngs @ ..]) => {
-            let item = item(name);
-            let scaffold = Scaffold::of(item);
+            let scaffold = Scaffold::of(item(name));
             let thresholds = Manifest::read().thresholds;
             for png in pngs {
                 let score = scaffold.score(&open(png));
@@ -593,37 +623,24 @@ pub fn configure(args: &[String]) -> bool {
         }
         (Some("--keep"), [name, index]) => {
             let index: u32 = index.parse().expect(USAGE);
-            let item = item(name);
-            let scaffold = Scaffold::of(item);
+            let scaffold = Scaffold::of(item(name));
             let dir = dir(name);
-            let candidate = open(
-                dir.join(format!("candidates/{name}-{index}.png"))
-                    .to_str()
-                    .expect("utf-8 paths"),
-            );
+            let candidate = open(dir.join(format!("candidates/{name}-{index}.png")));
             let mut manifest = Manifest::read();
-            manifest
-                .machine
-                .get_mut(*name)
-                .unwrap_or_else(|| panic!("manifest has no [machine.{name}]"))
-                .kept = Some(index);
+            manifest.machine_mut(name).kept = Some(index);
             manifest.write();
-            save(&scaffold.cut(&candidate), &dir.join("albedo.png"));
+            let _ = std::fs::remove_file(dir.join("normal.png"));
+            let _ = std::fs::remove_dir_all(dir.join("relit"));
             std::fs::create_dir_all(dir.join("relit")).expect("the relit dir is creatable");
+            save(&scaffold.cut(&candidate), &dir.join("albedo.png"));
             save(&scaffold.master(&candidate), &dir.join("relit/master.png"));
         }
         (Some("--normals"), [name, pngs @ ..]) => {
-            let item = item(name);
-            let scaffold = Scaffold::of(item);
-            let master = open(
-                dir(name)
-                    .join("relit/master.png")
-                    .to_str()
-                    .expect("utf-8 paths"),
-            );
-            let edits: Vec<RgbaImage> = pngs.iter().map(|p| open(p)).collect();
-            let relief = scaffold.normals(&master, &edits);
             let thresholds = Manifest::read().thresholds;
+            let scaffold = Scaffold::of(item(name));
+            let master = open(dir(name).join("relit/master.png"));
+            let edits: Vec<RgbaImage> = pngs.iter().map(open).collect();
+            let relief = scaffold.normals(&master, &edits);
             for (png, light) in pngs.iter().zip(&relief.lights) {
                 let d = light.direction;
                 println!(
@@ -655,16 +672,16 @@ fn plan() {
         let machine = manifest.machine(name);
         println!(
             "machine\t{name}\t{}\t{}\t{} {}",
-            manifest.thresholds.candidates,
+            manifest.candidates,
             machine.kept.map_or("-".to_string(), |k| k.to_string()),
             manifest.style.shared,
             machine.prompt
         );
     }
-    for from in &manifest.style.relights {
+    for edge in &manifest.style.edges {
         println!(
-            "relight\t{from}\t{}",
-            manifest.style.relight.replace("{from}", from)
+            "relight\t{edge}\t{}",
+            manifest.style.relight.replace("{edge}", edge)
         );
     }
 }
@@ -675,6 +692,10 @@ mod tests {
     use crate::look::{AMBIENT, light};
     use crate::sim::{Arm, Glyph, Hex, ORIGIN};
 
+    const BUMP: f32 = 0.3;
+    const RELIEF: f32 = 0.1;
+    const TILT: f32 = 0.15;
+
     fn shade(n: Vec3) -> f32 {
         (AMBIENT + (1.0 - AMBIENT) * n.dot(light()).max(0.0))
             / (AMBIENT + (1.0 - AMBIENT) * light().z)
@@ -684,7 +705,6 @@ mod tests {
     fn scaffold_cells_match_the_footprint() {
         for item in PALETTE {
             let scaffold = Scaffold::of(item);
-            let mask = scaffold.mask();
             let n = scaffold.canvas as usize;
             let mut covered = Vec::new();
             for q in -4..=4 {
@@ -692,7 +712,7 @@ mod tests {
                     let h = Hex::new(q, r);
                     let p = scaffold.pixel(px(h));
                     let inside = p.x >= 0.0 && p.y >= 0.0 && p.x < n as f32 && p.y < n as f32;
-                    if inside && mask[p.y as usize * n + p.x as usize] == 1.0 {
+                    if inside && scaffold.mask[p.y as usize * n + p.x as usize] == 1.0 {
                         covered.push(h);
                     }
                 }
@@ -715,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn every_machine_has_a_manifest_entry_a_scaffold_and_a_kept_candidate_that_passes() {
+    fn every_machine_has_a_manifest_entry_a_scaffold_a_kept_candidate_that_passes_and_relief() {
         let manifest = Manifest::read();
         let names: Vec<&str> = PALETTE.into_iter().map(name).collect();
         assert_eq!(
@@ -739,27 +759,32 @@ mod tests {
             let dir = dir(name);
             let scaffold = Scaffold::of(item);
             let want = scaffold.render();
-            let shipped = open(dir.join("scaffold.png").to_str().unwrap());
+            let shipped = open(dir.join("scaffold.png"));
             assert!(
                 want.as_raw() == shipped.as_raw(),
                 "{name}/scaffold.png is stale: regenerate it"
             );
-            let candidate = open(
-                dir.join(format!("candidates/{name}-{kept}.png"))
-                    .to_str()
-                    .unwrap(),
-            );
+            let candidate = open(dir.join(format!("candidates/{name}-{kept}.png")));
             let score = scaffold.score(&candidate);
             assert!(score.passes(&manifest.thresholds), "{name}: {score:?}");
             let (_, side) = scaffold.crop();
             for map in ["albedo", "normal"] {
-                let png = open(dir.join(format!("{map}.png")).to_str().unwrap());
+                let png = open(dir.join(format!("{map}.png")));
                 assert_eq!(
                     (png.width(), png.height()),
                     (side, side),
                     "{name}/{map}.png"
                 );
             }
+            let normal = open(dir.join("normal.png"));
+            let tilted = normal
+                .pixels()
+                .filter(|p| decode(p).truncate().length() > RELIEF)
+                .count();
+            assert!(
+                tilted as f32 > normal.pixels().len() as f32 * 0.01,
+                "{name}/normal.png is flat"
+            );
         }
     }
 
@@ -815,9 +840,11 @@ mod tests {
     }
 
     #[test]
-    fn a_lambertian_sphere_returns_its_own_lights_and_normals() {
+    fn a_lambertian_sphere_returns_its_own_lights_and_a_bump_its_own_normals() {
         let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::Source));
         let base = scaffold.render();
+        let bump = scaffold.pixel(px(scaffold.cells[0].at));
+        let radius = BUMP * HEX * scale();
         let lights = [
             Vec3::new(1.0, 0.2, 0.2),
             Vec3::new(0.1, 1.0, 0.2),
@@ -830,9 +857,11 @@ mod tests {
             .map(|l| {
                 let mut e = base.clone();
                 for (x, y, p) in e.enumerate_pixels_mut() {
-                    let n = scaffold.sphere_normal(x, y).unwrap_or(Vec3::Z);
-                    let lum = SPHERE_ALBEDO * (AMBIENT + (1.0 - AMBIENT) * n.dot(*l).max(0.0));
-                    *p = rgba([lum; 3], 1.0);
+                    let n = scaffold
+                        .sphere_normal(x, y)
+                        .or_else(|| ball(bump, radius, x, y))
+                        .unwrap_or(Vec3::Z);
+                    *p = grey(SPHERE_ALBEDO * (AMBIENT + (1.0 - AMBIENT) * n.dot(*l).max(0.0)));
                 }
                 e
             })
@@ -844,5 +873,14 @@ mod tests {
         }
         let thresholds = Manifest::read().thresholds;
         assert!(relief.sphere <= thresholds.sphere, "{}", relief.sphere);
+        let (origin, _) = scaffold.crop();
+        let at = |dx: f32, dy: f32| {
+            let p = bump + Vec2::new(dx, dy) * radius / 2.0 - Vec2::splat(origin as f32);
+            decode(relief.normal.get_pixel(p.x as u32, p.y as u32))
+        };
+        assert!(at(1.0, 0.0).x > TILT, "{:?}", at(1.0, 0.0));
+        assert!(at(-1.0, 0.0).x < -TILT, "{:?}", at(-1.0, 0.0));
+        assert!(at(0.0, -1.0).y > TILT, "{:?}", at(0.0, -1.0));
+        assert!(at(0.0, 1.0).y < -TILT, "{:?}", at(0.0, 1.0));
     }
 }

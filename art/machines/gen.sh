@@ -38,7 +38,8 @@ machine() {
     keep=$(sort -t$'\t' -k6,6r -k5,5gr "$dir/scores.tsv" | awk -F'\t' 'NR == 1 && $6 == "pass" { print $1 }' | sed 's/.*-\([0-9]*\)\.png$/\1/')
     [ -n "$keep" ] || { echo "$name: no candidate passes; see $dir/scores.tsv" >&2; return 1; }
   fi
-  flock "$here/manifest.toml" "$ziral" --keep "$name" "$keep"
+  flock "$here" "$ziral" --keep "$name" "$keep"
+  pngquant --quality 70-95 --speed 1 --force --output "$dir/albedo.png" "$dir/albedo.png"
   for _ in 1 2 3; do
     edits=()
     for from in $(printf '%s\n' "$plan" | awk -F'\t' '$1 == "relight" { print $2 }'); do
@@ -70,16 +71,11 @@ else
 fi
 
 plan=$("$ziral" --plan)
-args=()
 while IFS=$'\t' read -r png outside seat palette _ verdict; do
   name=$(basename "$(dirname "$(dirname "$png")")")
   kept=$(row machine "$name" | cut -f4)
   label="$(basename "$png" .png)  out $outside  seat $seat  pal $palette  $verdict"
   [ "$(basename "$png" .png)" != "$name-$kept" ] || label="KEPT $label"
-  args+=(-label "$label" "$png")
-done < <(cat /dev/null "$here"/*/scores.tsv)
-part=$(mktemp "$here/sheet.XXXXXX")
-trap 'rm -f "$part"' EXIT
-magick montage "${args[@]}" -tile 4x -geometry 256x256+6+6 -background '#6B4F3A' -fill '#F4EDE4' -font "${FONT:-DejaVu-Sans}" -pointsize 14 png:- | pngquant --quality 70-95 - > "$part"
-mv "$part" "$here/sheet.png"
+  printf '%s\t%s\n' "$label" "$png"
+done < <(cat /dev/null "$here"/*/scores.tsv) | art/sheet.sh 4 "$here/sheet.png" 256
 exit "$status"
