@@ -1,8 +1,78 @@
 use crate::Item;
-use crate::sim::{AtomKind, BondKind, GlyphKind, Hex};
+use crate::sim::{Arm, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
+use bevy::math::Vec2;
 use bevy::prelude::Color;
+
+pub const HEX: f32 = 20.0;
+pub const MARGIN: f32 = 1.0;
+
+pub fn px(h: Hex) -> Vec2 {
+    let q = h.q as f32;
+    let r = h.r as f32;
+    Vec2::new(HEX * 3f32.sqrt() * (q + r / 2.0), HEX * 1.5 * r)
+}
+
+pub fn turn(dir: usize) -> f32 {
+    px(DIRS[dir % 6]).to_angle()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Seat(Slot),
+    Pivot,
+    Hand,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cell {
+    pub at: Hex,
+    pub role: Role,
+}
+
+pub fn footprint(item: Item) -> Vec<Cell> {
+    match item {
+        Item::Arm => {
+            let [pivot, hand] = Arm::new(ORIGIN, 0, Vec::new()).cells();
+            vec![
+                Cell {
+                    at: pivot,
+                    role: Role::Pivot,
+                },
+                Cell {
+                    at: hand,
+                    role: Role::Hand,
+                },
+            ]
+        }
+        Item::Glyph(kind) => kind
+            .rule()
+            .slots
+            .iter()
+            .map(|slot| Cell {
+                at: slot.at,
+                role: Role::Seat(*slot),
+            })
+            .collect(),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quad {
+    pub centre: Vec2,
+    pub side: f32,
+}
+
+pub fn quad(cells: &[Cell]) -> Quad {
+    let at: Vec<Vec2> = cells.iter().map(|c| px(c.at)).collect();
+    let centre = at.iter().sum::<Vec2>() / at.len() as f32;
+    let radius = at.iter().map(|p| p.distance(centre)).fold(0.0, f32::max);
+    Quad {
+        centre,
+        side: 2.0 * (radius + MARGIN * HEX),
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Glaze {
@@ -37,6 +107,11 @@ impl Glaze {
             Glaze::Ivory => Color::srgb_u8(0xF4, 0xED, 0xE4),
         }
     }
+
+    pub fn rgb(self) -> [f32; 3] {
+        let c = self.color().to_srgba();
+        [c.red, c.green, c.blue]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -45,11 +120,17 @@ pub struct Token {
     pub field: Glaze,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Finish {
+    Glaze,
+    Sprite,
+}
+
 #[derive(Clone, Copy)]
 pub struct Skin {
     pub name: &'static str,
     pub(crate) png: &'static [u8],
-    pub alpha: bool,
+    pub finish: Finish,
 }
 
 impl PartialEq for Skin {
@@ -71,16 +152,16 @@ macro_rules! skin {
         Skin {
             name: $name,
             png: include_bytes!(concat!("../art/", $name, ".png")),
-            alpha: false,
+            finish: Finish::Glaze,
         }
     };
 }
 pub(crate) use skin;
 
-macro_rules! sprite {
-    ($name:expr) => {{
+macro_rules! finish {
+    ($name:expr, $finish:expr) => {{
         let mut skin = skin!($name);
-        skin.alpha = true;
+        skin.finish = $finish;
         skin
     }};
 }
@@ -138,6 +219,12 @@ pub enum MachineMark {
     Sprite,
 }
 
+macro_rules! machine {
+    ($name:literal) => {
+        finish!(concat!("machines/", $name, "/albedo"), Finish::Sprite)
+    };
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Look<M> {
     pub glaze: Glaze,
@@ -175,7 +262,7 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         Item::Arm => {
             return Look {
                 glaze: Glaze::Brass,
-                skin: sprite!("textures/arm"),
+                skin: machine!("arm"),
                 shape: Shape::Radial,
                 marking: MachineMark::Hand(Glaze::Terracotta),
             };
@@ -183,11 +270,11 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         Item::Glyph(kind) => kind,
     };
     let (glaze, skin) = match kind {
-        GlyphKind::Source => (Glaze::BlueGreen, sprite!("textures/source")),
-        GlyphKind::Bonder => (Glaze::Terracotta, sprite!("textures/bonder")),
-        GlyphKind::SecondBond => (Glaze::Plum, sprite!("textures/second-bond")),
-        GlyphKind::Output => (Glaze::Ivory, sprite!("textures/output")),
-        GlyphKind::Cleanup => (Glaze::Brass, sprite!("textures/cleanup")),
+        GlyphKind::Source => (Glaze::BlueGreen, machine!("source")),
+        GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
+        GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
+        GlyphKind::Output => (Glaze::Ivory, machine!("output")),
+        GlyphKind::Cleanup => (Glaze::Brass, machine!("cleanup")),
     };
     Look {
         glaze,
@@ -602,7 +689,7 @@ mod tests {
         Skin {
             name: "symbols/none",
             png: b"",
-            alpha: false,
+            finish: Finish::Glaze,
         }
         .decode();
     }

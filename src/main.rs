@@ -1,4 +1,6 @@
 mod look;
+#[cfg(not(target_arch = "wasm32"))]
+mod machines;
 mod sim;
 
 use bevy::asset::RenderAssetUsages;
@@ -10,10 +12,9 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use bevy::sprite_render::AlphaMode2d;
 use bevy::window::PrimaryWindow;
-use look::{Glaze, Look, MANUAL, MachineMark, Shape, Skin, Token, skin};
+use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
 use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent, Spin, Stall};
 
-const HEX: f32 = 20.0;
 const TICK_MS: f32 = 400.0;
 const MOTION: f32 = 1.0;
 const MICRO_SCALE: f32 = 0.5;
@@ -609,12 +610,6 @@ impl World {
     }
 }
 
-fn px(h: Hex) -> Vec2 {
-    let q = h.q as f32;
-    let r = h.r as f32;
-    Vec2::new(HEX * 3f32.sqrt() * (q + r / 2.0), HEX * 1.5 * r)
-}
-
 fn hex_at(p: Vec2) -> Hex {
     let r = p.y / (HEX * 1.5);
     let q = p.x / (HEX * 3f32.sqrt()) - r / 2.0;
@@ -677,6 +672,10 @@ fn main() {
             Update,
             (run_ticks, view, edit, tapes, board, draw, manual).chain(),
         );
+    #[cfg(not(target_arch = "wasm32"))]
+    if machines::configure(&std::env::args().collect::<Vec<String>>()) {
+        return;
+    }
     #[cfg(not(target_arch = "wasm32"))]
     if shot::configure(&mut app) {
         app.run();
@@ -1157,7 +1156,7 @@ fn fire_kiln(
     let skins = look::skins()
         .map(|skin| {
             let texture = images.add(fire(skin));
-            let solid = if skin.alpha {
+            let solid = if skin.finish == Finish::Sprite {
                 AlphaMode2d::Blend
             } else {
                 AlphaMode2d::Opaque
@@ -1304,17 +1303,23 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, glaze.color());
     }
 
-    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
+    fn sprite(&mut self, item: Item, skin: Skin, origin: Vec2, angle: f32, z: f32) {
+        let quad = look::quad(&look::footprint(item));
+        let centre = origin + Vec2::from_angle(angle).rotate(quad.centre);
         let kiln = self.kiln;
-        let material = kiln.skin(look.skin, false);
+        let material = kiln.skin(skin, false);
         self.fill(
             &kiln.bar,
             material,
-            (pivot + hand) / 2.0,
-            (hand - pivot).to_angle(),
-            Vec2::splat(HEX * 3.5),
-            0.28,
+            centre,
+            angle,
+            Vec2::splat(quad.side),
+            z,
         );
+    }
+
+    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
+        self.sprite(Item::Arm, look.skin, pivot, (hand - pivot).to_angle(), 0.28);
         match look.marking {
             MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
@@ -1323,29 +1328,16 @@ impl Painter<'_, '_, '_, '_, '_> {
 
     fn machine(&mut self, item: Item, at: Hex, dir: usize) {
         let look = look::machine(item);
-        let kind = match (item, look.marking) {
+        match (item, look.marking) {
             (Item::Arm, MachineMark::Hand(_)) => {
                 let hand = px(at.add(DIRS[dir % 6]));
-                return self.arm(px(at), hand, RING_OPEN, look);
+                self.arm(px(at), hand, RING_OPEN, look);
             }
-            (Item::Arm, _) | (Item::Glyph(_), MachineMark::Hand(_)) => unworn(look),
-            (Item::Glyph(kind), MachineMark::Sprite) => kind,
-        };
-        let kiln = self.kiln;
-        let surface = kiln.skin(look.skin, false);
-        let slots: Vec<Vec2> = Glyph { kind, at, dir }.slots().map(px).collect();
-        let c = slots.iter().sum::<Vec2>() / slots.len() as f32;
-        let radius = slots
-            .iter()
-            .map(|slot| slot.distance(c))
-            .fold(0.0, f32::max);
-        let side = 2.0 * (radius + 0.8 * HEX);
-        let angle = if slots.len() == 1 {
-            0.0
-        } else {
-            px(DIRS[dir % 6]).to_angle()
-        };
-        self.fill(&kiln.bar, surface, c, angle, Vec2::splat(side), 0.1);
+            (Item::Glyph(_), MachineMark::Sprite) => {
+                self.sprite(item, look.skin, px(at), look::turn(dir), 0.1);
+            }
+            _ => unworn(look),
+        }
     }
 }
 

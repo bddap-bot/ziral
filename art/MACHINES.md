@@ -1,27 +1,36 @@
 # Machine bible — Fired Workshop
 
-The machines are compact kiln-floor tools rather than symbols painted on wells. Each is a top-down ceramic-and-brass object with a simple silhouette, one readable material story, and empty atom seats left unobstructed. Fine valves, collars, channels, and service plates reward a close look; broad seats and channels carry meaning at board scale. Every sprite uses diffuse, non-directional illumination because every machine may be placed in six turns.
+The machines are compact kiln-floor tools rather than symbols painted on wells. Each is a top-down ceramic-and-brass object with a simple silhouette, one readable material story, and empty atom seats left unobstructed. Fine valves, collars, channels, and service plates reward a close look; broad seats and channels carry meaning at board scale.
+
+## How a machine texture is made
+
+The game owns geometry and judgement; the generator only paints. `machines/gen.sh all` remakes every machine from `machines/manifest.toml`; `gen.sh NAME` remakes one; `gen.sh -k INDEX NAME` keeps a candidate by hand. A bible tweak is one edit to the manifest and one command.
+
+1. **Scaffold.** `ziral --scaffold NAME` draws the machine's footprint from the one glyph table at 256 px per hex, turn 0: the cells as hexagonal wells sunk into plain clay, each seat marked by its role from that table (a blue-green ring for a seat that keeps its atom, a terracotta ring and dot for one that consumes it, a brass disc for the arm's pivot, an open terracotta horseshoe for its hand), inside a clay band that the sprite never shows. The pixel rectangle is the same `quad` the renderer places the sprite on, so alignment is by construction.
+2. **Paint.** The image tool edits the scaffold in place, `candidates` times, with the manifest's shared prompt and the machine's own; the candidates stay under `NAME/candidates/`.
+3. **Score.** `ziral --score` measures each candidate by code: `outside`, how far the clay outside the footprint drifted from clay; `seat`, the least contrast between any seat disc and the ring around it; `palette`, the distance from the sprite's mean colour to the nearest bible glaze. The thresholds are the manifest's; the best passing candidate is kept, its index recorded in the manifest, and `NAME/scores.tsv` keeps every number. The contact sheet `sheet.png` shows every candidate with its scores and the survivor.
+4. **Cut.** `ziral --keep` cuts the kept candidate by the footprint mask into `NAME/albedo.png`, the flat base colour with baked ambient occlusion.
 
 ## Arm
 
-A broad brass pivot, one-piece link, and terracotta rubber-lined horseshoe make a durable manipulator whose wear belongs only at joints and contact edges. Bushings, grease ports, and service plates imply maintenance without exposed clockwork. `proposal-arm-3.png` is landed; its flat base-color capture and horizontal silhouette stay correct around the pivot-to-hand axis. The first two proposals keep slimmer and more ornate alternatives.
+A broad brass pivot, one-piece link, and terracotta rubber-lined horseshoe make a durable manipulator whose wear belongs only at joints and contact edges. Bushings, grease ports, and service plates imply maintenance without exposed clockwork.
 
 ## Source
 
-The source is a single blue-green ceramic feed hopper with one unmistakable seat, a brass metering ring, a short delivery chute, and a worn rubber gate. It reads as dispensing one bead, never storing a second. `proposal-source-2.png` is landed for its singular central seat; `proposal-source-1.png` explores a broader service frame.
+A single blue-green ceramic feed hopper with one unmistakable seat, a brass metering ring, a short delivery chute, and a worn rubber gate. It reads as dispensing one bead, never storing a second.
 
 ## Bonder
 
-The bonder spans two adjacent cells as equal terracotta seats joined by a heavy compression bridge. Opposed clamps and shared pressure plumbing say that both atoms survive and leave joined; there is no third or sacrificial intake. `proposal-bonder-3.png` is landed for its equal seats, flat base-color capture, and strong two-cell silhouette. The first two proposals explore enclosed housings.
+Two adjacent cells as equal seats joined by a heavy compression bridge. Opposed clamps and shared pressure plumbing say that both atoms survive and leave joined; there is no third or sacrificial intake.
 
 ## Second bond
 
-The second-bond applicator is a triangular plum manifold with two matching bond seats and one different sacrificial feed. Paired rails connect the bond seats while the feed uses a funnel, one-way valve, and more severe collar, making the fixed roles legible before an atom arrives. `proposal-second-bond-3.png` is landed for its flat base-color capture and clearest fixed-role hierarchy. The first two proposals keep more ceremonial plum variants.
+A triangular plum manifold with two matching bond seats and one different sacrificial feed. Paired rails connect the bond seats while the feed uses a funnel, one-way valve, and more severe collar, making the fixed roles legible before an atom arrives.
 
 ## Output
 
-The output is a two-cell ivory receiving station: two protected cups, a bond-checking bridge, paired rails, and one covered exit chute. It looks receptive rather than transformative. `proposal-output-3.png` is landed for its flat base-color capture, clean paired seats, and inspection bridge. The first two proposals explore larger surrounding racks.
+A two-cell ivory receiving station: two protected cups, a bond-checking bridge, paired rails, and one covered exit chute. It looks receptive rather than transformative.
 
 ## Cleanup
 
-The cleanup is a one-cell soot-dark disposal well with a brass safety rim, rubber iris, covered ash chute, and quencher valve. It promises containment rather than machinery spectacle. `proposal-cleanup-1.png` is landed for its direct single void; `proposal-cleanup-2.png` is a wider service-station alternative.
+A one-cell soot-dark disposal well with a brass safety rim, rubber iris, covered ash chute, and quencher valve. It promises containment rather than machinery spectacle.
