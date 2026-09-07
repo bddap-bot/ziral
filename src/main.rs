@@ -1966,6 +1966,17 @@ mod shot {
                 }
                 world.sim = sim;
             }
+            "machines" => {
+                let mut sim = Sim::empty();
+                for (k, item) in PALETTE.into_iter().enumerate() {
+                    let at = Hex::new(3 * k as i32 - 7, -1);
+                    match item {
+                        Item::Arm => sim.arms.push(Arm::new(at, 0, Vec::new())),
+                        Item::Glyph(kind) => sim.glyphs.push(Glyph { kind, at, dir: 0 }),
+                    }
+                }
+                world.sim = sim;
+            }
             "rotation" => {
                 let mut sim = Sim::empty();
                 for (q, dir) in [(-4, 0), (4, 2)] {

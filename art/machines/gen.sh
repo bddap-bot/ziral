@@ -35,7 +35,7 @@ machine() {
       art/paint.sh -s "$size" -i "$dir/scaffold.png" "$dir/candidates/$name-$i.png" "$prompt"
     done
     "$ziral" --score "$name" "$dir"/candidates/*.png > "$dir/scores.tsv"
-    keep=$(sort -t$'\t' -k6,6r -k5,5gr "$dir/scores.tsv" | awk -F'\t' 'NR == 1 && $6 == "pass" { print $1 }' | sed 's/.*-\([0-9]*\)\.png$/\1/')
+    keep=$(sort -t$'\t' -k7,7r -k6,6gr "$dir/scores.tsv" | awk -F'\t' 'NR == 1 && $7 == "pass" { print $1 }' | sed 's/.*-\([0-9]*\)\.png$/\1/')
     [ -n "$keep" ] || { echo "$name: no candidate passes; see $dir/scores.tsv" >&2; return 1; }
   fi
   flock "$here" "$ziral" --keep "$name" "$keep"
@@ -71,10 +71,10 @@ else
 fi
 
 plan=$("$ziral" --plan)
-while IFS=$'\t' read -r png outside seat palette _ verdict; do
+while IFS=$'\t' read -r png outside seat palette off_centre _ verdict; do
   name=$(basename "$(dirname "$(dirname "$png")")")
   kept=$(row machine "$name" | cut -f4)
-  label="$(basename "$png" .png)  out $outside  seat $seat  pal $palette  $verdict"
+  label="$(basename "$png" .png)  out $outside  seat $seat  pal $palette  off $off_centre  $verdict"
   [ "$(basename "$png" .png)" != "$name-$kept" ] || label="KEPT $label"
   printf '%s\t%s\n' "$label" "$png"
 done < <(cat /dev/null "$here"/*/scores.tsv) | art/sheet.sh 4 "$here/sheet.png" 256

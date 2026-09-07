@@ -1,5 +1,5 @@
-art/machines/source/relit/right.png	light=(+0.91,+0.36,+0.18)	ambient=0.31
-art/machines/source/relit/top.png	light=(-0.22,+0.89,+0.39)	ambient=0.41
-art/machines/source/relit/left.png	light=(-0.85,+0.53,-0.08)	ambient=0.33
-art/machines/source/relit/bottom.png	light=(-0.45,-0.89,-0.02)	ambient=0.52
-sphere error 19.2 degrees
+art/machines/source/relit/right.png	light=(+0.91,+0.29,+0.28)	ambient=0.21
+art/machines/source/relit/top.png	light=(-0.11,+0.99,+0.10)	ambient=0.37
+art/machines/source/relit/left.png	light=(-0.93,+0.22,+0.30)	ambient=0.38
+art/machines/source/relit/bottom.png	light=(-0.06,-0.72,+0.69)	ambient=0.23
+sphere error 11.1 degrees

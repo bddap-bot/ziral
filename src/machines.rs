@@ -15,6 +15,9 @@ const SEAT: f32 = 0.4;
 const SEAT_RING: f32 = 0.32;
 const SEAT_DOT: f32 = 0.12;
 const SEAT_AROUND: [f32; 2] = [0.45, 0.65];
+const SEAT_SEARCH: f32 = 0.5;
+const SEAT_STEP: f32 = 0.02;
+const SEAT_SPOKES: usize = 36;
 const SPHERE: f32 = 0.75;
 const SPHERE_ALBEDO: f32 = 0.6;
 const SPHERE_LIT: f32 = 0.15;
@@ -43,6 +46,7 @@ struct Thresholds {
     outside: f32,
     seat: f32,
     palette: f32,
+    off_centre: f32,
     sphere: f32,
 }
 
@@ -132,7 +136,6 @@ impl Scaffold {
         scaffold
     }
 
-    #[cfg(test)]
     fn pixel(&self, world: Vec2) -> Vec2 {
         let half = self.canvas as f32 / 2.0;
         let d = (world - self.quad.centre) * scale();
@@ -185,13 +188,12 @@ impl Scaffold {
         let d = world - px(cell.at);
         let r = d.length() / HEX;
         let ring = (SEAT_RING..=SEAT).contains(&r);
+        let dot = r <= SEAT_DOT;
         match cell.role {
             Role::Seat(Slot {
                 consumed: false, ..
-            }) => ring.then_some(Glaze::BlueGreen),
-            Role::Seat(Slot { consumed: true, .. }) => {
-                (ring || r <= SEAT_DOT).then_some(Glaze::Terracotta)
-            }
+            }) => (ring || dot).then_some(Glaze::BlueGreen),
+            Role::Seat(Slot { consumed: true, .. }) => (ring || dot).then_some(Glaze::Terracotta),
             Role::Pivot => (r <= SEAT).then_some(Glaze::Brass),
             Role::Hand => {
                 let pivot = self
@@ -201,7 +203,7 @@ impl Scaffold {
                     .map(|c| px(c.at))
                     .expect("a hand has its pivot");
                 let open = d.angle_to(px(cell.at) - pivot).abs() < std::f32::consts::FRAC_PI_4;
-                (ring && !open).then_some(Glaze::Terracotta)
+                ((ring && !open) || dot).then_some(Glaze::Terracotta)
             }
         }
     }
@@ -218,11 +220,6 @@ impl Scaffold {
     }
 
     fn alpha(&self, candidate: &RgbaImage) -> Vec<f32> {
-        assert_eq!(
-            (candidate.width(), candidate.height()),
-            (self.canvas, self.canvas),
-            "a candidate is painted over the whole scaffold"
-        );
         candidate.pixels().map(|p| opacity(rgb(p))).collect()
     }
 
@@ -234,7 +231,54 @@ impl Scaffold {
         })
     }
 
-    fn score(&self, candidate: &RgbaImage) -> Score {
+    fn register(&self, candidate: &RgbaImage) -> Capture {
+        assert_eq!(
+            (candidate.width(), candidate.height()),
+            (self.canvas, self.canvas),
+            "a candidate is painted over the whole scaffold"
+        );
+        let cells: Vec<Vec2> = self.cells.iter().map(|c| px(c.at)).collect();
+        let seats: Option<Vec<Vec2>> = self.cells.iter().map(|c| self.seat(candidate, c)).collect();
+        let Some(seats) = seats else {
+            return Capture {
+                image: candidate.clone(),
+                off_centre: f32::INFINITY,
+            };
+        };
+        let n = cells.len() as f32;
+        let (c0, s0) = (
+            cells.iter().sum::<Vec2>() / n,
+            seats.iter().sum::<Vec2>() / n,
+        );
+        let spread: f32 = cells.iter().map(|c| (*c - c0).length_squared()).sum();
+        let k = if spread > 0.0 {
+            cells
+                .iter()
+                .zip(&seats)
+                .map(|(c, s)| (*c - c0).dot(*s - s0))
+                .sum::<f32>()
+                / spread
+        } else {
+            1.0
+        };
+        let onto = |w: Vec2| s0 + k * (w - c0);
+        let image = RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
+            let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+            bilinear(candidate, self.pixel(onto(world)))
+        });
+        let off_centre = self
+            .cells
+            .iter()
+            .map(|c| {
+                self.seat(&image, c)
+                    .map_or(f32::INFINITY, |s| s.distance(px(c.at)) / HEX)
+            })
+            .fold(0.0, f32::max);
+        Capture { image, off_centre }
+    }
+
+    fn score(&self, capture: &Capture) -> Score {
+        let candidate = &capture.image;
         let alpha = self.alpha(candidate);
         let (origin, side) = self.crop();
         let n = self.canvas as usize;
@@ -284,7 +328,57 @@ impl Scaffold {
             outside: outside.value(),
             seat,
             palette,
+            off_centre: capture.off_centre,
         }
+    }
+
+    fn seat(&self, candidate: &RgbaImage, cell: &Cell) -> Option<Vec2> {
+        let sample = |world: Vec2| {
+            let p = self.pixel(world);
+            let inside = p.min_element() >= 0.0 && p.max_element() < self.canvas as f32;
+            let c = inside.then(|| rgb(candidate.get_pixel(p.x as u32, p.y as u32)))?;
+            (opacity(c) > 0.0).then(|| Vec3::from_array(c))
+        };
+        let step = SEAT_STEP * HEX;
+        let rings = ((SEAT_AROUND[1] - SEAT_DOT) / SEAT_STEP).ceil() as usize;
+        let rim = |centre: Vec2| {
+            (0..rings)
+                .map(|k| {
+                    let r = SEAT_DOT * HEX + step * k as f32;
+                    let mut jump = Vec3::ZERO;
+                    for s in 0..SEAT_SPOKES {
+                        let ray =
+                            Vec2::from_angle(std::f32::consts::TAU * s as f32 / SEAT_SPOKES as f32);
+                        if let (Some(outer), Some(inner)) = (
+                            sample(centre + ray * (r + step)),
+                            sample(centre + ray * (r - step)),
+                        ) {
+                            jump += outer - inner;
+                        }
+                    }
+                    jump.length() / SEAT_SPOKES as f32
+                })
+                .fold(0.0, f32::max)
+        };
+        let search = |around: Vec2, radius: f32, pitch: f32| {
+            let reach = (radius / pitch).ceil() as i32;
+            let mut offsets: Vec<Vec2> = (-reach..=reach)
+                .flat_map(|i| (-reach..=reach).map(move |j| Vec2::new(i as f32, j as f32)))
+                .map(|o| o * pitch)
+                .filter(|o| o.length() <= radius)
+                .collect();
+            offsets.sort_by(|a, b| a.length().total_cmp(&b.length()));
+            let mut best = (0.0, None);
+            for offset in offsets {
+                let edge = rim(around + offset);
+                if edge > best.0 {
+                    best = (edge, Some(around + offset));
+                }
+            }
+            best.1
+        };
+        let coarse = search(px(cell.at), SEAT_SEARCH * HEX, 2.0 * step)?;
+        search(coarse, 2.0 * step, step)
     }
 
     fn sphere_normal(&self, x: u32, y: u32) -> Option<Vec3> {
@@ -409,6 +503,11 @@ impl Scaffold {
     }
 }
 
+struct Capture {
+    image: RgbaImage,
+    off_centre: f32,
+}
+
 struct Relief {
     normal: RgbaImage,
     lights: Vec<Light>,
@@ -514,11 +613,15 @@ struct Score {
     outside: f32,
     seat: f32,
     palette: f32,
+    off_centre: f32,
 }
 
 impl Score {
     fn passes(&self, t: &Thresholds) -> bool {
-        self.outside <= t.outside && self.seat >= t.seat && self.palette <= t.palette
+        self.outside <= t.outside
+            && self.seat >= t.seat
+            && self.palette <= t.palette
+            && self.off_centre <= t.off_centre
     }
 
     fn total(&self) -> f32 {
@@ -552,6 +655,27 @@ impl Mean {
     fn value(&self) -> f32 {
         self.rgb()[0]
     }
+}
+
+fn bilinear(image: &RgbaImage, at: Vec2) -> Rgba<u8> {
+    let q = at - 0.5;
+    let (x0, y0) = (q.x.floor(), q.y.floor());
+    let (fx, fy) = (q.x - x0, q.y - y0);
+    let mut sum = [0f32; 4];
+    for (dx, dy, w) in [
+        (0.0, 0.0, (1.0 - fx) * (1.0 - fy)),
+        (1.0, 0.0, fx * (1.0 - fy)),
+        (0.0, 1.0, (1.0 - fx) * fy),
+        (1.0, 1.0, fx * fy),
+    ] {
+        let x = (x0 + dx).clamp(0.0, image.width() as f32 - 1.0) as u32;
+        let y = (y0 + dy).clamp(0.0, image.height() as f32 - 1.0) as u32;
+        let p = *image.get_pixel(x, y);
+        for (s, c) in sum.iter_mut().zip(p.0) {
+            *s += w * f32::from(c);
+        }
+    }
+    Rgba(sum.map(|s| s.round() as u8))
 }
 
 fn in_hex(d: Vec2, radius: f32) -> bool {
@@ -626,12 +750,13 @@ pub fn configure(args: &[String]) -> bool {
             let scaffold = Scaffold::of(item(name));
             let thresholds = Manifest::read().thresholds;
             for png in pngs {
-                let score = scaffold.score(&open(png));
+                let score = scaffold.score(&scaffold.register(&open(png)));
                 println!(
-                    "{png}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{}",
+                    "{png}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{}",
                     score.outside,
                     score.seat,
                     score.palette,
+                    score.off_centre,
                     score.total(),
                     if score.passes(&thresholds) {
                         "pass"
@@ -645,15 +770,16 @@ pub fn configure(args: &[String]) -> bool {
             let index: u32 = index.parse().expect(USAGE);
             let scaffold = Scaffold::of(item(name));
             let dir = dir(name);
-            let candidate = open(dir.join(format!("candidates/{name}-{index}.png")));
+            let capture =
+                scaffold.register(&open(dir.join(format!("candidates/{name}-{index}.png"))));
             let mut manifest = Manifest::read();
             manifest.machine_mut(name).kept = Some(index);
             manifest.write();
             let _ = std::fs::remove_dir_all(dir.join("relit"));
             std::fs::create_dir_all(dir.join("relit")).expect("the relit dir is creatable");
-            save(&scaffold.cut(&candidate), &dir.join("albedo.png"));
+            save(&scaffold.cut(&capture.image), &dir.join("albedo.png"));
             save(
-                &scaffold.master(&candidate, Some(Vec3::Z)),
+                &scaffold.master(&capture.image, Some(Vec3::Z)),
                 &dir.join("relit/master.png"),
             );
         }
@@ -719,6 +845,23 @@ mod tests {
     const TILT: f32 = 0.15;
     const ASPECT: f32 = 0.02;
     const KEYED: f32 = 0.01;
+    const REGISTERED: f32 = 0.02;
+
+    fn fired(scaffold: &Scaffold, at: &dyn Fn(Vec2) -> Vec2) -> RgbaImage {
+        RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
+            let world = at(scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)));
+            let glaze = scaffold
+                .cells
+                .iter()
+                .find_map(|cell| scaffold.mark(cell, world));
+            let ground = if scaffold.covered(world) {
+                Glaze::Clay.rgb()
+            } else {
+                KEY
+            };
+            rgba(glaze.map_or(ground, Glaze::rgb), 1.0)
+        })
+    }
 
     fn shade(n: Vec3) -> f32 {
         (AMBIENT + (1.0 - AMBIENT) * n.dot(light()).max(0.0))
@@ -788,12 +931,13 @@ mod tests {
                 want.as_raw() == shipped.as_raw(),
                 "{name}/scaffold.png is stale: regenerate it"
             );
-            let candidate = open(dir.join(format!("candidates/{name}-{kept}.png")));
-            let score = scaffold.score(&candidate);
+            let capture =
+                scaffold.register(&open(dir.join(format!("candidates/{name}-{kept}.png"))));
+            let score = scaffold.score(&capture);
             assert!(score.passes(&manifest.thresholds), "{name}: {score:?}");
             let (_, side) = scaffold.crop();
             let albedo = open(dir.join("albedo.png"));
-            let cut = scaffold.cut(&candidate);
+            let cut = scaffold.cut(&capture.image);
             assert_eq!(
                 (albedo.width(), albedo.height()),
                 (side, side),
@@ -844,8 +988,12 @@ mod tests {
         let item = Item::Glyph(crate::sim::GlyphKind::Bonder);
         let scaffold = Scaffold::of(item);
         let thresholds = Manifest::read().thresholds;
-        let clean = scaffold.render();
-        assert!(scaffold.score(&clean).passes(&thresholds));
+        let clean = fired(&scaffold, &|w| w);
+        assert!(
+            scaffold
+                .score(&scaffold.register(&clean))
+                .passes(&thresholds)
+        );
         let mut spilled = clean.clone();
         let (origin, side) = scaffold.crop();
         let brass = rgba(Glaze::Brass.rgb(), 1.0);
@@ -854,9 +1002,66 @@ mod tests {
                 spilled.put_pixel(x, y, brass);
             }
         }
-        let score = scaffold.score(&spilled);
+        let score = scaffold.score(&scaffold.register(&spilled));
         assert!(!score.passes(&thresholds), "{score:?}");
         assert!(score.outside > thresholds.outside, "{score:?}");
+    }
+
+    #[test]
+    fn a_capture_whose_seats_sit_off_their_cell_centres_is_rejected() {
+        let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::SecondBond));
+        let thresholds = Manifest::read().thresholds;
+        let drift = |a: &RgbaImage, b: &RgbaImage| {
+            let mut mean = Mean::default();
+            for (p, q) in a.pixels().zip(b.pixels()) {
+                mean.add(apart(rgb(p), rgb(q)));
+            }
+            mean.value()
+        };
+        let clean = fired(&scaffold, &|w| w);
+        let score = scaffold.score(&scaffold.register(&clean));
+        assert!(score.passes(&thresholds), "{score:?}");
+        assert!(score.off_centre <= SEAT_STEP, "{score:?}");
+        let shift = Vec2::new(2.0, -1.0).normalize() * thresholds.off_centre * 2.0 * HEX;
+        let centroid = scaffold.quad.centre;
+        for (name, moved) in [
+            ("shifted", fired(&scaffold, &|w| w - shift)),
+            (
+                "spread",
+                fired(&scaffold, &|w| centroid + (w - centroid) / 1.15),
+            ),
+        ] {
+            let capture = scaffold.register(&moved);
+            let score = scaffold.score(&capture);
+            assert!(score.passes(&thresholds), "{name}: {score:?}");
+            assert!(score.off_centre <= SEAT_STEP, "{name}: {score:?}");
+            let drift = drift(&capture.image, &clean);
+            assert!(
+                drift <= REGISTERED,
+                "{name} registers {drift:.3} from clean"
+            );
+        }
+        let turn = Vec2::from_angle(-shift.length() / HEX);
+        let turned =
+            scaffold.register(&fired(&scaffold, &|w| centroid + turn.rotate(w - centroid)));
+        let score = scaffold.score(&turned);
+        assert!(score.off_centre > thresholds.off_centre, "{score:?}");
+        assert!(score.off_centre <= shift.length() / HEX * 1.5, "{score:?}");
+        assert!(!score.passes(&thresholds), "{score:?}");
+        let off = Score {
+            off_centre: score.off_centre,
+            ..scaffold.score(&scaffold.register(&clean))
+        };
+        assert!(
+            !off.passes(&thresholds),
+            "{off:?} passes on off-centre seats alone"
+        );
+        let beyond = Vec2::X * (SEAT_SEARCH + 2.0 * thresholds.off_centre) * HEX;
+        let lost = scaffold.score(&scaffold.register(&fired(&scaffold, &|w| w - beyond)));
+        assert!(
+            lost.off_centre > thresholds.off_centre,
+            "{lost:?} beyond the search reach"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 candidates = 4
 
 [style]
-shared = "Use case: game-texture. Restyle the supplied scaffold while preserving its exact framing and its flat straight-down view. The scaffold is a flat pure green chroma-key background carrying the seat marks of one machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring with a centre dot is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand. Turn those marks into the machine described next as one freestanding object, compact and built tight around the marks, its body reaching and joining every mark, every seat still centred on its mark, empty and unobstructed. The machine is compact and small against the green: every seat stays centred on its mark at the mark's own size, each seat housing hugs its ring closely, no part lies further from the nearest mark's centre than twice that ring's radius, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover stays the untouched flat pure green key: no board, no tile, no plate, no well, no base, no table, no room, no beads, no atoms, no fist, no fingers, no text, numerals, logos or exposed clockwork. Flat base-colour capture with baked ambient occlusion only: photoreal glazed ceramic, darkened brass and worn rubber, no directional light, highlight, specular or cast shadow, so the sprite is correct at every 60-degree turn."
+shared = "Use case: game-texture. Restyle the supplied scaffold while preserving its exact framing and its flat straight-down view. The scaffold is a flat pure green chroma-key background carrying the seat marks of one machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand, and the small dot at the heart of every ring and horseshoe is the exact centre of that seat, the point the atom will occupy. Turn those marks into the machine described next as one freestanding object, compact and built tight around the marks, its body reaching and joining every mark, every seat, cup, well, funnel and hand built concentric on its dot, empty and unobstructed. The machine is compact and small against the green, but the marks are never pulled closer together: every seat stays exactly on its dot at the mark's own size, as far apart as the dots are, and the body between seats is slender rather than the seats moving inward; each seat housing hugs its ring closely, no part lies further from the nearest mark's centre than twice that ring's radius, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover stays the untouched flat pure green key: no board, no tile, no plate, no well, no base, no table, no room, no beads, no atoms, no fist, no fingers, no text, numerals, logos or exposed clockwork. Flat base-colour capture with baked ambient occlusion only: photoreal glazed ceramic, darkened brass and worn rubber, no directional light, highlight, specular or cast shadow, so the sprite is correct at every 60-degree turn."
 edges = [
     "right",
     "top",
@@ -14,11 +14,12 @@ relight = "Use case: precise-object-edit. Edit target: the attached image. Keep 
 outside = 0.15
 seat = 0.1
 palette = 0.35
+off_centre = 0.1
 sphere = 25.0
 
 [machine.arm]
 prompt = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-black-rubber horseshoe gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
-kept = 3
+kept = 4
 
 [machine.bonder]
 prompt = "The machine is a two-cell bonder: two equal empty blue-green ceramic atom seats in terracotta housings, joined by one heavy darkened-brass compression channel with opposed clamp jaws, worn rubber collars, pressure pipes and a squat kiln port, so both atoms survive and leave joined; no third seat."
@@ -29,12 +30,12 @@ prompt = "The machine is a one-cell cleanup: a deep soot-dark ceramic disposal w
 kept = 2
 
 [machine.output]
-prompt = "The machine is a two-cell output station: two equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, a clear bond-checking bridge between them, paired delivery rails, worn rubber bumpers and one small covered exit chute, looking receptive rather than transformative."
-kept = 3
+prompt = "The machine is a two-cell output station: two equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, each cup exactly on its mark and as far apart as the marks, a clear bond-checking bridge between them, paired delivery rails, worn rubber bumpers and one small covered exit chute, looking receptive rather than transformative."
+kept = 4
 
 [machine.second-bond]
-prompt = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
-kept = 1
+prompt = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
+kept = 4
 
 [machine.source]
 prompt = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."
