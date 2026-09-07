@@ -254,3 +254,9 @@ Pivot is the arm's second rotation, as in Opus Magnum: the held molecule turns 6
 Directive (verbatim): "add an atom cleanup machine. it consumes an atom then both the machine and the atom dissapear into the void. it breaks any bonds that were attached to the atom"
 
 The cleanup glyph is a one-slot, single-use well: the tick an atom lies on it, every bond on that atom is severed, the atom is eaten, and the glyph is spent and leaves the board with it, the rest of the molecule lying where it was.
+
+### Toy 1 draws in a fixed stack
+
+Report (verbatim): "rather i see arms flickering over eachother per-frame"
+
+Every drawable has its own depth, so no two ever tie. From the board up: glyph wells, torn bond stubs, bonds, arms, atoms with their rims, then whatever a drag is carrying, above all of it. Within a class each member's depth follows its place in the list, later over earlier, the same fixed order the sim resolves actuator conflicts by, so two arms crossing one cell always show the same one on top. Before this every arm shared one depth and the renderer broke the tie by entity id, which the drawing reassigns every frame; art/machines/proof/flicker.gif is two consecutive frames before and after, and the test in `src/main.rs` renders two frames of a still scene and requires them identical.

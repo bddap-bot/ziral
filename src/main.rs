@@ -665,31 +665,41 @@ impl Viewport {
     }
 }
 
-fn main() {
+fn app(world: World) -> App {
     let mut app = App::new();
-    app.insert_resource(World::new(sim::preloaded()))
+    app.insert_resource(world)
         .insert_resource(ClearColor(brass(0.65)))
         .add_systems(Startup, (fire_kiln, spawn_ui).chain())
         .add_systems(
             Update,
             (run_ticks, view, edit, tapes, board, draw, manual).chain(),
         );
+    app
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
     #[cfg(not(target_arch = "wasm32"))]
-    if machines::configure(&std::env::args().collect::<Vec<String>>()) {
+    if machines::configure(&args) {
         return;
     }
-    if !shot::configure(&mut app) {
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "ziral".into(),
-                canvas: Some("#ziral".into()),
-                fit_canvas_to_parent: true,
+    let mut app = match shot::parse(&args) {
+        Some((world, shot)) => shot::app(world, shot),
+        None => {
+            let mut app = app(World::new(sim::preloaded()));
+            app.add_plugins(DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "ziral".into(),
+                    canvas: Some("#ziral".into()),
+                    fit_canvas_to_parent: true,
+                    ..default()
+                }),
                 ..default()
-            }),
-            ..default()
-        }))
-        .add_systems(Startup, spawn_camera);
-    }
+            }))
+            .add_systems(Startup, spawn_camera);
+            app
+        }
+    };
     lit_plugin(&mut app);
     app.run();
 }
@@ -1345,9 +1355,9 @@ impl Painter<'_, '_, '_, '_, '_> {
             kiln.skin(look.skin, false),
             at,
             HEX * 0.4,
-            0.4,
+            layer::BEAD,
         );
-        self.stamp(&kiln.rim, &kiln.patina, at, HEX * 0.4, 0.42);
+        self.stamp(&kiln.rim, &kiln.patina, at, HEX * 0.4, layer::RIM);
     }
 
     fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind, faint: bool) {
@@ -1358,7 +1368,7 @@ impl Painter<'_, '_, '_, '_, '_> {
         let kiln = self.kiln;
         let material = kiln.skin(look.skin, faint);
         let side = (c - a).perp().normalize_or_zero() * HEX * 0.16;
-        let z = if faint { 0.12 } else { 0.2 };
+        let z = if faint { layer::TORN } else { layer::BOND };
         for k in 0..n {
             let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
             self.bar(&kiln.bond, material, a + off, c + off, HEX * BOND_WIDTH, z);
@@ -1380,26 +1390,42 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.fill(&kiln.bar, material, centre, angle, quad.size(), z);
     }
 
-    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>) {
-        self.sprite(Item::Arm, pivot, (hand - pivot).to_angle(), 0.28);
+    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>, z: f32) {
+        self.sprite(Item::Arm, pivot, (hand - pivot).to_angle(), z);
         match look.marking {
             MachineMark::Hand(glaze, _) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
         };
     }
 
-    fn machine(&mut self, item: Item, at: Hex, dir: usize) {
+    fn machine(&mut self, item: Item, at: Hex, dir: usize, z: f32) {
         let look = look::machine(item);
         match (item, look.marking) {
             (Item::Arm, MachineMark::Hand(_, _)) => {
                 let hand = px(at.add(DIRS[dir % 6]));
-                self.arm(px(at), hand, RING_OPEN, look);
+                self.arm(px(at), hand, RING_OPEN, look, z);
             }
             (Item::Glyph(_), MachineMark::Sprite(_)) => {
-                self.sprite(item, px(at), look::turn(dir), 0.1);
+                self.sprite(item, px(at), look::turn(dir), z);
             }
             _ => unworn(look),
         }
+    }
+}
+
+mod layer {
+    use std::ops::Range;
+
+    pub const GLYPHS: Range<f32> = 0.1..0.12;
+    pub const TORN: f32 = 0.14;
+    pub const BOND: f32 = 0.2;
+    pub const ARMS: Range<f32> = 0.28..0.38;
+    pub const BEAD: f32 = 0.4;
+    pub const RIM: f32 = 0.42;
+    pub const HELD: Range<f32> = 0.44..0.5;
+
+    pub fn z(band: Range<f32>, i: usize, n: usize) -> f32 {
+        band.start + (band.end - band.start) * (i as f32 / n as f32)
     }
 }
 
@@ -1628,8 +1654,9 @@ fn draw(
         kiln: &kiln,
     };
     let f = Frame::between(&world.prev, &world.sim, world.phase());
-    for g in &f.sim.glyphs {
-        p.machine(Item::Glyph(g.kind), g.at, g.dir);
+    for (i, g) in f.sim.glyphs.iter().enumerate() {
+        let z = layer::z(layer::GLYPHS, i, f.sim.glyphs.len());
+        p.machine(Item::Glyph(g.kind), g.at, g.dir, z);
     }
     for (i, g) in world.sim.glyphs.iter().enumerate() {
         if world.picks(Id::Glyph(i)) {
@@ -1651,8 +1678,10 @@ fn draw(
             p.bead(*at, look::atom(atom.kind));
         }
     }
+    let look = look::machine(Item::Arm);
     for (i, arm) in f.arms.iter().enumerate() {
-        p.arm(arm.pivot, arm.hand, arm.ring, look::machine(Item::Arm));
+        let z = layer::z(layer::ARMS, i, f.arms.len());
+        p.arm(arm.pivot, arm.hand, arm.ring, look, z);
         if world.picks(Id::Arm(i)) {
             p.gizmos.linestrip_2d(corners(arm.pivot, HEX * 0.9), IVORY);
         }
@@ -1668,8 +1697,9 @@ fn draw(
     if let Some(Focus::Hold { set, .. }) = &world.focus {
         let grab = hex_at(pointer);
         p.gizmos.linestrip_2d(corners(px(grab), HEX * 0.9), IVORY);
-        for piece in set {
-            p.machine(piece.item(), grab.add(piece.at()), piece.dir());
+        for (i, piece) in set.iter().enumerate() {
+            let z = layer::z(layer::HELD, i, set.len());
+            p.machine(piece.item(), grab.add(piece.at()), piece.dir(), z);
         }
     }
     if let Some(Press::Marquee { from }) = world.down {
@@ -1680,8 +1710,14 @@ fn draw(
 
 #[cfg(target_arch = "wasm32")]
 mod shot {
-    pub fn configure(_: &mut super::App) -> bool {
-        false
+    pub enum Shot {}
+
+    pub fn parse(_: &[String]) -> Option<(super::World, Shot)> {
+        None
+    }
+
+    pub fn app(_: super::World, shot: Shot) -> super::App {
+        match shot {}
     }
 }
 
@@ -1721,7 +1757,7 @@ mod shot {
     }
 
     #[derive(Resource)]
-    struct Shot {
+    pub struct Shot {
         path: PathBuf,
         clip: Option<u32>,
         wide: bool,
@@ -2196,12 +2232,11 @@ mod shot {
         (world, wide, script)
     }
 
-    pub fn configure(app: &mut App) -> bool {
+    pub fn parse(args: &[String]) -> Option<(World, Shot)> {
         const USAGE: &str = "usage: ziral --shot <png> <scene> <ticks> | ziral --shot <dir> <scene> <ticks> <play> <tick_ms> <motion>";
-        let args: Vec<String> = std::env::args().collect();
         let num = |s: &String| s.parse::<f32>().expect(USAGE);
-        let (path, view, ticks, clip) = match args.as_slice() {
-            [_] => return false,
+        let (path, view, ticks, clip) = match args {
+            [_] => return None,
             [_, flag, path, view, ticks] if flag == "--shot" => (path, view, ticks, None),
             [_, flag, path, view, ticks, play, tick_ms, motion] if flag == "--shot" => (
                 path,
@@ -2213,19 +2248,40 @@ mod shot {
         };
         let (mut world, wide, script) = scene(view, ticks.parse().expect(USAGE));
         let clip = clip.map(|(play, tick_ms, motion)| {
-            app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
             world.period = tick_ms / 1000.0;
             world.motion = motion;
             (play * world.period / FRAME.as_secs_f32()).round() as u32
         });
-        app.insert_resource(world)
-            .insert_resource(Shot {
-                path: PathBuf::from(path),
-                clip,
-                wide,
-                script,
-                frames: 0,
-            })
+        let shot = Shot {
+            path: PathBuf::from(path),
+            clip,
+            wide,
+            script,
+            frames: 0,
+        };
+        Some((world, shot))
+    }
+
+    #[cfg(test)]
+    pub fn still(view: &str, dir: PathBuf, frames: u32) -> App {
+        let (mut world, wide, script) = scene(view, 0);
+        world.period = f32::INFINITY;
+        let shot = Shot {
+            path: dir,
+            clip: Some(frames),
+            wide,
+            script,
+            frames: 0,
+        };
+        app(world, shot)
+    }
+
+    pub fn app(world: World, shot: Shot) -> App {
+        let mut app = super::app(world);
+        if shot.clip.is_some() {
+            app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
+        }
+        app.insert_resource(shot)
             .add_plugins(
                 DefaultPlugins
                     .set(RenderPlugin {
@@ -2245,7 +2301,7 @@ mod shot {
             .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
             .add_systems(Startup, spawn_offscreen_camera)
             .add_systems(Update, capture.after(run_ticks).before(draw));
-        true
+        app
     }
 
     fn spawn_offscreen_camera(
@@ -2346,6 +2402,39 @@ mod shot {
 mod tests {
     use super::*;
     use sim::{Atom, AtomKind};
+
+    #[test]
+    fn two_frames_of_a_still_scene_with_overlapping_arms_are_pixel_identical() {
+        let dir = std::env::temp_dir().join(format!("ziral-still-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("wide", dir.clone(), 2);
+        lit_plugin(&mut app);
+        let exit = app.run();
+        let frames: Vec<_> = (0..2)
+            .map(|n| std::fs::read(dir.join(format!("{n:05}.png"))))
+            .collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(exit, bevy::app::AppExit::Success);
+        let frame = |n: usize| {
+            image::load_from_memory(frames[n].as_ref().unwrap())
+                .unwrap()
+                .into_rgba8()
+        };
+        let (a, b) = (frame(0), frame(1));
+        let changed = a
+            .enumerate_pixels()
+            .zip(b.pixels())
+            .filter(|((_, _, p), q)| p != q)
+            .map(|((x, y, _), _)| (x, y))
+            .collect::<Vec<_>>();
+        assert!(
+            changed.is_empty(),
+            "{} pixels differ between two frames of a still scene, first at {:?}",
+            changed.len(),
+            changed[0]
+        );
+    }
 
     fn rotating_arm_with_atom() -> (Sim, Sim) {
         let mut prev = Sim::empty();
