@@ -1,4 +1,4 @@
-art/machines/cleanup/candidates/cleanup-1.png	0.000	0.743	0.132	0.000	0.611	pass
-art/machines/cleanup/candidates/cleanup-2.png	0.000	0.628	0.119	0.000	0.509	pass
-art/machines/cleanup/candidates/cleanup-3.png	0.000	0.372	0.054	0.000	0.318	pass
-art/machines/cleanup/candidates/cleanup-4.png	0.000	0.537	0.035	0.000	0.502	pass
+cleanup-1	0.054	0.392	0.082	0.000	fail outside 0.054 > 0.05
+cleanup-2	0.064	0.477	0.047	0.000	fail outside 0.064 > 0.05
+cleanup-3	0.000	0.412	0.192	0.020	pass
+cleanup-4	0.132	0.466	0.078	0.000	fail outside 0.132 > 0.05

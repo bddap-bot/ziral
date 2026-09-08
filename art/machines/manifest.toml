@@ -19,24 +19,36 @@ sphere = 25.0
 
 [machine.arm]
 prompt = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-black-rubber horseshoe gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
-kept = 4
+kept = 2
+painted = "11573c8e033f97d2"
+relit = "7e4c16eb1db67dea"
 
 [machine.bonder]
 prompt = "The machine is a two-cell bonder: two equal empty blue-green ceramic atom seats in terracotta housings, joined by one heavy darkened-brass compression channel with opposed clamp jaws, worn rubber collars, pressure pipes and a squat kiln port, everything lying flat along the line between the two seats and no taller than the seat housings, the port and pipes on the channel itself, nothing rising above or hanging below the channel at its middle, so both atoms survive and leave joined; no third seat."
-kept = 2
+kept = 3
+painted = "192bad54c569cfaf"
+relit = "ee68ab7a8a88c91e"
 
 [machine.cleanup]
 prompt = "The machine is a one-cell cleanup: a deep soot-dark ceramic disposal well with one empty seat over the void, a darkened-brass safety rim, a worn rubber iris, a covered ash chute, a small quencher valve and restrained scorch residue, promising containment rather than spectacle; no pure black."
-kept = 1
+kept = 3
+painted = "20717d9c8195b842"
+relit = "850fb3cf3ab15541"
 
 [machine.output]
-prompt = "The machine is a two-cell output station: two equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, each cup exactly on its mark and as far apart as the marks, a clear bond-checking bridge between them, paired delivery rails, worn rubber bumpers and one small covered exit chute, looking receptive rather than transformative."
-kept = 1
+prompt = "The machine is a two-cell output station: two equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, each cup exactly on its mark and as far apart as the marks, a clear bond-checking bridge between them, paired delivery rails, worn rubber bumpers and one small covered exit chute, everything lying flat along the line between the two cups and no wider than the cup housings, the chute and rails on the bridge itself, nothing rising above or hanging below the bridge at its middle and nothing bulging out beyond the two cups, looking receptive rather than transformative."
+kept = 4
+painted = "02a85bde9a04dbd6"
+relit = "fc7f100c70ecf16b"
 
 [machine.second-bond]
 prompt = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
-kept = 4
+kept = 2
+painted = "1e09321bc7b4f92c"
+relit = "48f7f053b25fc705"
 
 [machine.source]
 prompt = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."
-kept = 4
+kept = 2
+painted = "e2d206d746813551"
+relit = "9082d3a85967453d"

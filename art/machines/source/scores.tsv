@@ -1,4 +1,4 @@
-art/machines/source/candidates/source-1.png	0.000	0.423	0.147	0.000	0.276	pass
-art/machines/source/candidates/source-2.png	0.045	0.451	0.117	0.000	0.288	pass
-art/machines/source/candidates/source-3.png	0.132	0.277	0.087	0.000	0.057	fail
-art/machines/source/candidates/source-4.png	0.000	0.677	0.123	0.000	0.554	pass
+source-1	0.120	0.455	0.129	0.000	fail outside 0.120 > 0.05
+source-2	0.000	0.667	0.167	0.020	pass
+source-3	0.000	0.371	0.219	0.000	pass
+source-4	0.000	0.536	0.136	0.000	pass

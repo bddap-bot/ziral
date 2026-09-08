@@ -29,11 +29,22 @@ one() {
   [ "${#srcs[@]}" -eq 1 ] || { echo "thread $thread holds ${#srcs[@]} images, not one" >&2; return 1; }
   read -r w h < <(identify -format '%w %h\n' "${srcs[0]}")
   [ -n "$h" ] && [ "$w" = "$h" ] || { echo "thread $thread painted ${w}x${h}, not a square" >&2; return 1; }
-  magick "${srcs[0]}" -resize "${size}x${size}" -strip png:- | pngquant --quality 70-95 --speed 1 - > "$target.part"
+  magick "${srcs[0]}" -resize "${size}x${size}" -strip png:- | pngquant --quality 70-95 --speed 1 - > "$target.part" || { echo "thread $thread: resize or quantise failed" >&2; return 1; }
   mv "$target.part" "$target"
 }
 
 mkdir -p "$(dirname "$target")"
 rm -f "$target"
-for _ in 1 2 3 4; do one && break; done
-[ -s "$target" ]
+attempts=4
+for attempt in $(seq 1 "$attempts"); do
+  rm -f "$target.part"
+  one && break
+  if [ "$attempt" -eq "$attempts" ]; then
+    echo "$target: gave up after $attempts attempts" >&2
+    exit 1
+  fi
+  wait=$((1 << (attempt - 1)))
+  echo "$target: attempt $attempt of $attempts failed, retrying in ${wait}s" >&2
+  sleep "$wait"
+done
+[ -s "$target" ] || { echo "$target: empty" >&2; exit 1; }

@@ -19,10 +19,10 @@
     {
       "paths": ["art/machines/**"],
       "tests": [
-        "nix-shell --run 'shellcheck art/paint.sh art/machines/gen.sh'",
+        "nix-shell --run 'shellcheck art/paint.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"
       ],
-      "why": "the machine textures are made by gen.sh over the binary's scaffold and scoring; the tests check the shipped scaffolds, kept candidates and maps against the manifest"
+      "why": "the machine textures are made by ziral --gen through paint.sh; the tests check the shipped scaffolds, kept candidates, maps and keys against the manifest"
     },
     {
       "paths": ["art/**/*.sh"],

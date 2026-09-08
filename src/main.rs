@@ -811,8 +811,8 @@ fn app(world: World) -> App {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     #[cfg(not(target_arch = "wasm32"))]
-    if machines::configure(&args) {
-        return;
+    if let Some(status) = machines::configure(&args) {
+        std::process::exit(status);
     }
     let mut app = match shot::parse(&args) {
         Some((world, shot)) => shot::app(world, shot),

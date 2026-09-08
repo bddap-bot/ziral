@@ -34,7 +34,7 @@ struct Manifest {
     machine: BTreeMap<String, Machine>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Style {
     shared: String,
     edges: Vec<String>,
@@ -50,42 +50,55 @@ struct Thresholds {
     sphere: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Machine {
     prompt: String,
     kept: Option<u32>,
+    painted: Option<String>,
+    relit: Option<String>,
 }
 
-fn manifest_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("art/machines/manifest.toml")
+struct Art {
+    dir: PathBuf,
 }
 
-impl Manifest {
-    fn read() -> Manifest {
-        let path = manifest_path();
+impl Art {
+    fn shipped() -> Art {
+        Art {
+            dir: Path::new(env!("CARGO_MANIFEST_DIR")).join("art/machines"),
+        }
+    }
+
+    fn manifest(&self) -> PathBuf {
+        self.dir.join("manifest.toml")
+    }
+
+    fn read(&self) -> Manifest {
+        let path = self.manifest();
         let text =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
     }
 
-    fn write(&self) {
-        let text = toml::to_string_pretty(self).expect("a manifest serialises");
-        let path = manifest_path();
+    fn write(&self, manifest: &Manifest) {
+        let text = toml::to_string_pretty(manifest).expect("a manifest serialises");
+        let path = self.manifest();
         let part = path.with_extension("toml.part");
         std::fs::write(&part, text).expect("the manifest is writable");
         std::fs::rename(&part, &path).expect("the manifest is replaceable");
     }
 
-    fn machine(&self, name: &str) -> &Machine {
-        self.machine
-            .get(name)
-            .unwrap_or_else(|| panic!("manifest has no [machine.{name}]"))
+    fn machine(&self, name: &str) -> PathBuf {
+        self.dir.join(name)
     }
 
-    fn machine_mut(&mut self, name: &str) -> &mut Machine {
-        self.machine
-            .get_mut(name)
-            .unwrap_or_else(|| panic!("manifest has no [machine.{name}]"))
+    fn candidate(&self, name: &str, index: u32) -> PathBuf {
+        self.machine(name)
+            .join(format!("candidates/{name}-{index}.png"))
+    }
+
+    fn paint_sh(&self) -> PathBuf {
+        self.dir.join("../paint.sh")
     }
 }
 
@@ -626,11 +639,22 @@ struct Score {
 }
 
 impl Score {
+    fn failing(&self, t: &Thresholds) -> Option<(&'static str, f32, &'static str, f32)> {
+        if self.outside > t.outside {
+            Some(("outside", self.outside, ">", t.outside))
+        } else if self.seat < t.seat {
+            Some(("seat", self.seat, "<", t.seat))
+        } else if self.palette > t.palette {
+            Some(("palette", self.palette, ">", t.palette))
+        } else if self.off_centre > t.off_centre {
+            Some(("off_centre", self.off_centre, ">", t.off_centre))
+        } else {
+            None
+        }
+    }
+
     fn passes(&self, t: &Thresholds) -> bool {
-        self.outside <= t.outside
-            && self.seat >= t.seat
-            && self.palette <= t.palette
-            && self.off_centre <= t.off_centre
+        self.failing(t).is_none()
     }
 
     fn total(&self) -> f32 {
@@ -753,108 +777,591 @@ fn save(image: &RgbaImage, path: &Path) {
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
 }
 
-fn dir(name: &str) -> PathBuf {
-    manifest_path().with_file_name(name)
+const PAINTERS: usize = 6;
+const RELIGHTS: u32 = 3;
+
+struct Paint {
+    input: PathBuf,
+    output: PathBuf,
+    prompt: String,
+    size: u32,
 }
 
-pub fn configure(args: &[String]) -> bool {
-    const USAGE: &str = "usage: ziral --plan | ziral --scaffold NAME | ziral --score NAME PNG... | ziral --keep NAME INDEX | ziral --normals NAME PNG...";
-    let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
-    match (args.get(1).map(String::as_str), rest.as_slice()) {
-        (Some("--plan"), []) => plan(),
-        (Some("--scaffold"), [name]) => {
-            let scaffold = Scaffold::of(item(name));
-            let dir = dir(name);
-            std::fs::create_dir_all(&dir).expect("the machine dir is creatable");
-            save(&scaffold.render(), &dir.join("scaffold.png"));
-            println!("{}", scaffold.canvas);
+type Painter<'a> = &'a (dyn Fn(&Paint) -> Result<(), String> + Sync);
+
+fn paint_sh(art: &Art, job: &Paint) -> Result<(), String> {
+    let stem = job
+        .output
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let output = std::process::Command::new(art.paint_sh())
+        .arg("-s")
+        .arg(job.size.to_string())
+        .arg("-i")
+        .arg(&job.input)
+        .arg(&job.output)
+        .arg(&job.prompt)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("{}: {e}", art.paint_sh().display()))?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
+        eprintln!("{stem}: {line}");
+    }
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(stderr
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("paint.sh failed without a word")
+        .to_string())
+}
+
+struct Cap {
+    free: std::sync::Mutex<usize>,
+    freed: std::sync::Condvar,
+}
+
+struct Permit<'a>(&'a Cap);
+
+impl Drop for Permit<'_> {
+    fn drop(&mut self) {
+        *self.0.free.lock().expect("the cap is unpoisoned") += 1;
+        self.0.freed.notify_one();
+    }
+}
+
+impl Cap {
+    fn new(n: usize) -> Cap {
+        Cap {
+            free: std::sync::Mutex::new(n),
+            freed: std::sync::Condvar::new(),
         }
-        (Some("--score"), [name, pngs @ ..]) => {
-            let scaffold = Scaffold::of(item(name));
-            let thresholds = Manifest::read().thresholds;
-            for png in pngs {
-                let score = scaffold.score(&scaffold.register(&open(png)));
-                println!(
-                    "{png}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{}",
-                    score.outside,
-                    score.seat,
-                    score.palette,
-                    score.off_centre,
-                    score.total(),
-                    if score.passes(&thresholds) {
-                        "pass"
-                    } else {
-                        "fail"
-                    }
-                );
+    }
+
+    fn take(&self) -> Permit<'_> {
+        let mut free = self.free.lock().expect("the cap is unpoisoned");
+        while *free == 0 {
+            free = self.freed.wait(free).expect("the cap is unpoisoned");
+        }
+        *free -= 1;
+        Permit(self)
+    }
+}
+
+fn key(parts: &[&[u8]]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |b: u8| {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    for part in parts {
+        for b in (part.len() as u64).to_le_bytes() {
+            eat(b);
+        }
+        for b in *part {
+            eat(*b);
+        }
+    }
+    format!("{h:016x}")
+}
+
+fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage) -> String {
+    key(&[
+        prompt.as_bytes(),
+        &count.to_le_bytes(),
+        &scaffold.width().to_le_bytes(),
+        scaffold.as_raw(),
+    ])
+}
+
+fn relit_key(kept: &[u8], style: &Style) -> String {
+    let edges = style.edges.join("\n");
+    key(&[kept, style.relight.as_bytes(), edges.as_bytes()])
+}
+
+fn read(path: &Path) -> Vec<u8> {
+    std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn quantise(png: &Path) -> Result<(), String> {
+    let status = std::process::Command::new("pngquant")
+        .args(["--quality", "70-95", "--speed", "1", "--force", "--output"])
+        .arg(png)
+        .arg(png)
+        .status()
+        .map_err(|e| format!("pngquant: {e}"))?;
+    status
+        .success()
+        .then_some(())
+        .ok_or_else(|| format!("pngquant {status} on {}", png.display()))
+}
+
+impl Score {
+    fn verdict(&self, t: &Thresholds) -> String {
+        match self.failing(t) {
+            None => "pass".to_string(),
+            Some((rule, got, sign, bound)) => format!("fail {rule} {got:.3} {sign} {bound}"),
+        }
+    }
+
+    fn row(&self, candidate: &str, t: &Thresholds) -> String {
+        format!(
+            "{candidate}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{}",
+            self.outside,
+            self.seat,
+            self.palette,
+            self.off_centre,
+            self.verdict(t)
+        )
+    }
+}
+
+struct Remake<'a> {
+    art: &'a Art,
+    manifest: std::sync::Mutex<Manifest>,
+    painter: Painter<'a>,
+    cap: Cap,
+    painted: std::sync::atomic::AtomicBool,
+}
+
+impl Remake<'_> {
+    fn paint(&self, jobs: Vec<(String, Paint)>) -> Vec<(String, Result<(), String>)> {
+        std::thread::scope(|s| {
+            let handles: Vec<_> = jobs
+                .into_iter()
+                .map(|(label, job)| {
+                    s.spawn(move || {
+                        let out = {
+                            let _permit = self.cap.take();
+                            (self.painter)(&job)
+                        };
+                        match &out {
+                            Ok(()) => {
+                                self.painted
+                                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                                println!("{label}\tpainted");
+                            }
+                            Err(e) => println!("{label}\tpaint failed: {e}"),
+                        }
+                        (label, out)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a paint returns"))
+                .collect()
+        })
+    }
+
+    fn entry(&self, name: &str) -> Result<(Style, Thresholds, u32, Machine), String> {
+        let m = self.manifest.lock().expect("the manifest is unpoisoned");
+        let entry = m
+            .machine
+            .get(name)
+            .ok_or_else(|| format!("manifest has no [machine.{name}]"))?;
+        Ok((m.style.clone(), m.thresholds, m.candidates, entry.clone()))
+    }
+
+    fn record(&self, name: &str, kept: Option<u32>, painted: &str, relit: Option<&str>) {
+        let mut m = self.manifest.lock().expect("the manifest is unpoisoned");
+        let entry = m.machine.get_mut(name).expect("the entry read above");
+        let now = (kept, Some(painted.to_string()), relit.map(str::to_string));
+        if (entry.kept, entry.painted.clone(), entry.relit.clone()) != now {
+            (entry.kept, entry.painted, entry.relit) = now;
+            self.art.write(&m);
+        }
+    }
+
+    fn score(&self, name: &str, scaffold: &Scaffold, count: u32) -> Vec<(u32, Score)> {
+        (1..=count)
+            .filter(|i| self.art.candidate(name, *i).exists())
+            .map(|i| {
+                let png = open(self.art.candidate(name, i));
+                (i, scaffold.score(&scaffold.register(&png)))
+            })
+            .collect()
+    }
+
+    fn machine(&self, name: &str) -> Result<bool, String> {
+        let started = std::time::Instant::now();
+        let scaffold = Scaffold::of(item(name));
+        let dir = self.art.machine(name);
+        let (style, thresholds, count, entry) = self.entry(name)?;
+        if count == 0 {
+            return Err("the manifest asks for no candidates".to_string());
+        }
+        let candidates = dir.join("candidates");
+        std::fs::create_dir_all(&candidates).map_err(|e| e.to_string())?;
+        let rendered = scaffold.render();
+        let scaffold_png = dir.join("scaffold.png");
+        let mut changed = false;
+        if !scaffold_png.exists() || open(&scaffold_png).as_raw() != rendered.as_raw() {
+            save(&rendered, &scaffold_png);
+            changed = true;
+        }
+        let prompt = format!("{} {}", style.shared, entry.prompt);
+        let painted = painted_key(&prompt, count, &rendered);
+        let mut wipe = entry.painted.as_deref() != Some(painted.as_str());
+        let mut kept = entry.kept.filter(|k| self.art.candidate(name, *k).exists());
+        let mut landed = None;
+        for _ in 0..2 {
+            if wipe {
+                let _ = std::fs::remove_dir_all(&candidates);
+                std::fs::create_dir_all(&candidates).map_err(|e| e.to_string())?;
+                kept = None;
             }
-        }
-        (Some("--keep"), [name, index]) => {
-            let index: u32 = index.parse().expect(USAGE);
-            let scaffold = Scaffold::of(item(name));
-            let dir = dir(name);
-            let capture =
-                scaffold.register(&open(dir.join(format!("candidates/{name}-{index}.png"))));
-            let mut manifest = Manifest::read();
-            manifest.machine_mut(name).kept = Some(index);
-            manifest.write();
-            let _ = std::fs::remove_dir_all(dir.join("relit"));
-            std::fs::create_dir_all(dir.join("relit")).expect("the relit dir is creatable");
-            save(&scaffold.cut(&capture.image), &dir.join("albedo.png"));
-            save(
-                &scaffold.master(&capture.image, Some(Vec3::Z)),
-                &dir.join("relit/master.png"),
-            );
-        }
-        (Some("--normals"), [name, pngs @ ..]) => {
-            let thresholds = Manifest::read().thresholds;
-            let scaffold = Scaffold::of(item(name));
-            let master = open(dir(name).join("relit/master.png"));
-            let edits: Vec<RgbaImage> = pngs.iter().map(open).collect();
-            let relief = scaffold.normals(&master, &edits);
-            for (png, light) in pngs.iter().zip(&relief.lights) {
-                let d = light.direction;
-                println!(
-                    "{png}\tlight=({:+.2},{:+.2},{:+.2})\tambient={:.2}",
-                    d.x, d.y, d.z, light.ambient
-                );
+            let jobs: Vec<(String, Paint)> = (1..=count)
+                .filter(|i| !self.art.candidate(name, *i).exists())
+                .map(|i| {
+                    (
+                        format!("{name}-{i}"),
+                        Paint {
+                            input: scaffold_png.clone(),
+                            output: self.art.candidate(name, i),
+                            prompt: prompt.clone(),
+                            size: scaffold.canvas,
+                        },
+                    )
+                })
+                .collect();
+            let asked = jobs.len();
+            let failed: Vec<String> = self
+                .paint(jobs)
+                .into_iter()
+                .filter_map(|(label, r)| r.err().map(|e| format!("{label}: {e}")))
+                .collect();
+            let painted_now = asked > failed.len();
+            changed |= painted_now;
+            if painted_now || wipe {
+                self.record(name, None, &painted, None);
             }
-            println!("sphere error {:.1} degrees", relief.sphere);
-            assert!(
-                relief.sphere <= thresholds.sphere,
+            let rows = |scored: &[(u32, Score)]| -> Vec<String> {
+                let rows: Vec<String> = scored
+                    .iter()
+                    .map(|(i, s)| s.row(&format!("{name}-{i}"), &thresholds))
+                    .collect();
+                for row in &rows {
+                    println!("{row}");
+                }
+                rows
+            };
+            let only_kept = kept.filter(|_| asked == 0);
+            let mut scored = match only_kept {
+                Some(k) => {
+                    let png = open(self.art.candidate(name, k));
+                    vec![(k, scaffold.score(&scaffold.register(&png)))]
+                }
+                None => self.score(name, &scaffold, count),
+            };
+            let mut printed = rows(&scored);
+            let passing = |scored: &[(u32, Score)], i: u32| {
+                scored.iter().any(|(k, s)| *k == i && s.passes(&thresholds))
+            };
+            if let Some(k) = kept.filter(|k| passing(&scored, *k)) {
+                if asked > 0 || wipe {
+                    std::fs::write(dir.join("scores.tsv"), printed.join("\n") + "\n")
+                        .map_err(|e| e.to_string())?;
+                }
+                landed = Some(k);
+                break;
+            }
+            if only_kept.is_some() {
+                scored = self.score(name, &scaffold, count);
+                printed = rows(&scored);
+            }
+            std::fs::write(dir.join("scores.tsv"), printed.join("\n") + "\n")
+                .map_err(|e| e.to_string())?;
+            if let Some(k) = scored
+                .iter()
+                .filter(|(_, s)| s.passes(&thresholds))
+                .max_by(|a, b| a.1.total().total_cmp(&b.1.total()))
+                .map(|(i, _)| *i)
+            {
+                landed = Some(k);
+                break;
+            }
+            if asked > 0 {
+                let why = if failed.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "; {} of {count} paints failed: {}",
+                        failed.len(),
+                        failed.join(", ")
+                    )
+                };
+                return Err(format!("no candidate passes{why}"));
+            }
+            wipe = true;
+        }
+        let kept = landed.ok_or_else(|| "no candidate passes".to_string())?;
+        let kept_png = read(&self.art.candidate(name, kept));
+        let relit = relit_key(&kept_png, &style);
+        let current = entry.relit.as_deref() == Some(relit.as_str())
+            && dir.join("albedo.png").exists()
+            && dir.join("normal.png").exists();
+        if !current {
+            self.relief(name, &scaffold, kept, &style, thresholds)?;
+            changed = true;
+        }
+        self.record(name, Some(kept), &painted, Some(&relit));
+        println!(
+            "{name}\t{}\tkept {name}-{kept}\t{:.0}s",
+            if changed { "landed" } else { "up to date" },
+            started.elapsed().as_secs_f32()
+        );
+        Ok(changed)
+    }
+
+    fn relief(
+        &self,
+        name: &str,
+        scaffold: &Scaffold,
+        kept: u32,
+        style: &Style,
+        thresholds: Thresholds,
+    ) -> Result<(), String> {
+        let dir = self.art.machine(name);
+        let capture = scaffold.register(&open(self.art.candidate(name, kept)));
+        let relit = dir.join("relit");
+        let _ = std::fs::remove_dir_all(&relit);
+        std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
+        let master = scaffold.master(&capture.image, Some(Vec3::Z));
+        save(&master, &relit.join("master.png"));
+        let mut why = String::new();
+        for _ in 0..RELIGHTS {
+            let jobs = style
+                .edges
+                .iter()
+                .map(|edge| {
+                    (
+                        format!("{name}-{edge}"),
+                        Paint {
+                            input: relit.join("master.png"),
+                            output: relit.join(format!("{edge}.png")),
+                            prompt: style.relight.replace("{edge}", edge),
+                            size: scaffold.canvas,
+                        },
+                    )
+                })
+                .collect();
+            let painted = self.paint(jobs);
+            let edits: Vec<(&str, RgbaImage)> = painted
+                .iter()
+                .zip(&style.edges)
+                .filter(|((_, r), _)| r.is_ok())
+                .map(|(_, edge)| (edge.as_str(), open(relit.join(format!("{edge}.png")))))
+                .collect();
+            if edits.len() < style.edges.len() {
+                why = format!(
+                    "{} of {} relights failed",
+                    painted.len() - edits.len(),
+                    painted.len()
+                );
+                continue;
+            }
+            let images: Vec<RgbaImage> = edits.iter().map(|(_, e)| e.clone()).collect();
+            let relief = scaffold.normals(&master, &images);
+            let mut lights: Vec<String> = edits
+                .iter()
+                .zip(&relief.lights)
+                .map(|((edge, _), l)| {
+                    let d = l.direction;
+                    format!(
+                        "{edge}\tlight=({:+.2},{:+.2},{:+.2})\tambient={:.2}",
+                        d.x, d.y, d.z, l.ambient
+                    )
+                })
+                .collect();
+            lights.push(format!("sphere error {:.1} degrees", relief.sphere));
+            println!("{name}\t{}", lights.last().expect("the sphere line"));
+            std::fs::write(relit.join("lights.txt"), lights.join("\n") + "\n")
+                .map_err(|e| e.to_string())?;
+            if relief.sphere <= thresholds.sphere {
+                save(&scaffold.cut(&capture.image), &dir.join("albedo.png"));
+                save(&relief.normal, &dir.join("normal.png"));
+                quantise(&dir.join("albedo.png"))?;
+                return Ok(());
+            }
+            why = format!(
                 "the calibration sphere came back {:.1} degrees off, over {}",
-                relief.sphere,
-                thresholds.sphere
+                relief.sphere, thresholds.sphere
             );
-            save(&relief.normal, &dir(name).join("normal.png"));
         }
-        (Some("--plan" | "--scaffold" | "--score" | "--keep" | "--normals"), _) => {
-            panic!("{USAGE}")
-        }
-        _ => return false,
+        Err(format!("{why}, {RELIGHTS} relights over"))
     }
-    true
+
+    fn sheet(&self) -> Result<(), String> {
+        let m = self.manifest.lock().expect("the manifest is unpoisoned");
+        let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
+        for item in PALETTE {
+            let name = name(item);
+            let scores = self.art.machine(name).join("scores.tsv");
+            let (Some(entry), Ok(text)) = (m.machine.get(name), std::fs::read_to_string(&scores))
+            else {
+                continue;
+            };
+            for row in text.lines().filter(|l| !l.is_empty()) {
+                let cols: Vec<&str> = row.split('\t').collect();
+                let [candidate, outside, seat, palette, off_centre, verdict] = cols[..] else {
+                    return Err(format!("{}: bad row {row:?}", scores.display()));
+                };
+                let index: u32 = candidate
+                    .rsplit('-')
+                    .next()
+                    .and_then(|i| i.parse().ok())
+                    .ok_or_else(|| format!("{}: bad candidate {candidate:?}", scores.display()))?;
+                let kept = if entry.kept == Some(index) {
+                    "KEPT "
+                } else {
+                    ""
+                };
+                let rule: Vec<&str> = verdict.split(' ').take(2).collect();
+                args.push("-label".into());
+                args.push(
+                    format!(
+                        "{kept}{candidate}  {outside} {seat} {palette} {off_centre}  {}",
+                        rule.join(" ")
+                    )
+                    .into(),
+                );
+                args.push(self.art.candidate(name, index).into());
+            }
+        }
+        if args.len() == 1 {
+            return Ok(());
+        }
+        let part = self.art.dir.join("sheet.png.part");
+        args.extend(
+            [
+                "-tile",
+                "4x",
+                "-geometry",
+                "340x340+6+6",
+                "-background",
+                "#6B4F3A",
+                "-fill",
+                "#F4EDE4",
+                "-font",
+                "DejaVu-Sans",
+                "-pointsize",
+                "12",
+            ]
+            .map(Into::into),
+        );
+        args.push(part.clone().into());
+        let status = std::process::Command::new("magick")
+            .args(&args)
+            .status()
+            .map_err(|e| format!("magick: {e}"))?;
+        if !status.success() {
+            return Err(format!("magick montage {status}"));
+        }
+        quantise(&part)?;
+        std::fs::rename(&part, self.art.dir.join("sheet.png")).map_err(|e| e.to_string())
+    }
 }
 
-fn plan() {
-    let manifest = Manifest::read();
-    for item in PALETTE {
-        let name = name(item);
-        let machine = manifest.machine(name);
-        println!(
-            "machine\t{name}\t{}\t{}\t{} {}",
-            manifest.candidates,
-            machine.kept.map_or("-".to_string(), |k| k.to_string()),
-            manifest.style.shared,
-            machine.prompt
-        );
+fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<bool, String>)> {
+    let remake = Remake {
+        art,
+        manifest: std::sync::Mutex::new(art.read()),
+        painter,
+        cap: Cap::new(PAINTERS),
+        painted: std::sync::atomic::AtomicBool::new(false),
+    };
+    let mut names: Vec<&String> = names.iter().collect();
+    names.sort();
+    names.dedup();
+    let results: Vec<(String, Result<bool, String>)> = std::thread::scope(|s| {
+        let handles: Vec<_> = names
+            .iter()
+            .map(|name| s.spawn(|| (name.to_string(), remake.machine(name))))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("a machine returns"))
+            .collect()
+    });
+    let sheet = art.dir.join("sheet.png");
+    if (!sheet.exists() || remake.painted.load(std::sync::atomic::Ordering::SeqCst))
+        && let Err(e) = remake.sheet()
+    {
+        eprintln!("sheet: {e}");
     }
-    for edge in &manifest.style.edges {
-        println!(
-            "relight\t{edge}\t{}",
-            manifest.style.relight.replace("{edge}", edge)
-        );
+    results
+}
+
+fn violators(art: &Art, manifest: &Manifest) -> Vec<String> {
+    let violates = |name: &str| {
+        let dir = art.machine(name);
+        let Some(kept) = manifest.machine.get(name).and_then(|m| m.kept) else {
+            println!("{name}\tkeeps no candidate");
+            return true;
+        };
+        let png = art.candidate(name, kept);
+        if !png.exists() || !dir.join("albedo.png").exists() || !dir.join("normal.png").exists() {
+            println!("{name}\t{name}-{kept} or its maps are missing");
+            return true;
+        }
+        let scaffold = Scaffold::of(item(name));
+        let score = scaffold.score(&scaffold.register(&open(png)));
+        println!("{name}-{kept}\t{}", score.verdict(&manifest.thresholds));
+        !score.passes(&manifest.thresholds)
+    };
+    std::thread::scope(|s| {
+        let handles: Vec<_> = PALETTE
+            .into_iter()
+            .map(name)
+            .map(|name| s.spawn(move || violates(name).then(|| name.to_string())))
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().expect("a verdict returns"))
+            .collect()
+    })
+}
+
+fn landed(results: &[(String, Result<bool, String>)]) -> bool {
+    let mut landed = true;
+    for (name, result) in results {
+        if let Err(e) = result {
+            landed = false;
+            eprintln!("{name}: did not land: {e}");
+        }
     }
+    landed
+}
+
+pub fn configure(args: &[String]) -> Option<i32> {
+    const USAGE: &str = "usage: ziral --gen NAME... | ziral --gen --all | ziral --gen --violators";
+    if args.get(1).map(String::as_str) != Some("--gen") {
+        return None;
+    }
+    let art = Art::shipped();
+    let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
+    let known = |n: &str| PALETTE.into_iter().map(name).any(|k| k == n);
+    let names: Vec<String> = match rest.as_slice() {
+        ["--all"] => PALETTE.into_iter().map(|i| name(i).to_string()).collect(),
+        ["--violators"] => violators(&art, &art.read()),
+        [_, ..] if rest.iter().all(|n| known(n)) => rest.iter().map(|n| n.to_string()).collect(),
+        _ => {
+            eprintln!("{USAGE}");
+            return Some(2);
+        }
+    };
+    if names.is_empty() {
+        println!("nothing to do");
+        return Some(0);
+    }
+    let painter = |job: &Paint| paint_sh(&art, job);
+    Some(i32::from(!landed(&remake(&art, &names, &painter))))
 }
 
 #[cfg(test)]
@@ -926,7 +1433,7 @@ mod tests {
 
     #[test]
     fn every_machine_has_a_manifest_entry_a_scaffold_a_kept_candidate_that_passes_and_relief() {
-        let manifest = Manifest::read();
+        let manifest = Art::shipped().read();
         let names: Vec<&str> = PALETTE.into_iter().map(name).collect();
         assert_eq!(
             manifest
@@ -942,11 +1449,11 @@ mod tests {
         );
         for item in PALETTE {
             let name = name(item);
-            let machine = manifest.machine(name);
+            let machine = &manifest.machine[name];
             let kept = machine
                 .kept
                 .unwrap_or_else(|| panic!("{name} keeps no candidate"));
-            let dir = dir(name);
+            let dir = Art::shipped().machine(name);
             let scaffold = Scaffold::of(item);
             let want = scaffold.render();
             let shipped = open(dir.join("scaffold.png"));
@@ -1003,13 +1510,25 @@ mod tests {
                 tilted as f32 > normal.pixels().len() as f32 * 0.01,
                 "{name}/normal.png is flat"
             );
+            let prompt = format!("{} {}", manifest.style.shared, machine.prompt);
+            assert_eq!(
+                machine.painted.as_deref(),
+                Some(painted_key(&prompt, manifest.candidates, &want).as_str()),
+                "{name}: the candidates are stale against the manifest: run ziral --gen {name}"
+            );
+            let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));
+            assert_eq!(
+                machine.relit.as_deref(),
+                Some(relit_key(&kept_png, &manifest.style).as_str()),
+                "{name}: the maps are stale against the kept candidate: run ziral --gen {name}"
+            );
         }
     }
 
     #[test]
     fn a_candidate_painted_beyond_its_footprint_is_rejected() {
         let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::Bonder));
-        let thresholds = Manifest::read().thresholds;
+        let thresholds = Art::shipped().read().thresholds;
         let clean = fired(&scaffold, &|w| w);
         let score = scaffold.score(&scaffold.register(&clean));
         assert!(score.passes(&thresholds), "{score:?}");
@@ -1042,7 +1561,7 @@ mod tests {
     #[test]
     fn a_capture_whose_seats_sit_off_their_cell_centres_is_rejected() {
         let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::SecondBond));
-        let thresholds = Manifest::read().thresholds;
+        let thresholds = Art::shipped().read().thresholds;
         let drift = |a: &RgbaImage, b: &RgbaImage| {
             let mut mean = Mean::default();
             for (p, q) in a.pixels().zip(b.pixels()) {
@@ -1159,7 +1678,7 @@ mod tests {
             assert!(got.direction.dot(want) > 0.999, "{got:?} vs {want:?}");
             assert!((got.ambient - AMBIENT).abs() < 0.02, "{got:?}");
         }
-        let thresholds = Manifest::read().thresholds;
+        let thresholds = Art::shipped().read().thresholds;
         assert!(relief.sphere <= thresholds.sphere, "{}", relief.sphere);
         let (origin, _) = scaffold.crop();
         let at = |dx: f32, dy: f32| {
@@ -1170,5 +1689,267 @@ mod tests {
         assert!(at(-1.0, 0.0).x < -TILT, "{:?}", at(-1.0, 0.0));
         assert!(at(0.0, -1.0).y > TILT, "{:?}", at(0.0, -1.0));
         assert!(at(0.0, 1.0).y < -TILT, "{:?}", at(0.0, 1.0));
+    }
+
+    fn studio(tag: &str, edges: &[&str], machines: &[&str]) -> Art {
+        let shipped = Art::shipped();
+        let root = std::env::temp_dir().join(format!("ziral-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let art = Art {
+            dir: root.join("machines"),
+        };
+        std::fs::create_dir_all(&art.dir).expect("a studio is creatable");
+        std::fs::copy(shipped.paint_sh(), art.paint_sh()).expect("paint.sh copies");
+        let style = shipped.read().style;
+        art.write(&Manifest {
+            candidates: 2,
+            style: Style {
+                edges: edges.iter().map(|e| e.to_string()).collect(),
+                ..style
+            },
+            thresholds: shipped.read().thresholds,
+            machine: machines
+                .iter()
+                .map(|name| {
+                    (
+                        name.to_string(),
+                        Machine {
+                            prompt: format!("a {name}"),
+                            kept: None,
+                            painted: None,
+                            relit: None,
+                        },
+                    )
+                })
+                .collect(),
+        });
+        art
+    }
+
+    fn fake(job: &Paint) -> Result<(), String> {
+        let stem = job
+            .output
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("an output stem");
+        if job.input.ends_with("scaffold.png") {
+            let (name, index) = stem.rsplit_once('-').expect("name-index");
+            let scaffold = Scaffold::of(item(name));
+            let shift = Vec2::X * (index.parse::<f32>().expect("an index") - 1.0);
+            save(&fired(&scaffold, &|w| w - shift), &job.output);
+        } else {
+            let name = job
+                .input
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::file_name)
+                .and_then(|s| s.to_str())
+                .expect("relit/master.png under the machine dir");
+            let scaffold = Scaffold::of(item(name));
+            let light = match stem {
+                "right" => Vec3::new(1.0, 0.0, 0.2),
+                "top" => Vec3::new(0.0, 1.0, 0.2),
+                "left" => Vec3::new(-1.0, 0.0, 0.2),
+                "bottom" => Vec3::new(0.0, -1.0, 0.2),
+                edge => panic!("no light for {edge}"),
+            }
+            .normalize();
+            let mut edit = open(&job.input);
+            for (x, y, p) in edit.enumerate_pixels_mut() {
+                if let Some(n) = scaffold.sphere_normal(x, y) {
+                    *p = grey(SPHERE_ALBEDO * (AMBIENT + (1.0 - AMBIENT) * n.dot(light).max(0.0)));
+                }
+            }
+            save(&edit, &job.output);
+        }
+        Ok(())
+    }
+
+    fn counted<'a>(
+        calls: &'a std::sync::atomic::AtomicUsize,
+        painter: &'a (dyn Fn(&Paint) -> Result<(), String> + Sync),
+    ) -> impl Fn(&Paint) -> Result<(), String> + Sync + 'a {
+        move |job| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            painter(job)
+        }
+    }
+
+    #[test]
+    fn unchanged_inputs_are_skipped_and_a_changed_prompt_or_kept_is_remade() {
+        let art = studio("key", &["right", "top", "left", "bottom"], &["source"]);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let painter = counted(&calls, &fake);
+        let names = ["source".to_string()];
+        let run = |calls: &std::sync::atomic::AtomicUsize| {
+            calls.store(0, std::sync::atomic::Ordering::SeqCst);
+            let results = remake(&art, &names, &painter);
+            assert_eq!(results.len(), 1, "{results:?}");
+            let changed = results[0].1.clone().expect("source lands");
+            (changed, calls.load(std::sync::atomic::Ordering::SeqCst))
+        };
+        assert_eq!(run(&calls), (true, 6));
+        let dir = art.machine("source");
+        for made in [
+            "scaffold.png",
+            "candidates/source-1.png",
+            "candidates/source-2.png",
+            "scores.tsv",
+            "albedo.png",
+            "normal.png",
+            "relit/lights.txt",
+            "../sheet.png",
+        ] {
+            assert!(dir.join(made).exists(), "{made}");
+        }
+        let manifest = std::fs::read_to_string(art.manifest()).expect("a manifest");
+        let kept = art.read().machine["source"].kept.expect("a kept candidate");
+        let albedo = read(&dir.join("albedo.png"));
+        let sheet = |dir: &Path| {
+            std::fs::metadata(dir.join("../sheet.png"))
+                .and_then(|m| m.modified())
+                .expect("a sheet")
+        };
+        let made = sheet(&dir);
+        assert_eq!(run(&calls), (false, 0));
+        assert_eq!(sheet(&dir), made);
+        assert_eq!(
+            std::fs::read_to_string(art.manifest()).expect("a manifest"),
+            manifest
+        );
+        assert_eq!(read(&dir.join("albedo.png")), albedo);
+        let mut m = art.read();
+        m.thresholds.outside += 0.01;
+        art.write(&m);
+        assert_eq!(run(&calls), (false, 0));
+        let mut m = art.read();
+        m.machine.get_mut("source").expect("source").prompt = "another source".into();
+        art.write(&m);
+        assert_eq!(run(&calls), (true, 2));
+        let mut m = art.read();
+        m.machine.get_mut("source").expect("source").kept = Some(3 - kept);
+        art.write(&m);
+        assert_eq!(run(&calls), (true, 4));
+        assert_eq!(art.read().machine["source"].kept, Some(3 - kept));
+        assert_ne!(read(&dir.join("albedo.png")), albedo);
+        assert_eq!(run(&calls), (false, 0));
+    }
+
+    #[test]
+    fn a_machine_whose_candidates_all_fail_to_paint_does_not_land_and_the_others_still_do() {
+        let art = studio(
+            "exit",
+            &["right", "top", "left", "bottom"],
+            &["cleanup", "source"],
+        );
+        let painter = |job: &Paint| {
+            if job.output.to_string_lossy().contains("cleanup") {
+                Err("boom".to_string())
+            } else {
+                fake(job)
+            }
+        };
+        let names = ["cleanup".to_string(), "source".to_string()];
+        let results = remake(&art, &names, &painter);
+        assert!(!landed(&results));
+        let by_name = |results: &[(String, Result<bool, String>)], name: &str| {
+            results
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, r)| r.clone())
+                .unwrap_or_else(|| panic!("{name} in {results:?}"))
+        };
+        assert_eq!(by_name(&results, "source"), Ok(true));
+        let reason = by_name(&results, "cleanup").expect_err("cleanup did not land");
+        assert!(
+            reason.contains("no candidate passes")
+                && reason.contains("2 of 2 paints failed")
+                && reason.contains("cleanup-1: boom"),
+            "{reason}"
+        );
+        assert_eq!(art.read().machine["cleanup"].kept, None);
+        assert!(art.read().machine["source"].kept.is_some());
+        let results = remake(&art, &names, &fake);
+        assert!(landed(&results), "{results:?}");
+        assert_eq!(by_name(&results, "source"), Ok(false));
+        assert_eq!(by_name(&results, "cleanup"), Ok(true));
+        assert!(art.read().machine["cleanup"].kept.is_some());
+        assert!(landed(&remake(&art, &names[1..], &fake)));
+        assert!(landed(&[]));
+    }
+
+    #[test]
+    fn paint_sh_retries_the_image_tool_with_backoff_and_reports_every_failed_attempt() {
+        let root = std::env::temp_dir().join(format!("ziral-paint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("bin")).expect("a fake bin");
+        let codex = root.join("bin/codex");
+        std::fs::write(
+            &codex,
+            "#!/bin/sh\n\
+             n=$(cat \"$HOME/attempts\" 2>/dev/null || echo 0)\n\
+             n=$((n + 1))\n\
+             printf %s \"$n\" > \"$HOME/attempts\"\n\
+             [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
+             mkdir -p \"$HOME/.codex/generated_images/t$n\"\n\
+             magick -size 64x64 xc:'#00ff00' \"$HOME/.codex/generated_images/t$n/a.png\"\n\
+             echo \"{\\\"type\\\":\\\"thread.started\\\",\\\"thread_id\\\":\\\"t$n\\\"}\"\n",
+        )
+        .expect("a fake codex");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let path = format!(
+            "{}:{}",
+            root.join("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let paint = |pass_on: u32| {
+            let _ = std::fs::remove_file(root.join("attempts"));
+            let _ = std::fs::remove_file(root.join("out.png"));
+            let started = std::time::Instant::now();
+            let out = std::process::Command::new(Art::shipped().paint_sh())
+                .args(["-s", "64"])
+                .arg(root.join("out.png"))
+                .arg("a prompt")
+                .env("PATH", &path)
+                .env("HOME", &root)
+                .env("PASS_ON", pass_on.to_string())
+                .output()
+                .expect("paint.sh runs");
+            let attempts: u32 = std::fs::read_to_string(root.join("attempts"))
+                .expect("attempts")
+                .parse()
+                .expect("a count");
+            (
+                out.status.success(),
+                attempts,
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+                started.elapsed().as_secs_f32(),
+            )
+        };
+        let (ok, attempts, stderr, took) = paint(3);
+        assert!(ok, "{stderr}");
+        assert!(root.join("out.png").exists());
+        assert_eq!(attempts, 3);
+        for line in [
+            "codex: boom 1",
+            "attempt 1 of 4 failed, retrying in 1s",
+            "codex: boom 2",
+            "attempt 2 of 4 failed, retrying in 2s",
+        ] {
+            assert!(stderr.contains(line), "{line:?} missing from {stderr}");
+        }
+        assert!(!stderr.contains("attempt 3 of 4"), "{stderr}");
+        assert!(took >= 3.0, "{took}s: no backoff");
+        let (ok, attempts, stderr, took) = paint(99);
+        assert!(!ok);
+        assert!(!root.join("out.png").exists());
+        assert_eq!(attempts, 4);
+        assert!(
+            stderr.contains("attempt 3 of 4 failed, retrying in 4s"),
+            "{stderr}"
+        );
+        assert!(stderr.contains("gave up after 4 attempts"), "{stderr}");
+        assert!(took >= 7.0, "{took}s: no backoff");
     }
 }
