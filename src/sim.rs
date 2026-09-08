@@ -218,22 +218,41 @@ impl GlyphKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Item {
+pub enum Machine {
     Arm,
     Glyph(GlyphKind),
 }
 
-impl Item {
-    pub const ALL: [Item; GlyphKind::ALL.len() + 1] = {
-        let mut all = [Item::Arm; GlyphKind::ALL.len() + 1];
+impl Machine {
+    pub const ALL: [Machine; GlyphKind::ALL.len() + 1] = {
+        let mut all = [Machine::Arm; GlyphKind::ALL.len() + 1];
         let mut k = 0;
         while k < GlyphKind::ALL.len() {
-            all[k + 1] = Item::Glyph(GlyphKind::ALL[k]);
+            all[k + 1] = Machine::Glyph(GlyphKind::ALL[k]);
             k += 1;
         }
         all
     };
 
+    pub fn recipe(self) -> Option<&'static Form> {
+        Item::Machine(self).recipe()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Item {
+    Machine(Machine),
+    Step,
+    Token(Instr),
+}
+
+impl From<Machine> for Item {
+    fn from(machine: Machine) -> Item {
+        Item::Machine(machine)
+    }
+}
+
+impl Item {
     fn index(self) -> Option<usize> {
         recipes().iter().position(|(item, _)| *item == self)
     }
@@ -400,12 +419,13 @@ impl Inventory {
         }
     }
 
-    pub fn take(&mut self, item: Item) {
-        if let Some(i) = item.index() {
-            self.count[i] = self.count[i]
-                .checked_sub(1)
-                .expect("a lift at zero never holds");
-        }
+    #[must_use]
+    pub fn spend(&mut self, item: Item) -> bool {
+        let Some(i) = item.index().filter(|i| self.count[*i] > 0) else {
+            return false;
+        };
+        self.count[i] -= 1;
+        true
     }
 
     pub fn set_cap(&mut self, item: Item, notches: i32) {
@@ -1179,8 +1199,8 @@ mod tests {
             .collect()
     }
 
-    fn count(sim: &Sim, item: Item) -> u32 {
-        sim.inventory.count(item).unwrap()
+    fn count(sim: &Sim, item: impl Into<Item>) -> u32 {
+        sim.inventory.count(item.into()).unwrap()
     }
 
     fn lying(sim: &Sim, ids: &[usize]) -> bool {
@@ -1229,7 +1249,111 @@ mod tests {
             assert_eq!(count(&world, *item), 1, "{item:?} does not craft itself");
             assert!(world.atoms.iter().flatten().next().is_none());
         }
-        assert!(Item::Glyph(GlyphKind::Source).recipe().is_none());
+        assert!(
+            Item::Machine(Machine::Glyph(GlyphKind::Source))
+                .recipe()
+                .is_none()
+        );
+    }
+
+    fn mirrored(form: &Form) -> Form {
+        let mut sim = form.sim();
+        for atom in sim.atoms.iter_mut().flatten() {
+            atom.pos = Hex::new(atom.pos.r, atom.pos.q);
+        }
+        Form::of(&sim)
+    }
+
+    fn last_bend(form: &Form) -> i32 {
+        let sim = form.sim();
+        let degree = |i: usize| sim.bonds.iter().filter(|b| b.a == i || b.b == i).count();
+        let double = sim
+            .bonds
+            .iter()
+            .find(|b| b.kind == BondKind::Double)
+            .expect("a token carries the arm's double bond");
+        let mut path = vec![
+            [double.a, double.b]
+                .into_iter()
+                .find(|i| degree(*i) == 1)
+                .expect("a chain from the arm"),
+        ];
+        while let Some(next) = sim.bonds.iter().find_map(|b| {
+            let last = *path.last().unwrap();
+            let other = if b.a == last {
+                b.b
+            } else if b.b == last {
+                b.a
+            } else {
+                return None;
+            };
+            (!path.contains(&other)).then_some(other)
+        }) {
+            path.push(next);
+        }
+        let at = |i: usize| sim.atoms[i].unwrap().pos;
+        let [a, b, c] = [
+            path[path.len() - 3],
+            path[path.len() - 2],
+            path[path.len() - 1],
+        ]
+        .map(at);
+        let (u, v) = (b.sub(a), c.sub(b));
+        u.q * v.r - u.r * v.q
+    }
+
+    #[test]
+    fn the_step_is_one_atom_and_every_token_is_the_arm_with_its_act_drawn_on() {
+        assert_eq!(Item::Step.recipe().unwrap().atoms().len(), 1);
+        let recipe = |instr: Instr| Item::Token(instr).recipe().unwrap();
+        let tokens: Vec<Instr> = recipes()
+            .iter()
+            .filter_map(|(item, _)| match item {
+                Item::Token(instr) => Some(*instr),
+                Item::Machine(_) | Item::Step => None,
+            })
+            .collect();
+        for instr in tokens {
+            let sim = recipe(instr).sim();
+            assert!(
+                sim.bonds.iter().any(|b| b.kind == BondKind::Double),
+                "{instr:?} has no arm in it"
+            );
+            let atoms = if matches!(instr, Instr::Move(_)) {
+                4
+            } else {
+                3
+            };
+            assert_eq!(sim.atoms.len(), atoms, "{instr:?}");
+        }
+        for instr in [Instr::Grab, Instr::Drop, Instr::Wait] {
+            assert_eq!(mirrored(recipe(instr)), *recipe(instr), "{instr:?}");
+        }
+        for (ccw, cw) in [
+            (Instr::Rot(Spin::Ccw), Instr::Rot(Spin::Cw)),
+            (Instr::Pivot(Spin::Ccw), Instr::Pivot(Spin::Cw)),
+            (Instr::Move(1), Instr::Move(4)),
+            (Instr::Move(2), Instr::Move(5)),
+            (Instr::Move(3), Instr::Move(0)),
+        ] {
+            assert_eq!(mirrored(recipe(ccw)), *recipe(cw), "{ccw:?} {cw:?}");
+            assert!(last_bend(recipe(ccw)) > 0, "{ccw:?} bends clockwise");
+            assert!(last_bend(recipe(cw)) < 0, "{cw:?} bends counterclockwise");
+        }
+        assert_eq!(last_bend(recipe(Instr::Drop)), 0);
+        assert_eq!(last_bend(recipe(Instr::Wait)), 0);
+        let a_lone_atom_on_a_pad = |tier| {
+            let mut sim = Sim::empty();
+            sim.glyphs.push(Some(output(tier, ORIGIN)));
+            sim.spawn(Atom {
+                kind: AtomKind::Base,
+                pos: ORIGIN,
+            });
+            sim.step();
+            (count(&sim, Item::Step), sim.atoms.iter().flatten().count())
+        };
+        assert_eq!(a_lone_atom_on_a_pad(Tier::One), (1, 0));
+        assert_eq!(a_lone_atom_on_a_pad(Tier::Three), (1, 0));
     }
 
     #[test]
@@ -1304,8 +1428,8 @@ mod tests {
         let b = put(&mut sim, 2, 0);
         bond(&mut sim, a, b, BondKind::Double);
         sim.step();
-        assert_eq!(count(&sim, Item::Arm), 1);
-        assert_eq!(count(&sim, Item::Glyph(GlyphKind::Bonder)), 0);
+        assert_eq!(count(&sim, Machine::Arm), 1);
+        assert_eq!(count(&sim, Machine::Glyph(GlyphKind::Bonder)), 0);
         assert!(sim.arms[0].holding);
         assert_eq!(sim.held(0), None);
         assert!(sim.atoms.iter().flatten().next().is_none());
@@ -1326,26 +1450,27 @@ mod tests {
             put(&mut sim, 3, -1),
         ];
         bond(&mut sim, triangle[0], triangle[1], BondKind::Single);
-        bond(&mut sim, triangle[1], triangle[2], BondKind::Single);
+        bond(&mut sim, triangle[1], triangle[2], BondKind::Double);
         bond(&mut sim, triangle[2], triangle[0], BondKind::Double);
         sim.step();
         assert!(lying(&sim, &triangle));
-        assert_eq!(count(&sim, Item::Glyph(GlyphKind::SecondBond)), 0);
+        assert_eq!(count(&sim, Machine::Glyph(GlyphKind::SecondBond)), 0);
+        sim.bonds[1].kind = BondKind::Single;
         sim.bonds[2].kind = BondKind::Single;
         sim.step();
         assert!(!lying(&sim, &triangle));
-        assert_eq!(count(&sim, Item::Glyph(GlyphKind::SecondBond)), 1);
-        assert_eq!(count(&sim, Item::Arm), 1);
+        assert_eq!(count(&sim, Machine::Glyph(GlyphKind::SecondBond)), 1);
+        assert_eq!(count(&sim, Machine::Arm), 1);
     }
 
     #[test]
     fn the_cap_holds_a_compound_until_the_count_drops_and_a_return_passes_it() {
-        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let bonder = Machine::Glyph(GlyphKind::Bonder);
         let recipe = bonder.recipe().unwrap();
         let mut sim = Sim::empty();
         sim.glyphs.push(Some(output(Tier::One, ORIGIN)));
         for _ in 1..DEFAULT_CAP {
-            sim.inventory.add(bonder);
+            sim.inventory.add(bonder.into());
         }
         lay(&mut sim, recipe, 0, ORIGIN);
         sim.step();
@@ -1356,33 +1481,38 @@ mod tests {
         }
         assert!(lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP);
-        sim.inventory.take(bonder);
+        assert!(sim.inventory.spend(bonder.into()));
         sim.step();
         assert!(!lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP);
-        sim.inventory.add(bonder);
-        sim.inventory.add(bonder);
+        sim.inventory.add(bonder.into());
+        sim.inventory.add(bonder.into());
         let ids = lay(&mut sim, recipe, 2, ORIGIN);
         sim.step();
         assert!(lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP + 2);
-        sim.inventory.set_cap(bonder, 3);
+        sim.inventory.set_cap(bonder.into(), 3);
         sim.step();
         assert!(!lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP + 3);
-        assert!(sim.inventory.full(bonder));
+        assert!(sim.inventory.full(bonder.into()));
     }
 
     #[test]
     fn two_compounds_on_one_glyph_both_craft_in_one_tick() {
         let mut sim = Sim::empty();
         sim.glyphs.push(Some(output(Tier::Two, ORIGIN)));
-        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let bonder = Machine::Glyph(GlyphKind::Bonder);
         let pair = lay(&mut sim, bonder.recipe().unwrap(), 0, Hex::new(-2, 0));
-        let arm = lay(&mut sim, Item::Arm.recipe().unwrap(), 0, Hex::new(1, 0));
+        let arm = lay(
+            &mut sim,
+            Item::Machine(Machine::Arm).recipe().unwrap(),
+            0,
+            Hex::new(1, 0),
+        );
         sim.step();
         assert!(!lying(&sim, &pair) && !lying(&sim, &arm));
-        assert_eq!((count(&sim, bonder), count(&sim, Item::Arm)), (1, 1));
+        assert_eq!((count(&sim, bonder), count(&sim, Machine::Arm)), (1, 1));
     }
 
     #[test]
@@ -1586,7 +1716,7 @@ mod tests {
         for _ in 0..20 * 3 {
             sim.step();
         }
-        assert_eq!(count(&sim, Item::Arm), 3 * (PLACEMENTS.len() as u32 - 1));
+        assert_eq!(count(&sim, Machine::Arm), 3 * (PLACEMENTS.len() as u32 - 1));
         let stalled: Vec<usize> = (0..sim.arms.len())
             .filter(|i| sim.arms[*i].stall.is_some())
             .collect();
@@ -1594,7 +1724,7 @@ mod tests {
         for _ in 0..20 {
             sim.step();
         }
-        assert_eq!(count(&sim, Item::Arm), DEFAULT_CAP);
+        assert_eq!(count(&sim, Machine::Arm), DEFAULT_CAP);
         assert!(sim.atoms.len() < 60);
     }
 

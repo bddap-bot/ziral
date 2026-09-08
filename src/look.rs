@@ -1,4 +1,4 @@
-use crate::sim::Item;
+use crate::sim::Machine;
 use crate::sim::{Arm, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot, Tier};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
@@ -78,9 +78,9 @@ pub struct Cell {
     pub role: Role,
 }
 
-pub fn footprint(item: Item) -> Vec<Cell> {
+pub fn footprint(item: Machine) -> Vec<Cell> {
     match item {
-        Item::Arm => {
+        Machine::Arm => {
             let [pivot, hand] = Arm::new(ORIGIN, 0, Vec::new()).cells();
             vec![
                 Cell {
@@ -93,7 +93,7 @@ pub fn footprint(item: Item) -> Vec<Cell> {
                 },
             ]
         }
-        Item::Glyph(kind) => kind
+        Machine::Glyph(kind) => kind
             .rule()
             .slots
             .iter()
@@ -111,7 +111,7 @@ pub struct Quad {
     pub side: f32,
 }
 
-pub fn quad(item: Item) -> Quad {
+pub fn quad(item: Machine) -> Quad {
     let at: Vec<Vec2> = footprint(item).iter().map(|c| px(c.at)).collect();
     let centre = at.iter().sum::<Vec2>() / at.len() as f32;
     let radius = at.iter().map(|p| p.distance(centre)).fold(0.0, f32::max);
@@ -325,9 +325,9 @@ pub fn bond(kind: BondKind) -> Look<()> {
     }
 }
 
-pub fn machine(item: Item) -> Look<MachineMark> {
+pub fn machine(item: Machine) -> Look<MachineMark> {
     let kind = match item {
-        Item::Arm => {
+        Machine::Arm => {
             let (skin, normal) = machine!("arm");
             return Look {
                 glaze: Glaze::Brass,
@@ -336,7 +336,7 @@ pub fn machine(item: Item) -> Look<MachineMark> {
                 marking: MachineMark::Hand(Glaze::Terracotta, normal),
             };
         }
-        Item::Glyph(kind) => kind,
+        Machine::Glyph(kind) => kind,
     };
     let (glaze, (skin, normal)) = match kind {
         GlyphKind::Source => (Glaze::BlueGreen, machine!("source")),
@@ -360,9 +360,9 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .into_iter()
         .map(|k| atom(k).skin)
         .chain(BondKind::ALL.into_iter().map(|k| bond(k).skin))
-        .chain(Item::ALL.into_iter().map(|item| machine(item).skin))
+        .chain(Machine::ALL.into_iter().map(|item| machine(item).skin))
         .chain(
-            Item::ALL
+            Machine::ALL
                 .into_iter()
                 .map(|item| machine(item).marking.normal()),
         )
@@ -662,16 +662,19 @@ pub(crate) mod tests {
 
     #[test]
     fn every_glyph_is_distinct() {
-        let glyphs = Item::ALL.iter().filter_map(|item| match item {
-            Item::Glyph(kind) => Some(*kind),
-            Item::Arm => None,
+        let glyphs = Machine::ALL.iter().filter_map(|item| match item {
+            Machine::Glyph(kind) => Some(*kind),
+            Machine::Arm => None,
         });
-        pairwise("glyphs", &named(glyphs, |kind| machine(Item::Glyph(kind))));
+        pairwise(
+            "glyphs",
+            &named(glyphs, |kind| machine(Machine::Glyph(kind))),
+        );
     }
 
     #[test]
     fn every_machine_is_distinct() {
-        pairwise("machines", &named(Item::ALL, machine));
+        pairwise("machines", &named(Machine::ALL, machine));
     }
 
     fn wears(what: impl std::fmt::Display, color: Color, glaze: Glaze) {
@@ -734,7 +737,7 @@ pub(crate) mod tests {
 
     #[test]
     fn every_machine_sprite_has_visible_art_and_real_transparency() {
-        for item in Item::ALL {
+        for item in Machine::ALL {
             let skin = machine(item).skin;
             let (_, _, data) = pixels(skin);
             let visible = data.chunks_exact(4).filter(|pixel| pixel[3] > 230).count();
@@ -754,7 +757,7 @@ pub(crate) mod tests {
             .chain(
                 GlyphKind::ALL
                     .into_iter()
-                    .map(|kind| machine(Item::Glyph(kind)).skin),
+                    .map(|kind| machine(Machine::Glyph(kind)).skin),
             )
             .collect();
         for (i, a) in semantic.iter().enumerate() {
@@ -828,7 +831,7 @@ pub(crate) mod tests {
             all.len(),
             AtomKind::ALL.len()
                 + BondKind::ALL.len()
-                + 2 * Item::ALL.len()
+                + 2 * Machine::ALL.len()
                 + TILES.len()
                 + KEYS.len()
                 + 1

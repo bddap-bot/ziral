@@ -1,6 +1,6 @@
 use crate::form::Form;
 use crate::look::{self, AMBIENT, Cell, Glaze, HEX, Quad, Role, px};
-use crate::sim::Item;
+use crate::sim::Machine;
 use crate::sim::Slot;
 use bevy::math::{Vec2, Vec3};
 use image::{Rgba, RgbaImage};
@@ -32,7 +32,7 @@ struct Manifest {
     candidates: u32,
     style: Style,
     thresholds: Thresholds,
-    machine: BTreeMap<String, Machine>,
+    machine: BTreeMap<String, Entry>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -53,7 +53,7 @@ struct Thresholds {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct Machine {
+struct Entry {
     #[serde(flatten)]
     direction: Direction,
     kept: Option<u32>,
@@ -163,7 +163,7 @@ impl Art {
     }
 }
 
-pub(crate) fn name(item: Item) -> &'static str {
+pub(crate) fn name(item: Machine) -> &'static str {
     look::machine(item)
         .skin
         .name
@@ -172,8 +172,8 @@ pub(crate) fn name(item: Item) -> &'static str {
         .expect("a machine skin lives in art/machines/<name>/")
 }
 
-fn item(name: &str) -> Item {
-    Item::ALL
+fn item(name: &str) -> Machine {
+    Machine::ALL
         .into_iter()
         .find(|item| self::name(*item) == name)
         .unwrap_or_else(|| panic!("no machine is named {name}"))
@@ -191,7 +191,7 @@ pub(crate) const fn scale() -> f32 {
     PX_PER_HEX / HEX
 }
 
-pub(crate) fn canvas(item: Item) -> u32 {
+pub(crate) fn canvas(item: Machine) -> u32 {
     (look::quad(item).side * scale() + 2.0 * band()).round() as u32
 }
 
@@ -200,7 +200,7 @@ const fn band() -> f32 {
 }
 
 impl Scaffold {
-    fn of(item: Item) -> Scaffold {
+    fn of(item: Machine) -> Scaffold {
         let mut scaffold = Scaffold {
             cells: look::footprint(item),
             quad: look::quad(item),
@@ -944,7 +944,7 @@ fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, recipe: Option<&F
     ])
 }
 
-fn prompt(style: &Style, item: Item, direction: &Direction) -> String {
+fn prompt(style: &Style, item: Machine, direction: &Direction) -> String {
     match item.recipe() {
         Some(_) => format!("{} {} {}", style.shared, style.recipe, direction.text()),
         None => format!("{} {}", style.shared, direction.text()),
@@ -998,7 +998,7 @@ struct Prepared {
     style: Style,
     thresholds: Thresholds,
     count: u32,
-    entry: Machine,
+    entry: Entry,
     prompt: String,
     painted: String,
     images: Vec<PathBuf>,
@@ -1044,7 +1044,7 @@ impl Remake<'_> {
         })
     }
 
-    fn entry(&self, name: &str) -> Result<(Style, Thresholds, u32, Machine), String> {
+    fn entry(&self, name: &str) -> Result<(Style, Thresholds, u32, Entry), String> {
         let m = self.manifest.lock().expect("the manifest is unpoisoned");
         let entry = m
             .machine
@@ -1322,7 +1322,7 @@ impl Remake<'_> {
     fn sheet(&self) -> Result<(), String> {
         let m = self.manifest.lock().expect("the manifest is unpoisoned");
         let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
-        for item in Item::ALL {
+        for item in Machine::ALL {
             let name = name(item);
             let scores = self.art.machine(name).join("scores.tsv");
             let (Some(entry), Ok(text)) = (m.machine.get(name), std::fs::read_to_string(&scores))
@@ -1448,7 +1448,7 @@ fn violators(art: &Art, manifest: &Manifest) -> Vec<String> {
         !score.passes(&manifest.thresholds)
     };
     std::thread::scope(|s| {
-        let handles: Vec<_> = Item::ALL
+        let handles: Vec<_> = Machine::ALL
             .into_iter()
             .map(name)
             .map(|name| s.spawn(move || violates(name).then(|| name.to_string())))
@@ -1463,7 +1463,7 @@ fn violators(art: &Art, manifest: &Manifest) -> Vec<String> {
 fn plan(manifest: &Manifest) -> String {
     let mut out = String::new();
     let mut placeholders = 0;
-    for item in Item::ALL {
+    for item in Machine::ALL {
         let name = name(item);
         let entry = &manifest.machine[name];
         placeholders += usize::from(matches!(entry.direction, Direction::Placeholder(_)));
@@ -1500,9 +1500,12 @@ pub fn configure(args: &[String]) -> Option<i32> {
         return None;
     }
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
-    let known = |n: &str| Item::ALL.into_iter().map(name).any(|k| k == n);
+    let known = |n: &str| Machine::ALL.into_iter().map(name).any(|k| k == n);
     let names: Vec<String> = match rest.as_slice() {
-        ["--all"] => Item::ALL.into_iter().map(|i| name(i).to_string()).collect(),
+        ["--all"] => Machine::ALL
+            .into_iter()
+            .map(|i| name(i).to_string())
+            .collect(),
         ["--violators"] => violators(&art, &art.read()),
         [_, ..] if rest.iter().all(|n| known(n)) => rest.iter().map(|n| n.to_string()).collect(),
         _ => {
@@ -1554,7 +1557,7 @@ mod tests {
 
     #[test]
     fn scaffold_cells_match_the_footprint() {
-        for item in Item::ALL {
+        for item in Machine::ALL {
             let scaffold = Scaffold::of(item);
             let n = scaffold.canvas as usize;
             let mut covered = Vec::new();
@@ -1569,8 +1572,8 @@ mod tests {
                 }
             }
             let mut footprint: Vec<Hex> = match item {
-                Item::Arm => Arm::new(ORIGIN, 0, Vec::new()).cells().to_vec(),
-                Item::Glyph(kind) => Glyph {
+                Machine::Arm => Arm::new(ORIGIN, 0, Vec::new()).cells().to_vec(),
+                Machine::Glyph(kind) => Glyph {
                     kind,
                     at: ORIGIN,
                     dir: 0,
@@ -1588,7 +1591,7 @@ mod tests {
     #[test]
     fn every_machine_has_a_manifest_entry_a_scaffold_a_kept_candidate_that_passes_and_relief() {
         let manifest = Art::shipped().read();
-        let names: Vec<&str> = Item::ALL.into_iter().map(name).collect();
+        let names: Vec<&str> = Machine::ALL.into_iter().map(name).collect();
         assert_eq!(
             manifest
                 .machine
@@ -1601,7 +1604,7 @@ mod tests {
                 sorted
             }
         );
-        for item in Item::ALL {
+        for item in Machine::ALL {
             let name = name(item);
             let machine = &manifest.machine[name];
             let kept = machine
@@ -1681,7 +1684,7 @@ mod tests {
 
     #[test]
     fn a_candidate_painted_beyond_its_footprint_is_rejected() {
-        let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::Bonder));
+        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::Bonder));
         let thresholds = Art::shipped().read().thresholds;
         let clean = fired(&scaffold, &|w| w);
         let score = scaffold.score(&scaffold.register(&clean));
@@ -1714,7 +1717,7 @@ mod tests {
 
     #[test]
     fn a_capture_whose_seats_sit_off_their_cell_centres_is_rejected() {
-        let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::SecondBond));
+        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SecondBond));
         let thresholds = Art::shipped().read().thresholds;
         let drift = |a: &RgbaImage, b: &RgbaImage| {
             let mut mean = Mean::default();
@@ -1802,7 +1805,7 @@ mod tests {
 
     #[test]
     fn a_lambertian_sphere_returns_its_own_lights_and_a_bump_its_own_normals() {
-        let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::Source));
+        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::Source));
         let base = RgbaImage::from_pixel(scaffold.canvas, scaffold.canvas, grey(SPHERE_ALBEDO));
         let bump = scaffold.pixel(px(scaffold.cells[0].at));
         let radius = BUMP * HEX * scale();
@@ -1867,7 +1870,7 @@ mod tests {
                 .map(|name| {
                     (
                         name.to_string(),
-                        Machine {
+                        Entry {
                             direction: Direction::Placeholder(format!("a {name}")),
                             kept: None,
                             painted: None,
@@ -2007,7 +2010,7 @@ mod tests {
         assert_eq!(
             prompt(
                 &read.style,
-                Item::Glyph(crate::sim::GlyphKind::Source),
+                Machine::Glyph(crate::sim::GlyphKind::Source),
                 direction
             ),
             format!("{} {text}", read.style.shared)
@@ -2047,7 +2050,7 @@ mod tests {
     #[test]
     fn the_plan_names_every_placeholder_machine_and_counts_them() {
         let mut m = Art::shipped().read();
-        let names: Vec<&str> = Item::ALL.into_iter().map(name).collect();
+        let names: Vec<&str> = Machine::ALL.into_iter().map(name).collect();
         let lines = |m: &Manifest| plan(m).lines().map(str::to_string).collect::<Vec<_>>();
         let all = lines(&m);
         assert_eq!(all.len(), names.len() + 1);
@@ -2102,8 +2105,8 @@ mod tests {
         let recorded = jobs.lock().unwrap();
         let style = art.read().style;
         for (name, item) in [
-            ("cleanup", Item::Glyph(crate::sim::GlyphKind::Cleanup)),
-            ("source", Item::Glyph(crate::sim::GlyphKind::Source)),
+            ("cleanup", Machine::Glyph(crate::sim::GlyphKind::Cleanup)),
+            ("source", Machine::Glyph(crate::sim::GlyphKind::Source)),
         ] {
             let dir = art.machine(name);
             let candidates: Vec<_> = recorded
@@ -2143,7 +2146,7 @@ mod tests {
         let recipe_png = art.machine("cleanup").join("recipe.png");
         let before = read(&recipe_png);
         let recipe = open(&recipe_png);
-        let canvas = canvas(Item::Glyph(crate::sim::GlyphKind::Output(
+        let canvas = canvas(Machine::Glyph(crate::sim::GlyphKind::Output(
             crate::sim::Tier::One,
         )));
         assert_eq!((recipe.width(), recipe.height()), (canvas, canvas));

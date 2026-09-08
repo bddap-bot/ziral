@@ -1,34 +1,83 @@
 use crate::sim::{
-    Atom, AtomKind, Bond, BondKind, DIRS, GlyphKind, Hex, Item, MAX_COMPOUND_ATOMS, Sim, Tier,
+    Atom, AtomKind, Bond, BondKind, DIRS, GlyphKind, Hex, Instr, Item, MAX_COMPOUND_ATOMS, Machine,
+    Sim, Spin, Tier,
 };
 use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 7] = [
-    (Item::Glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
+pub const RECIPES: [(Item, &str); 21] = [
+    (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
-        Item::Glyph(GlyphKind::SecondBond),
+        glyph(GlyphKind::SecondBond),
         "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1-1,0",
     ),
-    (Item::Arm, "B0,0 B0,1 0,0=0,1"),
+    (Item::Machine(Machine::Arm), "B0,0 B0,1 0,0=0,1"),
+    (glyph(GlyphKind::Cleanup), "B0,0 B0,1 B0,2 0,0-0,1 0,1-0,2"),
     (
-        Item::Glyph(GlyphKind::Cleanup),
-        "B0,0 B0,1 B0,2 0,0-0,1 0,1-0,2",
-    ),
-    (
-        Item::Glyph(GlyphKind::Output(Tier::One)),
+        glyph(GlyphKind::Output(Tier::One)),
         "B0,0 B0,1 B1,1 0,0-0,1 0,1-1,1",
     ),
     (
-        Item::Glyph(GlyphKind::Output(Tier::Two)),
+        glyph(GlyphKind::Output(Tier::Two)),
         "B0,1 B1,1 B1,2 B2,0 0,1-1,1 1,1-1,2 1,1-2,0",
     ),
     (
-        Item::Glyph(GlyphKind::Output(Tier::Three)),
+        glyph(GlyphKind::Output(Tier::Three)),
         "B0,1 B0,2 B1,0 B1,1 B1,2 B2,0 B2,1 0,1-1,1 0,2-1,1 1,0-1,1 1,1-1,2 1,1-2,0 1,1-2,1",
     ),
+    (Item::Step, "B0,0"),
+    (
+        Item::Token(Instr::Grab),
+        "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1=1,0",
+    ),
+    (Item::Token(Instr::Drop), "B0,0 B0,1 B0,2 0,0-0,1 0,1=0,2"),
+    (
+        Item::Token(Instr::Rot(Spin::Ccw)),
+        "B0,0 B0,1 B1,1 0,0-0,1 0,1=1,1",
+    ),
+    (
+        Item::Token(Instr::Rot(Spin::Cw)),
+        "B0,0 B0,1 B1,1 0,0=0,1 0,1-1,1",
+    ),
+    (
+        Item::Token(Instr::Pivot(Spin::Ccw)),
+        "B0,0 B0,1 B1,0 0,0-0,1 0,1=1,0",
+    ),
+    (
+        Item::Token(Instr::Pivot(Spin::Cw)),
+        "B0,0 B0,1 B1,0 0,0-0,1 0,0=1,0",
+    ),
+    (Item::Token(Instr::Wait), "B0,0 B0,1 B0,2 0,0=0,1 0,1=0,2"),
+    (
+        Item::Token(Instr::Move(4)),
+        "B0,0 B0,1 B0,2 B1,1 0,0=0,1 0,1-0,2 0,2-1,1",
+    ),
+    (
+        Item::Token(Instr::Move(5)),
+        "B0,0 B0,1 B1,1 B2,0 0,0=0,1 0,1-1,1 1,1-2,0",
+    ),
+    (
+        Item::Token(Instr::Move(0)),
+        "B0,0 B0,1 B1,0 B1,1 0,0-1,0 0,1-1,0 0,1=1,1",
+    ),
+    (
+        Item::Token(Instr::Move(1)),
+        "B0,0 B0,1 B0,2 B1,0 0,0-0,1 0,0-1,0 0,1=0,2",
+    ),
+    (
+        Item::Token(Instr::Move(2)),
+        "B0,0 B0,1 B1,1 B2,0 0,0-0,1 0,1-1,1 1,1=2,0",
+    ),
+    (
+        Item::Token(Instr::Move(3)),
+        "B0,0 B0,1 B1,0 B1,1 0,0-0,1 0,1-1,0 1,0=1,1",
+    ),
 ];
+
+const fn glyph(kind: GlyphKind) -> Item {
+    Item::Machine(Machine::Glyph(kind))
+}
 
 pub fn recipes() -> &'static [(Item, Form)] {
     static FORMS: OnceLock<Vec<(Item, Form)>> = OnceLock::new();
@@ -269,12 +318,12 @@ mod tests {
             assert_eq!(Form::of(&form.sim()), *form, "{item:?}");
             assert_eq!(form.crafts(), Some(*item));
         }
-        let arm = Item::Arm.recipe().unwrap();
+        let arm = Machine::Arm.recipe().unwrap();
         assert_eq!(arm.sim().bonds[0].kind, BondKind::Double);
         assert_eq!(arm.to_string(), "B0,0 B0,1 0,0=0,1");
         assert_eq!(
             "0,1-0,0 B0,1 B0,0".parse::<Form>().unwrap(),
-            *Item::Glyph(GlyphKind::Bonder).recipe().unwrap()
+            *Machine::Glyph(GlyphKind::Bonder).recipe().unwrap()
         );
         assert_eq!(
             "B7,3 B8,2 7,3=8,2\n".parse::<Form>().unwrap().to_string(),
