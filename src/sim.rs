@@ -366,6 +366,10 @@ pub struct Glyph {
 }
 
 impl Glyph {
+    pub fn new(kind: GlyphKind, at: Hex, dir: usize) -> Self {
+        Glyph { kind, at, dir }
+    }
+
     pub fn slots(&self) -> impl Iterator<Item = Hex> + '_ {
         self.kind
             .rule()
@@ -454,6 +458,12 @@ impl Sim {
             .position(|a| a.is_some_and(|a| a.pos == at))
     }
 
+    pub fn glyph_at(&self, at: Hex) -> Option<usize> {
+        self.glyphs
+            .iter()
+            .position(|g| g.is_some_and(|g| g.slots().any(|s| s == at)))
+    }
+
     pub fn bond_between(&self, a: usize, b: usize) -> Option<usize> {
         self.bonds
             .iter()
@@ -524,10 +534,15 @@ impl Sim {
         sim
     }
 
-    pub fn fits(&self, other: &Sim, at: Hex) -> bool {
+    pub fn fits(&self, other: &Sim, at: Hex, lifted: &[usize]) -> bool {
         other.atoms.iter().flatten().all(|atom| {
             let cell = atom.pos.add(at);
             self.atom_at(cell).is_none() && self.arms.iter().all(|a| a.pivot != cell)
+        }) && other.glyphs.iter().flatten().all(|g| {
+            g.slots().all(|cell| {
+                self.glyph_at(cell.add(at))
+                    .is_none_or(|i| lifted.contains(&i))
+            })
         })
     }
 
@@ -701,12 +716,7 @@ impl Sim {
                     .any(|(j, a)| j != i && a.pivot == at)
         };
         let stepped = pivot != self.arms[i].pivot;
-        let seated = self
-            .glyphs
-            .iter()
-            .flatten()
-            .any(|g| g.slots().any(|s| s == pivot));
-        if (stepped && (seated || !free(pivot)))
+        if (stepped && (self.glyph_at(pivot).is_some() || !free(pivot)))
             || moved.iter().any(|(_, at)| !free(*at) || *at == pivot)
         {
             return Err(Stall::Illegal);
@@ -779,61 +789,44 @@ pub const PLACEMENTS: [Hex; 6] = [
 
 pub fn layout() -> Sim {
     use Instr::*;
-    let supply = [
-        Grab,
-        Rot(Spin::Cw),
-        Rot(Spin::Cw),
-        Drop,
-        Rot(Spin::Ccw),
-        Rot(Spin::Ccw),
-    ];
-    let mut build: Vec<Instr> = supply.repeat(2);
-    build.extend([
-        Grab,
-        Rot(Spin::Cw),
-        Rot(Spin::Cw),
-        Rot(Spin::Cw),
-        Rot(Spin::Cw),
-        Drop,
-        Rot(Spin::Cw),
-        Rot(Spin::Cw),
-    ]);
-    let mut ferry = vec![Wait; 4];
-    ferry.extend([Grab, Rot(Spin::Ccw), Drop, Rot(Spin::Cw)]);
+    let cw = Rot(Spin::Cw);
+    let ccw = Rot(Spin::Ccw);
+    let out = Move(5);
+    let back = Move(2);
+    let mut build = vec![Grab, cw, cw, cw, Drop, ccw, ccw, ccw];
+    build.extend([Grab, cw, cw, Drop, ccw, ccw]);
+    build.extend([Grab, cw, cw, cw, out, out, Drop, back, back, ccw, ccw, ccw]);
+    let mut ferry = vec![Wait; 5];
+    ferry.extend([Grab, ccw, Drop, cw]);
     ferry.resize(build.len(), Wait);
     let mut sim = Sim::empty();
-    sim.glyphs.push(Some(Glyph {
-        kind: GlyphKind::Source,
-        at: Hex::new(1, 0),
-        dir: 0,
-    }));
-    sim.glyphs.push(Some(Glyph {
-        kind: GlyphKind::Output(Tier::One),
-        at: Hex::new(-1, 2),
-        dir: 0,
-    }));
-    sim.glyphs.push(Some(Glyph {
-        kind: GlyphKind::Bonder,
-        at: Hex::new(0, -1),
-        dir: 0,
-    }));
-    sim.glyphs.push(Some(Glyph {
-        kind: GlyphKind::SecondBond,
-        at: Hex::new(-1, -1),
-        dir: 5,
-    }));
-    sim.arms.push(Arm::new(Hex::new(0, 0), 0, build));
-    sim.arms.push(Arm::new(Hex::new(0, -2), 5, ferry));
+    sim.glyphs
+        .push(Some(Glyph::new(GlyphKind::Source, Hex::new(1, 0), 0)));
+    sim.glyphs.push(Some(Glyph::new(
+        GlyphKind::Output(Tier::One),
+        Hex::new(-2, 3),
+        0,
+    )));
+    sim.glyphs
+        .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(0, -1), 0)));
+    sim.glyphs
+        .push(Some(Glyph::new(GlyphKind::SecondBond, Hex::new(-2, 1), 0)));
+    sim.arms.push(Arm::new(ORIGIN, 0, build));
+    sim.arms.push(Arm::new(Hex::new(-2, 0), 0, ferry));
     sim
 }
 
 pub fn start() -> Sim {
     let mut sim = Sim::empty();
-    let glyph = |kind, at| Some(Glyph { kind, at, dir: 0 });
-    sim.glyphs.push(glyph(GlyphKind::Source, Hex::new(-4, 1)));
-    sim.glyphs.push(glyph(GlyphKind::Bonder, Hex::new(-1, 1)));
     sim.glyphs
-        .push(glyph(GlyphKind::Output(Tier::One), Hex::new(2, -2)));
+        .push(Some(Glyph::new(GlyphKind::Source, Hex::new(-4, 1), 0)));
+    sim.glyphs
+        .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(-1, 1), 0)));
+    sim.glyphs.push(Some(Glyph::new(
+        GlyphKind::Output(Tier::One),
+        Hex::new(2, -2),
+        0,
+    )));
     sim
 }
 
@@ -845,7 +838,7 @@ pub fn preloaded() -> Sim {
     }
     world.spawn(Atom {
         kind: AtomKind::Base,
-        pos: Hex::new(-1, 0).add(PLACEMENTS[PLACEMENTS.len() - 1]),
+        pos: Hex::new(1, -1).add(PLACEMENTS[PLACEMENTS.len() - 1]),
     });
     world
 }
@@ -1145,32 +1138,6 @@ mod tests {
                 kind: BondKind::Double
             }]
         );
-    }
-
-    #[test]
-    fn machines_never_collide_so_a_bonder_laid_across_a_second_bond_feeds_it() {
-        let bonder = Glyph {
-            kind: GlyphKind::Bonder,
-            at: Hex::new(2, -1),
-            dir: 3,
-        };
-        let second = Glyph {
-            kind: GlyphKind::SecondBond,
-            at: Hex::new(1, 0),
-            dir: 1,
-        };
-        assert_eq!(
-            bonder.slots().collect::<Vec<_>>(),
-            second.slots().skip(1).collect::<Vec<_>>()
-        );
-        let mut sim = bench(vec![Instr::Wait], vec![bonder, second]);
-        put(&mut sim, 1, 0);
-        put(&mut sim, 2, -1);
-        put(&mut sim, 1, -1);
-        sim.step();
-        assert_eq!(sim.bonds.len(), 1);
-        assert_eq!(sim.bonds[0].kind, BondKind::Double);
-        assert_eq!(sim.atoms.iter().flatten().count(), 2);
     }
 
     fn output(tier: Tier, at: Hex) -> Glyph {
@@ -1707,7 +1674,9 @@ mod tests {
     #[test]
     fn preloaded_world_crafts_an_arm_every_period_until_the_cap_holds() {
         let mut sim = preloaded();
-        for _ in 0..20 * 3 {
+        let period = 26;
+        assert_eq!(sim.arms[0].tape.len(), period);
+        for _ in 0..period * 3 {
             sim.step();
         }
         assert_eq!(count(&sim, Machine::Arm), 3 * (PLACEMENTS.len() as u32 - 1));
@@ -1715,7 +1684,7 @@ mod tests {
             .filter(|i| sim.arms[*i].stall.is_some())
             .collect();
         assert_eq!(stalled, vec![sim.arms.len() - 2, sim.arms.len() - 1]);
-        for _ in 0..20 {
+        for _ in 0..period {
             sim.step();
         }
         assert_eq!(count(&sim, Machine::Arm), DEFAULT_CAP);
