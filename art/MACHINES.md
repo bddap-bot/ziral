@@ -4,6 +4,8 @@ The machines are compact kiln-floor tools standing on the board rather than symb
 
 Every seat is painted at the exact centre of its cell, the arm's pivot and hand included: the sim puts an atom at the centre of its cell and a seat is where the machine meets that atom, so an off-centre seat shows the bead beside its cup, and an arm turns about its pivot cell's centre. The pipeline holds the rule: the scaffold marks each centre, every capture is registered by its seats, and the score rejects one whose seats still miss their centres by more than the manifest's `off_centre` share of a cell's circumradius.
 
+Every machine is drawn from directly above (BIBLE.md, View): the shared prompt says so, and a capture that shows a side face or a cup's far wall is refused by eye at the keep, since the score has no honest measure of it.
+
 ## How a machine texture is made
 
 The game owns geometry and judgement; the generator only paints. `machines/gen.sh all` remakes every machine from `machines/manifest.toml`; `gen.sh NAME` remakes one; `gen.sh -k INDEX NAME` keeps a candidate by hand. A bible tweak is one edit to the manifest and one command.
