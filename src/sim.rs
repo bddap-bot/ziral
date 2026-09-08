@@ -300,6 +300,8 @@ impl Glyph {
     }
 }
 
+pub const MAX_COMPOUND_ATOMS: usize = 256;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sim {
     pub glyphs: Vec<Glyph>,
@@ -456,6 +458,16 @@ impl Sim {
         if rule.whole {
             let comp = self.component(ids[0]);
             if comp.len() != ids.len() || comp.iter().any(|id| !ids.contains(id)) {
+                return None;
+            }
+        }
+        for (a, b, _) in rule.after {
+            let (a, b) = (ids[*a], ids[*b]);
+            if bonded(a, b).is_some() {
+                continue;
+            }
+            let comp = self.component(a);
+            if !comp.contains(&b) && comp.len() + self.component(b).len() > MAX_COMPOUND_ATOMS {
                 return None;
             }
         }
@@ -767,6 +779,43 @@ mod tests {
                 assert!(a != b && *a < n && *b < n, "{kind:?} after {a} {b}");
             }
         }
+    }
+
+    fn chain(sim: &mut Sim, q: i32, len: i32) {
+        let mut prev = put(sim, q, 0);
+        for r in 1..len {
+            let next = put(sim, q, r);
+            bond(sim, prev, next, BondKind::Single);
+            prev = next;
+        }
+    }
+
+    fn bonder_joining_chains(left: i32, right: i32) -> Sim {
+        let bonder = Glyph {
+            kind: GlyphKind::Bonder,
+            at: Hex::new(0, 0),
+            dir: 0,
+        };
+        let mut sim = bench(vec![Instr::Wait], vec![bonder]);
+        chain(&mut sim, 0, left);
+        chain(&mut sim, 1, right);
+        sim
+    }
+
+    #[test]
+    fn a_bond_that_would_pass_the_compound_cap_is_refused_and_one_that_meets_it_fires() {
+        let left = MAX_COMPOUND_ATOMS as i32 - 2;
+        let mut sim = bonder_joining_chains(left, 3);
+        let before = sim.clone();
+        sim.step();
+        assert_eq!(sim.atoms, before.atoms);
+        assert_eq!(sim.bonds, before.bonds);
+        assert!(sim.torn.is_empty());
+
+        let mut sim = bonder_joining_chains(left, 2);
+        sim.step();
+        assert_eq!(sim.bonds.len(), MAX_COMPOUND_ATOMS - 1);
+        assert_eq!(sim.component(0).len(), MAX_COMPOUND_ATOMS);
     }
 
     #[test]
