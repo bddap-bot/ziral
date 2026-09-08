@@ -1,5 +1,5 @@
-use crate::Item;
-use crate::sim::{Arm, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot};
+use crate::sim::Item;
+use crate::sim::{Arm, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot, Tier};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
 use bevy::math::{Vec2, Vec3};
@@ -342,7 +342,9 @@ pub fn machine(item: Item) -> Look<MachineMark> {
         GlyphKind::Source => (Glaze::BlueGreen, machine!("source")),
         GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
         GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
-        GlyphKind::Output => (Glaze::Ivory, machine!("output")),
+        GlyphKind::Output(Tier::One) => (Glaze::Ivory, machine!("output-1")),
+        GlyphKind::Output(Tier::Two) => (Glaze::Ivory, machine!("output-2")),
+        GlyphKind::Output(Tier::Three) => (Glaze::Ivory, machine!("output-3")),
         GlyphKind::Cleanup => (Glaze::Brass, machine!("cleanup")),
     };
     Look {
@@ -358,9 +360,9 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .into_iter()
         .map(|k| atom(k).skin)
         .chain(BondKind::ALL.into_iter().map(|k| bond(k).skin))
-        .chain(crate::PALETTE.into_iter().map(|item| machine(item).skin))
+        .chain(Item::ALL.into_iter().map(|item| machine(item).skin))
         .chain(
-            crate::PALETTE
+            Item::ALL
                 .into_iter()
                 .map(|item| machine(item).marking.normal()),
         )
@@ -371,13 +373,13 @@ pub fn skins() -> impl Iterator<Item = Skin> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{KEYS, PALETTE, SYMBOL_PX};
+    use crate::{KEYS, SYMBOL_PX};
     use bevy::color::{Hsva, Luminance};
 
     const HUE_APART: f32 = 40.0;
     const CHROMA_FLOOR: f32 = 0.15;
     const VALUE_APART: f32 = 0.15;
-    const THUMB: usize = 8;
+    const THUMB: usize = 16;
     const TILES_APART: f32 = 0.023;
     const BODY_OF_FACE: f32 = 0.95;
     const GROUT_AT_MOST: f32 = 0.65;
@@ -597,13 +599,12 @@ pub(crate) mod tests {
         Pressed { face, field }
     }
 
-    fn differences<M>(a: &Look<M>, b: &Look<M>) -> [bool; 4] {
-        let [hue, value] = hue_and_value_differ(a.glaze.color(), b.glaze.color());
-        let x = thumbnail(a.skin, THUMB);
-        let y = thumbnail(b.skin, THUMB);
-        let painted: Vec<bool> = painted(a.skin, THUMB)
+    pub(crate) fn texture_apart<M>(a: &Look<M>, b: &Look<M>, side: usize) -> f32 {
+        let x = thumbnail(a.skin, side);
+        let y = thumbnail(b.skin, side);
+        let painted: Vec<bool> = painted(a.skin, side)
             .iter()
-            .zip(painted(b.skin, THUMB))
+            .zip(painted(b.skin, side))
             .map(|(p, q)| *p || q)
             .collect();
         let apart: f32 = x
@@ -613,7 +614,12 @@ pub(crate) mod tests {
             .filter(|(i, _)| painted[i / 3])
             .map(|(_, (x, y))| (x - y).abs())
             .sum();
-        let texture = apart / (3.0 * painted.iter().filter(|p| **p).count() as f32) >= TILES_APART;
+        apart / (3.0 * painted.iter().filter(|p| **p).count() as f32)
+    }
+
+    fn differences<M>(a: &Look<M>, b: &Look<M>) -> [bool; 4] {
+        let [hue, value] = hue_and_value_differ(a.glaze.color(), b.glaze.color());
+        let texture = texture_apart(a, b, THUMB) >= TILES_APART;
         [hue, value, a.shape != b.shape, texture]
     }
 
@@ -656,7 +662,7 @@ pub(crate) mod tests {
 
     #[test]
     fn every_glyph_is_distinct() {
-        let glyphs = PALETTE.iter().filter_map(|item| match item {
+        let glyphs = Item::ALL.iter().filter_map(|item| match item {
             Item::Glyph(kind) => Some(*kind),
             Item::Arm => None,
         });
@@ -665,14 +671,7 @@ pub(crate) mod tests {
 
     #[test]
     fn every_machine_is_distinct() {
-        pairwise("machines", &named(PALETTE, machine));
-    }
-
-    #[test]
-    fn every_glyph_kind_is_on_the_palette() {
-        for kind in GlyphKind::ALL {
-            assert!(PALETTE.contains(&Item::Glyph(kind)));
-        }
+        pairwise("machines", &named(Item::ALL, machine));
     }
 
     fn wears(what: impl std::fmt::Display, color: Color, glaze: Glaze) {
@@ -735,7 +734,7 @@ pub(crate) mod tests {
 
     #[test]
     fn every_machine_sprite_has_visible_art_and_real_transparency() {
-        for item in PALETTE {
+        for item in Item::ALL {
             let skin = machine(item).skin;
             let (_, _, data) = pixels(skin);
             let visible = data.chunks_exact(4).filter(|pixel| pixel[3] > 230).count();
@@ -829,7 +828,7 @@ pub(crate) mod tests {
             all.len(),
             AtomKind::ALL.len()
                 + BondKind::ALL.len()
-                + 2 * PALETTE.len()
+                + 2 * Item::ALL.len()
                 + TILES.len()
                 + KEYS.len()
                 + 1

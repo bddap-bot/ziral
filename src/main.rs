@@ -4,6 +4,8 @@ mod machines;
 mod sim;
 
 use bevy::asset::RenderAssetUsages;
+use bevy::camera::RenderTarget;
+use bevy::camera::visibility::RenderLayers;
 use bevy::color::{Alpha, Mix};
 use bevy::image::Image;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
@@ -14,9 +16,12 @@ use bevy::render::render_resource::AsBindGroup;
 use bevy::render::render_resource::TextureFormat;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
-use bevy::window::PrimaryWindow;
+use bevy::ui::IsDefaultUiCamera;
+use bevy::window::{CursorLeft, PrimaryWindow};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
+use sim::{
+    Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, ORIGIN, RECIPES, Sim, Spin, Stall,
+};
 
 const TICK_MS: f32 = 400.0;
 const MOTION: f32 = 1.0;
@@ -30,6 +35,11 @@ const SYMBOL_PX: f32 = 26.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
 const MARK_PX: f32 = 6.0;
+const TALLY_PX: f32 = 86.0;
+const PALETTE_WIDTH: f32 = PALETTE_PX + TALLY_PX + 24.0;
+const CARD_SCALE: f32 = 1.0;
+const CARD_PAD: f32 = 12.0;
+const CARD: RenderLayers = RenderLayers::layer(1);
 
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
@@ -41,20 +51,12 @@ fn strip(lit: bool) -> Color {
 
 const IVORY: Color = Glaze::Ivory.color();
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Component)]
-pub enum Item {
-    Arm,
-    Glyph(GlyphKind),
-}
+#[derive(Clone, Copy, Component)]
+struct PaletteRow(Item);
 
-pub const PALETTE: [Item; 6] = [
-    Item::Arm,
-    Item::Glyph(GlyphKind::Bonder),
-    Item::Glyph(GlyphKind::SecondBond),
-    Item::Glyph(GlyphKind::Source),
-    Item::Glyph(GlyphKind::Output),
-    Item::Glyph(GlyphKind::Cleanup),
-];
+fn palette() -> impl Iterator<Item = Item> {
+    RECIPES.iter().map(|(item, _)| *item)
+}
 
 #[derive(Clone, Copy)]
 pub struct Key {
@@ -226,6 +228,7 @@ fn turn(set: &mut Sim, spin: Spin) {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Back {
     Nowhere,
+    Inventory(Item),
     Ghost,
     Pick(Vec<Id>),
     Cell { cell: Hex, turns: usize },
@@ -295,6 +298,7 @@ struct World {
     down: Option<Press>,
     clipboard: Option<Sim>,
     pointer: Option<Vec2>,
+    hover: Option<Item>,
 }
 
 impl World {
@@ -311,6 +315,30 @@ impl World {
             down: None,
             clipboard: None,
             pointer: None,
+            hover: None,
+        }
+    }
+
+    fn lift_inventory(&mut self, item: Item) {
+        if self
+            .sim
+            .inventory
+            .count(item)
+            .is_some_and(|count| count > 0)
+        {
+            self.lift(fresh(item), Back::Inventory(item));
+        }
+    }
+
+    fn set_cap(&mut self, item: Item, notches: i32) {
+        self.sim.inventory.set_cap(item, notches);
+        self.resim(self.ghosts());
+    }
+
+    fn item(&self, id: Id) -> Item {
+        match id {
+            Id::Arm(_) => Item::Arm,
+            Id::Glyph(i) => Item::Glyph(self.glyph(i).kind),
         }
     }
 
@@ -482,6 +510,16 @@ impl World {
         self.resim(self.ghosts());
     }
 
+    fn delete(&mut self, ids: &[Id]) {
+        if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) {
+            return;
+        }
+        for id in ids {
+            self.sim.inventory.add(self.item(*id));
+        }
+        self.remove(ids);
+    }
+
     fn copy(&mut self, ids: &[Id]) {
         self.clipboard = Some(self.lifted(ids, self.anchor(ids[0])));
     }
@@ -599,6 +637,9 @@ impl World {
             self.pop(set, back);
             return;
         };
+        if let Back::Inventory(item) = back {
+            self.sim.inventory.take(item);
+        }
         let ids = match back {
             Back::Pick(ids) => {
                 let arms = ids.iter().filter(|id| matches!(id, Id::Arm(_)));
@@ -611,7 +652,7 @@ impl World {
                 }
                 ids
             }
-            Back::Nowhere | Back::Ghost | Back::Cell { .. } => {
+            Back::Nowhere | Back::Inventory(_) | Back::Ghost | Back::Cell { .. } => {
                 let arms = self.sim.arms.len()..self.sim.arms.len() + set.arms.len();
                 let glyphs = self.sim.place(&set, at).into_iter().map(Id::Glyph);
                 arms.map(Id::Arm).chain(glyphs).collect()
@@ -623,7 +664,7 @@ impl World {
 
     fn pop(&mut self, mut set: Sim, back: Back) {
         match back {
-            Back::Nowhere | Back::Ghost => {}
+            Back::Nowhere | Back::Inventory(_) | Back::Ghost => {}
             Back::Pick(ids) => self.pick(ids),
             Back::Cell { cell, turns } => {
                 for _ in 0..turns {
@@ -671,8 +712,8 @@ impl World {
             Some(Focus::Hold { back, .. }) => match (key, instr, &mut self.focus) {
                 (Escape, _, _) => self.place(None),
                 (KeyZ, _, _) => match back {
-                    Back::Nowhere | Back::Ghost => self.focus = None,
-                    Back::Pick(ids) => self.remove(&ids),
+                    Back::Nowhere | Back::Inventory(_) | Back::Ghost => self.focus = None,
+                    Back::Pick(ids) => self.delete(&ids),
                     Back::Cell { .. } => {}
                 },
                 (_, Some(Instr::Rot(spin)), Some(Focus::Hold { set, back })) => {
@@ -686,7 +727,7 @@ impl World {
             Some(Focus::Pick(ids)) => match key {
                 _ if shift => {}
                 Escape => self.focus = None,
-                KeyZ => self.remove(&ids),
+                KeyZ => self.delete(&ids),
                 KeyX | KeyC if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) => {}
                 KeyX => {
                     self.copy(&ids);
@@ -803,9 +844,33 @@ fn app(world: World) -> App {
         .add_systems(Startup, (fire_kiln, spawn_ui).chain())
         .add_systems(
             Update,
-            (run_ticks, view, edit, tapes, board, draw, manual).chain(),
+            (
+                run_ticks, view, hover, edit, tapes, tally, board, draw, card, manual,
+            )
+                .chain(),
         );
     app
+}
+
+#[derive(Component)]
+struct CardCamera;
+
+fn card_camera(target: RenderTarget) -> impl Bundle {
+    let mut projection = OrthographicProjection::default_2d();
+    projection.scale = CARD_SCALE;
+    (
+        CardCamera,
+        Camera2d,
+        Camera {
+            order: 1,
+            is_active: false,
+            clear_color: ClearColorConfig::Custom(brass(0.65)),
+            ..default()
+        },
+        target,
+        Projection::Orthographic(projection),
+        CARD,
+    )
 }
 
 fn main() {
@@ -840,9 +905,11 @@ fn spawn_camera(mut commands: Commands) {
     projection.scale = MICRO_SCALE;
     commands.spawn((
         Camera2d,
+        IsDefaultUiCamera,
         Projection::Orthographic(projection),
         Transform::from_translation(px(FOCUS).extend(0.0)),
     ));
+    commands.spawn(card_camera(RenderTarget::default()));
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -915,7 +982,7 @@ fn manual(keys: Res<ButtonInput<KeyCode>>, mut page: Single<&mut Node, With<Manu
 #[derive(Component)]
 struct Marks(u64);
 
-fn mark(k: u64) -> impl Bundle {
+fn mark(k: u64, filled: bool) -> impl Bundle {
     let gap = if k > 0 && k.is_multiple_of(5) {
         MARK_PX
     } else {
@@ -926,10 +993,12 @@ fn mark(k: u64) -> impl Bundle {
             width: Val::Px(MARK_PX),
             height: Val::Px(MARK_PX),
             margin: UiRect::left(Val::Px(gap)),
+            border: UiRect::all(Val::Px(1.0)),
             border_radius: BorderRadius::MAX,
             ..default()
         },
-        BackgroundColor(IVORY),
+        BackgroundColor(if filled { IVORY } else { Color::NONE }),
+        BorderColor::all(if filled { IVORY } else { brass(0.5) }),
     )
 }
 
@@ -942,6 +1011,106 @@ fn cursor() -> impl Bundle {
         },
         BackgroundColor(IVORY),
     )
+}
+
+#[derive(Component)]
+struct Palette;
+
+#[derive(Component)]
+struct Tally {
+    item: Item,
+    shown: Option<(u32, u32)>,
+}
+
+fn tally(mut commands: Commands, world: Res<World>, mut rows: Query<(Entity, &mut Tally)>) {
+    for (entity, mut tally) in &mut rows {
+        let inventory = &world.sim.inventory;
+        let Some(count) = inventory.count(tally.item) else {
+            continue;
+        };
+        let cap = if world.hover == Some(tally.item) {
+            inventory.cap(tally.item).unwrap_or(0)
+        } else {
+            0
+        };
+        if tally.shown == Some((count, cap)) {
+            continue;
+        }
+        tally.shown = Some((count, cap));
+        commands
+            .entity(entity)
+            .despawn_children()
+            .with_children(|row| {
+                for k in 0..u64::from(count.max(cap)) {
+                    row.spawn(mark(k, k < u64::from(count)));
+                }
+            });
+    }
+}
+
+fn hover(
+    mut world: ResMut<World>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    rows: Query<(&PaletteRow, &Interaction)>,
+    scroll: Res<AccumulatedMouseScroll>,
+    mut left: MessageReader<CursorLeft>,
+) {
+    if left.read().next().is_some() {
+        world.hover = None;
+    }
+    if window.cursor_position().is_some() {
+        world.hover = rows
+            .iter()
+            .find(|(_, i)| **i != Interaction::None)
+            .map(|(row, _)| row.0);
+    }
+    let notches = match scroll.unit {
+        MouseScrollUnit::Line => scroll.delta.y,
+        MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
+    };
+    if let (Some(item), true) = (world.hover, notches.round() != 0.0) {
+        world.set_cap(item, notches.round() as i32);
+    }
+}
+
+fn recipe_side() -> f32 {
+    look::quad(Item::Glyph(GlyphKind::Output(sim::Tier::One))).side
+}
+
+fn card_size(item: Item) -> Vec2 {
+    let picture = look::quad(item).side;
+    let recipe = recipe_side();
+    Vec2::new(
+        4.0 * CARD_PAD + picture + 2.0 * recipe,
+        2.0 * CARD_PAD + picture.max(recipe),
+    )
+}
+
+fn card(
+    world: Res<World>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    column: Single<(&ComputedNode, &UiGlobalTransform), With<Palette>>,
+    camera: Single<&mut Camera, With<CardCamera>>,
+) {
+    let mut camera = camera.into_inner();
+    let Some(item) = world.hover else {
+        camera.is_active = false;
+        return;
+    };
+    let (node, transform) = column.into_inner();
+    let scale = window.scale_factor();
+    let size = card_size(item) * scale / CARD_SCALE;
+    let top_left = transform.translation - node.size() / 2.0;
+    let target = window.physical_size().as_vec2();
+    let size = size.min(target);
+    let at = Vec2::new(top_left.x, top_left.y - CARD_PAD * scale - size.y)
+        .clamp(Vec2::ZERO, target - size);
+    camera.viewport = Some(bevy::camera::Viewport {
+        physical_position: at.as_uvec2(),
+        physical_size: size.as_uvec2(),
+        ..default()
+    });
+    camera.is_active = true;
 }
 
 fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
@@ -972,38 +1141,53 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             ));
         });
     commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(8.0),
-            bottom: Val::Px(8.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
-            ..default()
-        })
+        .spawn((
+            Palette,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(8.0),
+                bottom: Val::Px(8.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                ..default()
+            },
+        ))
         .with_children(|col| {
-            for item in PALETTE {
+            for item in palette() {
                 col.spawn((
-                    item,
+                    PaletteRow(item),
                     button(Node {
                         padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
                         border: UiRect::all(Val::Px(1.0)),
-                        ..default()
+                        ..row(6.0)
                     }),
-                    children![(
-                        ImageNode::new(kiln.image(look::machine(item).skin)),
-                        Node {
-                            width: Val::Px(PALETTE_PX),
-                            height: Val::Px(PALETTE_PX),
-                            ..default()
-                        }
-                    )],
+                    children![
+                        (
+                            ImageNode::new(kiln.image(look::machine(item).skin)),
+                            Node {
+                                width: Val::Px(PALETTE_PX),
+                                height: Val::Px(PALETTE_PX),
+                                ..default()
+                            }
+                        ),
+                        (
+                            Tally { item, shown: None },
+                            Node {
+                                width: Val::Px(TALLY_PX),
+                                flex_wrap: FlexWrap::Wrap,
+                                column_gap: Val::Px(2.0),
+                                row_gap: Val::Px(2.0),
+                                ..default()
+                            }
+                        )
+                    ],
                 ));
             }
         });
     commands
         .spawn(Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(PALETTE_PX + 34.0),
+            left: Val::Px(PALETTE_WIDTH + 16.0),
             right: Val::Px(8.0),
             bottom: Val::Px(8.0),
             flex_direction: FlexDirection::Column,
@@ -1045,7 +1229,8 @@ fn view(
     scroll: Res<AccumulatedMouseScroll>,
     motion: Res<AccumulatedMouseMotion>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&mut Transform, &mut Projection), With<Camera2d>>,
+    camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>,
+    palette: Query<&Interaction, With<PaletteRow>>,
 ) {
     let (mut transform, mut projection) = camera.into_inner();
     let Some(mut viewport) = Viewport::of(&window, &transform, &projection) else {
@@ -1055,6 +1240,7 @@ fn view(
         return;
     };
     if scroll.delta.y != 0.0
+        && palette.iter().all(|i| *i == Interaction::None)
         && let Some(c) = window.cursor_position()
     {
         let before = viewport.world(c);
@@ -1077,9 +1263,8 @@ fn edit(
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Transform, &Projection), With<Camera2d>>,
-    palette: Query<(&Item, &Interaction), With<Button>>,
-    rows: Query<(&TapeRow, &Interaction), With<Button>>,
+    camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
+    ui: Query<(Option<&PaletteRow>, Option<&TapeRow>, &Interaction)>,
 ) {
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
@@ -1089,15 +1274,14 @@ fn edit(
     if let Some(c) = screen {
         world.pointer = Some(viewport.world(c));
     }
-    let over_ui = keys.pressed(KeyCode::Tab)
-        || palette.iter().any(|(_, i)| *i != Interaction::None)
-        || rows.iter().any(|(_, i)| *i != Interaction::None);
+    let over_ui = keys.pressed(KeyCode::Tab) || ui.iter().any(|(_, _, i)| *i != Interaction::None);
     let at = world.pointer.map(hex_at);
 
     if buttons.just_pressed(MouseButton::Left) {
-        if let Some((item, _)) = palette.iter().find(|(_, i)| **i == Interaction::Pressed) {
-            world.lift(fresh(*item), Back::Nowhere);
-        } else if let Some((row, _)) = rows.iter().find(|(_, i)| **i == Interaction::Pressed) {
+        let pressed = ui.iter().find(|(_, _, i)| **i == Interaction::Pressed);
+        if let Some((Some(entry), _, _)) = pressed {
+            world.lift_inventory(entry.0);
+        } else if let Some((_, Some(row), _)) = pressed {
             if let Some(arm) = row.arm().filter(|a| *a < world.shown().arms.len()) {
                 world.focus_tape(arm);
             }
@@ -1147,7 +1331,7 @@ fn tapes(
     kiln: Res<Kiln>,
     world: Res<World>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Transform, &Projection), With<Camera2d>>,
+    camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     mut rows: Query<(Entity, &mut TapeRow, &mut Visibility, &mut BackgroundColor)>,
     marks: Single<(Entity, &mut Marks)>,
 ) {
@@ -1163,7 +1347,7 @@ fn tapes(
             .despawn_children()
             .with_children(|strip| {
                 for k in 0..marks.0 {
-                    strip.spawn(mark(k));
+                    strip.spawn(mark(k, true));
                 }
             });
     }
@@ -1236,6 +1420,7 @@ struct Kiln {
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
     patina: [Handle<ColorMaterial>; 2],
+    card: [Handle<ColorMaterial>; 2],
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
     lit: Vec<(Skin, Handle<Lit>)>,
 }
@@ -1415,7 +1600,7 @@ fn fire_kiln(
             .map(|(_, image, _)| image.clone())
             .unwrap_or_else(|| panic!("{skin:?} was never fired"))
     };
-    let lit = PALETTE
+    let lit = Item::ALL
         .into_iter()
         .map(|item| {
             let look = look::machine(item);
@@ -1441,6 +1626,7 @@ fn fire_kiln(
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: [0.5, 0.5 * GHOST].map(|a| materials.add(Glaze::Brass.color().with_alpha(a))),
+        card: [strip(false), brass(0.5)].map(|c| materials.add(c)),
         skins,
         lit,
     });
@@ -1482,6 +1668,7 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs> {
     commands: &'a mut Commands<'cw, 'cs>,
     kiln: &'a Kiln,
     ghost: bool,
+    layers: RenderLayers,
 }
 
 impl<'a> Painter<'a, '_, '_, '_, '_> {
@@ -1508,6 +1695,7 @@ impl<'a> Painter<'a, '_, '_, '_, '_> {
     ) {
         self.commands.spawn((
             Fill,
+            self.layers.clone(),
             Mesh2d(mesh.clone()),
             MeshMaterial2d(material.clone()),
             Transform {
@@ -1616,6 +1804,7 @@ mod layer {
     pub const BEAD: f32 = 0.4;
     pub const RIM: f32 = 0.02;
     pub const HELD: Range<f32> = 0.44..0.5;
+    pub const CARD: Range<f32> = 0.6..0.7;
 
     pub fn z(band: Range<f32>, i: usize, n: usize) -> f32 {
         band.start + (band.end - band.start) * (i as f32 / n as f32)
@@ -1765,7 +1954,7 @@ fn board(
     mut commands: Commands,
     mut kiln: ResMut<Kiln>,
     window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Transform, &Projection), With<Camera2d>>,
+    camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     laid: Query<Entity, With<Board>>,
 ) {
     let (transform, projection) = camera.into_inner();
@@ -1850,6 +2039,7 @@ fn draw(
         commands: &mut commands,
         kiln: &kiln,
         ghost: world.ghosts() > 0,
+        layers: RenderLayers::default(),
     };
     let f = Frame::between(&world.prev, world.shown(), world.phase());
     for (i, g) in f.sim.glyphs.iter().enumerate() {
@@ -1891,8 +2081,13 @@ fn draw(
             p.gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, ivory);
         }
     }
-    let Some(pointer) = world.pointer else { return };
     p.ghost = false;
+    if let Some(item) = world.hover {
+        p.layers = CARD;
+        hover_card(&mut p, item);
+        p.layers = RenderLayers::default();
+    }
+    let Some(pointer) = world.pointer else { return };
     if let Some(Focus::Hold { set, .. }) = &world.focus {
         let grab = hex_at(pointer);
         p.gizmos.linestrip_2d(corners(px(grab), HEX * 0.9), IVORY);
@@ -1928,6 +2123,32 @@ fn draw(
     }
 }
 
+fn hover_card(p: &mut Painter, item: Item) {
+    let kiln = p.kiln;
+    let size = card_size(item);
+    let z = |k: usize| layer::z(layer::CARD, k, 5);
+    p.fill(&kiln.bar, &kiln.card[1], Vec2::ZERO, 0.0, size + 2.0, z(0));
+    p.fill(&kiln.bar, &kiln.card[0], Vec2::ZERO, 0.0, size, z(1));
+    let quad = look::quad(item);
+    let picture = Vec2::new(-size.x / 2.0 + CARD_PAD + quad.side / 2.0, 0.0);
+    p.sprite(item, picture - quad.centre, 0.0, z(2));
+    let Some(recipe) = item.recipe() else { return };
+    let set = recipe.sim();
+    let centre = Vec2::new(
+        picture.x + quad.side / 2.0 + CARD_PAD + recipe_side() / 2.0,
+        0.0,
+    );
+    let at = |id: usize| centre + px(set.atoms[id].unwrap().pos);
+    for b in &set.bonds {
+        p.bond(at(b.a), at(b.b), b.kind, z(3));
+    }
+    for (id, atom) in set.atoms.iter().enumerate() {
+        if let Some(atom) = atom {
+            p.bead(at(id), look::atom(atom.kind), z(4));
+        }
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 mod shot {
     pub enum Shot {}
@@ -1945,7 +2166,7 @@ mod shot {
 mod shot {
     use super::*;
     use bevy::app::{AppExit, ScheduleRunnerPlugin};
-    use bevy::camera::RenderTarget;
+
     use bevy::image::Image;
     use bevy::input::ButtonState;
     use bevy::input::keyboard::{Key, KeyboardInput, NativeKey};
@@ -1953,7 +2174,7 @@ mod shot {
     use bevy::render::render_resource::{TextureFormat, TextureUsages};
     use bevy::render::view::window::screenshot::{Screenshot, save_to_disk};
     use bevy::time::TimeUpdateStrategy;
-    use bevy::ui::IsDefaultUiCamera;
+
     use sim::{Atom, AtomKind, Bond};
     use std::path::PathBuf;
     use std::time::Duration;
@@ -1970,6 +2191,8 @@ mod shot {
         Press(Hex),
         Drag(Hex),
         Release(Hex),
+        Hover(Item),
+        Lift(Item),
     }
 
     fn tap(frame: u32, key: KeyCode) -> [(u32, Act); 2] {
@@ -2002,10 +2225,8 @@ mod shot {
         script: Vec<(u32, Act)>,
         warm: u32,
         frames: u32,
+        target: Option<Handle<Image>>,
     }
-
-    #[derive(Resource)]
-    struct Target(Handle<Image>);
 
     fn second_bond(extra: &[Hex]) -> (Sim, Vec<usize>) {
         let glyph = Glyph {
@@ -2134,8 +2355,11 @@ mod shot {
                     .push(glyph(GlyphKind::Bonder, Hex::new(-1, 1), 0));
                 sim.glyphs
                     .push(glyph(GlyphKind::SecondBond, Hex::new(2, 0), 1));
-                sim.glyphs
-                    .push(glyph(GlyphKind::Output, Hex::new(-1, -3), 1));
+                sim.glyphs.push(glyph(
+                    GlyphKind::Output(sim::Tier::One),
+                    Hex::new(-1, -3),
+                    1,
+                ));
                 sim.spawn(Atom {
                     kind: AtomKind::Base,
                     pos: source,
@@ -2171,6 +2395,47 @@ mod shot {
                     &[(2, -1), (1, -1), (0, -2), (-1, -2), (-1, -3)],
                     Some(2),
                 ));
+            }
+            "craft" => {
+                let source = Hex::new(-4, 1);
+                let mut sim = Sim::empty();
+                let glyph = |kind, at, dir| Some(Glyph { kind, at, dir });
+                sim.glyphs.push(glyph(GlyphKind::Source, source, 0));
+                sim.glyphs
+                    .push(glyph(GlyphKind::Bonder, Hex::new(-1, 1), 0));
+                sim.glyphs
+                    .push(glyph(GlyphKind::Output(sim::Tier::One), Hex::new(2, -2), 0));
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: source,
+                });
+                world.sim = sim;
+                let carry = |f0: u32, path: &[(i32, i32)]| {
+                    let cell = |k: usize| Hex::new(path[k].0, path[k].1);
+                    let mut acts = vec![(f0, Act::Press(cell(0)))];
+                    for k in 1..path.len() {
+                        acts.push((f0 + 6 * k as u32, Act::Drag(cell(k))));
+                    }
+                    let last = f0 + 6 * (path.len() as u32 - 1);
+                    acts.push((last + 6, Act::Release(cell(path.len() - 1))));
+                    acts
+                };
+                script.extend(carry(20, &[(-4, 1), (-3, 1), (-2, 1), (-1, 1)]));
+                script.extend(carry(56, &[(-4, 1), (-3, 1), (-2, 1), (-1, 1), (0, 1)]));
+                script.extend(carry(110, &[(-1, 1), (0, 0), (1, -1), (1, -2)]));
+                let bonder = Item::Glyph(GlyphKind::Bonder);
+                script.push((190, Act::Lift(bonder)));
+                script.push((196, Act::Drag(Hex::new(-3, -3))));
+                script.push((202, Act::Drag(Hex::new(-2, -3))));
+                script.push((214, Act::Release(Hex::new(-2, -3))));
+            }
+            name if name.starts_with("card:") => {
+                let item = Item::ALL
+                    .into_iter()
+                    .find(|item| machines::name(*item) == &name[5..])
+                    .unwrap_or_else(|| panic!("unknown machine {name}"));
+                world.sim = Sim::empty();
+                script.push((2, Act::Hover(item)));
             }
             "walk" | "ghost" => {
                 let mut sim = Sim::empty();
@@ -2252,25 +2517,14 @@ mod shot {
             }
             "output" => {
                 let mut sim = Sim::empty();
-                for (k, kind) in [BondKind::Single, BondKind::Double, BondKind::Double]
-                    .into_iter()
-                    .enumerate()
-                {
-                    let at = Hex::new(k as i32 * 3 - 4, -1);
+                for (k, (_, recipe)) in RECIPES.iter().take(3).enumerate() {
+                    let at = Hex::new(k as i32 * 4 - 4, -1);
                     sim.glyphs.push(Some(Glyph {
-                        kind: GlyphKind::Output,
+                        kind: GlyphKind::Output(sim::Tier::One),
                         at,
-                        dir: if k == 2 { 3 } else { 0 },
+                        dir: k,
                     }));
-                    let a = sim.spawn(Atom {
-                        kind: AtomKind::Base,
-                        pos: at,
-                    });
-                    let b = sim.spawn(Atom {
-                        kind: AtomKind::Base,
-                        pos: at.add(DIRS[0]),
-                    });
-                    sim.bonds.push(Bond { a, b, kind });
+                    sim.place(&recipe.sim(), at);
                 }
                 world.sim = sim;
             }
@@ -2296,7 +2550,7 @@ mod shot {
             }
             "machines" => {
                 let mut sim = Sim::empty();
-                for (k, item) in PALETTE.into_iter().enumerate() {
+                for (k, item) in Item::ALL.into_iter().enumerate() {
                     let at = Hex::new(3 * k as i32 - 7, -1);
                     match item {
                         Item::Arm => sim.arms.push(Arm::new(at, 0, Vec::new())),
@@ -2451,7 +2705,7 @@ mod shot {
             "heldout" => {
                 let mut sim = Sim::empty();
                 sim.glyphs.push(Some(Glyph {
-                    kind: GlyphKind::Output,
+                    kind: GlyphKind::Output(sim::Tier::One),
                     at: Hex::new(1, -1),
                     dir: 0,
                 }));
@@ -2579,6 +2833,7 @@ mod shot {
             script,
             warm,
             frames: 0,
+            target: None,
         };
         Some((world, shot))
     }
@@ -2594,6 +2849,7 @@ mod shot {
             script,
             warm,
             frames: 0,
+            target: None,
         };
         app(world, shot)
     }
@@ -2629,7 +2885,7 @@ mod shot {
     fn spawn_offscreen_camera(
         mut commands: Commands,
         mut images: ResMut<Assets<Image>>,
-        shot: Res<Shot>,
+        mut shot: ResMut<Shot>,
     ) {
         let mut image = Image::new_target_texture(1280, 720, TextureFormat::Rgba8UnormSrgb, None);
         image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
@@ -2650,7 +2906,8 @@ mod shot {
             RenderTarget::Image(handle.clone().into()),
             IsDefaultUiCamera,
         ));
-        commands.insert_resource(Target(handle));
+        commands.spawn(card_camera(RenderTarget::Image(handle.clone().into())));
+        shot.target = Some(handle);
     }
 
     fn key(key_code: KeyCode, state: ButtonState, window: Entity) -> KeyboardInput {
@@ -2668,11 +2925,17 @@ mod shot {
         mut commands: Commands,
         mut shot: ResMut<Shot>,
         mut world: ResMut<World>,
-        target: Res<Target>,
         window: Single<Entity, With<PrimaryWindow>>,
+        card: Single<&Camera, With<CardCamera>>,
         mut keyboard: MessageWriter<KeyboardInput>,
         mut exit: MessageWriter<AppExit>,
     ) {
+        if let (true, Some(v)) = (shot.frames == shot.warm, &card.viewport) {
+            println!(
+                "card {} {} {} {}",
+                v.physical_position.x, v.physical_position.y, v.physical_size.x, v.physical_size.y
+            );
+        }
         shot.frames += 1;
         for (frame, act) in shot.script.clone() {
             if frame != shot.frames {
@@ -2697,6 +2960,8 @@ mod shot {
                     world.pointer = Some(px(cell));
                     world.release(Some(cell));
                 }
+                Act::Hover(item) => world.hover = Some(item),
+                Act::Lift(item) => world.lift_inventory(item),
             }
         }
         let warm = shot.warm;
@@ -2712,7 +2977,11 @@ mod shot {
                 None => shot.path.clone(),
             };
             commands
-                .spawn(Screenshot::image(target.0.clone()))
+                .spawn(Screenshot::image(
+                    shot.target
+                        .clone()
+                        .expect("the offscreen camera spawned first"),
+                ))
                 .observe(save_to_disk(path));
         }
         if n == count + 28 {
@@ -2724,7 +2993,7 @@ mod shot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sim::{Atom, AtomKind, Bond};
+    use sim::{Atom, AtomKind, Bond, Tier};
 
     const SEAM_TONE: f32 = 0.05;
     const SEAM_GRAIN: f32 = 0.015;
@@ -2782,7 +3051,7 @@ mod tests {
         let half_edge = HEX / 2.0 / MICRO_SCALE - 2.0 * BLUR_PX;
         let reach = half_grout.max(half_edge).ceil();
         let inside = |p: Vec2| {
-            p.x >= 2.0 * PALETTE_PX + reach
+            p.x >= PALETTE_WIDTH + 16.0 + reach
                 && p.x < frame.width() as f32 - reach
                 && p.y >= reach
                 && p.y < frame.height() as f32 - reach
@@ -3815,6 +4084,7 @@ mod tests {
         w.key(KeyCode::KeyZ, false);
         let mut cleared = ghost0.clone();
         cleared.glyphs.push(None);
+        cleared.inventory.add(Item::Glyph(GlyphKind::Bonder));
         assert_eq!(w.sim, cleared);
         assert_eq!(*w.shown(), cleared.replay(2));
     }
@@ -4052,19 +4322,152 @@ mod tests {
     fn no_glyph_fires_on_a_carried_compound_and_a_drop_on_an_output_is_eaten_at_the_end_of_that_tick()
      {
         let at = Hex::new(2, -2);
-        let mut w = lone(vec![glyph(GlyphKind::Output, at, 0)], vec![]);
+        let mut w = lone(vec![glyph(GlyphKind::Output(Tier::One), at, 0)], vec![]);
         w.running = false;
         pair(&mut w, at, BondKind::Double);
         lift_at(&mut w, at);
         w.step();
-        assert_eq!(w.sim.delivered, 0);
+        assert_eq!(count(&w, Item::Arm), 0);
         w.pointer = Some(px(at));
         w.release(Some(at));
-        assert_eq!(w.sim.delivered, 0);
+        assert_eq!(count(&w, Item::Arm), 0);
         assert_eq!(atoms(&w).len(), 2);
         w.step();
-        assert_eq!(w.sim.delivered, 1);
+        assert_eq!(count(&w, Item::Arm), 1);
         assert_eq!(atoms(&w), vec![]);
+    }
+
+    fn count(w: &World, item: Item) -> u32 {
+        w.sim.inventory.count(item).unwrap()
+    }
+
+    fn stocked(w: &mut World, item: Item, n: u32) {
+        for _ in 0..n {
+            w.sim.inventory.add(item);
+        }
+    }
+
+    #[test]
+    fn a_machine_lifted_from_the_inventory_is_spent_at_the_drop_and_returned_by_z_not_by_x() {
+        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let mut w = lone(vec![], vec![]);
+        w.lift_inventory(bonder);
+        assert_eq!(w.focus, None);
+        stocked(&mut w, bonder, 1);
+        w.lift_inventory(bonder);
+        assert!(matches!(
+            w.focus,
+            Some(Focus::Hold {
+                back: Back::Inventory(item),
+                ..
+            }) if item == bonder
+        ));
+        assert_eq!(count(&w, bonder), 1);
+        w.key(KeyCode::Escape, false);
+        assert_eq!(w.focus, None);
+        assert_eq!(count(&w, bonder), 1);
+        w.lift_inventory(bonder);
+        let to = Hex::new(-2, 3);
+        w.release(Some(to));
+        assert_eq!(count(&w, bonder), 0);
+        assert_eq!(w.sim.glyphs[0].unwrap().at, to);
+        assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
+        w.lift_inventory(bonder);
+        assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
+        stocked(&mut w, bonder, sim::DEFAULT_CAP);
+        w.key(KeyCode::KeyX, false);
+        assert_eq!(w.sim.glyphs[0], None);
+        assert_eq!(count(&w, bonder), sim::DEFAULT_CAP);
+        w.key(KeyCode::KeyV, false);
+        w.release(Some(to));
+        assert_eq!(count(&w, bonder), sim::DEFAULT_CAP);
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(w.sim.glyphs[0], None);
+        assert_eq!(count(&w, bonder), sim::DEFAULT_CAP + 1);
+        assert!(w.sim.inventory.full(bonder));
+    }
+
+    #[test]
+    fn a_scroll_over_an_entry_changes_only_that_cap_and_the_glyph_reads_it() {
+        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let at = Hex::new(2, -2);
+        let mut w = lone(vec![glyph(GlyphKind::Output(Tier::One), at, 0)], vec![]);
+        w.running = false;
+        w.set_cap(bonder, -(sim::DEFAULT_CAP as i32) - 5);
+        assert_eq!(w.sim.inventory.cap(bonder), Some(0));
+        for item in palette().filter(|item| *item != bonder) {
+            assert_eq!(
+                w.sim.inventory.cap(item),
+                Some(sim::DEFAULT_CAP),
+                "{item:?}"
+            );
+        }
+        w.set_cap(bonder, i32::MAX);
+        assert_eq!(w.sim.inventory.cap(bonder), Some(sim::MAX_CAP));
+        w.set_cap(bonder, -(sim::MAX_CAP as i32));
+        pair(&mut w, at, BondKind::Single);
+        w.step();
+        assert_eq!(atoms(&w).len(), 2);
+        assert_eq!(count(&w, bonder), 0);
+        w.set_cap(bonder, 1);
+        w.step();
+        assert_eq!(atoms(&w), vec![]);
+        assert_eq!(count(&w, bonder), 1);
+    }
+
+    #[test]
+    fn the_palette_lists_every_machine_but_the_source() {
+        let listed: Vec<Item> = palette().collect();
+        let all: Vec<Item> = Item::ALL
+            .into_iter()
+            .filter(|item| *item != Item::Glyph(GlyphKind::Source))
+            .collect();
+        assert_eq!(listed.len(), all.len());
+        assert!(all.iter().all(|item| listed.contains(item)));
+    }
+
+    #[test]
+    fn the_hover_card_draws_the_picture_and_the_recipe_on_its_own_layer() {
+        for (name, item) in [
+            ("bonder", Item::Glyph(GlyphKind::Bonder)),
+            ("arm", Item::Arm),
+        ] {
+            let dir =
+                std::env::temp_dir().join(format!("ziral-card-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut app = shot::still(&format!("card:{name}"), dir.clone(), 1);
+            lit_plugin(&mut app);
+            let seen = std::sync::Arc::new(std::sync::Mutex::new((0, false, UVec2::ZERO)));
+            let probe = seen.clone();
+            app.add_systems(
+                Last,
+                move |fills: Query<&RenderLayers, With<Fill>>,
+                      camera: Single<&Camera, With<CardCamera>>| {
+                    let on_card = fills.iter().filter(|l| **l == CARD).count();
+                    let size = camera
+                        .viewport
+                        .as_ref()
+                        .map_or(UVec2::ZERO, |v| v.physical_size);
+                    *probe.lock().unwrap() = (on_card, camera.is_active, size);
+                },
+            );
+            assert_eq!(app.run(), bevy::app::AppExit::Success);
+            std::fs::remove_dir_all(&dir).unwrap();
+            let (on_card, active, size) = *seen.lock().unwrap();
+            let recipe = item.recipe().unwrap();
+            let bars: usize = recipe
+                .bonds
+                .iter()
+                .map(|(_, _, kind)| match look::bond(*kind).shape {
+                    Shape::Bars(n) => n,
+                    _ => unreachable!(),
+                })
+                .sum();
+            assert_eq!(on_card, 3 + bars + 2 * recipe.atoms.len(), "{name}");
+            assert!(active, "{name}");
+            assert_eq!(size, card_size(item).as_uvec2(), "{name}");
+        }
     }
 
     #[test]
@@ -4197,6 +4600,8 @@ mod tests {
                         w.pointer = Some(px(cell));
                         w.release(Some(cell));
                     }
+                    shot::Act::Hover(item) => w.hover = Some(item),
+                    shot::Act::Lift(item) => w.lift_inventory(item),
                 }
             }
             if frame == warm {
@@ -4208,11 +4613,23 @@ mod tests {
     }
 
     #[test]
-    fn the_hand_scene_delivers_one_compound_built_by_hand_with_no_arm_on_the_board() {
+    fn the_hand_scene_crafts_one_arm_by_hand_with_no_arm_on_the_board() {
         let w = played("hand", 300);
         assert!(w.sim.arms.is_empty());
-        assert_eq!(w.sim.delivered, 1, "{:?}", w.sim);
+        assert_eq!(count(&w, Item::Arm), 1, "{:?}", w.sim);
         assert_eq!(w.focus, None);
         assert_eq!(atoms(&w).len(), 1);
+    }
+
+    #[test]
+    fn the_craft_scene_crafts_a_bonder_by_hand_then_places_it_from_the_inventory() {
+        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let w = played("craft", 189);
+        assert_eq!(count(&w, bonder), 1, "{:?}", w.sim);
+        assert_eq!(w.sim.glyphs.len(), 3);
+        let w = played("craft", 240);
+        assert_eq!(count(&w, bonder), 0);
+        assert_eq!(w.sim.glyphs[3].unwrap().kind, GlyphKind::Bonder);
+        assert_eq!(w.sim.glyphs[3].unwrap().at, Hex::new(-2, -3));
     }
 }

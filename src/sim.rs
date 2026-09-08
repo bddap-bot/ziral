@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+use std::sync::OnceLock;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Hex {
     pub q: i32,
     pub r: i32,
@@ -26,6 +28,17 @@ impl Hex {
 
     pub fn sub(self, o: Hex) -> Hex {
         Hex::new(self.q - o.q, self.r - o.r)
+    }
+
+    pub const fn ring(self) -> i32 {
+        let (q, r, s) = (self.q.abs(), self.r.abs(), (self.q + self.r).abs());
+        if q >= r && q >= s {
+            q
+        } else if r >= s {
+            r
+        } else {
+            s
+        }
     }
 
     pub fn scramble(self) -> u32 {
@@ -92,7 +105,7 @@ pub enum Stall {
     Hand(usize),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AtomKind {
     Base,
 }
@@ -107,7 +120,7 @@ pub struct Atom {
     pub pos: Hex,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BondKind {
     Single,
     Double,
@@ -167,22 +180,67 @@ impl Arm {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tier {
+    One,
+    Two,
+    Three,
+}
+
+impl Tier {
+    pub const fn radius(self) -> i32 {
+        match self {
+            Tier::One => 1,
+            Tier::Two => 2,
+            Tier::Three => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GlyphKind {
     Source,
     Bonder,
     SecondBond,
-    Output,
+    Output(Tier),
     Cleanup,
 }
 
 impl GlyphKind {
-    pub const ALL: [GlyphKind; 5] = [
+    pub const ALL: [GlyphKind; 7] = [
         GlyphKind::Source,
         GlyphKind::Bonder,
         GlyphKind::SecondBond,
-        GlyphKind::Output,
+        GlyphKind::Output(Tier::One),
+        GlyphKind::Output(Tier::Two),
+        GlyphKind::Output(Tier::Three),
         GlyphKind::Cleanup,
     ];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Item {
+    Arm,
+    Glyph(GlyphKind),
+}
+
+impl Item {
+    pub const ALL: [Item; GlyphKind::ALL.len() + 1] = {
+        let mut all = [Item::Arm; GlyphKind::ALL.len() + 1];
+        let mut k = 0;
+        while k < GlyphKind::ALL.len() {
+            all[k + 1] = Item::Glyph(GlyphKind::ALL[k]);
+            k += 1;
+        }
+        all
+    };
+
+    fn index(self) -> Option<usize> {
+        RECIPES.iter().position(|(item, _)| *item == self)
+    }
+
+    pub fn recipe(self) -> Option<&'static Recipe> {
+        self.index().map(|i| &RECIPES[i].1)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -198,7 +256,6 @@ pub struct Rule {
     pub slots: &'static [Slot],
     pub before: &'static [(usize, usize, Option<BondKind>)],
     pub after: &'static [(usize, usize, BondKind)],
-    pub whole: bool,
     pub spent: bool,
 }
 
@@ -227,16 +284,38 @@ const SECOND_BOND: [Slot; 3] = [
     base(DIRS[1]),
 ];
 const BONDER: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
-const OUTPUT: [Slot; 2] = [consumed(ORIGIN), consumed(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
 const CLEANUP: [Slot; 1] = [consumed(ORIGIN)];
+
+const fn hexagon<const N: usize>(radius: i32) -> [Slot; N] {
+    let mut cells = [consumed(ORIGIN); N];
+    let mut n = 0;
+    let mut q = -radius;
+    while q <= radius {
+        let mut r = -radius;
+        while r <= radius {
+            let cell = Hex::new(q, r);
+            if cell.ring() <= radius {
+                cells[n] = consumed(cell);
+                n += 1;
+            }
+            r += 1;
+        }
+        q += 1;
+    }
+    assert!(n == N);
+    cells
+}
+
+const OUTPUT_1: [Slot; 7] = hexagon(Tier::One.radius());
+const OUTPUT_2: [Slot; 19] = hexagon(Tier::Two.radius());
+const OUTPUT_3: [Slot; 37] = hexagon(Tier::Three.radius());
 
 const fn plain(slots: &'static [Slot]) -> Rule {
     Rule {
         slots,
         before: &[],
         after: &[],
-        whole: false,
         spent: false,
     }
 }
@@ -255,11 +334,9 @@ impl GlyphKind {
                 after: &[(1, 2, BondKind::Double)],
                 ..plain(&SECOND_BOND)
             },
-            GlyphKind::Output => Rule {
-                before: &[(0, 1, Some(BondKind::Double))],
-                whole: true,
-                ..plain(&OUTPUT)
-            },
+            GlyphKind::Output(Tier::One) => plain(&OUTPUT_1),
+            GlyphKind::Output(Tier::Two) => plain(&OUTPUT_2),
+            GlyphKind::Output(Tier::Three) => plain(&OUTPUT_3),
             GlyphKind::Cleanup => Rule {
                 spent: true,
                 ..plain(&CLEANUP)
@@ -287,6 +364,208 @@ impl Glyph {
 
 pub const MAX_COMPOUND_ATOMS: usize = 256;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Recipe {
+    pub atoms: &'static [(Hex, AtomKind)],
+    pub bonds: &'static [(usize, usize, BondKind)],
+}
+
+const fn spoke(k: usize) -> (Hex, AtomKind) {
+    (DIRS[k], AtomKind::Base)
+}
+
+const CENTRE: (Hex, AtomKind) = (ORIGIN, AtomKind::Base);
+const PAIR: [(Hex, AtomKind); 2] = [CENTRE, spoke(0)];
+const BENT: [(Hex, AtomKind); 3] = [spoke(3), CENTRE, spoke(5)];
+const LINE: [(Hex, AtomKind); 3] = [spoke(3), CENTRE, spoke(0)];
+const TRIANGLE: [(Hex, AtomKind); 3] = [CENTRE, spoke(0), spoke(1)];
+const SPOKES_3: [(Hex, AtomKind); 4] = [CENTRE, spoke(0), spoke(2), spoke(4)];
+const SPOKES_6: [(Hex, AtomKind); 7] = [
+    CENTRE,
+    spoke(0),
+    spoke(1),
+    spoke(2),
+    spoke(3),
+    spoke(4),
+    spoke(5),
+];
+
+const fn single(a: usize, b: usize) -> (usize, usize, BondKind) {
+    (a, b, BondKind::Single)
+}
+
+pub const RECIPES: [(Item, Recipe); 7] = [
+    (
+        Item::Glyph(GlyphKind::Bonder),
+        Recipe {
+            atoms: &PAIR,
+            bonds: &[single(0, 1)],
+        },
+    ),
+    (
+        Item::Glyph(GlyphKind::SecondBond),
+        Recipe {
+            atoms: &TRIANGLE,
+            bonds: &[single(0, 1), single(1, 2), single(2, 0)],
+        },
+    ),
+    (
+        Item::Arm,
+        Recipe {
+            atoms: &PAIR,
+            bonds: &[(0, 1, BondKind::Double)],
+        },
+    ),
+    (
+        Item::Glyph(GlyphKind::Cleanup),
+        Recipe {
+            atoms: &LINE,
+            bonds: &[single(0, 1), single(1, 2)],
+        },
+    ),
+    (
+        Item::Glyph(GlyphKind::Output(Tier::One)),
+        Recipe {
+            atoms: &BENT,
+            bonds: &[single(0, 1), single(1, 2)],
+        },
+    ),
+    (
+        Item::Glyph(GlyphKind::Output(Tier::Two)),
+        Recipe {
+            atoms: &SPOKES_3,
+            bonds: &[single(0, 1), single(0, 2), single(0, 3)],
+        },
+    ),
+    (
+        Item::Glyph(GlyphKind::Output(Tier::Three)),
+        Recipe {
+            atoms: &SPOKES_6,
+            bonds: &[
+                single(0, 1),
+                single(0, 2),
+                single(0, 3),
+                single(0, 4),
+                single(0, 5),
+                single(0, 6),
+            ],
+        },
+    ),
+];
+
+impl Recipe {
+    pub fn sim(&self) -> Sim {
+        let mut sim = Sim::empty();
+        for (pos, kind) in self.atoms {
+            sim.spawn(Atom {
+                kind: *kind,
+                pos: *pos,
+            });
+        }
+        sim.bonds.extend(self.bonds.iter().map(|(a, b, kind)| Bond {
+            a: *a,
+            b: *b,
+            kind: *kind,
+        }));
+        sim
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Form {
+    atoms: Vec<(Hex, AtomKind)>,
+    bonds: Vec<(Hex, Hex, BondKind)>,
+}
+
+impl Form {
+    pub fn of(sim: &Sim) -> Form {
+        let atoms: Vec<Atom> = sim.atoms.iter().flatten().copied().collect();
+        (0..6)
+            .map(|turn| {
+                let at = |atom: &Atom| atom.pos.turned(turn);
+                let origin = atoms.iter().map(at).min().unwrap_or(ORIGIN);
+                let mut placed: Vec<(Hex, AtomKind)> = atoms
+                    .iter()
+                    .map(|atom| (at(atom).sub(origin), atom.kind))
+                    .collect();
+                let mut bonds: Vec<(Hex, Hex, BondKind)> = sim
+                    .bonds
+                    .iter()
+                    .map(|bond| {
+                        let end = |id: usize| at(&sim.atoms[id].unwrap()).sub(origin);
+                        let (a, b) = (end(bond.a), end(bond.b));
+                        (a.min(b), a.max(b), bond.kind)
+                    })
+                    .collect();
+                placed.sort_unstable();
+                bonds.sort_unstable();
+                Form {
+                    atoms: placed,
+                    bonds,
+                }
+            })
+            .min()
+            .expect("six turns")
+    }
+
+    pub fn crafts(&self) -> Option<Item> {
+        static FORMS: OnceLock<Vec<Form>> = OnceLock::new();
+        FORMS
+            .get_or_init(|| RECIPES.iter().map(|(_, r)| Form::of(&r.sim())).collect())
+            .iter()
+            .position(|form| form == self)
+            .map(|i| RECIPES[i].0)
+    }
+}
+
+pub const DEFAULT_CAP: u32 = 16;
+pub const MAX_CAP: u32 = 256;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Inventory {
+    count: [u32; RECIPES.len()],
+    cap: [u32; RECIPES.len()],
+}
+
+impl Inventory {
+    pub const EMPTY: Inventory = Inventory {
+        count: [0; RECIPES.len()],
+        cap: [DEFAULT_CAP; RECIPES.len()],
+    };
+
+    pub fn count(&self, item: Item) -> Option<u32> {
+        item.index().map(|i| self.count[i])
+    }
+
+    pub fn cap(&self, item: Item) -> Option<u32> {
+        item.index().map(|i| self.cap[i])
+    }
+
+    pub fn full(&self, item: Item) -> bool {
+        item.index().is_none_or(|i| self.count[i] >= self.cap[i])
+    }
+
+    pub fn add(&mut self, item: Item) {
+        if let Some(i) = item.index() {
+            self.count[i] = self.count[i].saturating_add(1);
+        }
+    }
+
+    pub fn take(&mut self, item: Item) {
+        if let Some(i) = item.index() {
+            self.count[i] = self.count[i]
+                .checked_sub(1)
+                .expect("a lift at zero never holds");
+        }
+    }
+
+    pub fn set_cap(&mut self, item: Item, notches: i32) {
+        if let Some(i) = item.index() {
+            self.cap[i] = self.cap[i].saturating_add_signed(notches).min(MAX_CAP);
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sim {
     pub glyphs: Vec<Option<Glyph>>,
@@ -294,7 +573,7 @@ pub struct Sim {
     pub atoms: Vec<Option<Atom>>,
     pub bonds: Vec<Bond>,
     pub tick: u64,
-    pub delivered: u64,
+    pub inventory: Inventory,
 }
 
 impl Sim {
@@ -305,7 +584,7 @@ impl Sim {
             atoms: Vec::new(),
             bonds: Vec::new(),
             tick: 0,
-            delivered: 0,
+            inventory: Inventory::EMPTY,
         }
     }
 
@@ -423,11 +702,42 @@ impl Sim {
         }
         for i in 0..self.glyphs.len() {
             let Some(g) = self.glyphs[i] else { continue };
-            if self.fire(g) && g.kind.rule().spent {
-                self.glyphs[i] = None;
+            match g.kind {
+                GlyphKind::Output(tier) => self.craft(g.at, tier),
+                _ => {
+                    if self.fire(g) && g.kind.rule().spent {
+                        self.glyphs[i] = None;
+                    }
+                }
             }
         }
         self.tick += 1;
+    }
+
+    fn craft(&mut self, centre: Hex, tier: Tier) {
+        let within = |atom: Atom| atom.pos.sub(centre).ring() <= tier.radius();
+        let mut seen = Vec::new();
+        for id in 0..self.atoms.len() {
+            let Some(atom) = self.atoms[id] else { continue };
+            if !within(atom) || seen.contains(&id) {
+                continue;
+            }
+            let compound = self.component(id);
+            seen.extend(&compound);
+            if !compound.iter().all(|c| within(self.atoms[*c].unwrap()))
+                || !RECIPES.iter().any(|(_, r)| r.atoms.len() == compound.len())
+            {
+                continue;
+            }
+            let Some(item) = Form::of(&self.fragment(&compound, centre)).crafts() else {
+                continue;
+            };
+            if self.inventory.full(item) {
+                continue;
+            }
+            self.consume(&compound);
+            self.inventory.add(item);
+        }
     }
 
     fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
@@ -448,12 +758,6 @@ impl Sim {
             .any(|(a, b, want)| bonded(ids[*a], ids[*b]) != *want)
         {
             return None;
-        }
-        if rule.whole {
-            let comp = self.component(ids[0]);
-            if comp.len() != ids.len() || comp.iter().any(|id| !ids.contains(id)) {
-                return None;
-            }
         }
         for (a, b, _) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
@@ -488,9 +792,6 @@ impl Sim {
             .map(|(_, id)| *id)
             .collect();
         self.consume(&consumed);
-        if g.kind == GlyphKind::Output {
-            self.delivered += 1;
-        }
         true
     }
 
@@ -650,9 +951,9 @@ pub fn layout() -> Sim {
         dir: 0,
     }));
     sim.glyphs.push(Some(Glyph {
-        kind: GlyphKind::Output,
-        at: Hex::new(0, 1),
-        dir: 3,
+        kind: GlyphKind::Output(Tier::One),
+        at: Hex::new(-1, 2),
+        dir: 0,
     }));
     sim.glyphs.push(Some(Glyph {
         kind: GlyphKind::Bonder,
@@ -997,37 +1298,229 @@ mod tests {
         assert_eq!(sim.atoms.iter().flatten().count(), 2);
     }
 
+    fn output(tier: Tier, at: Hex) -> Glyph {
+        Glyph {
+            kind: GlyphKind::Output(tier),
+            at,
+            dir: 0,
+        }
+    }
+
+    fn lay(sim: &mut Sim, recipe: &Recipe, turn: usize, at: Hex) -> Vec<usize> {
+        let mut set = recipe.sim();
+        for atom in set.atoms.iter_mut().flatten() {
+            atom.pos = atom.pos.turned(turn);
+        }
+        let before: Vec<bool> = sim.atoms.iter().map(Option::is_some).collect();
+        sim.place(&set, at);
+        (0..sim.atoms.len())
+            .filter(|i| sim.atoms[*i].is_some() && !before.get(*i).copied().unwrap_or(false))
+            .collect()
+    }
+
+    fn count(sim: &Sim, item: Item) -> u32 {
+        sim.inventory.count(item).unwrap()
+    }
+
+    fn lying(sim: &Sim, ids: &[usize]) -> bool {
+        ids.iter().all(|id| sim.atoms[*id].is_some())
+    }
+
     #[test]
-    fn an_output_takes_only_the_exact_shape_atoms_and_bonds_out_of_every_hand() {
-        let output = Glyph {
-            kind: GlyphKind::Output,
-            at: Hex::new(1, 0),
-            dir: 5,
-        };
-        assert_eq!(
-            output.slots().collect::<Vec<_>>(),
-            [Hex::new(1, 0), Hex::new(1, 1)]
+    fn every_recipe_is_one_distinct_compound_bonded_across_adjacent_cells_that_fits_the_first_tier()
+    {
+        let forms: Vec<Form> = RECIPES.iter().map(|(_, r)| Form::of(&r.sim())).collect();
+        for (k, (item, recipe)) in RECIPES.iter().enumerate() {
+            let sim = recipe.sim();
+            assert!(
+                recipe
+                    .atoms
+                    .iter()
+                    .all(|(at, _)| at.ring() <= Tier::One.radius()),
+                "{item:?}"
+            );
+            assert_eq!(
+                sim.component(0).len(),
+                recipe.atoms.len(),
+                "{item:?} is not one compound"
+            );
+            for (a, b, kind) in recipe.bonds {
+                let (a, b) = (recipe.atoms[*a].0, recipe.atoms[*b].0);
+                assert_eq!(a.sub(b).ring(), 1, "{item:?} bonds cells that do not touch");
+                if *kind == BondKind::Double {
+                    let free = DIRS
+                        .iter()
+                        .map(|d| a.add(*d))
+                        .filter(|c| c.sub(b).ring() == 1)
+                        .any(|c| sim.atom_at(c).is_none());
+                    assert!(free, "{item:?} has a double bond no second-bond can write");
+                }
+            }
+            assert!(!forms[..k].contains(&forms[k]), "{item:?} shares a recipe");
+            assert!(
+                !RECIPES[..k].iter().any(|(other, _)| other == item),
+                "{item:?} is listed twice"
+            );
+            let mut world = Sim::empty();
+            world.glyphs.push(Some(output(Tier::One, ORIGIN)));
+            lay(&mut world, recipe, 0, ORIGIN);
+            world.step();
+            assert_eq!(count(&world, *item), 1, "{item:?} does not craft itself");
+            assert!(world.atoms.iter().flatten().next().is_none());
+        }
+        assert!(Item::Glyph(GlyphKind::Source).recipe().is_none());
+    }
+
+    #[test]
+    fn a_larger_glyph_takes_a_recipe_in_every_turn_wherever_it_lies_wholly_on_its_cells() {
+        let (item, recipe) = RECIPES[0];
+        assert_eq!(recipe.atoms.len(), 2);
+        let radius = Tier::Two.radius();
+        let (mut fired, mut refused) = (0, 0);
+        for turn in 0..6 {
+            for q in -radius - 1..=radius + 1 {
+                for r in -radius - 1..=radius + 1 {
+                    let at = Hex::new(q, r);
+                    let mut sim = Sim::empty();
+                    sim.glyphs.push(Some(output(Tier::Two, ORIGIN)));
+                    let ids = lay(&mut sim, &recipe, turn, at);
+                    let inside = |id: &usize| sim.atoms[*id].unwrap().pos.ring() <= radius;
+                    let (wholly, touching) = (ids.iter().all(inside), ids.iter().any(inside));
+                    sim.step();
+                    if wholly {
+                        fired += 1;
+                        assert_eq!(count(&sim, item), 1, "turn {turn} at {at:?}");
+                        assert!(!lying(&sim, &ids));
+                    } else {
+                        refused += usize::from(touching);
+                        assert_eq!(count(&sim, item), 0, "turn {turn} at {at:?}");
+                        assert!(lying(&sim, &ids));
+                        assert_eq!(sim.bonds.len(), 1);
+                    }
+                }
+            }
+        }
+        assert_eq!((fired, refused), (6 * 14, 6 * 10));
+    }
+
+    #[test]
+    fn a_turn_is_the_same_shape_and_a_mirror_image_is_another() {
+        let mut propeller = Sim::empty();
+        let centre = put(&mut propeller, 0, 0);
+        for k in [0, 2, 4] {
+            let spoke = propeller.spawn(Atom {
+                kind: AtomKind::Base,
+                pos: DIRS[k],
+            });
+            let tip = propeller.spawn(Atom {
+                kind: AtomKind::Base,
+                pos: DIRS[k].add(DIRS[(k + 1) % 6]),
+            });
+            bond(&mut propeller, centre, spoke, BondKind::Single);
+            bond(&mut propeller, spoke, tip, BondKind::Single);
+        }
+        let form = Form::of(&propeller);
+        let mut turned = propeller.clone();
+        for atom in turned.atoms.iter_mut().flatten() {
+            atom.pos = atom.pos.turned(1).add(Hex::new(4, -7));
+        }
+        assert_eq!(Form::of(&turned), form);
+        let mut mirrored = propeller.clone();
+        for atom in mirrored.atoms.iter_mut().flatten() {
+            atom.pos = Hex::new(atom.pos.q, -atom.pos.q - atom.pos.r);
+        }
+        assert_ne!(Form::of(&mirrored), form);
+    }
+
+    #[test]
+    fn a_pair_crafts_by_its_bond_and_an_extra_atom_or_bond_leaves_the_compound_untouched() {
+        let mut sim = bench(
+            vec![Instr::Grab, Instr::Wait],
+            vec![output(Tier::One, Hex::new(2, 0))],
         );
-        let mut sim = bench(vec![Instr::Wait], vec![output]);
         let a = put(&mut sim, 1, 0);
-        let b = put(&mut sim, 1, 1);
-        bond(&mut sim, a, b, BondKind::Single);
+        let b = put(&mut sim, 2, 0);
+        bond(&mut sim, a, b, BondKind::Double);
         sim.step();
-        assert_eq!(sim.delivered, 0);
-        sim.bonds[0].kind = BondKind::Double;
-        let c = put(&mut sim, 2, 0);
-        bond(&mut sim, b, c, BondKind::Single);
-        sim.step();
-        assert_eq!(sim.delivered, 0);
-        sim.consume(&[c]);
-        sim.arms[0].tape = vec![Instr::Grab, Instr::Wait];
-        sim.arms[0].pc = 0;
-        sim.step();
-        assert_eq!(sim.delivered, 1);
+        assert_eq!(count(&sim, Item::Arm), 1);
+        assert_eq!(count(&sim, Item::Glyph(GlyphKind::Bonder)), 0);
         assert!(sim.arms[0].holding);
         assert_eq!(sim.held(0), None);
         assert!(sim.atoms.iter().flatten().next().is_none());
-        assert!(sim.bonds.is_empty());
+        let arc: Vec<usize> = [(3, 0), (3, -1), (2, -1), (1, 0)]
+            .into_iter()
+            .map(|(q, r)| put(&mut sim, q, r))
+            .collect();
+        for pair in arc.windows(2) {
+            bond(&mut sim, pair[0], pair[1], BondKind::Single);
+        }
+        sim.step();
+        assert!(lying(&sim, &arc));
+        assert_eq!(sim.bonds.len(), 3);
+        sim.consume(&arc);
+        let triangle = [
+            put(&mut sim, 2, 0),
+            put(&mut sim, 3, 0),
+            put(&mut sim, 3, -1),
+        ];
+        bond(&mut sim, triangle[0], triangle[1], BondKind::Single);
+        bond(&mut sim, triangle[1], triangle[2], BondKind::Single);
+        bond(&mut sim, triangle[2], triangle[0], BondKind::Double);
+        sim.step();
+        assert!(lying(&sim, &triangle));
+        assert_eq!(count(&sim, Item::Glyph(GlyphKind::SecondBond)), 0);
+        sim.bonds[2].kind = BondKind::Single;
+        sim.step();
+        assert!(!lying(&sim, &triangle));
+        assert_eq!(count(&sim, Item::Glyph(GlyphKind::SecondBond)), 1);
+        assert_eq!(count(&sim, Item::Arm), 1);
+    }
+
+    #[test]
+    fn the_cap_holds_a_compound_until_the_count_drops_and_a_return_passes_it() {
+        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let recipe = *bonder.recipe().unwrap();
+        let mut sim = Sim::empty();
+        sim.glyphs.push(Some(output(Tier::One, ORIGIN)));
+        for _ in 1..DEFAULT_CAP {
+            sim.inventory.add(bonder);
+        }
+        lay(&mut sim, &recipe, 0, ORIGIN);
+        sim.step();
+        assert_eq!(count(&sim, bonder), DEFAULT_CAP);
+        let ids = lay(&mut sim, &recipe, 1, ORIGIN);
+        for _ in 0..3 {
+            sim.step();
+        }
+        assert!(lying(&sim, &ids));
+        assert_eq!(count(&sim, bonder), DEFAULT_CAP);
+        sim.inventory.take(bonder);
+        sim.step();
+        assert!(!lying(&sim, &ids));
+        assert_eq!(count(&sim, bonder), DEFAULT_CAP);
+        sim.inventory.add(bonder);
+        sim.inventory.add(bonder);
+        let ids = lay(&mut sim, &recipe, 2, ORIGIN);
+        sim.step();
+        assert!(lying(&sim, &ids));
+        assert_eq!(count(&sim, bonder), DEFAULT_CAP + 2);
+        sim.inventory.set_cap(bonder, 3);
+        sim.step();
+        assert!(!lying(&sim, &ids));
+        assert_eq!(count(&sim, bonder), DEFAULT_CAP + 3);
+        assert!(sim.inventory.full(bonder));
+    }
+
+    #[test]
+    fn two_compounds_on_one_glyph_both_craft_in_one_tick() {
+        let mut sim = Sim::empty();
+        sim.glyphs.push(Some(output(Tier::Two, ORIGIN)));
+        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let pair = lay(&mut sim, bonder.recipe().unwrap(), 0, Hex::new(-2, 0));
+        let arm = lay(&mut sim, Item::Arm.recipe().unwrap(), 0, Hex::new(1, 0));
+        sim.step();
+        assert!(!lying(&sim, &pair) && !lying(&sim, &arm));
+        assert_eq!((count(&sim, bonder), count(&sim, Item::Arm)), (1, 1));
     }
 
     #[test]
@@ -1208,34 +1701,21 @@ mod tests {
     }
 
     #[test]
-    fn an_output_turned_away_from_the_compound_ignores_it() {
-        let mut sim = bench(vec![Instr::Wait], Vec::new());
-        let a = put(&mut sim, 1, 0);
-        let b = put(&mut sim, 1, 1);
-        bond(&mut sim, a, b, BondKind::Double);
-        for dir in 0..6 {
-            sim.glyphs = vec![Some(Glyph {
-                kind: GlyphKind::Output,
-                at: Hex::new(1, 0),
-                dir,
-            })];
-            sim.step();
-            assert_eq!(sim.delivered, u64::from(dir == 5), "dir {dir}");
-        }
-    }
-
-    #[test]
-    fn preloaded_world_delivers_every_period_except_the_copy_that_stalls() {
+    fn preloaded_world_crafts_an_arm_every_period_until_the_cap_holds() {
         let mut sim = preloaded();
-        for _ in 0..20 * 4 {
+        for _ in 0..20 * 3 {
             sim.step();
         }
-        assert_eq!(sim.delivered, 4 * (PLACEMENTS.len() as u64 - 1));
+        assert_eq!(count(&sim, Item::Arm), 3 * (PLACEMENTS.len() as u32 - 1));
         let stalled: Vec<usize> = (0..sim.arms.len())
             .filter(|i| sim.arms[*i].stall.is_some())
             .collect();
         assert_eq!(stalled, vec![sim.arms.len() - 2, sim.arms.len() - 1]);
-        assert!(sim.atoms.len() < 40);
+        for _ in 0..20 {
+            sim.step();
+        }
+        assert_eq!(count(&sim, Item::Arm), DEFAULT_CAP);
+        assert!(sim.atoms.len() < 60);
     }
 
     fn cleanup(at: Hex) -> Glyph {

@@ -1,6 +1,6 @@
 use crate::look::{self, AMBIENT, Cell, Glaze, HEX, Quad, Role, px};
+use crate::sim::Item;
 use crate::sim::Slot;
-use crate::{Item, PALETTE};
 use bevy::math::{Vec2, Vec3};
 use image::{Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
@@ -102,7 +102,7 @@ impl Art {
     }
 }
 
-fn name(item: Item) -> &'static str {
+pub(crate) fn name(item: Item) -> &'static str {
     look::machine(item)
         .skin
         .name
@@ -112,7 +112,7 @@ fn name(item: Item) -> &'static str {
 }
 
 fn item(name: &str) -> Item {
-    PALETTE
+    Item::ALL
         .into_iter()
         .find(|item| self::name(*item) == name)
         .unwrap_or_else(|| panic!("no machine is named {name}"))
@@ -1200,7 +1200,7 @@ impl Remake<'_> {
     fn sheet(&self) -> Result<(), String> {
         let m = self.manifest.lock().expect("the manifest is unpoisoned");
         let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
-        for item in PALETTE {
+        for item in Item::ALL {
             let name = name(item);
             let scores = self.art.machine(name).join("scores.tsv");
             let (Some(entry), Ok(text)) = (m.machine.get(name), std::fs::read_to_string(&scores))
@@ -1316,7 +1316,7 @@ fn violators(art: &Art, manifest: &Manifest) -> Vec<String> {
         !score.passes(&manifest.thresholds)
     };
     std::thread::scope(|s| {
-        let handles: Vec<_> = PALETTE
+        let handles: Vec<_> = Item::ALL
             .into_iter()
             .map(name)
             .map(|name| s.spawn(move || violates(name).then(|| name.to_string())))
@@ -1346,9 +1346,9 @@ pub fn configure(args: &[String]) -> Option<i32> {
     }
     let art = Art::shipped();
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
-    let known = |n: &str| PALETTE.into_iter().map(name).any(|k| k == n);
+    let known = |n: &str| Item::ALL.into_iter().map(name).any(|k| k == n);
     let names: Vec<String> = match rest.as_slice() {
-        ["--all"] => PALETTE.into_iter().map(|i| name(i).to_string()).collect(),
+        ["--all"] => Item::ALL.into_iter().map(|i| name(i).to_string()).collect(),
         ["--violators"] => violators(&art, &art.read()),
         [_, ..] if rest.iter().all(|n| known(n)) => rest.iter().map(|n| n.to_string()).collect(),
         _ => {
@@ -1400,7 +1400,7 @@ mod tests {
 
     #[test]
     fn scaffold_cells_match_the_footprint() {
-        for item in PALETTE {
+        for item in Item::ALL {
             let scaffold = Scaffold::of(item);
             let n = scaffold.canvas as usize;
             let mut covered = Vec::new();
@@ -1434,7 +1434,7 @@ mod tests {
     #[test]
     fn every_machine_has_a_manifest_entry_a_scaffold_a_kept_candidate_that_passes_and_relief() {
         let manifest = Art::shipped().read();
-        let names: Vec<&str> = PALETTE.into_iter().map(name).collect();
+        let names: Vec<&str> = Item::ALL.into_iter().map(name).collect();
         assert_eq!(
             manifest
                 .machine
@@ -1447,7 +1447,7 @@ mod tests {
                 sorted
             }
         );
-        for item in PALETTE {
+        for item in Item::ALL {
             let name = name(item);
             let machine = &manifest.machine[name];
             let kept = machine

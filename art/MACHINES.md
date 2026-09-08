@@ -37,9 +37,17 @@ Two adjacent cells as equal seats joined by a heavy compression bridge. Opposed 
 
 A triangular plum manifold with two matching bond seats and one different sacrificial feed. Paired rails connect the bond seats while the feed uses a funnel, one-way valve, and more severe collar, making the fixed roles legible before an atom arrives.
 
-## Output
+## Output, first tier
 
-A two-cell ivory receiving station: two protected cups, a bond-checking bridge, paired rails, and one covered exit chute. It looks receptive rather than transformative.
+A seven-cell ivory receiving station on the centred hexagon of radius one: seven protected cups, one at the centre and six around it, paired rails from the centre to each, rubber bumpers and one covered exit chute. It looks receptive rather than transformative.
+
+## Output, second tier
+
+The first tier at its heart, ringed by twelve more cups tied on by the same rails and a thin brass ring: nineteen cells, radius two.
+
+## Output, third tier
+
+The second tier at its heart, ringed by eighteen more cups and a second brass ring: thirty-seven cells, radius three.
 
 ## Cleanup
 
