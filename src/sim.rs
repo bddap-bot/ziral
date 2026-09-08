@@ -268,22 +268,6 @@ impl GlyphKind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Spent(Vec<usize>);
-
-impl Spent {
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn remap(&self, i: usize) -> Option<usize> {
-        match self.0.binary_search(&i) {
-            Ok(_) => None,
-            Err(k) => Some(i - k),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Glyph {
     pub kind: GlyphKind,
@@ -305,7 +289,7 @@ pub const MAX_COMPOUND_ATOMS: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sim {
-    pub glyphs: Vec<Glyph>,
+    pub glyphs: Vec<Option<Glyph>>,
     pub arms: Vec<Arm>,
     pub atoms: Vec<Option<Atom>>,
     pub bonds: Vec<Bond>,
@@ -365,16 +349,7 @@ impl Sim {
     }
 
     pub fn spawn(&mut self, atom: Atom) -> usize {
-        match self.atoms.iter().position(|a| a.is_none()) {
-            Some(free) => {
-                self.atoms[free] = Some(atom);
-                free
-            }
-            None => {
-                self.atoms.push(Some(atom));
-                self.atoms.len() - 1
-            }
-        }
+        seat(&mut self.atoms, atom)
     }
 
     fn other_hand(&self, i: usize) -> Option<usize> {
@@ -390,9 +365,17 @@ impl Sim {
         }
     }
 
-    pub fn step(&mut self) -> Spent {
+    pub fn replay(&self, ticks: u64) -> Sim {
+        let mut sim = self.clone();
+        for _ in 0..ticks {
+            sim.step();
+        }
+        sim
+    }
+
+    pub fn step(&mut self) {
         for i in 0..self.glyphs.len() {
-            let g = self.glyphs[i];
+            let Some(g) = self.glyphs[i] else { continue };
             if g.kind == GlyphKind::Source && self.atom_at(g.at).is_none() {
                 self.spawn(Atom {
                     kind: AtomKind::Base,
@@ -411,18 +394,13 @@ impl Sim {
                 self.arms[i].pc = self.arms[i].pc.wrapping_add(1);
             }
         }
-        let mut spent = Vec::new();
         for i in 0..self.glyphs.len() {
-            let g = self.glyphs[i];
+            let Some(g) = self.glyphs[i] else { continue };
             if self.fire(g) && g.kind.rule().spent {
-                spent.push(i);
+                self.glyphs[i] = None;
             }
         }
-        for i in spent.iter().rev() {
-            self.glyphs.remove(*i);
-        }
         self.tick += 1;
-        Spent(spent)
     }
 
     fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
@@ -538,7 +516,11 @@ impl Sim {
                     .any(|(j, a)| j != i && a.pivot == at)
         };
         let stepped = pivot != self.arms[i].pivot;
-        let seated = self.glyphs.iter().any(|g| g.slots().any(|s| s == pivot));
+        let seated = self
+            .glyphs
+            .iter()
+            .flatten()
+            .any(|g| g.slots().any(|s| s == pivot));
         if (stepped && (seated || !free(pivot)))
             || moved.iter().any(|(_, at)| !free(*at) || *at == pivot)
         {
@@ -551,9 +533,11 @@ impl Sim {
     }
 
     pub fn place(&mut self, other: &Sim, at: Hex) {
-        self.glyphs.extend(other.glyphs.iter().map(|g| Glyph {
-            at: g.at.add(at),
-            ..*g
+        self.glyphs.extend(other.glyphs.iter().flatten().map(|g| {
+            Some(Glyph {
+                at: g.at.add(at),
+                ..*g
+            })
         }));
         self.arms.extend(other.arms.iter().map(|a| Arm {
             pivot: a.pivot.add(at),
@@ -576,6 +560,19 @@ impl Sim {
             b: ids[bond.b].unwrap(),
             ..*bond
         }));
+    }
+}
+
+pub fn seat<T>(slots: &mut Vec<Option<T>>, x: T) -> usize {
+    match slots.iter().position(Option::is_none) {
+        Some(free) => {
+            slots[free] = Some(x);
+            free
+        }
+        None => {
+            slots.push(Some(x));
+            slots.len() - 1
+        }
     }
 }
 
@@ -613,26 +610,26 @@ pub fn layout() -> Sim {
     ferry.extend([Grab, Rot(Spin::Ccw), Drop, Rot(Spin::Cw)]);
     ferry.resize(build.len(), Wait);
     let mut sim = Sim::empty();
-    sim.glyphs.push(Glyph {
+    sim.glyphs.push(Some(Glyph {
         kind: GlyphKind::Source,
         at: Hex::new(1, 0),
         dir: 0,
-    });
-    sim.glyphs.push(Glyph {
+    }));
+    sim.glyphs.push(Some(Glyph {
         kind: GlyphKind::Output,
         at: Hex::new(0, 1),
         dir: 3,
-    });
-    sim.glyphs.push(Glyph {
+    }));
+    sim.glyphs.push(Some(Glyph {
         kind: GlyphKind::Bonder,
         at: Hex::new(0, -1),
         dir: 0,
-    });
-    sim.glyphs.push(Glyph {
+    }));
+    sim.glyphs.push(Some(Glyph {
         kind: GlyphKind::SecondBond,
         at: Hex::new(-1, -1),
         dir: 5,
-    });
+    }));
     sim.arms.push(Arm::new(Hex::new(0, 0), 0, build));
     sim.arms.push(Arm::new(Hex::new(0, -2), 5, ferry));
     sim
@@ -657,7 +654,8 @@ mod tests {
 
     fn bench(tape: Vec<Instr>, glyphs: Vec<Glyph>) -> Sim {
         let mut sim = Sim::empty();
-        sim.glyphs = glyphs;
+        sim.glyphs = glyphs.into_iter().map(Some).collect();
+
         sim.arms.push(Arm::new(Hex::new(0, 0), 0, tape));
         sim
     }
@@ -1182,11 +1180,11 @@ mod tests {
         let b = put(&mut sim, 1, 1);
         bond(&mut sim, a, b, BondKind::Double);
         for dir in 0..6 {
-            sim.glyphs = vec![Glyph {
+            sim.glyphs = vec![Some(Glyph {
                 kind: GlyphKind::Output,
                 at: Hex::new(1, 0),
                 dir,
-            }];
+            })];
             sim.step();
             assert_eq!(sim.delivered, u64::from(dir == 5), "dir {dir}");
         }
@@ -1217,7 +1215,7 @@ mod tests {
     #[test]
     fn a_cleanup_eats_the_middle_of_a_chain_and_leaves_the_ends_where_they_lay_unbonded() {
         let mut sim = Sim::empty();
-        sim.glyphs.push(cleanup(ORIGIN));
+        sim.glyphs.push(Some(cleanup(ORIGIN)));
         let left = put(&mut sim, -1, 0);
         let mid = put(&mut sim, 0, 0);
         let right = put(&mut sim, 1, 0);
@@ -1233,19 +1231,21 @@ mod tests {
     #[test]
     fn a_cleanup_is_spent_by_its_first_meal_and_a_later_atom_on_its_cell_survives() {
         let mut sim = Sim::empty();
-        sim.glyphs.push(Glyph {
+        let source = Some(Glyph {
             kind: GlyphKind::Source,
             at: Hex::new(-3, 0),
             dir: 0,
         });
-        sim.glyphs.push(cleanup(ORIGIN));
+        sim.glyphs.push(source);
+        sim.glyphs.push(Some(cleanup(ORIGIN)));
+
         put(&mut sim, 0, 0);
-        let spent = sim.step();
-        assert_eq!((spent.remap(0), spent.remap(1)), (Some(0), None));
-        assert_eq!(sim.glyphs.len(), 1);
-        assert_eq!(sim.glyphs[0].kind, GlyphKind::Source);
+        sim.step();
+        assert_eq!(sim.glyphs, vec![source, None]);
         let later = put(&mut sim, 0, 0);
-        assert!(sim.step().is_empty());
+        sim.step();
+        assert_eq!(sim.glyphs, vec![source, None]);
+
         assert_eq!(sim.atoms[later].unwrap().pos, ORIGIN);
         assert!(sim.atom_at(Hex::new(-3, 0)).is_some());
     }

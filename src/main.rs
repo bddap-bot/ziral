@@ -16,7 +16,7 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::window::PrimaryWindow;
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
-use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spent, Spin, Stall};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, ORIGIN, Sim, Spin, Stall};
 
 const TICK_MS: f32 = 400.0;
 const MOTION: f32 = 1.0;
@@ -29,6 +29,7 @@ const LINE_PX: f32 = 3.0;
 const SYMBOL_PX: f32 = 26.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
+const MARK_PX: f32 = 6.0;
 
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
@@ -270,20 +271,14 @@ impl Focus {
         }
     }
 
-    fn survive(mut self, spent: &Spent) -> Option<Focus> {
-        let lost = |id: &Id| matches!(id, Id::Glyph(i) if spent.remap(*i).is_none());
+    fn survive(mut self, sim: &Sim) -> Option<Focus> {
+        let lost = |id: &Id| matches!(id, Id::Glyph(i) if sim.glyphs[*i].is_none());
         let ids = match &mut self {
             Focus::Tape { .. } => return Some(self),
             Focus::Hold { from, .. } if from.iter().any(lost) => return None,
             Focus::Pick(ids) | Focus::Hold { from: ids, .. } => ids,
         };
-        ids.retain_mut(|id| match id {
-            Id::Arm(_) => true,
-            Id::Glyph(i) => spent.remap(*i).is_some_and(|j| {
-                *i = j;
-                true
-            }),
-        });
+        ids.retain(|id| !lost(id));
         (!ids.is_empty() || matches!(self, Focus::Hold { .. })).then_some(self)
     }
 }
@@ -299,6 +294,7 @@ enum Press {
 struct World {
     sim: Sim,
     prev: Sim,
+    ghost: Option<Sim>,
     since: f32,
     period: f32,
     motion: f32,
@@ -314,6 +310,7 @@ impl World {
         World {
             prev: sim.clone(),
             sim,
+            ghost: None,
             since: 0.0,
             period: TICK_MS / 1000.0,
             motion: MOTION,
@@ -325,12 +322,29 @@ impl World {
         }
     }
 
+    fn shown(&self) -> &Sim {
+        self.ghost.as_ref().unwrap_or(&self.sim)
+    }
+
+    fn ghosts(&self) -> u64 {
+        self.shown().tick - self.sim.tick
+    }
+
     fn step(&mut self) {
+        self.ghost = None;
         self.prev = self.sim.clone();
-        let spent = self.sim.step();
-        if !spent.is_empty() {
-            self.focus = self.focus.take().and_then(|f| f.survive(&spent));
-        }
+        self.sim.step();
+
+        self.focus = self.focus.take().and_then(|f| f.survive(&self.sim));
+    }
+
+    fn resim(&mut self, n: u64) {
+        self.ghost = (n > 0).then(|| self.sim.replay(n));
+        self.prev = self.shown().clone();
+    }
+
+    fn editable(&self, arm: bool) -> bool {
+        !arm || self.ghost.is_none()
     }
 
     fn phase(&self) -> f32 {
@@ -343,7 +357,7 @@ impl World {
     }
 
     fn focus_tape(&mut self, arm: usize) {
-        let cursor = self.sim.arms[arm].tape.len();
+        let cursor = self.shown().arms[arm].tape.len();
         self.focus = Some(Focus::Tape { arm, cursor });
     }
 
@@ -355,14 +369,18 @@ impl World {
         self.focus.as_ref().is_some_and(|f| f.picks(id))
     }
 
+    fn glyph(&self, i: usize) -> Glyph {
+        self.sim.glyphs[i].unwrap()
+    }
+
     fn piece(&self, id: Id, grab: Hex) -> Piece {
         match id {
             Id::Arm(i) => {
-                let a = &self.sim.arms[i];
+                let a = &self.shown().arms[i];
                 Piece::Arm(Arm::new(a.pivot.sub(grab), a.dir, a.tape.clone()))
             }
             Id::Glyph(i) => {
-                let g = self.sim.glyphs[i];
+                let g = self.glyph(i);
                 Piece::Glyph(Glyph {
                     at: g.at.sub(grab),
                     ..g
@@ -373,28 +391,30 @@ impl World {
 
     fn dir(&self, id: Id) -> usize {
         match id {
-            Id::Arm(i) => self.sim.arms[i].dir,
-            Id::Glyph(i) => self.sim.glyphs[i].dir,
+            Id::Arm(i) => self.shown().arms[i].dir,
+            Id::Glyph(i) => self.glyph(i).dir,
         }
     }
 
     fn anchor(&self, id: Id) -> Hex {
         match id {
-            Id::Arm(i) => self.sim.arms[i].pivot,
-            Id::Glyph(i) => self.sim.glyphs[i].at,
+            Id::Arm(i) => self.shown().arms[i].pivot,
+            Id::Glyph(i) => self.glyph(i).at,
         }
     }
 
     fn cells(&self, id: Id) -> Vec<Hex> {
         match id {
-            Id::Arm(i) => self.sim.arms[i].cells().to_vec(),
-            Id::Glyph(i) => self.sim.glyphs[i].slots().collect(),
+            Id::Arm(i) => self.shown().arms[i].cells().to_vec(),
+            Id::Glyph(i) => self.glyph(i).slots().collect(),
         }
     }
 
     fn ids(&self) -> impl Iterator<Item = Id> + '_ {
-        let arms = (0..self.sim.arms.len()).map(Id::Arm);
-        arms.chain((0..self.sim.glyphs.len()).map(Id::Glyph))
+        let sim = self.shown();
+        let arms = (0..sim.arms.len()).map(Id::Arm);
+        let glyphs = sim.glyphs.iter().enumerate().filter(|(_, g)| g.is_some());
+        arms.chain(glyphs.map(|(i, _)| Id::Glyph(i)))
     }
 
     fn hit(&self, cell: Hex) -> Option<Id> {
@@ -424,7 +444,11 @@ impl World {
                 (self.sim.arms[i].pivot, self.sim.arms[i].dir) = (at, dir);
                 self.unstall();
             }
-            Id::Glyph(i) => (self.sim.glyphs[i].at, self.sim.glyphs[i].dir) = (at, dir),
+            Id::Glyph(i) => {
+                if let Some(g) = &mut self.sim.glyphs[i] {
+                    (g.at, g.dir) = (at, dir);
+                }
+            }
         }
     }
 
@@ -434,10 +458,7 @@ impl World {
                 self.sim.arms.push(a);
                 Id::Arm(self.sim.arms.len() - 1)
             }
-            Piece::Glyph(g) => {
-                self.sim.glyphs.push(g);
-                Id::Glyph(self.sim.glyphs.len() - 1)
-            }
+            Piece::Glyph(g) => Id::Glyph(sim::seat(&mut self.sim.glyphs, g)),
         }
     }
 
@@ -448,6 +469,9 @@ impl World {
     }
 
     fn remove(&mut self, ids: &[Id]) {
+        if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) {
+            return;
+        }
         let mut arms: Vec<usize> = ids
             .iter()
             .filter_map(|id| match id {
@@ -455,27 +479,21 @@ impl World {
                 Id::Glyph(_) => None,
             })
             .collect();
-        let mut glyphs: Vec<usize> = ids
-            .iter()
-            .filter_map(|id| match id {
-                Id::Glyph(i) => Some(*i),
-                Id::Arm(_) => None,
-            })
-            .collect();
         arms.sort_unstable_by(|a, b| b.cmp(a));
-        glyphs.sort_unstable_by(|a, b| b.cmp(a));
         if !arms.is_empty() {
             self.unstall();
         }
         for i in arms {
             self.sim.arms.remove(i);
         }
-        for i in glyphs {
-            self.sim.glyphs.remove(i);
+        for id in ids {
+            if let Id::Glyph(i) = id {
+                self.sim.glyphs[*i] = None;
+            }
         }
-        self.prev = self.sim.clone();
         self.focus = None;
         self.down = None;
+        self.resim(self.ghosts());
     }
 
     fn copy(&mut self, ids: &[Id]) {
@@ -556,7 +574,8 @@ impl World {
         else {
             return;
         };
-        let Some(at) = at else {
+        let editable = self.editable(set.iter().any(|p| matches!(p, Piece::Arm(_))));
+        let Some(at) = at.filter(|_| editable) else {
             self.pick(from);
             return;
         };
@@ -578,16 +597,42 @@ impl World {
             })
             .collect();
         self.pick(ids);
-        self.prev = self.sim.clone();
+        self.resim(self.ghosts());
     }
 
     fn act(&mut self, arm: usize, instr: Instr) {
-        self.sim.act(arm, instr);
-        self.prev = self.sim.clone();
+        if self.editable(true) {
+            self.sim.act(arm, instr);
+            self.resim(self.ghosts());
+        }
     }
 
     fn key(&mut self, key: KeyCode, shift: bool) {
         use KeyCode::*;
+        match key {
+            Space => {
+                self.running = !self.running;
+                if self.running {
+                    self.resim(0);
+                }
+                return;
+            }
+            KeyG => {
+                if !self.running {
+                    self.prev = self.shown().clone();
+                    self.ghost = Some(self.prev.replay(1));
+                    self.since = 0.0;
+                }
+                return;
+            }
+            KeyS => {
+                if let (false, Some(n)) = (self.running, self.ghosts().checked_sub(1)) {
+                    self.resim(n);
+                }
+                return;
+            }
+            _ => {}
+        }
         let instr = instr_of(key, shift);
         match self.focus.clone() {
             Some(Focus::Hold { from, .. }) => match (key, instr, &mut self.focus) {
@@ -600,6 +645,7 @@ impl World {
                 _ if shift => {}
                 Escape => self.focus = None,
                 KeyZ => self.remove(&ids),
+                KeyX | KeyC if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) => {}
                 KeyX => {
                     self.copy(&ids);
                     self.remove(&ids);
@@ -609,9 +655,11 @@ impl World {
                 _ => {
                     if let ([Id::Arm(arm)], Some(instr)) = (ids.as_slice(), instr) {
                         self.act(*arm, instr);
-                    } else if let ([id], Some(Instr::Rot(spin))) = (ids.as_slice(), instr) {
+                    } else if let ([id], Some(Instr::Rot(spin))) = (ids.as_slice(), instr)
+                        && self.editable(matches!(id, Id::Arm(_)))
+                    {
                         self.set_pose(*id, self.anchor(*id), spin.turn(self.dir(*id)));
-                        self.prev = self.sim.clone();
+                        self.resim(self.ghosts());
                     }
                 }
             },
@@ -621,12 +669,13 @@ impl World {
                     return;
                 }
                 let tape = &mut self.sim.arms[arm].tape;
-                let cursor = cursor.min(tape.len());
+                let len = tape.len();
+                let cursor = cursor.min(len);
                 let cursor = match key {
                     ArrowLeft => cursor.saturating_sub(1),
-                    ArrowRight => (cursor + 1).min(tape.len()),
+                    ArrowRight => (cursor + 1).min(len),
                     Home => 0,
-                    End => tape.len(),
+                    End => len,
                     KeyZ | Backspace if cursor > 0 => {
                         tape.remove(cursor - 1);
                         cursor - 1
@@ -639,7 +688,11 @@ impl World {
                         None => cursor,
                     },
                 };
+                let edited = tape.len() != len;
                 self.focus = Some(Focus::Tape { arm, cursor });
+                if edited && self.ghost.is_some() {
+                    self.resim(self.ghosts());
+                }
             }
             None => {
                 if key == KeyV {
@@ -819,6 +872,27 @@ fn manual(keys: Res<ButtonInput<KeyCode>>, mut page: Single<&mut Node, With<Manu
     }
 }
 
+#[derive(Component)]
+struct Marks(u64);
+
+fn mark(k: u64) -> impl Bundle {
+    let gap = if k > 0 && k.is_multiple_of(5) {
+        MARK_PX
+    } else {
+        0.0
+    };
+    (
+        Node {
+            width: Val::Px(MARK_PX),
+            height: Val::Px(MARK_PX),
+            margin: UiRect::left(Val::Px(gap)),
+            border_radius: BorderRadius::MAX,
+            ..default()
+        },
+        BackgroundColor(IVORY),
+    )
+}
+
 fn cursor() -> impl Bundle {
     (
         Node {
@@ -897,6 +971,13 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             ..default()
         })
         .with_children(|col| {
+            col.spawn((
+                Marks(0),
+                Node {
+                    flex_wrap: FlexWrap::Wrap,
+                    ..row(3.0)
+                },
+            ));
             for slot in 0..STRIP_ROWS {
                 col.spawn((
                     TapeRow { slot, line: None },
@@ -960,14 +1041,6 @@ fn edit(
     palette: Query<(&Item, &Interaction), With<Button>>,
     rows: Query<(&TapeRow, &Interaction), With<Button>>,
 ) {
-    if keys.just_pressed(KeyCode::Space) {
-        world.running = !world.running;
-    }
-    if keys.just_pressed(KeyCode::Period) {
-        world.running = false;
-        world.since = 0.0;
-        world.step();
-    }
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
         return;
@@ -985,7 +1058,7 @@ fn edit(
         if let Some((item, _)) = palette.iter().find(|(_, i)| **i == Interaction::Pressed) {
             world.lift(vec![Piece::fresh(*item)], Vec::new());
         } else if let Some((row, _)) = rows.iter().find(|(_, i)| **i == Interaction::Pressed) {
-            if let Some(arm) = row.arm().filter(|a| *a < world.sim.arms.len()) {
+            if let Some(arm) = row.arm().filter(|a| *a < world.shown().arms.len()) {
                 world.focus_tape(arm);
             }
         } else if !over_ui && let (Some(c), Some(p)) = (screen, world.pointer) {
@@ -1011,7 +1084,7 @@ fn edit(
 }
 
 fn tape_line(world: &World, i: usize) -> TapeLine {
-    let arm = &world.sim.arms[i];
+    let arm = &world.shown().arms[i];
     let cursor = match &world.focus {
         Some(Focus::Tape { arm, cursor }) if *arm == i => Some(*cursor),
         _ => None,
@@ -1036,13 +1109,26 @@ fn tapes(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<Camera2d>>,
     mut rows: Query<(Entity, &mut TapeRow, &mut Visibility, &mut BackgroundColor)>,
+    marks: Single<(Entity, &mut Marks)>,
 ) {
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
         return;
     };
-    let shown: Vec<usize> = world
-        .sim
+    let (entity, mut marks) = marks.into_inner();
+    if marks.0 != world.ghosts() {
+        marks.0 = world.ghosts();
+        commands
+            .entity(entity)
+            .despawn_children()
+            .with_children(|strip| {
+                for k in 0..marks.0 {
+                    strip.spawn(mark(k));
+                }
+            });
+    }
+    let listed: Vec<usize> = world
+        .shown()
         .arms
         .iter()
         .enumerate()
@@ -1051,7 +1137,7 @@ fn tapes(
         .take(STRIP_ROWS)
         .collect();
     for (entity, mut row, mut vis, mut bg) in &mut rows {
-        let Some(arm) = shown.get(row.slot).copied() else {
+        let Some(arm) = listed.get(row.slot).copied() else {
             *vis = Visibility::Hidden;
             row.line = None;
             continue;
@@ -1109,8 +1195,8 @@ struct Kiln {
     rim: Handle<Mesh>,
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
-    patina: Handle<ColorMaterial>,
-    skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
+    patina: [Handle<ColorMaterial>; 2],
+    skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
     lit: Vec<(Skin, Handle<Lit>)>,
 }
 
@@ -1149,15 +1235,15 @@ impl Kiln {
         &self.glaze[glaze as usize]
     }
 
-    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, Handle<ColorMaterial>) {
+    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, [Handle<ColorMaterial>; 2]) {
         self.skins
             .iter()
             .find(|(s, _, _)| *s == skin)
             .unwrap_or_else(|| panic!("{skin:?} was never fired"))
     }
 
-    fn skin(&self, skin: Skin) -> &Handle<ColorMaterial> {
-        &self.fired(skin).2
+    fn skin(&self, skin: Skin, ghost: bool) -> &Handle<ColorMaterial> {
+        &self.fired(skin).2[usize::from(ghost)]
     }
 
     fn image(&self, skin: Skin) -> Handle<Image> {
@@ -1246,7 +1332,7 @@ fn fire_kiln(
 ) {
     gizmo.config_mut::<DefaultGizmoConfigGroup>().0.line.width = LINE_PX;
     let grout = look::GROUT.decode();
-    let skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)> = look::skins()
+    let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
         .map(|skin| {
             let mut image = skin.decode();
             let crop = match skin.finish {
@@ -1262,17 +1348,24 @@ fn fire_kiln(
             } else {
                 AlphaMode2d::Opaque
             };
+            let uv_transform = Affine2::from_scale_angle_translation(
+                Vec2::splat(crop),
+                0.0,
+                Vec2::splat(0.5 * (1.0 - crop)),
+            );
             let fired = materials.add(ColorMaterial {
                 color: Color::WHITE,
                 alpha_mode,
                 texture: Some(texture.clone()),
-                uv_transform: Affine2::from_scale_angle_translation(
-                    Vec2::splat(crop),
-                    0.0,
-                    Vec2::splat(0.5 * (1.0 - crop)),
-                ),
+                uv_transform,
             });
-            (skin, texture, fired)
+            let ghost = materials.add(ColorMaterial {
+                color: Color::WHITE.with_alpha(GHOST),
+                alpha_mode: AlphaMode2d::Blend,
+                texture: Some(texture.clone()),
+                uv_transform,
+            });
+            (skin, texture, [fired, ghost])
         })
         .collect();
     let image = |skin: Skin| {
@@ -1307,7 +1400,7 @@ fn fire_kiln(
         rim: meshes.add(Annulus::new(0.85, 1.0)),
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
-        patina: materials.add(Glaze::Brass.color().with_alpha(0.5)),
+        patina: [0.5, 0.5 * GHOST].map(|a| materials.add(Glaze::Brass.color().with_alpha(a))),
         skins,
         lit,
     });
@@ -1348,9 +1441,22 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs> {
     gizmos: &'a mut Gizmos<'gw, 'gs>,
     commands: &'a mut Commands<'cw, 'cs>,
     kiln: &'a Kiln,
+    ghost: bool,
 }
 
-impl Painter<'_, '_, '_, '_, '_> {
+impl<'a> Painter<'a, '_, '_, '_, '_> {
+    fn line(&self, color: Color) -> Color {
+        if self.ghost {
+            color.with_alpha(GHOST)
+        } else {
+            color
+        }
+    }
+
+    fn skin(&self, skin: Skin) -> &'a Handle<ColorMaterial> {
+        self.kiln.skin(skin, self.ghost)
+    }
+
     fn fill<M: Material2d>(
         &mut self,
         mesh: &Handle<Mesh>,
@@ -1399,14 +1505,9 @@ impl Painter<'_, '_, '_, '_, '_> {
 
     fn bead(&mut self, at: Vec2, look: Look<()>) {
         let kiln = self.kiln;
-        self.stamp(
-            &kiln.circle,
-            kiln.skin(look.skin),
-            at,
-            HEX * 0.4,
-            layer::BEAD,
-        );
-        self.stamp(&kiln.rim, &kiln.patina, at, HEX * 0.4, layer::RIM);
+        let (skin, patina) = (self.skin(look.skin), &kiln.patina[usize::from(self.ghost)]);
+        self.stamp(&kiln.circle, skin, at, HEX * 0.4, layer::BEAD);
+        self.stamp(&kiln.rim, patina, at, HEX * 0.4, layer::RIM);
     }
 
     fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind) {
@@ -1415,7 +1516,7 @@ impl Painter<'_, '_, '_, '_, '_> {
             unworn(look)
         };
         let kiln = self.kiln;
-        let material = kiln.skin(look.skin);
+        let material = self.skin(look.skin);
         let side = (c - a).perp().normalize_or_zero() * HEX * 0.16;
         for k in 0..n {
             let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
@@ -1434,15 +1535,20 @@ impl Painter<'_, '_, '_, '_, '_> {
         use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
         let turn = toward.to_angle() - (FRAC_PI_2 + 3.0 * FRAC_PI_4);
         let iso = Isometry2d::new(at, Rot2::radians(turn));
-        self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, glaze.color());
+        let color = self.line(glaze.color());
+        self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, color);
     }
 
     fn sprite(&mut self, item: Item, origin: Vec2, angle: f32, z: f32) {
         let quad = look::quad(item);
         let centre = origin + Vec2::from_angle(angle).rotate(quad.centre);
         let kiln = self.kiln;
-        let material = kiln.lit(look::machine(item).skin);
-        self.fill(&kiln.bar, material, centre, angle, quad.size(), z);
+        let skin = look::machine(item).skin;
+        if self.ghost {
+            self.fill(&kiln.bar, self.skin(skin), centre, angle, quad.size(), z);
+        } else {
+            self.fill(&kiln.bar, kiln.lit(skin), centre, angle, quad.size(), z);
+        }
     }
 
     fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>, z: f32) {
@@ -1485,6 +1591,7 @@ mod layer {
 
 const RING_CLOSED: f32 = 0.5;
 const RING_OPEN: f32 = 0.9;
+const GHOST: f32 = 0.45;
 
 struct ArmPose {
     pivot: Vec2,
@@ -1669,7 +1776,7 @@ fn board(
                     let tile = look::tile(h);
                     lay(
                         &kiln.hexagon,
-                        kiln.skin(tile.skin),
+                        kiln.skin(tile.skin, false),
                         Transform {
                             translation: px(h).extend(0.0),
                             rotation: Quat::IDENTITY,
@@ -1709,14 +1816,18 @@ fn draw(
         gizmos: &mut gizmos,
         commands: &mut commands,
         kiln: &kiln,
+        ghost: world.ghosts() > 0,
     };
-    let f = Frame::between(&world.prev, &world.sim, world.phase());
+    let f = Frame::between(&world.prev, world.shown(), world.phase());
     for (i, g) in f.sim.glyphs.iter().enumerate() {
+        let Some(g) = g else { continue };
         let z = layer::z(layer::GLYPHS, i, f.sim.glyphs.len());
         p.machine(Item::Glyph(g.kind), g.at, g.dir, z);
     }
-    for (i, g) in world.sim.glyphs.iter().enumerate() {
-        if world.picks(Id::Glyph(i)) {
+    for (i, g) in world.shown().glyphs.iter().enumerate() {
+        if let Some(g) = g
+            && world.picks(Id::Glyph(i))
+        {
             p.gizmos.linestrip_2d(corners(px(g.at), HEX * 0.9), IVORY);
         }
     }
@@ -1739,14 +1850,16 @@ fn draw(
             p.gizmos.linestrip_2d(corners(arm.pivot, HEX * 0.9), IVORY);
         }
         let stall = f.sim.arms[i].stall;
+        let ivory = p.line(IVORY);
         if stall.is_some() {
-            p.gizmos.circle_2d(arm.pivot, HEX * 0.5, IVORY);
+            p.gizmos.circle_2d(arm.pivot, HEX * 0.5, ivory);
         }
         if let Some(Stall::Hand(j)) = stall {
-            p.gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, IVORY);
+            p.gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, ivory);
         }
     }
     let Some(pointer) = world.pointer else { return };
+    p.ghost = false;
     if let Some(Focus::Hold { set, .. }) = &world.focus {
         let grab = hex_at(pointer);
         p.gizmos.linestrip_2d(corners(px(grab), HEX * 0.9), IVORY);
@@ -1847,7 +1960,7 @@ mod shot {
             dir: 0,
         };
         let mut sim = Sim::empty();
-        sim.glyphs.push(glyph);
+        sim.glyphs.push(Some(glyph));
         let ids: Vec<usize> = extra
             .iter()
             .copied()
@@ -1905,11 +2018,11 @@ mod shot {
                     pos: arm.hand(),
                 });
                 sim.arms.push(arm);
-                sim.glyphs.push(Glyph {
+                sim.glyphs.push(Some(Glyph {
                     kind: GlyphKind::Bonder,
                     at: Hex::new(0, 0),
                     dir: 0,
-                });
+                }));
                 world.sim = sim;
                 world.focus_arm(0);
             }
@@ -1924,11 +2037,11 @@ mod shot {
                         pos: arm.hand(),
                     });
                     sim.arms.push(arm);
-                    sim.glyphs.push(Glyph {
+                    sim.glyphs.push(Some(Glyph {
                         kind: GlyphKind::ALL[k % GlyphKind::ALL.len()],
                         at: pivot.add(DIRS[(dir + 2) % 6]),
                         dir,
-                    });
+                    }));
                 }
                 world.sim = sim;
                 wide = true;
@@ -1952,7 +2065,7 @@ mod shot {
                 world.focus_arm(world.sim.arms.len() - 1);
                 keys = vec![(KeyD, false); 2];
             }
-            "walk" => {
+            "walk" | "ghost" => {
                 let mut sim = Sim::empty();
                 let mut arm = Arm::new(
                     Hex::new(-4, 0),
@@ -1988,6 +2101,18 @@ mod shot {
                 ));
                 world.sim = sim;
                 world.focus_tape(0);
+                if name == "ghost" {
+                    script.extend(tap(60, Space));
+                    for k in 0..5 {
+                        script.extend(tap(84 + 24 * k, KeyG));
+                    }
+                    script.extend(tap(204, Home));
+                    script.extend(tap(212, KeyD));
+                    for k in 0..3 {
+                        script.extend(tap(236 + 24 * k, KeyS));
+                    }
+                    script.extend(tap(308, Space));
+                }
             }
             "hold" => {
                 world.lift(
@@ -2028,11 +2153,11 @@ mod shot {
                     .enumerate()
                 {
                     let at = Hex::new(k as i32 * 3 - 4, -1);
-                    sim.glyphs.push(Glyph {
+                    sim.glyphs.push(Some(Glyph {
                         kind: GlyphKind::Output,
                         at,
                         dir: if k == 2 { 3 } else { 0 },
-                    });
+                    }));
                     let a = sim.spawn(Atom {
                         kind: AtomKind::Base,
                         pos: at,
@@ -2071,7 +2196,7 @@ mod shot {
                     let at = Hex::new(3 * k as i32 - 7, -1);
                     match item {
                         Item::Arm => sim.arms.push(Arm::new(at, 0, Vec::new())),
-                        Item::Glyph(kind) => sim.glyphs.push(Glyph { kind, at, dir: 0 }),
+                        Item::Glyph(kind) => sim.glyphs.push(Some(Glyph { kind, at, dir: 0 })),
                     }
                 }
                 world.sim = sim;
@@ -2092,7 +2217,7 @@ mod shot {
                         at: Hex::new(q, 2),
                         dir,
                     };
-                    sim.glyphs.push(glyph);
+                    sim.glyphs.push(Some(glyph));
                     let ends: Vec<usize> = glyph
                         .slots()
                         .map(|pos| {
@@ -2118,11 +2243,11 @@ mod shot {
                     vec![Instr::Rot(Spin::Cw), Instr::Drop, Instr::Wait],
                 );
                 arm.holding = true;
-                sim.glyphs.push(Glyph {
+                sim.glyphs.push(Some(Glyph {
                     kind: GlyphKind::Cleanup,
                     at: arm.hand().rotate(arm.pivot, Spin::Cw),
                     dir: 0,
-                });
+                }));
                 let chain: Vec<usize> = [DIRS[1], ORIGIN, DIRS[4]]
                     .iter()
                     .map(|off| {
@@ -2221,11 +2346,11 @@ mod shot {
             }
             "heldout" => {
                 let mut sim = Sim::empty();
-                sim.glyphs.push(Glyph {
+                sim.glyphs.push(Some(Glyph {
                     kind: GlyphKind::Output,
                     at: Hex::new(1, -1),
                     dir: 0,
-                });
+                }));
                 let a = sim.spawn(Atom {
                     kind: AtomKind::Base,
                     pos: Hex::new(1, -1),
@@ -2313,9 +2438,7 @@ mod shot {
             }
             other => panic!("unknown scene {other}"),
         }
-        for _ in 0..ticks {
-            world.step();
-        }
+        world.sim = world.sim.replay(ticks);
         world.prev = world.sim.clone();
         let typed = typed(&keys);
         let warm = typed
@@ -2757,11 +2880,11 @@ mod tests {
     #[test]
     fn what_a_glyph_makes_appears_only_when_the_transition_ends() {
         let mut prev = Sim::empty();
-        prev.glyphs.push(Glyph {
+        prev.glyphs.push(Some(Glyph {
             kind: GlyphKind::Source,
             at: Hex::new(0, 0),
             dir: 0,
-        });
+        }));
         let mut cur = prev.clone();
         cur.step();
         assert!(Frame::between(&prev, &cur, 0.99).atoms.is_empty());
@@ -2901,7 +3024,7 @@ mod tests {
 
     fn lone(glyphs: Vec<Glyph>, arms: Vec<Arm>) -> World {
         let mut sim = Sim::empty();
-        sim.glyphs = glyphs;
+        sim.glyphs = glyphs.into_iter().map(Some).collect();
         sim.arms = arms;
         World::new(sim)
     }
@@ -2933,7 +3056,7 @@ mod tests {
         assert_ne!(slot, bonder.at);
         let to = Hex::new(-4, 3);
         drag(&mut w, slot, to);
-        let moved = w.sim.glyphs[0];
+        let moved = w.sim.glyphs[0].unwrap();
         assert_eq!(moved.slots().nth(1), Some(to));
         assert_eq!(moved.at, to.add(bonder.at.sub(slot)));
         assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
@@ -2945,7 +3068,7 @@ mod tests {
         let arm = Arm::new(Hex::new(4, 0), 0, vec![]);
         let mut w = lone(vec![bonder], vec![arm.clone()]);
         drag(&mut w, Hex::new(0, 3), Hex::new(-4, 4));
-        assert_eq!(w.sim.glyphs, vec![bonder]);
+        assert_eq!(w.sim.glyphs, vec![Some(bonder)]);
         assert_eq!(w.sim.arms, vec![arm]);
         assert!(w.focus.is_none() && w.down.is_none());
     }
@@ -2972,7 +3095,7 @@ mod tests {
         w.key(KeyCode::KeyD, false);
         let to = Hex::new(-1, -1);
         w.release(Some(to));
-        let moved = w.sim.glyphs[0];
+        let moved = w.sim.glyphs[0].unwrap();
         assert_eq!(moved.dir, 3);
         assert_eq!(moved.slots().nth(1), Some(to));
     }
@@ -3012,7 +3135,7 @@ mod tests {
         w.drag(px(slot) + Vec2::new(DRAG_PX / 2.0, 0.0));
         w.release(Some(slot));
         assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
-        assert_eq!(w.sim.glyphs, vec![bonder]);
+        assert_eq!(w.sim.glyphs, vec![Some(bonder)]);
     }
 
     fn cluster() -> World {
@@ -3068,7 +3191,10 @@ mod tests {
         assert_eq!(w.sim.arms[0].pivot, before.arms[0].pivot.add(delta));
         assert_eq!(w.sim.arms[0].dir, before.arms[0].dir);
         assert_eq!(w.sim.arms[0].tape, before.arms[0].tape);
-        assert_eq!(w.sim.glyphs[0].at, before.glyphs[0].at.add(delta));
+        assert_eq!(
+            w.sim.glyphs[0].unwrap().at,
+            before.glyphs[0].unwrap().at.add(delta)
+        );
         assert_eq!(w.sim.arms[1], before.arms[1]);
         assert_eq!(w.sim.glyphs[1], before.glyphs[1]);
         assert_eq!(w.focus, picked(&INSIDE));
@@ -3144,7 +3270,7 @@ mod tests {
         let (other_arm, other_glyph) = (w.sim.arms[1].clone(), w.sim.glyphs[1]);
         w.key(KeyCode::KeyX, false);
         assert_eq!(w.sim.arms, vec![other_arm.clone()]);
-        assert_eq!(w.sim.glyphs, vec![other_glyph]);
+        assert_eq!(w.sim.glyphs, vec![None, other_glyph]);
         assert_eq!(w.focus, None);
         assert_eq!(w.clipboard.len(), 2);
         w.key(KeyCode::KeyV, false);
@@ -3155,7 +3281,7 @@ mod tests {
         w.press(px(to), px(to));
         assert_eq!(w.sim.arms.len(), 2);
         assert_eq!(w.sim.glyphs.len(), 2);
-        let pasted = [Id::Arm(1), Id::Glyph(1)];
+        let pasted = [Id::Arm(1), Id::Glyph(0)];
         let after = offsets(&w, &pasted);
         let shift = to.sub(before[0].0);
         for ((at, dir), (was, was_dir)) in after.iter().zip(&before) {
@@ -3164,7 +3290,7 @@ mod tests {
         }
         assert_eq!(w.sim.arms[1].tape, arm.tape);
         assert_eq!(w.sim.arms[1], Arm::new(after[0].0, after[0].1, arm.tape));
-        assert_eq!(w.sim.glyphs[1].kind, glyph.kind);
+        assert_eq!(w.sim.glyphs[0].unwrap().kind, glyph.unwrap().kind);
         assert_eq!(w.focus, picked(&pasted));
         w.key(KeyCode::KeyC, false);
         assert_eq!(w.clipboard.len(), 2);
@@ -3201,14 +3327,14 @@ mod tests {
     #[test]
     fn z_deletes_the_focused_machine() {
         let mut w = armed(vec![]);
-        w.sim.glyphs.push(Glyph {
+        w.sim.glyphs.push(Some(Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(3, 3),
             dir: 0,
-        });
+        }));
         w.pick(vec![Id::Glyph(0)]);
         w.key(KeyCode::KeyZ, false);
-        assert!(w.sim.glyphs.is_empty());
+        assert_eq!(w.sim.glyphs, vec![None]);
         w.focus_arm(0);
         w.key(KeyCode::KeyZ, false);
         assert!(w.sim.arms.is_empty());
@@ -3284,11 +3410,12 @@ mod tests {
         let stalls = |world: &mut World| -> Vec<Option<Stall>> {
             (0..lap)
                 .map(|_| {
-                    world.step();
+                    world.sim.step();
                     world.sim.arms[0].stall
                 })
                 .collect()
         };
+
         let first = stalls(&mut world);
         let home = world.sim.arms[0].clone();
         assert_eq!(home.pivot, Hex::new(-4, 0));
@@ -3377,15 +3504,15 @@ mod tests {
         assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(1, -1));
         w.key(KeyCode::KeyQ, false);
         assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(2, -1));
-        w.sim.glyphs.push(Glyph {
+        w.sim.glyphs.push(Some(Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(3, 3),
             dir: 2,
-        });
+        }));
         w.pick(vec![Id::Glyph(0)]);
         w.key(KeyCode::KeyQ, false);
         w.key(KeyCode::KeyE, false);
-        assert_eq!(w.sim.glyphs[0].dir, 2);
+        assert_eq!(w.sim.glyphs[0].unwrap().dir, 2);
         w.lift(vec![Piece::fresh(Item::Arm)], Vec::new());
         w.key(KeyCode::KeyQ, false);
         w.key(KeyCode::KeyE, false);
@@ -3402,10 +3529,10 @@ mod tests {
         let mut w = lone(vec![bonder], vec![]);
         w.pick(vec![Id::Glyph(0)]);
         w.key(KeyCode::KeyA, false);
-        assert_eq!(w.sim.glyphs[0].dir, 5);
+        assert_eq!(w.sim.glyphs[0].unwrap().dir, 5);
         w.key(KeyCode::KeyD, false);
         w.key(KeyCode::KeyD, false);
-        assert_eq!(w.sim.glyphs[0].dir, 1);
+        assert_eq!(w.sim.glyphs[0].unwrap().dir, 1);
         assert_eq!(w.prev, w.sim);
         w.lift(vec![Piece::fresh(Item::Arm)], Vec::new());
         w.key(KeyCode::KeyD, false);
@@ -3473,9 +3600,9 @@ mod tests {
             dir: 0,
         };
         w.sim.glyphs = vec![
-            glyph(GlyphKind::Source, -4),
-            glyph(GlyphKind::Cleanup, 0),
-            glyph(GlyphKind::Bonder, 4),
+            Some(glyph(GlyphKind::Source, -4)),
+            Some(glyph(GlyphKind::Cleanup, 0)),
+            Some(glyph(GlyphKind::Bonder, 4)),
         ];
         w.sim.spawn(Atom {
             kind: AtomKind::Base,
@@ -3485,24 +3612,29 @@ mod tests {
     }
 
     #[test]
-    fn a_spent_glyph_leaves_the_pick_and_the_rest_still_name_their_glyphs() {
+    fn a_spent_glyph_leaves_the_pick_and_the_rest_keep_their_ids() {
         let mut w = fed_cleanup();
         w.pick(vec![Id::Glyph(0), Id::Glyph(1), Id::Glyph(2)]);
         w.step();
-        assert_eq!(w.focus, picked(&[Id::Glyph(0), Id::Glyph(1)]));
-        assert_eq!(w.sim.glyphs[1].kind, GlyphKind::Bonder);
-        assert_eq!(w.prev.glyphs.len(), 3);
+        assert_eq!(w.focus, picked(&[Id::Glyph(0), Id::Glyph(2)]));
+        assert_eq!(w.sim.glyphs[1], None);
+        assert_eq!(w.sim.glyphs[2].unwrap().kind, GlyphKind::Bonder);
+        assert_eq!(
+            w.ids().collect::<Vec<Id>>(),
+            vec![Id::Glyph(0), Id::Glyph(2)]
+        );
+        assert!(w.prev.glyphs[1].is_some());
     }
 
     #[test]
-    fn a_hold_follows_its_glyph_down_the_index_and_a_hold_on_a_spent_glyph_cancels() {
+    fn a_hold_keeps_its_glyph_id_and_a_hold_on_a_spent_glyph_cancels() {
         let mut w = fed_cleanup();
         w.lift(w.lifted(&[Id::Glyph(2)], ORIGIN), vec![Id::Glyph(2)]);
         w.step();
         let Some(Focus::Hold { from, set }) = w.focus.clone() else {
             panic!("{:?}", w.focus)
         };
-        assert_eq!(from, vec![Id::Glyph(1)]);
+        assert_eq!(from, vec![Id::Glyph(2)]);
         assert_eq!(set.len(), 1);
         let mut w = fed_cleanup();
         let ids = [Id::Glyph(1), Id::Glyph(2)];
@@ -3517,5 +3649,147 @@ mod tests {
         w.pick(vec![Id::Glyph(1)]);
         w.step();
         assert_eq!(w.focus, None);
+    }
+
+    fn paused(n: usize) -> World {
+        let (mut w, _, _, _) = shot::scene("walk", 2);
+        for _ in 0..n {
+            w.key(KeyCode::KeyG, false);
+        }
+        w
+    }
+
+    #[test]
+    fn n_presses_of_g_show_one_replay_of_n_ticks_from_ghost0_and_leave_it_untouched() {
+        let w = paused(0);
+        let ghost0 = w.sim.clone();
+        let w = paused(5);
+        assert_eq!(w.ghosts(), 5);
+        assert_eq!(w.sim, ghost0);
+        assert_eq!(*w.shown(), ghost0.replay(5));
+        assert_eq!(w.prev, ghost0.replay(4));
+        assert_ne!(*w.shown(), ghost0);
+        assert_eq!(w.since, 0.0);
+    }
+
+    #[test]
+    fn a_tape_edit_at_n_re_sims_to_the_ghost_n_of_stepping_from_scratch_with_that_tape() {
+        let mut w = paused(3);
+        w.focus_tape(0);
+        w.key(KeyCode::Home, false);
+        w.key(KeyCode::KeyD, false);
+        assert_eq!(w.sim.arms[0].tape[0], Instr::Rot(Spin::Cw));
+        let mut scratch = paused(0);
+        scratch.sim.arms[0].tape.insert(0, Instr::Rot(Spin::Cw));
+        assert_eq!(w.sim, scratch.sim);
+        for _ in 0..3 {
+            scratch.key(KeyCode::KeyG, false);
+        }
+        assert_eq!(w.ghosts(), 3);
+        assert_eq!(*w.shown(), *scratch.shown());
+        assert_eq!(*w.shown(), w.sim.replay(3));
+        assert_eq!(w.prev, *w.shown());
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 1 }));
+    }
+
+    #[test]
+    fn an_arm_edit_at_n_is_refused_and_ghost0_is_unchanged() {
+        let mut w = paused(4);
+        let ghost0 = w.sim.clone();
+        let ghost4 = w.shown().clone();
+        let pivot = ghost4.arms[0].pivot;
+        assert_ne!(pivot, ghost0.arms[0].pivot);
+        drag(&mut w, pivot, pivot.add(Hex::new(3, 0)));
+        assert_eq!(w.focus, picked(&[Id::Arm(0)]));
+        w.key(KeyCode::KeyD, false);
+        w.key(KeyCode::KeyF, false);
+        w.key(KeyCode::KeyC, false);
+        w.key(KeyCode::KeyX, false);
+        assert!(w.clipboard.is_empty());
+        w.key(KeyCode::KeyZ, false);
+        w.lift(vec![Piece::fresh(Item::Arm)], Vec::new());
+        w.place(Some(Hex::new(5, 5)));
+        assert_eq!(w.sim, ghost0);
+        assert_eq!(*w.shown(), ghost4);
+        assert_eq!(w.focus, None);
+    }
+
+    #[test]
+    fn a_glyph_placed_at_n_appears_in_ghost0_and_in_the_re_simmed_ghost_n() {
+        let mut w = paused(2);
+        let ghost0 = w.sim.clone();
+        let at = Hex::new(5, 5);
+        w.lift(
+            vec![Piece::fresh(Item::Glyph(GlyphKind::Bonder))],
+            Vec::new(),
+        );
+        w.place(Some(at));
+        let placed = Some(bonder(at, 0));
+        assert_eq!(w.sim.glyphs.last().copied(), Some(placed));
+        assert_eq!(w.shown().glyphs.last().copied(), Some(placed));
+        assert_eq!(w.ghosts(), 2);
+        assert_eq!(*w.shown(), w.sim.replay(2));
+        assert_eq!(w.sim.arms, ghost0.arms);
+        assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
+        w.key(KeyCode::KeyZ, false);
+        let mut cleared = ghost0.clone();
+        cleared.glyphs.push(None);
+        assert_eq!(w.sim, cleared);
+        assert_eq!(*w.shown(), cleared.replay(2));
+    }
+
+    #[test]
+    fn unpause_restores_ghost0_exactly_and_the_ghosts_are_gone() {
+        let mut w = paused(3);
+        let ghost0 = w.sim.clone();
+        w.key(KeyCode::Space, false);
+        assert!(w.running);
+        assert_eq!(w.ghost, None);
+        assert_eq!(w.sim, ghost0);
+        assert_eq!(w.prev, ghost0);
+        assert_eq!(w.ghosts(), 0);
+        w.key(KeyCode::KeyG, false);
+        w.key(KeyCode::KeyS, false);
+        assert_eq!(w.sim, ghost0);
+        w.step();
+        assert_eq!(w.sim, ghost0.replay(1));
+        assert_eq!(w.ghost, None);
+        let mut w = paused(3);
+        w.running = true;
+        w.step();
+        assert_eq!(w.ghost, None);
+        assert_eq!(w.ghosts(), 0);
+    }
+
+    #[test]
+    fn the_step_keys_never_reach_the_tape_editor() {
+        assert!(
+            KEYS.iter()
+                .all(|k| k.code != KeyCode::KeyS && k.code != KeyCode::KeyG)
+        );
+        let mut w = paused(0);
+
+        w.focus_tape(0);
+        w.key(KeyCode::ArrowLeft, false);
+        let focus = w.focus.clone();
+        let tape = w.sim.arms[0].tape.clone();
+        w.key(KeyCode::KeyG, false);
+        w.key(KeyCode::KeyG, false);
+        w.key(KeyCode::KeyS, false);
+        assert_eq!(w.ghosts(), 1);
+        assert_eq!(w.sim.arms[0].tape, tape);
+        assert_eq!(w.shown().arms[0].tape, tape);
+        assert_eq!(w.focus, focus);
+    }
+
+    #[test]
+    fn s_at_ghost0_is_a_no_op() {
+        let mut w = paused(0);
+        w.focus_arm(0);
+        let (sim, prev, focus, since) = (w.sim.clone(), w.prev.clone(), w.focus.clone(), w.since);
+        w.key(KeyCode::KeyS, false);
+        assert_eq!(w.ghosts(), 0);
+        assert_eq!(w.ghost, None);
+        assert_eq!((w.sim, w.prev, w.focus, w.since), (sim, prev, focus, since));
     }
 }
