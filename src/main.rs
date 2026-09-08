@@ -506,7 +506,7 @@ impl World {
 
     fn press(&mut self, screen: Vec2, point: Vec2) {
         let cell = hex_at(point);
-        if matches!(self.focus, Some(Focus::Hold { .. })) {
+        if self.holding() {
             self.place(Some(cell));
             return;
         }
