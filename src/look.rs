@@ -4,11 +4,16 @@ use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
 use bevy::math::{Vec2, Vec3};
 use bevy::prelude::Color;
+use std::ops::RangeInclusive;
 
 pub const HEX: f32 = 20.0;
 const MARGIN: f32 = 1.0;
-pub fn grout() -> f32 {
-    34.0 / 512.0 * 2.0 / 3f32.sqrt()
+const FACE: f32 = 458.0 / 512.0;
+const STROKE: f32 = 34.0 / 512.0;
+
+pub fn ring() -> RangeInclusive<f32> {
+    let half = STROKE / 3f32.sqrt();
+    FACE - half..=FACE + half
 }
 
 fn hex_distance(w: usize, h: usize, x: usize, y: usize) -> f32 {
@@ -17,41 +22,33 @@ fn hex_distance(w: usize, h: usize, x: usize, y: usize) -> f32 {
     f32::max(2.0 * x / 3f32.sqrt(), x / 3f32.sqrt() + y)
 }
 
-pub fn face(image: &Image) -> f32 {
-    const BINS: usize = 512;
-    const STRIDE: usize = 4;
-    let (w, h) = (image.width() as usize, image.height() as usize);
-    let data = image
+pub fn grout(tile: &mut Image, template: &Image) {
+    let (w, h) = (tile.width() as usize, tile.height() as usize);
+    assert_eq!(
+        (template.width() as usize, template.height() as usize),
+        (w, h),
+        "{GROUT:?} is not the size of the tile it grouts"
+    );
+    let ring = template
         .data
         .as_ref()
         .expect("a decoded image carries its pixels");
-    let mut sum = [0f32; BINS + 1];
-    let mut count = [0u32; BINS + 1];
-    for y in (0..h).step_by(STRIDE) {
-        for x in (0..w).step_by(STRIDE) {
-            let bin = (hex_distance(w, h, x, y) * BINS as f32) as usize;
-            if bin <= BINS {
+    let data = tile
+        .data
+        .as_mut()
+        .expect("a decoded image carries its pixels");
+    assert_eq!(data.len(), w * h * 4, "a tile is rgba8");
+    assert_eq!(ring.len(), w * h * 4, "{GROUT:?} is rgba8");
+    let inner = *self::ring().start();
+    for y in 0..h {
+        for x in 0..w {
+            if hex_distance(w, h, x, y) >= inner {
                 let i = (y * w + x) * 4;
-                sum[bin] +=
-                    data[i..i + 3].iter().map(|c| f32::from(*c)).sum::<f32>() / (3.0 * 255.0);
-                count[bin] += 1;
+                data[i..i + 4].copy_from_slice(&ring[i..i + 4]);
             }
         }
     }
-    let shade = |bin: usize| (count[bin] > 0).then(|| sum[bin] / count[bin] as f32);
-    let inner: Vec<f32> = (BINS / 4..=BINS / 2).filter_map(shade).collect();
-    let clay = inner.iter().sum::<f32>() / inner.len() as f32;
-    let darkest = (BINS / 2..=BINS).filter_map(shade).fold(f32::MAX, f32::min);
-    (BINS / 2..=BINS)
-        .find(|bin| shade(*bin).is_some_and(|s| s < (clay + darkest) / 2.0))
-        .expect("a tile ends in grout") as f32
-        / BINS as f32
 }
-
-pub fn crop(face: f32) -> f32 {
-    (face + grout()).min(1.0)
-}
-
 pub fn light() -> Vec3 {
     Vec3::new(-1.0, 1.0, 1.4).normalize()
 }
@@ -237,6 +234,8 @@ pub const TILES: [Skin; 24] = tiles![
 
 pub const MANUAL: Skin = skin!("overlay/manual");
 
+pub const GROUT: Skin = skin!("textures/grout");
+
 impl Skin {
     pub fn decode(self) -> Image {
         Image::from_buffer(
@@ -380,9 +379,10 @@ pub(crate) mod tests {
     const VALUE_APART: f32 = 0.15;
     const THUMB: usize = 8;
     const TILES_APART: f32 = 0.023;
-    const FACE: f32 = 458.0 / 512.0;
     const BODY_OF_FACE: f32 = 0.95;
     const GROUT_AT_MOST: f32 = 0.65;
+    const TEMPLATE_GRAIN: f32 = 0.04;
+    const RING_STEPS: usize = 6;
     const SHADING: f32 = 2.0 * VALUE_APART;
     const SPLIT_ROUNDS: usize = 8;
 
@@ -439,7 +439,7 @@ pub(crate) mod tests {
         average(&thumb, &(0..THUMB * THUMB).collect::<Vec<usize>>())
     }
 
-    fn tile_band(skin: Skin, band: std::ops::RangeInclusive<f32>) -> Vec<[f32; 3]> {
+    fn tile_band(skin: Skin, band: RangeInclusive<f32>) -> Vec<[f32; 3]> {
         let (w, h, data) = pixels(skin);
         (0..h)
             .flat_map(|y| (0..w).map(move |x| (x, y)))
@@ -451,12 +451,8 @@ pub(crate) mod tests {
             .collect()
     }
 
-    fn body_edge() -> f32 {
-        (FACE - grout() / 2.0) * BODY_OF_FACE
-    }
-
     fn tile_body(skin: Skin) -> Vec<[f32; 3]> {
-        tile_band(skin, 0.0..=body_edge())
+        tile_band(skin, 0.0..=ring().start() * BODY_OF_FACE)
     }
 
     fn mean_color(pixels: &[[f32; 3]]) -> Color {
@@ -469,18 +465,16 @@ pub(crate) mod tests {
         mean_color(&tile_body(skin))
     }
 
-    fn grout_band(skin: Skin) -> (f32, Vec<[f32; 3]>) {
-        let edge = face(&skin.decode());
-        (edge, tile_band(skin, edge..=crop(edge)))
+    fn shade(pixels: &[[f32; 3]]) -> f32 {
+        pixels.iter().flatten().sum::<f32>() / (3 * pixels.len()) as f32
     }
 
     pub fn grout_color() -> Color {
-        let band: Vec<[f32; 3]> = TILES.iter().flat_map(|t| grout_band(*t).1).collect();
-        mean_color(&band)
+        mean_color(&tile_band(GROUT, ring()))
     }
 
     #[test]
-    fn face_and_grout_are_the_scaffold_hex_and_its_stroke() {
+    fn face_and_stroke_are_the_scaffold_hex_and_its_stroke() {
         let svg = include_str!("../art/textures/hex-scaffold.svg");
         let after = |key: &str| svg.split(key).nth(1).unwrap();
         let top: f32 = after("M512 ").split(' ').next().unwrap().parse().unwrap();
@@ -491,20 +485,61 @@ pub(crate) mod tests {
             .parse()
             .unwrap();
         assert_eq!(FACE, (512.0 - top) / 512.0);
-        assert!((grout() - stroke / 512.0 * 2.0 / 3f32.sqrt()).abs() < 1e-6);
+        assert_eq!(STROKE, stroke / 512.0);
     }
 
     #[test]
-    fn every_tile_ends_in_a_stroke_of_grout_around_its_face() {
-        let shade =
-            |band: Vec<[f32; 3]>| band.iter().flatten().sum::<f32>() / (3 * band.len()) as f32;
+    fn the_grout_template_is_clay_faced_and_granular_grout_on_every_edge_of_its_ring() {
+        wears("the template face", tile_mean(GROUT), Glaze::Clay);
+        let face = shade(&tile_body(GROUT));
+        let (w, h, data) = pixels(GROUT);
+        let ring = ring();
+        let mut sum = [[0f32; RING_STEPS]; 6];
+        let mut square = [[0f32; RING_STEPS]; 6];
+        let mut count = [[0u32; RING_STEPS]; 6];
+        for y in 0..h {
+            for x in 0..w {
+                let d = hex_distance(w, h, x, y);
+                if !ring.contains(&d) {
+                    continue;
+                }
+                let step = (d - ring.start()) / (ring.end() - ring.start()) * RING_STEPS as f32;
+                let angle = (y as f32 - h as f32 / 2.0).atan2(x as f32 - w as f32 / 2.0);
+                let edge =
+                    ((angle / std::f32::consts::FRAC_PI_3 + 0.5).floor() as i32).rem_euclid(6);
+                let i = (y * w + x) * 4;
+                let s = data[i..i + 3].iter().map(|c| f32::from(*c)).sum::<f32>() / 765.0;
+                let cell = (edge as usize, (step as usize).min(RING_STEPS - 1));
+                sum[cell.0][cell.1] += s;
+                square[cell.0][cell.1] += s * s;
+                count[cell.0][cell.1] += 1;
+            }
+        }
+        for edge in 0..6 {
+            for step in 0..RING_STEPS {
+                let n = count[edge][step] as f32;
+                let mean = sum[edge][step] / n;
+                let grain = (square[edge][step] / n - mean * mean).max(0.0).sqrt();
+                assert!(
+                    n > 0.0 && mean < face * GROUT_AT_MOST && grain >= TEMPLATE_GRAIN,
+                    "{GROUT:?} on edge {edge} step {step} is {mean:.2} bright with {grain:.3} grain against a {face:.2} face"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_tile_keeps_its_clay_out_to_the_ring() {
         let strays: Vec<String> = TILES
             .iter()
             .filter_map(|tile| {
-                let (edge, band) = grout_band(*tile);
-                let (body, band) = (shade(tile_body(*tile)), shade(band));
-                (edge < body_edge() || band >= body * GROUT_AT_MOST).then(|| {
-                    format!("{tile:?} ends at {edge:.3}; its grout is {band:.2} bright against a {body:.2} face")
+                let body = shade(&tile_body(*tile));
+                let rim = shade(&tile_band(
+                    *tile,
+                    ring().start() * BODY_OF_FACE..=*ring().start(),
+                ));
+                (rim < body * GROUT_AT_MOST).then(|| {
+                    format!("{tile:?} is {rim:.2} bright at its ring against a {body:.2} face")
                 })
             })
             .collect();

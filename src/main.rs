@@ -1208,11 +1208,15 @@ fn fire_kiln(
     mut gizmo: ResMut<GizmoConfigStore>,
 ) {
     gizmo.config_mut::<DefaultGizmoConfigGroup>().0.line.width = LINE_PX;
+    let grout = look::GROUT.decode();
     let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
         .map(|skin| {
-            let image = skin.decode();
+            let mut image = skin.decode();
             let crop = match skin.finish {
-                Finish::Grouted => look::crop(look::face(&image)),
+                Finish::Grouted => {
+                    look::grout(&mut image, &grout);
+                    *look::ring().end()
+                }
                 _ => 1.0,
             };
             let texture = images.add(fire(image, skin));
@@ -2425,7 +2429,8 @@ mod tests {
     use super::*;
     use sim::{Atom, AtomKind};
 
-    const SEAM_TOLERANCE: f32 = 0.15;
+    const SEAM_TONE: f32 = 0.05;
+    const SEAM_GRAIN: f32 = 0.015;
     const BLUR_PX: f32 = 1.0;
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
@@ -2464,42 +2469,107 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_seam_between_two_tiles_is_grout() {
-        let frame = &still_frames("board", 1)[0];
-        let seam = (px(FOCUS.add(DIRS[0])) - px(FOCUS)) / 2.0 / MICRO_SCALE;
-        let grout_px = HEX * 3f32.sqrt() / 2.0 * look::grout() / MICRO_SCALE;
-        let half_edge = HEX / 2.0 / MICRO_SCALE;
+    struct Seam {
+        cells: [Hex; 2],
+        samples: usize,
+        mean: [f32; 3],
+        grain: f32,
+    }
+
+    fn seams(frame: &image::RgbaImage) -> Vec<Seam> {
         let centre = Vec2::new(frame.width() as f32, frame.height() as f32) / 2.0;
-        let expected = look::tests::grout_color().to_srgba();
-        let sampled: Vec<_> = frame
-            .enumerate_pixels()
-            .filter(|(x, y, _)| {
-                let at = Vec2::new(*x as f32 + 0.5, *y as f32 + 0.5) - centre - seam;
-                at.x.abs() <= grout_px - BLUR_PX && at.y.abs() <= half_edge - 2.0 * BLUR_PX
-            })
-            .map(|(x, y, p)| {
-                let apart = [expected.red, expected.green, expected.blue]
-                    .into_iter()
-                    .zip(p.0)
-                    .map(|(e, c)| (e - f32::from(c) / 255.0).abs())
-                    .fold(0.0, f32::max);
-                (x, y, p.0, apart)
-            })
-            .collect();
+        let to_frame = |w: Vec2| centre + (w - px(FOCUS)) * Vec2::new(1.0, -1.0) / MICRO_SCALE;
+        let ring = look::ring();
+        let half_grout =
+            HEX * 3f32.sqrt() / 2.0 * (ring.end() - ring.start()) / MICRO_SCALE - BLUR_PX;
+        let half_edge = HEX / 2.0 / MICRO_SCALE - 2.0 * BLUR_PX;
+        let reach = half_grout.max(half_edge).ceil();
+        let inside = |p: Vec2| {
+            p.x >= 2.0 * PALETTE_PX + reach
+                && p.x < frame.width() as f32 - reach
+                && p.y >= reach
+                && p.y < frame.height() as f32 - reach
+        };
+        let mut out = Vec::new();
+        for q in -40..40 {
+            for r in -20..20 {
+                let h = Hex::new(q, r);
+                for dir in &DIRS[..3] {
+                    let n = h.add(*dir);
+                    let mid = to_frame((px(h) + px(n)) / 2.0);
+                    if !inside(mid) {
+                        continue;
+                    }
+                    let across = (to_frame(px(n)) - to_frame(px(h))).normalize();
+                    let along = across.perp();
+                    let (x0, y0) = ((mid.x - reach) as u32, (mid.y - reach) as u32);
+                    let shades: Vec<[f32; 3]> = (y0..y0 + 2 * reach as u32)
+                        .flat_map(|y| (x0..x0 + 2 * reach as u32).map(move |x| (x, y)))
+                        .filter(|(x, y)| {
+                            let v = Vec2::new(*x as f32 + 0.5, *y as f32 + 0.5) - mid;
+                            v.dot(across).abs() <= half_grout && v.dot(along).abs() <= half_edge
+                        })
+                        .map(|(x, y)| [0, 1, 2].map(|c| f32::from(frame[(x, y)].0[c]) / 255.0))
+                        .collect();
+                    let mean = [0, 1, 2]
+                        .map(|c| shades.iter().map(|s| s[c]).sum::<f32>() / shades.len() as f32);
+                    let shade = |s: &[f32; 3]| s.iter().sum::<f32>() / 3.0;
+                    let m = shade(&mean);
+                    let grain = (shades.iter().map(|s| (shade(s) - m).powi(2)).sum::<f32>()
+                        / shades.len() as f32)
+                        .sqrt();
+                    out.push(Seam {
+                        cells: [h, n],
+                        samples: shades.len(),
+                        mean,
+                        grain,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_seam_between_tiles_is_grout() {
+        let frame = &still_frames("board", 1)[0];
+        let seams = seams(frame);
+        assert!(seams.len() > 500, "only {} seams in view", seams.len());
+        let thin = seams.iter().min_by_key(|s| s.samples).unwrap();
         assert!(
-            sampled.len() as f32 >= 2.0 * (half_edge - 2.0 * BLUR_PX),
-            "only {} seam pixels sampled",
-            sampled.len()
+            thin.samples as f32 >= HEX / MICRO_SCALE,
+            "only {} pixels sampled between {:?}",
+            thin.samples,
+            thin.cells
         );
-        let worst = sampled.iter().max_by(|a, b| a.3.total_cmp(&b.3)).unwrap();
+        let expected = look::tests::grout_color().to_srgba();
+        let expected = [expected.red, expected.green, expected.blue];
+        let name = |s: &Seam| s.cells.map(|h| (h, look::tile(h).skin));
+        let tone = |s: &Seam| {
+            (0..3)
+                .map(|c| (s.mean[c] - expected[c]).abs())
+                .fold(0.0, f32::max)
+        };
+        let off = seams
+            .iter()
+            .max_by(|a, b| tone(a).total_cmp(&tone(b)))
+            .unwrap();
         assert!(
-            worst.3 <= SEAM_TOLERANCE,
-            "seam pixel {:?} is {:?}, {:.3} from grout {:?}",
-            (worst.0, worst.1),
-            worst.2,
-            worst.3,
-            expected
+            tone(off) <= SEAM_TONE,
+            "the seam between {:?} is {:?}, {:.3} from grout {expected:?}",
+            name(off),
+            off.mean,
+            tone(off)
+        );
+        let flat = seams
+            .iter()
+            .min_by(|a, b| a.grain.total_cmp(&b.grain))
+            .unwrap();
+        assert!(
+            flat.grain >= SEAM_GRAIN,
+            "the seam between {:?} is a solid colour: {:.3} grain",
+            name(flat),
+            flat.grain
         );
     }
 
