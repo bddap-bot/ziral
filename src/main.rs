@@ -344,7 +344,14 @@ impl World {
         if span > 0.0 { self.since / span } else { 1.0 }
     }
 
+    fn holding(&self) -> bool {
+        matches!(self.focus, Some(Focus::Hold { .. }))
+    }
+
     fn focus_tape(&mut self, arm: usize) {
+        if self.holding() {
+            return;
+        }
         let cursor = self.shown().arms[arm].tape.len();
         self.focus = Some(Focus::Tape { arm, cursor });
     }
@@ -486,6 +493,9 @@ impl World {
     }
 
     fn lift(&mut self, set: Sim, back: Back) {
+        if self.holding() {
+            return;
+        }
         if let Back::Pick(ids) = &back {
             let machines = set.glyphs.iter().flatten().count() + set.arms.len();
             debug_assert_eq!(ids.len(), machines);
@@ -502,10 +512,11 @@ impl World {
         }
         let hit = self.hit(cell);
         let atom = self.shown().atom_at(cell).is_some();
-        let picked = hit
+        let picked = hit.is_some_and(|id| self.picks(id));
+        let in_pick = hit
             .is_some_and(|id| matches!(&self.focus, Some(Focus::Pick(ids)) if ids.contains(&id)));
         match hit {
-            Some(_) if picked => {}
+            Some(_) if in_pick => {}
             Some(Id::Arm(arm)) => self.focus_tape(arm),
             Some(id) => self.pick(vec![id]),
             None if atom => self.focus = None,
@@ -4092,6 +4103,7 @@ mod tests {
             .map(|a| a.pos)
             .find(|c| ghost0.atom_at(*c).is_none())
             .unwrap();
+        w.focus = None;
         lift_at(&mut w, carried);
         assert_eq!(held(&w).2, Back::Ghost);
         assert_eq!(w.sim, ghost0);
@@ -4123,6 +4135,39 @@ mod tests {
         assert_eq!(w.sim, ghost0);
         assert_eq!(*w.shown(), ghost0.replay(1));
         assert_eq!(w.focus, None);
+    }
+
+    #[test]
+    fn a_palette_lift_or_a_tape_focus_while_a_compound_is_in_the_hand_leaves_it_there() {
+        let mut w = lone(vec![], vec![Arm::new(Hex::new(5, 5), 0, vec![])]);
+        w.running = false;
+        pair(&mut w, ORIGIN, BondKind::Single);
+        lift_at(&mut w, ORIGIN);
+        let hold = w.focus.clone();
+        w.lift(fresh(Item::Arm), Back::Nowhere);
+        assert_eq!(w.focus, hold);
+        w.focus_tape(0);
+        assert_eq!(w.focus, hold);
+        assert_eq!(atoms(&w), vec![]);
+        w.release(None);
+        assert_eq!(atoms(&w), vec![ORIGIN, DIRS[0]]);
+    }
+
+    #[test]
+    fn an_arm_covered_by_an_atom_gives_the_atom_to_a_drag_and_itself_once_its_tape_is_focused() {
+        let mut w = lone(vec![], vec![Arm::new(Hex::new(-1, 0), 0, vec![])]);
+        w.running = false;
+        pair(&mut w, ORIGIN, BondKind::Single);
+        lift_at(&mut w, ORIGIN);
+        assert_eq!(held(&w).2, taken(ORIGIN));
+        w.release(None);
+        assert_eq!(w.focus, None);
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.release(Some(ORIGIN));
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 0 }));
+        lift_at(&mut w, ORIGIN);
+        assert_eq!(held(&w).2, Back::Pick(vec![Id::Arm(0)]));
+        assert_eq!(atoms(&w).len(), 2);
     }
 
     fn played(name: &str, frames: u32) -> World {
