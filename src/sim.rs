@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Hex {
     pub q: i32,
@@ -561,7 +559,7 @@ impl Sim {
         Ok(())
     }
 
-    pub fn place(&mut self, other: &Sim, at: Hex) -> (Vec<usize>, Range<usize>) {
+    pub fn place(&mut self, other: &Sim, at: Hex) -> Vec<usize> {
         let glyphs = other
             .glyphs
             .iter()
@@ -574,7 +572,6 @@ impl Sim {
                 seat(&mut self.glyphs, g)
             })
             .collect();
-        let first_arm = self.arms.len();
         self.arms.extend(other.arms.iter().map(|a| Arm {
             pivot: a.pivot.add(at),
             ..a.clone()
@@ -596,7 +593,7 @@ impl Sim {
             b: ids[bond.b].unwrap(),
             ..*bond
         }));
-        (glyphs, first_arm..self.arms.len())
+        glyphs
     }
 }
 
