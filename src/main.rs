@@ -1,3 +1,4 @@
+mod form;
 mod look;
 #[cfg(not(target_arch = "wasm32"))]
 mod machines;
@@ -18,11 +19,9 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
+use form::{Form, recipes};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
-use sim::{
-    Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, ORIGIN, RECIPES, Recipe, Sim, Spin,
-    Stall,
-};
+use sim::{Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, ORIGIN, Sim, Spin, Stall};
 
 const TICK_MS: f32 = 400.0;
 const MOTION: f32 = 1.0;
@@ -56,7 +55,7 @@ const IVORY: Color = Glaze::Ivory.color();
 struct PaletteRow(Item);
 
 fn palette() -> impl Iterator<Item = Item> {
-    RECIPES.iter().map(|(item, _)| *item)
+    recipes().iter().map(|(item, _)| *item)
 }
 
 #[derive(Clone, Copy)]
@@ -195,6 +194,7 @@ fn instr_of(key: KeyCode, shift: bool) -> Option<Instr> {
 enum Id {
     Arm(usize),
     Glyph(usize),
+    Atom(usize),
 }
 
 fn fresh(item: Item) -> Sim {
@@ -208,6 +208,13 @@ fn fresh(item: Item) -> Sim {
         })),
     }
     set
+}
+
+fn machines(ids: &[Id]) -> Vec<Id> {
+    ids.iter()
+        .copied()
+        .filter(|id| !matches!(id, Id::Atom(_)))
+        .collect()
 }
 
 fn runs(set: &Sim) -> bool {
@@ -260,7 +267,11 @@ impl Focus {
     }
 
     fn survive(mut self, sim: &Sim) -> Option<Focus> {
-        let lost = |id: &Id| matches!(id, Id::Glyph(i) if sim.glyphs[*i].is_none());
+        let lost = |id: &Id| match id {
+            Id::Arm(_) => false,
+            Id::Glyph(i) => sim.glyphs[*i].is_none(),
+            Id::Atom(i) => sim.atoms[*i].is_none(),
+        };
         match &mut self {
             Focus::Pick(ids) => {
                 ids.retain(|id| !lost(id));
@@ -336,10 +347,11 @@ impl World {
         self.resim(self.ghosts());
     }
 
-    fn item(&self, id: Id) -> Item {
+    fn item(&self, id: Id) -> Option<Item> {
         match id {
-            Id::Arm(_) => Item::Arm,
-            Id::Glyph(i) => Item::Glyph(self.glyph(i).kind),
+            Id::Arm(_) => Some(Item::Arm),
+            Id::Glyph(i) => Some(Item::Glyph(self.glyph(i).kind)),
+            Id::Atom(_) => None,
         }
     }
 
@@ -351,7 +363,19 @@ impl World {
         self.shown().tick - self.sim.tick
     }
 
+    fn unpick_atoms(&mut self) {
+        if let Some(Focus::Pick(ids)) = &mut self.focus {
+            ids.retain(|id| !matches!(id, Id::Atom(_)));
+            if ids.is_empty() {
+                self.focus = None;
+            }
+        }
+    }
+
     fn step(&mut self) {
+        if self.ghost.is_some() {
+            self.unpick_atoms();
+        }
         self.ghost = None;
         self.prev = self.sim.clone();
         self.sim.step();
@@ -360,6 +384,9 @@ impl World {
     }
 
     fn resim(&mut self, n: u64) {
+        if n > 0 || self.ghost.is_some() {
+            self.unpick_atoms();
+        }
         self.ghost = (n > 0).then(|| self.sim.replay(n));
         self.prev = self.shown().clone();
     }
@@ -401,6 +428,7 @@ impl World {
         match id {
             Id::Arm(i) => self.shown().arms[i].dir,
             Id::Glyph(i) => self.glyph(i).dir,
+            Id::Atom(_) => unreachable!("an atom has no direction"),
         }
     }
 
@@ -408,6 +436,7 @@ impl World {
         match id {
             Id::Arm(i) => self.shown().arms[i].pivot,
             Id::Glyph(i) => self.glyph(i).at,
+            Id::Atom(i) => self.shown().atoms[i].unwrap().pos,
         }
     }
 
@@ -415,6 +444,7 @@ impl World {
         match id {
             Id::Arm(i) => self.shown().arms[i].cells().to_vec(),
             Id::Glyph(i) => self.glyph(i).slots().collect(),
+            Id::Atom(_) => vec![self.anchor(id)],
         }
     }
 
@@ -441,7 +471,9 @@ impl World {
             let p = px(c);
             p.cmpge(lo).all() && p.cmple(hi).all()
         };
+        let atoms = self.shown().atoms.iter().enumerate();
         self.hand_ids()
+            .chain(atoms.filter_map(|(i, a)| a.map(|_| Id::Atom(i))))
             .filter(|id| self.cells(*id).into_iter().any(inside))
             .collect()
     }
@@ -462,6 +494,7 @@ impl World {
                         ..g
                     }));
                 }
+                Id::Atom(_) => {}
             }
         }
         set
@@ -478,6 +511,7 @@ impl World {
                     (g.at, g.dir) = (at, dir);
                 }
             }
+            Id::Atom(_) => unreachable!("an atom is not posed"),
         }
     }
 
@@ -495,7 +529,7 @@ impl World {
             .iter()
             .filter_map(|id| match id {
                 Id::Arm(i) => Some(*i),
-                Id::Glyph(_) => None,
+                Id::Glyph(_) | Id::Atom(_) => None,
             })
             .collect();
         arms.sort_unstable_by(|a, b| b.cmp(a));
@@ -520,13 +554,35 @@ impl World {
             return;
         }
         for id in ids {
-            self.sim.inventory.add(self.item(*id));
+            if let Some(item) = self.item(*id) {
+                self.sim.inventory.add(item);
+            }
         }
         self.remove(ids);
     }
 
     fn copy(&mut self, ids: &[Id]) {
-        self.clipboard = Some(self.lifted(ids, self.anchor(ids[0])));
+        let machines = machines(ids);
+        if let Some(first) = machines.first() {
+            self.clipboard = Some(self.lifted(&machines, self.anchor(*first)));
+        }
+    }
+
+    fn compounds(&self, ids: &[Id]) -> String {
+        let sim = self.shown();
+        let mut seen: Vec<usize> = Vec::new();
+        let mut lines: Vec<String> = Vec::new();
+        for id in ids {
+            let Id::Atom(i) = id else { continue };
+            if seen.contains(i) {
+                continue;
+            }
+            let compound = sim.component(*i);
+            seen.extend(&compound);
+            lines.push(Form::of(&sim.fragment(&compound, ORIGIN)).to_string());
+        }
+        lines.sort_unstable();
+        lines.join("\n")
     }
 
     fn paste(&mut self) {
@@ -600,7 +656,7 @@ impl World {
                 screen: start,
                 cell,
             }) if start.distance(screen) > DRAG_PX => {
-                let ids = self.focus.as_ref().map_or(Vec::new(), Focus::picked);
+                let ids = machines(&self.focus.as_ref().map_or(Vec::new(), Focus::picked));
                 if ids.is_empty() {
                     self.down = None;
                     return;
@@ -734,14 +790,20 @@ impl World {
                 Escape => self.focus = None,
                 KeyZ => self.delete(&ids),
                 KeyX | KeyC if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) => {}
-                KeyX => {
+                KeyX | KeyC => {
+                    let text = self.compounds(&ids);
+                    if !text.is_empty() {
+                        clipboard(&text);
+                    }
                     self.copy(&ids);
-                    self.remove(&ids);
+                    if key == KeyX {
+                        self.remove(&ids);
+                    }
                 }
-                KeyC => self.copy(&ids),
                 KeyV => self.paste(),
                 _ => {
                     if let ([id], Some(Instr::Rot(spin))) = (ids.as_slice(), instr)
+                        && !matches!(id, Id::Atom(_))
                         && self.editable(matches!(id, Id::Arm(_)))
                     {
                         self.set_pose(*id, self.anchor(*id), spin.turn(self.dir(*id)));
@@ -787,6 +849,35 @@ impl World {
             }
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn clipboard(text: &str) {
+    static HELD: std::sync::Mutex<Option<arboard::Clipboard>> = std::sync::Mutex::new(None);
+    let mut held = HELD.lock().unwrap();
+    let written = match &mut *held {
+        Some(c) => c.set_text(text),
+        None => arboard::Clipboard::new().and_then(|mut c| {
+            let written = c.set_text(text);
+            *held = Some(c);
+            written
+        }),
+    };
+    written.unwrap_or_else(|e| panic!("the clipboard refused the compound: {e}"));
+}
+
+#[cfg(target_arch = "wasm32")]
+fn clipboard(text: &str) {
+    let written = web_sys::window()
+        .expect("a window")
+        .navigator()
+        .clipboard()
+        .write_text(text);
+    wasm_bindgen_futures::spawn_local(async move {
+        wasm_bindgen_futures::JsFuture::from(written)
+            .await
+            .unwrap_or_else(|e| panic!("the clipboard refused the compound: {e:?}"));
+    });
 }
 
 fn hex_at(p: Vec2) -> Hex {
@@ -2075,6 +2166,13 @@ fn draw(
             p.bead(*at, look::atom(atom.kind), layer::BEAD);
         }
     }
+    for (i, at) in f.atoms.iter().enumerate() {
+        if let Some(at) = at
+            && world.picks(Id::Atom(i))
+        {
+            p.gizmos.linestrip_2d(corners(*at, HEX * 0.9), IVORY);
+        }
+    }
     let look = look::machine(Item::Arm);
     for (i, arm) in f.arms.iter().enumerate() {
         let z = layer::z(layer::ARMS, i, f.arms.len());
@@ -2150,10 +2248,12 @@ fn hover_card(p: &mut Painter, item: Item) {
     compound(p, centre, recipe);
 }
 
-fn compound(p: &mut Painter, centre: Vec2, recipe: &Recipe) {
+fn compound(p: &mut Painter, centre: Vec2, form: &Form) {
     let z = |k: usize| layer::z(layer::CARD, k, 5);
-    let set = recipe.sim();
-    let at = |id: usize| centre + px(set.atoms[id].unwrap().pos);
+    let set = form.sim();
+    let centroid =
+        form.atoms().iter().map(|(at, _)| px(*at)).sum::<Vec2>() / form.atoms().len() as f32;
+    let at = |id: usize| centre - centroid + px(set.atoms[id].unwrap().pos);
     for b in &set.bonds {
         p.bond(at(b.a), at(b.b), b.kind, z(3));
     }
@@ -2434,7 +2534,7 @@ mod shot {
                 ));
             }
             "start" => world.sim = sim::start(),
-            "craft" => {
+            "craft" | "copy" => {
                 let mut sim = sim::start();
                 sim.spawn(Atom {
                     kind: AtomKind::Base,
@@ -2453,12 +2553,24 @@ mod shot {
                 };
                 script.extend(carry(20, &[(-4, 1), (-3, 1), (-2, 1), (-1, 1)]));
                 script.extend(carry(56, &[(-4, 1), (-3, 1), (-2, 1), (-1, 1), (0, 1)]));
-                script.extend(carry(110, &[(-1, 1), (0, 0), (1, -1), (1, -2)]));
-                let bonder = Item::Glyph(GlyphKind::Bonder);
-                script.push((190, Act::Lift(bonder)));
-                script.push((196, Act::Drag(Hex::new(-3, -3))));
-                script.push((202, Act::Drag(Hex::new(-2, -3))));
-                script.push((214, Act::Release(Hex::new(-2, -3))));
+                if name == "craft" {
+                    script.extend(carry(110, &[(-1, 1), (0, 0), (1, -1), (1, -2)]));
+                    let bonder = Item::Glyph(GlyphKind::Bonder);
+                    script.push((190, Act::Lift(bonder)));
+                    script.push((196, Act::Drag(Hex::new(-3, -3))));
+                    script.push((202, Act::Drag(Hex::new(-2, -3))));
+                    script.push((214, Act::Release(Hex::new(-2, -3))));
+                } else {
+                    script.extend(carry(
+                        110,
+                        &[(-1, 1), (-2, 0), (-3, -1), (-3, -2), (-3, -3)],
+                    ));
+                    script.push((160, Act::Press(Hex::new(-5, -2))));
+                    script.push((166, Act::Drag(Hex::new(-4, -3))));
+                    script.push((178, Act::Drag(Hex::new(-2, -4))));
+                    script.push((184, Act::Release(Hex::new(-2, -4))));
+                    script.extend(tap(200, KeyCode::KeyC));
+                }
             }
             name if name.starts_with("card:") => {
                 world.sim = Sim::empty();
@@ -2550,14 +2662,14 @@ mod shot {
             }
             "output" => {
                 let mut sim = Sim::empty();
-                for (k, (_, recipe)) in RECIPES.iter().take(3).enumerate() {
+                for (k, (_, recipe)) in recipes().iter().take(3).enumerate() {
                     let at = Hex::new(k as i32 * 4 - 4, -1);
                     sim.glyphs.push(Some(Glyph {
                         kind: GlyphKind::Output(sim::Tier::One),
                         at,
                         dir: k,
                     }));
-                    sim.place(&recipe.sim(), at);
+                    sim.place(&recipe.sim(), at.sub(recipe.centre(1).unwrap()));
                 }
                 world.sim = sim;
             }
@@ -2946,9 +3058,7 @@ mod shot {
         let recipe = item
             .recipe()
             .expect("a recipe frame draws a machine that has one");
-        let centroid =
-            recipe.atoms.iter().map(|(at, _)| px(*at)).sum::<Vec2>() / recipe.atoms.len() as f32;
-        compound(&mut p, -centroid, recipe);
+        compound(&mut p, Vec2::ZERO, recipe);
     }
 
     fn spawn_offscreen_camera(
@@ -4509,6 +4619,66 @@ mod tests {
         assert!(all.iter().all(|item| listed.contains(item)));
     }
 
+    fn spawn(w: &mut World, q: i32, r: i32) -> usize {
+        w.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(q, r),
+        })
+    }
+
+    #[test]
+    fn a_marquee_over_one_atom_of_a_compound_copies_the_whole_compound_and_the_machines_beside_it()
+    {
+        let mut w = lone(vec![bonder(Hex::new(4, 4), 0)], vec![]);
+        let bent = |w: &mut World, q: i32, r: i32| {
+            let a = spawn(w, q, r);
+            let b = spawn(w, q, r + 1);
+            let c = spawn(w, q + 1, r + 1);
+            w.sim.bonds.push(sim::Bond {
+                a,
+                b,
+                kind: BondKind::Single,
+            });
+            w.sim.bonds.push(sim::Bond {
+                a: b,
+                b: c,
+                kind: BondKind::Single,
+            });
+            a
+        };
+        let first = bent(&mut w, 0, 0);
+        bent(&mut w, -6, 2);
+        let text = form::RECIPES[4].1;
+        assert_eq!(
+            Item::Glyph(GlyphKind::Output(sim::Tier::One)),
+            form::RECIPES[4].0
+        );
+        let corner = px(Hex::new(0, 0));
+        let from = px(Hex::new(-1, 0));
+        w.press(from, from);
+        w.drag(corner + Vec2::splat(1.0));
+        w.pointer = Some(corner + Vec2::splat(1.0));
+        w.release(Some(Hex::new(0, 0)));
+        assert_eq!(w.focus, picked(&[Id::Atom(first)]));
+        assert_eq!(w.compounds(&[Id::Atom(first)]), text);
+        w.copy(&[Id::Atom(first)]);
+        assert!(w.clipboard.is_none());
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(atoms(&w).len(), 6);
+        let (lo, hi) = (px(Hex::new(-7, 0)), px(Hex::new(5, 5)));
+        w.press(lo, lo);
+        w.drag(hi);
+        w.pointer = Some(hi);
+        w.release(Some(Hex::new(5, 5)));
+        let ids = w.focus.as_ref().unwrap().picked();
+        assert!(ids.contains(&Id::Glyph(0)));
+        assert_eq!(ids.iter().filter(|id| matches!(id, Id::Atom(_))).count(), 6);
+        assert_eq!(w.compounds(&ids), format!("{text}\n{text}"));
+        w.copy(&ids);
+        assert_eq!(w.clipboard.as_ref().unwrap().glyphs.len(), 1);
+        assert!(w.clipboard.as_ref().unwrap().atoms.is_empty());
+    }
+
     #[test]
     fn the_hover_card_draws_the_picture_and_the_recipe_on_its_own_layer() {
         for (name, item) in [
@@ -4540,14 +4710,15 @@ mod tests {
             let (on_card, active, size) = *seen.lock().unwrap();
             let recipe = item.recipe().unwrap();
             let bars: usize = recipe
+                .sim()
                 .bonds
                 .iter()
-                .map(|(_, _, kind)| match look::bond(*kind).shape {
+                .map(|bond| match look::bond(bond.kind).shape {
                     Shape::Bars(n) => n,
                     _ => unreachable!(),
                 })
                 .sum();
-            assert_eq!(on_card, 3 + bars + 2 * recipe.atoms.len(), "{name}");
+            assert_eq!(on_card, 3 + bars + 2 * recipe.atoms().len(), "{name}");
             assert!(active, "{name}");
             assert_eq!(size, card_size(item).as_uvec2(), "{name}");
         }
@@ -4753,9 +4924,10 @@ mod tests {
         w.press(-far, -far);
         w.drag(far);
         w.release(Some(hex_at(far)));
-        assert_eq!(w.focus, picked(&[Id::Glyph(1), Id::Glyph(2)]));
+        assert_eq!(w.focus, picked(&[Id::Glyph(1), Id::Glyph(2), Id::Atom(0)]));
         w.key(KeyCode::KeyZ, false);
         assert_eq!(w.sim.glyphs, vec![glyphs[0], None, None]);
+        assert_eq!(atoms(&w), vec![source.add(DIRS[0])]);
     }
 
     #[test]

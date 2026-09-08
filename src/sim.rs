@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use crate::form::{Form, RECIPES, recipes};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Hex {
@@ -235,11 +235,14 @@ impl Item {
     };
 
     fn index(self) -> Option<usize> {
-        RECIPES.iter().position(|(item, _)| *item == self)
+        recipes().iter().position(|(item, _)| *item == self)
     }
 
-    pub fn recipe(self) -> Option<&'static Recipe> {
-        self.index().map(|i| &RECIPES[i].1)
+    pub fn recipe(self) -> Option<&'static Form> {
+        recipes()
+            .iter()
+            .find(|(item, _)| *item == self)
+            .map(|(_, form)| form)
     }
 }
 
@@ -363,160 +366,6 @@ impl Glyph {
 }
 
 pub const MAX_COMPOUND_ATOMS: usize = 256;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Recipe {
-    pub atoms: &'static [(Hex, AtomKind)],
-    pub bonds: &'static [(usize, usize, BondKind)],
-}
-
-const fn spoke(k: usize) -> (Hex, AtomKind) {
-    (DIRS[k], AtomKind::Base)
-}
-
-const CENTRE: (Hex, AtomKind) = (ORIGIN, AtomKind::Base);
-const PAIR: [(Hex, AtomKind); 2] = [CENTRE, spoke(0)];
-const BENT: [(Hex, AtomKind); 3] = [spoke(3), CENTRE, spoke(5)];
-const LINE: [(Hex, AtomKind); 3] = [spoke(3), CENTRE, spoke(0)];
-const TRIANGLE: [(Hex, AtomKind); 3] = [CENTRE, spoke(0), spoke(1)];
-const SPOKES_3: [(Hex, AtomKind); 4] = [CENTRE, spoke(0), spoke(2), spoke(4)];
-const SPOKES_6: [(Hex, AtomKind); 7] = [
-    CENTRE,
-    spoke(0),
-    spoke(1),
-    spoke(2),
-    spoke(3),
-    spoke(4),
-    spoke(5),
-];
-
-const fn single(a: usize, b: usize) -> (usize, usize, BondKind) {
-    (a, b, BondKind::Single)
-}
-
-pub const RECIPES: [(Item, Recipe); 7] = [
-    (
-        Item::Glyph(GlyphKind::Bonder),
-        Recipe {
-            atoms: &PAIR,
-            bonds: &[single(0, 1)],
-        },
-    ),
-    (
-        Item::Glyph(GlyphKind::SecondBond),
-        Recipe {
-            atoms: &TRIANGLE,
-            bonds: &[single(0, 1), single(1, 2), single(2, 0)],
-        },
-    ),
-    (
-        Item::Arm,
-        Recipe {
-            atoms: &PAIR,
-            bonds: &[(0, 1, BondKind::Double)],
-        },
-    ),
-    (
-        Item::Glyph(GlyphKind::Cleanup),
-        Recipe {
-            atoms: &LINE,
-            bonds: &[single(0, 1), single(1, 2)],
-        },
-    ),
-    (
-        Item::Glyph(GlyphKind::Output(Tier::One)),
-        Recipe {
-            atoms: &BENT,
-            bonds: &[single(0, 1), single(1, 2)],
-        },
-    ),
-    (
-        Item::Glyph(GlyphKind::Output(Tier::Two)),
-        Recipe {
-            atoms: &SPOKES_3,
-            bonds: &[single(0, 1), single(0, 2), single(0, 3)],
-        },
-    ),
-    (
-        Item::Glyph(GlyphKind::Output(Tier::Three)),
-        Recipe {
-            atoms: &SPOKES_6,
-            bonds: &[
-                single(0, 1),
-                single(0, 2),
-                single(0, 3),
-                single(0, 4),
-                single(0, 5),
-                single(0, 6),
-            ],
-        },
-    ),
-];
-
-impl Recipe {
-    pub fn sim(&self) -> Sim {
-        let mut sim = Sim::empty();
-        for (pos, kind) in self.atoms {
-            sim.spawn(Atom {
-                kind: *kind,
-                pos: *pos,
-            });
-        }
-        sim.bonds.extend(self.bonds.iter().map(|(a, b, kind)| Bond {
-            a: *a,
-            b: *b,
-            kind: *kind,
-        }));
-        sim
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Form {
-    atoms: Vec<(Hex, AtomKind)>,
-    bonds: Vec<(Hex, Hex, BondKind)>,
-}
-
-impl Form {
-    pub fn of(sim: &Sim) -> Form {
-        let atoms: Vec<Atom> = sim.atoms.iter().flatten().copied().collect();
-        (0..6)
-            .map(|turn| {
-                let at = |atom: &Atom| atom.pos.turned(turn);
-                let origin = atoms.iter().map(at).min().unwrap_or(ORIGIN);
-                let mut placed: Vec<(Hex, AtomKind)> = atoms
-                    .iter()
-                    .map(|atom| (at(atom).sub(origin), atom.kind))
-                    .collect();
-                let mut bonds: Vec<(Hex, Hex, BondKind)> = sim
-                    .bonds
-                    .iter()
-                    .map(|bond| {
-                        let end = |id: usize| at(&sim.atoms[id].unwrap()).sub(origin);
-                        let (a, b) = (end(bond.a), end(bond.b));
-                        (a.min(b), a.max(b), bond.kind)
-                    })
-                    .collect();
-                placed.sort_unstable();
-                bonds.sort_unstable();
-                Form {
-                    atoms: placed,
-                    bonds,
-                }
-            })
-            .min()
-            .expect("six turns")
-    }
-
-    pub fn crafts(&self) -> Option<Item> {
-        static FORMS: OnceLock<Vec<Form>> = OnceLock::new();
-        FORMS
-            .get_or_init(|| RECIPES.iter().map(|(_, r)| Form::of(&r.sim())).collect())
-            .iter()
-            .position(|form| form == self)
-            .map(|i| RECIPES[i].0)
-    }
-}
 
 pub const DEFAULT_CAP: u32 = 16;
 pub const MAX_CAP: u32 = 256;
@@ -725,7 +574,9 @@ impl Sim {
             let compound = self.component(id);
             seen.extend(&compound);
             if !compound.iter().all(|c| within(self.atoms[*c].unwrap()))
-                || !RECIPES.iter().any(|(_, r)| r.atoms.len() == compound.len())
+                || !recipes()
+                    .iter()
+                    .any(|(_, r)| r.atoms().len() == compound.len())
             {
                 continue;
             }
@@ -1316,7 +1167,7 @@ mod tests {
         }
     }
 
-    fn lay(sim: &mut Sim, recipe: &Recipe, turn: usize, at: Hex) -> Vec<usize> {
+    fn lay(sim: &mut Sim, recipe: &Form, turn: usize, at: Hex) -> Vec<usize> {
         let mut set = recipe.sim();
         for atom in set.atoms.iter_mut().flatten() {
             atom.pos = atom.pos.turned(turn);
@@ -1339,23 +1190,23 @@ mod tests {
     #[test]
     fn every_recipe_is_one_distinct_compound_bonded_across_adjacent_cells_that_fits_the_first_tier()
     {
-        let forms: Vec<Form> = RECIPES.iter().map(|(_, r)| Form::of(&r.sim())).collect();
-        for (k, (item, recipe)) in RECIPES.iter().enumerate() {
+        let forms: Vec<&Form> = recipes().iter().map(|(_, form)| form).collect();
+        for (k, (item, recipe)) in recipes().iter().enumerate() {
             let sim = recipe.sim();
-            assert!(
-                recipe
-                    .atoms
-                    .iter()
-                    .all(|(at, _)| at.ring() <= Tier::One.radius()),
-                "{item:?}"
-            );
+            let centre = recipe
+                .centre(Tier::One.radius())
+                .unwrap_or_else(|| panic!("{item:?} hangs off the first tier"));
             assert_eq!(
                 sim.component(0).len(),
-                recipe.atoms.len(),
+                recipe.atoms().len(),
                 "{item:?} is not one compound"
             );
-            for (a, b, kind) in recipe.bonds {
-                let (a, b) = (recipe.atoms[*a].0, recipe.atoms[*b].0);
+            for bond in &sim.bonds {
+                let (a, b) = (
+                    sim.atoms[bond.a].unwrap().pos,
+                    sim.atoms[bond.b].unwrap().pos,
+                );
+                let kind = &bond.kind;
                 assert_eq!(a.sub(b).ring(), 1, "{item:?} bonds cells that do not touch");
                 if *kind == BondKind::Double {
                     let free = DIRS
@@ -1366,14 +1217,14 @@ mod tests {
                     assert!(free, "{item:?} has a double bond no second-bond can write");
                 }
             }
-            assert!(!forms[..k].contains(&forms[k]), "{item:?} shares a recipe");
+            assert!(!forms[..k].contains(&recipe), "{item:?} shares a recipe");
             assert!(
                 !RECIPES[..k].iter().any(|(other, _)| other == item),
                 "{item:?} is listed twice"
             );
             let mut world = Sim::empty();
             world.glyphs.push(Some(output(Tier::One, ORIGIN)));
-            lay(&mut world, recipe, 0, ORIGIN);
+            lay(&mut world, recipe, 0, ORIGIN.sub(centre));
             world.step();
             assert_eq!(count(&world, *item), 1, "{item:?} does not craft itself");
             assert!(world.atoms.iter().flatten().next().is_none());
@@ -1383,8 +1234,9 @@ mod tests {
 
     #[test]
     fn a_larger_glyph_takes_a_recipe_in_every_turn_wherever_it_lies_wholly_on_its_cells() {
-        let (item, recipe) = RECIPES[0];
-        assert_eq!(recipe.atoms.len(), 2);
+        let (item, recipe) = &recipes()[0];
+        let item = *item;
+        assert_eq!(recipe.atoms().len(), 2);
         let radius = Tier::Two.radius();
         let (mut fired, mut refused) = (0, 0);
         for turn in 0..6 {
@@ -1393,7 +1245,7 @@ mod tests {
                     let at = Hex::new(q, r);
                     let mut sim = Sim::empty();
                     sim.glyphs.push(Some(output(Tier::Two, ORIGIN)));
-                    let ids = lay(&mut sim, &recipe, turn, at);
+                    let ids = lay(&mut sim, recipe, turn, at);
                     let inside = |id: &usize| sim.atoms[*id].unwrap().pos.ring() <= radius;
                     let (wholly, touching) = (ids.iter().all(inside), ids.iter().any(inside));
                     sim.step();
@@ -1489,16 +1341,16 @@ mod tests {
     #[test]
     fn the_cap_holds_a_compound_until_the_count_drops_and_a_return_passes_it() {
         let bonder = Item::Glyph(GlyphKind::Bonder);
-        let recipe = *bonder.recipe().unwrap();
+        let recipe = bonder.recipe().unwrap();
         let mut sim = Sim::empty();
         sim.glyphs.push(Some(output(Tier::One, ORIGIN)));
         for _ in 1..DEFAULT_CAP {
             sim.inventory.add(bonder);
         }
-        lay(&mut sim, &recipe, 0, ORIGIN);
+        lay(&mut sim, recipe, 0, ORIGIN);
         sim.step();
         assert_eq!(count(&sim, bonder), DEFAULT_CAP);
-        let ids = lay(&mut sim, &recipe, 1, ORIGIN);
+        let ids = lay(&mut sim, recipe, 1, ORIGIN);
         for _ in 0..3 {
             sim.step();
         }
@@ -1510,7 +1362,7 @@ mod tests {
         assert_eq!(count(&sim, bonder), DEFAULT_CAP);
         sim.inventory.add(bonder);
         sim.inventory.add(bonder);
-        let ids = lay(&mut sim, &recipe, 2, ORIGIN);
+        let ids = lay(&mut sim, recipe, 2, ORIGIN);
         sim.step();
         assert!(lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP + 2);

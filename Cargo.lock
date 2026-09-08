@@ -5820,11 +5820,14 @@ dependencies = [
 name = "ziral"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "bevy",
  "image",
  "serde",
  "toml",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

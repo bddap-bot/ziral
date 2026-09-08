@@ -1,3 +1,4 @@
+use crate::form::Form;
 use crate::look::{self, AMBIENT, Cell, Glaze, HEX, Quad, Role, px};
 use crate::sim::Item;
 use crate::sim::Slot;
@@ -932,7 +933,8 @@ fn key(parts: &[&[u8]]) -> String {
     format!("{h:016x}")
 }
 
-fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, recipe: &str) -> String {
+fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, recipe: Option<&Form>) -> String {
+    let recipe = recipe.map(ToString::to_string).unwrap_or_default();
     key(&[
         prompt.as_bytes(),
         &count.to_le_bytes(),
@@ -940,21 +942,6 @@ fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, recipe: &str) -> 
         scaffold.as_raw(),
         recipe.as_bytes(),
     ])
-}
-
-fn recipe_text(item: Item) -> String {
-    let Some(recipe) = item.recipe() else {
-        return String::new();
-    };
-    let atoms = recipe
-        .atoms
-        .iter()
-        .map(|(at, kind)| format!("{},{},{}", at.q, at.r, *kind as u8));
-    let bonds = recipe
-        .bonds
-        .iter()
-        .map(|(a, b, kind)| format!("{a}-{b}:{}", *kind as u8));
-    atoms.chain(bonds).collect::<Vec<_>>().join(" ")
 }
 
 fn prompt(style: &Style, item: Item, direction: &Direction) -> String {
@@ -1102,7 +1089,7 @@ impl Remake<'_> {
             changed = true;
         }
         let prompt = prompt(&style, item(name), &entry.direction);
-        let painted = painted_key(&prompt, count, &rendered, &recipe_text(item(name)));
+        let painted = painted_key(&prompt, count, &rendered, item(name).recipe());
         let wipe = entry.painted.as_deref() != Some(painted.as_str());
         let mut images = vec![scaffold_png];
         if item(name).recipe().is_some() {
@@ -1680,7 +1667,7 @@ mod tests {
             let prompt = prompt(&manifest.style, item, &machine.direction);
             assert_eq!(
                 machine.painted.as_deref(),
-                Some(painted_key(&prompt, manifest.candidates, &want, &recipe_text(item)).as_str()),
+                Some(painted_key(&prompt, manifest.candidates, &want, item.recipe()).as_str()),
                 "{name}: the candidates are stale against the manifest: run ziral --gen {name}"
             );
             let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));

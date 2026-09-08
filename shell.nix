@@ -25,6 +25,8 @@ pkgs.mkShell {
     imagemagick
     pngquant
     dejavu_fonts
+    xclip
+    xvfb
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
