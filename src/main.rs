@@ -4110,6 +4110,21 @@ mod tests {
         assert_eq!(w.focus, None);
     }
 
+    #[test]
+    fn a_compound_lifted_at_ghost0_and_dropped_after_a_step_forward_is_refused_and_pops_back() {
+        let mut w = paused(0);
+        pair(&mut w, Hex::new(6, 6), BondKind::Single);
+        let ghost0 = w.sim.clone();
+        lift_at(&mut w, Hex::new(6, 6));
+        w.key(KeyCode::KeyG, false);
+        assert_eq!(w.ghosts(), 1);
+        w.pointer = Some(px(Hex::new(8, 8)));
+        w.release(Some(Hex::new(8, 8)));
+        assert_eq!(w.sim, ghost0);
+        assert_eq!(*w.shown(), ghost0.replay(1));
+        assert_eq!(w.focus, None);
+    }
+
     fn played(name: &str, frames: u32) -> World {
         let (mut w, _, script, warm) = shot::scene(name, 0);
         for frame in 1..=frames {
