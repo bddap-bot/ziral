@@ -970,6 +970,16 @@ pub fn layout() -> Sim {
     sim
 }
 
+pub fn start() -> Sim {
+    let mut sim = Sim::empty();
+    let glyph = |kind, at| Some(Glyph { kind, at, dir: 0 });
+    sim.glyphs.push(glyph(GlyphKind::Source, Hex::new(-4, 1)));
+    sim.glyphs.push(glyph(GlyphKind::Bonder, Hex::new(-1, 1)));
+    sim.glyphs
+        .push(glyph(GlyphKind::Output(Tier::One), Hex::new(2, -2)));
+    sim
+}
+
 pub fn preloaded() -> Sim {
     let one = layout();
     let mut world = Sim::empty();
@@ -1698,6 +1708,24 @@ mod tests {
         assert!(sim.arms[0].stall.is_none());
         assert_eq!(sim.atoms[a].unwrap().pos, Hex::new(1, -1));
         assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(0, -1));
+    }
+
+    #[test]
+    fn the_board_at_t0_is_one_source_one_bonder_one_first_tier_output_and_nothing_else() {
+        let sim = start();
+        let kinds: Vec<GlyphKind> = sim.glyphs.iter().flatten().map(|g| g.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                GlyphKind::Source,
+                GlyphKind::Bonder,
+                GlyphKind::Output(Tier::One)
+            ]
+        );
+        assert!(sim.arms.is_empty());
+        assert!(sim.atoms.is_empty());
+        assert!(sim.bonds.is_empty());
+        assert_eq!(sim.inventory, Inventory::EMPTY);
     }
 
     #[test]

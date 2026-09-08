@@ -418,17 +418,21 @@ impl World {
         }
     }
 
-    fn ids(&self) -> impl Iterator<Item = Id> + '_ {
+    fn hand_ids(&self) -> impl Iterator<Item = Id> + '_ {
         let sim = self.shown();
         let arms = (0..sim.arms.len()).map(Id::Arm);
-        let glyphs = sim.glyphs.iter().enumerate().filter(|(_, g)| g.is_some());
+        let glyphs = sim
+            .glyphs
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| g.is_some_and(|g| g.kind != GlyphKind::Source));
         arms.chain(glyphs.map(|(i, _)| Id::Glyph(i)))
     }
 
     fn hit(&self, cell: Hex) -> Option<Id> {
-        self.ids()
+        self.hand_ids()
             .find(|id| self.anchor(*id) == cell)
-            .or_else(|| self.ids().find(|id| self.cells(*id).contains(&cell)))
+            .or_else(|| self.hand_ids().find(|id| self.cells(*id).contains(&cell)))
     }
 
     fn marquee(&self, a: Vec2, b: Vec2) -> Vec<Id> {
@@ -437,7 +441,7 @@ impl World {
             let p = px(c);
             p.cmpge(lo).all() && p.cmple(hi).all()
         };
-        self.ids()
+        self.hand_ids()
             .filter(|id| self.cells(*id).into_iter().any(inside))
             .collect()
     }
@@ -886,7 +890,7 @@ fn main() {
     let mut app = match shot::parse(&args) {
         Some((world, shot)) => shot::app(world, shot),
         None => {
-            let mut app = app(World::new(sim::preloaded()));
+            let mut app = app(World::new(sim::start()));
             app.add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "ziral".into(),
@@ -2429,18 +2433,12 @@ mod shot {
                     Some(2),
                 ));
             }
+            "start" => world.sim = sim::start(),
             "craft" => {
-                let source = Hex::new(-4, 1);
-                let mut sim = Sim::empty();
-                let glyph = |kind, at, dir| Some(Glyph { kind, at, dir });
-                sim.glyphs.push(glyph(GlyphKind::Source, source, 0));
-                sim.glyphs
-                    .push(glyph(GlyphKind::Bonder, Hex::new(-1, 1), 0));
-                sim.glyphs
-                    .push(glyph(GlyphKind::Output(sim::Tier::One), Hex::new(2, -2), 0));
+                let mut sim = sim::start();
                 sim.spawn(Atom {
                     kind: AtomKind::Base,
-                    pos: source,
+                    pos: Hex::new(-4, 1),
                 });
                 world.sim = sim;
                 let carry = |f0: u32, path: &[(i32, i32)]| {
@@ -3564,25 +3562,25 @@ mod tests {
     #[test]
     fn an_anchor_under_the_cursor_wins_over_a_body_cell_and_stacked_anchors_go_to_the_first_listed()
     {
-        let source = Glyph {
-            kind: GlyphKind::Source,
+        let cleanup = Glyph {
+            kind: GlyphKind::Cleanup,
             at: Hex::new(1, 0),
             dir: 0,
         };
         let bonder = bonder(ORIGIN, 0);
         let arm = Arm::new(ORIGIN, 0, vec![]);
-        assert!(bonder.slots().any(|s| s == source.at));
-        assert_eq!(arm.hand(), source.at);
+        assert!(bonder.slots().any(|s| s == cleanup.at));
+        assert_eq!(arm.hand(), cleanup.at);
         assert_eq!(
-            lone(vec![bonder, source], vec![arm.clone()]).hit(source.at),
+            lone(vec![bonder, cleanup], vec![arm.clone()]).hit(cleanup.at),
             Some(Id::Glyph(1))
         );
         assert_eq!(
-            lone(vec![bonder, source], vec![arm]).hit(ORIGIN),
+            lone(vec![bonder, cleanup], vec![arm]).hit(ORIGIN),
             Some(Id::Arm(0))
         );
         assert_eq!(
-            lone(vec![source, source], vec![]).hit(source.at),
+            lone(vec![cleanup, cleanup], vec![]).hit(cleanup.at),
             Some(Id::Glyph(0))
         );
     }
@@ -4058,10 +4056,7 @@ mod tests {
         assert_eq!(w.focus, picked(&[Id::Glyph(0), Id::Glyph(2)]));
         assert_eq!(w.sim.glyphs[1], None);
         assert_eq!(w.sim.glyphs[2].unwrap().kind, GlyphKind::Bonder);
-        assert_eq!(
-            w.ids().collect::<Vec<Id>>(),
-            vec![Id::Glyph(0), Id::Glyph(2)]
-        );
+        assert_eq!(w.hand_ids().collect::<Vec<Id>>(), vec![Id::Glyph(2)]);
         assert!(w.prev.glyphs[1].is_some());
     }
 
@@ -4710,7 +4705,61 @@ mod tests {
     }
 
     #[test]
-    fn the_craft_scene_crafts_a_bonder_by_hand_then_places_it_from_the_inventory() {
+    fn a_source_has_no_palette_row_and_no_inventory_entry_so_nothing_lifts_it() {
+        let source = Item::Glyph(GlyphKind::Source);
+        let bonder = Item::Glyph(GlyphKind::Bonder);
+        let mut w = World::new(sim::start());
+        assert_eq!(w.sim.inventory.count(source), None);
+        w.sim.inventory.add(source);
+        assert_eq!(w.sim.inventory, sim::Inventory::EMPTY);
+        w.lift_inventory(source);
+        assert_eq!(w.focus, None);
+        w.sim.inventory.add(bonder);
+        w.lift_inventory(bonder);
+        assert!(w.holding());
+    }
+
+    #[test]
+    fn the_hand_never_picks_lifts_or_deletes_a_source() {
+        let mut w = World::new(sim::start());
+        w.running = false;
+        let glyphs = w.sim.glyphs.clone();
+        let source = glyphs
+            .iter()
+            .flatten()
+            .find(|g| g.kind == GlyphKind::Source)
+            .unwrap()
+            .at;
+        w.pointer = Some(px(source));
+        w.press(px(source), px(source));
+        w.release(Some(source));
+        assert_eq!(w.focus, None);
+        w.press(px(source), px(source));
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(w.sim.glyphs, glyphs);
+        lift_at(&mut w, source);
+        w.pointer = Some(px(source.add(DIRS[0])));
+        w.release(Some(source.add(DIRS[0])));
+        assert_eq!(w.sim.glyphs, glyphs);
+        assert_eq!(w.focus, None);
+        w.step();
+        lift_at(&mut w, source);
+        assert_eq!(held(&w).2, taken(source));
+        w.release(Some(source.add(DIRS[0])));
+        assert_eq!(w.sim.glyphs, glyphs);
+        assert_eq!(atoms(&w), vec![source.add(DIRS[0])]);
+        let far = Vec2::splat(1000.0);
+        w.pointer = Some(far);
+        w.press(-far, -far);
+        w.drag(far);
+        w.release(Some(hex_at(far)));
+        assert_eq!(w.focus, picked(&[Id::Glyph(1), Id::Glyph(2)]));
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(w.sim.glyphs, vec![glyphs[0], None, None]);
+    }
+
+    #[test]
+    fn the_craft_scene_crafts_the_first_bonder_by_hand_from_the_t0_board_then_places_it() {
         let bonder = Item::Glyph(GlyphKind::Bonder);
         let w = played("craft", 189);
         assert_eq!(count(&w, bonder), 1, "{:?}", w.sim);
