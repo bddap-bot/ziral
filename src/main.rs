@@ -1073,7 +1073,7 @@ struct Kiln {
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
     patina: Handle<ColorMaterial>,
-    skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
+    skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
     lit: Vec<(Skin, Handle<Lit>)>,
 }
 
@@ -1112,15 +1112,15 @@ impl Kiln {
         &self.glaze[glaze as usize]
     }
 
-    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, [Handle<ColorMaterial>; 2]) {
+    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, Handle<ColorMaterial>) {
         self.skins
             .iter()
             .find(|(s, _, _)| *s == skin)
             .unwrap_or_else(|| panic!("{skin:?} was never fired"))
     }
 
-    fn skin(&self, skin: Skin, faint: bool) -> &Handle<ColorMaterial> {
-        &self.fired(skin).2[usize::from(faint)]
+    fn skin(&self, skin: Skin) -> &Handle<ColorMaterial> {
+        &self.fired(skin).2
     }
 
     fn image(&self, skin: Skin) -> Handle<Image> {
@@ -1209,7 +1209,7 @@ fn fire_kiln(
 ) {
     gizmo.config_mut::<DefaultGizmoConfigGroup>().0.line.width = LINE_PX;
     let grout = look::GROUT.decode();
-    let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
+    let skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)> = look::skins()
         .map(|skin| {
             let mut image = skin.decode();
             let crop = match skin.finish {
@@ -1220,22 +1220,20 @@ fn fire_kiln(
                 _ => 1.0,
             };
             let texture = images.add(fire(image, skin));
-            let solid = if skin.finish == Finish::Sprite {
+            let alpha_mode = if skin.finish == Finish::Sprite {
                 AlphaMode2d::Blend
             } else {
                 AlphaMode2d::Opaque
             };
-            let fired = [(1.0, solid), (0.5, AlphaMode2d::Blend)].map(|(alpha, alpha_mode)| {
-                materials.add(ColorMaterial {
-                    color: Color::WHITE.with_alpha(alpha),
-                    alpha_mode,
-                    texture: Some(texture.clone()),
-                    uv_transform: Affine2::from_scale_angle_translation(
-                        Vec2::splat(crop),
-                        0.0,
-                        Vec2::splat(0.5 * (1.0 - crop)),
-                    ),
-                })
+            let fired = materials.add(ColorMaterial {
+                color: Color::WHITE,
+                alpha_mode,
+                texture: Some(texture.clone()),
+                uv_transform: Affine2::from_scale_angle_translation(
+                    Vec2::splat(crop),
+                    0.0,
+                    Vec2::splat(0.5 * (1.0 - crop)),
+                ),
             });
             (skin, texture, fired)
         })
@@ -1366,7 +1364,7 @@ impl Painter<'_, '_, '_, '_, '_> {
         let kiln = self.kiln;
         self.stamp(
             &kiln.circle,
-            kiln.skin(look.skin, false),
+            kiln.skin(look.skin),
             at,
             HEX * 0.4,
             layer::BEAD,
@@ -1374,18 +1372,24 @@ impl Painter<'_, '_, '_, '_, '_> {
         self.stamp(&kiln.rim, &kiln.patina, at, HEX * 0.4, layer::RIM);
     }
 
-    fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind, faint: bool) {
+    fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind) {
         let look = look::bond(kind);
         let Shape::Bars(n) = look.shape else {
             unworn(look)
         };
         let kiln = self.kiln;
-        let material = kiln.skin(look.skin, faint);
+        let material = kiln.skin(look.skin);
         let side = (c - a).perp().normalize_or_zero() * HEX * 0.16;
-        let z = if faint { layer::TORN } else { layer::BOND };
         for k in 0..n {
             let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
-            self.bar(&kiln.bond, material, a + off, c + off, HEX * BOND_WIDTH, z);
+            self.bar(
+                &kiln.bond,
+                material,
+                a + off,
+                c + off,
+                HEX * BOND_WIDTH,
+                layer::BOND,
+            );
         }
     }
 
@@ -1431,7 +1435,6 @@ mod layer {
     use std::ops::Range;
 
     pub const GLYPHS: Range<f32> = 0.1..0.12;
-    pub const TORN: f32 = 0.14;
     pub const BOND: f32 = 0.2;
     pub const ARMS: Range<f32> = 0.28..0.38;
     pub const BEAD: f32 = 0.4;
@@ -1626,7 +1629,7 @@ fn board(
                     let tile = look::tile(h);
                     lay(
                         &kiln.hexagon,
-                        kiln.skin(tile.skin, false),
+                        kiln.skin(tile.skin),
                         Transform {
                             translation: px(h).extend(0.0),
                             rotation: Quat::IDENTITY,
@@ -1681,11 +1684,7 @@ fn draw(
         let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
             continue;
         };
-        p.bond(a, c, b.kind, false);
-    }
-    for (kept, lost, kind) in &f.sim.torn {
-        let (a, b) = (px(*kept), px(*lost));
-        p.bond(a, a.lerp(b, 0.5), *kind, true);
+        p.bond(a, c, b.kind);
     }
     for (at, atom) in f.atoms.iter().zip(&f.sim.atoms) {
         if let (Some(at), Some(atom)) = (at, atom) {
@@ -2100,34 +2099,6 @@ mod shot {
                 });
                 world.sim = sim;
                 world.focus_arm(0);
-            }
-            "tear" => {
-                let (mut sim, ids) =
-                    second_bond(&[Hex::new(-1, -1), Hex::new(0, -1), Hex::new(1, 0)]);
-                for (a, b, kind) in [
-                    (0, 1, BondKind::Single),
-                    (1, 3, BondKind::Double),
-                    (3, 2, BondKind::Single),
-                ] {
-                    sim.bonds.push(Bond {
-                        a: ids[a],
-                        b: ids[b],
-                        kind,
-                    });
-                }
-                world.sim = sim;
-            }
-            "heldtear" => {
-                let (mut sim, ids) = second_bond(&[Hex::new(0, -1)]);
-                sim.bonds.push(Bond {
-                    a: ids[0],
-                    b: ids[1],
-                    kind: BondKind::Single,
-                });
-                let mut arm = Arm::new(Hex::new(-1, -1), 0, vec![Instr::Wait]);
-                arm.holding = true;
-                sim.arms.push(arm);
-                world.sim = sim;
             }
             "heldeat" => {
                 let (mut sim, _) = second_bond(&[Hex::new(0, 0)]);
