@@ -2,6 +2,7 @@ candidates = 4
 
 [style]
 shared = "Use case: game-texture. Restyle the supplied scaffold while preserving its exact framing and its flat straight-down view: the camera looks straight down, orthographic, exactly as the scaffold is drawn, so the picture is the plan of the machine, never an oblique or three-quarter view, with no perspective, no vanishing point, no foreshortening and no visible side face; every seat, cup and well is a concentric circle seen from directly above, its inner wall hidden all the way round and its far side no more visible than its near side. The scaffold is a flat pure green chroma-key background carrying the seat marks of one machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand, and the small dot at the heart of every ring and horseshoe is the exact centre of that seat, the point the atom will occupy. The machine stays within the tiles it stands on: every part, port, pipe, hinge, valve and chute included, lies within twice the ring's radius of some mark's centre, and nothing rises above or hangs below the seats or bulges out between two seats. Turn those marks into the machine described next as one freestanding object, compact and built tight around the marks, its body reaching and joining every mark, every seat, cup, well, funnel and hand built concentric on its dot, empty and unobstructed. The machine is compact and small against the green, but the marks are never pulled closer together: every seat stays exactly on its dot at the mark's own size, as far apart as the dots are, and the body between seats is slender rather than the seats moving inward; each seat housing hugs its ring closely, no part lies further from the nearest mark's centre than twice that ring's radius, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover stays the untouched flat pure green key: no board, no tile, no plate, no well, no base, no table, no room, no beads, no atoms, no fist, no fingers, no text, numerals, logos or exposed clockwork. Flat base-colour capture with baked ambient occlusion only: photoreal glazed ceramic, darkened brass and worn rubber, no directional light, highlight, specular or cast shadow, so the one sprite is correct turned to any facing."
+recipe = "The image of beads joined by bars is the compound that makes this machine, drawn at the scaffold's scale: take the shape of that structure, its count of beads and the way its bars join them, as the inspiration for the form of the machine, its body echoing the structure in its layout and its joins, and paint no bead and no bar."
 edges = [
     "right",
     "top",
@@ -18,49 +19,49 @@ off_centre = 0.1
 sphere = 25.0
 
 [machine.arm]
-prompt = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-black-rubber horseshoe gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
+placeholder = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-black-rubber horseshoe gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
 kept = 2
-painted = "11573c8e033f97d2"
-relit = "7e4c16eb1db67dea"
+painted = "75e41dd77cf21a87"
+relit = "584dbfeff8fea117"
 
 [machine.bonder]
-prompt = "The machine is a two-cell bonder: two equal empty blue-green ceramic atom seats in terracotta housings, joined by one heavy darkened-brass compression channel with opposed clamp jaws, worn rubber collars, pressure pipes and a squat kiln port, everything lying flat along the line between the two seats and no taller than the seat housings, the port and pipes on the channel itself, nothing rising above or hanging below the channel at its middle, so both atoms survive and leave joined; no third seat."
-kept = 3
-painted = "192bad54c569cfaf"
-relit = "ee68ab7a8a88c91e"
+placeholder = "The machine is a two-cell bonder: two equal empty blue-green ceramic atom seats in terracotta housings, joined by one heavy darkened-brass compression channel with opposed clamp jaws, worn rubber collars, pressure pipes and a squat kiln port, everything lying flat along the line between the two seats and no taller than the seat housings, the port and pipes on the channel itself, nothing rising above or hanging below the channel at its middle, so both atoms survive and leave joined; no third seat."
+kept = 4
+painted = "666e8344f926c2eb"
+relit = "8bb90d08a7f6055c"
 
 [machine.cleanup]
-prompt = "The machine is a one-cell cleanup: a deep soot-dark ceramic disposal well with one empty seat over the void, a darkened-brass safety rim, a worn rubber iris, a covered ash chute, a small quencher valve and restrained scorch residue, promising containment rather than spectacle; no pure black."
-kept = 3
-painted = "20717d9c8195b842"
-relit = "850fb3cf3ab15541"
+placeholder = "The machine is a one-cell cleanup: a deep soot-dark ceramic disposal well with one empty seat over the void, a darkened-brass safety rim, a worn rubber iris, a covered ash chute, a small quencher valve and restrained scorch residue, promising containment rather than spectacle; no pure black."
+kept = 2
+painted = "9d1941f79529d5f5"
+relit = "eb39d95a9d86c327"
 
 [machine.output-1]
-prompt = "The machine is a seven-cell output station, the first tier: seven equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, one at the centre and six around it, each cup exactly on its mark and as far apart as the marks, joined only by slender paired brass delivery rails running from the centre cup to each outer cup, worn rubber bumpers at the rim of the cluster and one small covered exit chute on the centre cup's housing, everything lying flat and no higher than the cup housings, nothing bulging out beyond the six outer cups, looking receptive rather than transformative."
+placeholder = "The machine is a seven-cell output station, the first tier: seven equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, one at the centre and six around it, each cup exactly on its mark and as far apart as the marks, joined only by slender paired brass delivery rails running from the centre cup to each outer cup, worn rubber bumpers at the rim of the cluster and one small covered exit chute on the centre cup's housing, everything lying flat and no higher than the cup housings, nothing bulging out beyond the six outer cups, looking receptive rather than transformative."
 kept = 2
-painted = "50e58af8f86d7159"
-relit = "bb90af32ce14fa95"
+painted = "c214e9feaedd5ffe"
+relit = "5fe90d3d955c6921"
 
 [machine.output-2]
-prompt = "The machine is a nineteen-cell output station, the second tier: the seven-cup ivory station of the first tier at its heart, a centre cup with six around it joined by slender paired brass rails, now ringed by twelve more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, each cup exactly on its mark and as far apart as the marks, the outer ring tied to the inner by the same slender brass rails and a thin brass hoop, the rubber bumpers and covered exit chute of the first tier kept, everything lying flat and no higher than the cup housings, nothing beyond the outer ring of cups."
-kept = 1
-painted = "4b74c941bf7bcf56"
-relit = "f28507933269f6bc"
+placeholder = "The machine is a nineteen-cell output station, the second tier: the seven-cup ivory station of the first tier at its heart, a centre cup with six around it joined by slender paired brass rails, now ringed by twelve more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, each cup exactly on its mark and as far apart as the marks, the outer ring tied to the inner by the same slender brass rails and a thin brass hoop, the rubber bumpers and covered exit chute of the first tier kept, everything lying flat and no higher than the cup housings, nothing beyond the outer ring of cups."
+kept = 4
+painted = "87692dd68508d7bb"
+relit = "bc3a6dc4b8d68075"
 
 [machine.output-3]
-prompt = "The machine is a thirty-seven-cell output station, the third tier: the nineteen-cup ivory station of the second tier at its heart, its centre cup, inner ring of six and outer ring of twelve joined by slender paired brass rails and a thin brass hoop, now ringed by eighteen more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, thirty-seven cups in a hexagon of rows of four, five, six, seven, six, five and four, each cup small, its rim no wider than the ring mark it sits on and its centre exactly on the mark's dot, the cups as far apart as the marks and no closer, so that the outermost rims sit on the outermost marks and the green margin all around stays empty, the new ring tied on by the same slender rails and a second brass hoop no wider than the cups, the rubber bumpers and covered exit chute of the earlier tiers kept small and inside the outer rims, everything lying flat and no higher than the cup housings, nothing at all beyond the outermost ring of cups."
-kept = 2
-painted = "58630989b19160a3"
-relit = "536a68b0b066802a"
+placeholder = "The machine is a thirty-seven-cell output station, the third tier: the nineteen-cup ivory station of the second tier at its heart, its centre cup, inner ring of six and outer ring of twelve joined by slender paired brass rails and a thin brass hoop, now ringed by eighteen more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, thirty-seven cups in a hexagon of rows of four, five, six, seven, six, five and four, each cup small, its rim no wider than the ring mark it sits on and its centre exactly on the mark's dot, the cups as far apart as the marks and no closer, so that the outermost rims sit on the outermost marks and the green margin all around stays empty, the new ring tied on by the same slender rails and a second brass hoop no wider than the cups, the rubber bumpers and covered exit chute of the earlier tiers kept small and inside the outer rims, everything lying flat and no higher than the cup housings, nothing at all beyond the outermost ring of cups."
+kept = 1
+painted = "690d310dd1549311"
+relit = "e9d3d0d9998a9f6a"
 
 [machine.second-bond]
-prompt = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
-kept = 2
-painted = "1e09321bc7b4f92c"
-relit = "48f7f053b25fc705"
+placeholder = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
+kept = 3
+painted = "9cab4c835e4af56e"
+relit = "6750664008d168c8"
 
 [machine.source]
-prompt = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."
+placeholder = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."
 kept = 2
-painted = "e2d206d746813551"
-relit = "9082d3a85967453d"
+painted = "38dfd1b060b04971"
+relit = "9b24ad26d7dc2604"

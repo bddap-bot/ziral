@@ -20,7 +20,8 @@ use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
 use sim::{
-    Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, ORIGIN, RECIPES, Sim, Spin, Stall,
+    Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, ORIGIN, RECIPES, Recipe, Sim, Spin,
+    Stall,
 };
 
 const TICK_MS: f32 = 400.0;
@@ -856,14 +857,17 @@ fn app(world: World) -> App {
 struct CardCamera;
 
 fn card_camera(target: RenderTarget) -> impl Bundle {
+    (CardCamera, card_view(target, CARD_SCALE, false))
+}
+
+fn card_view(target: RenderTarget, scale: f32, active: bool) -> impl Bundle {
     let mut projection = OrthographicProjection::default_2d();
-    projection.scale = CARD_SCALE;
+    projection.scale = scale;
     (
-        CardCamera,
         Camera2d,
         Camera {
             order: 1,
-            is_active: false,
+            is_active: active,
             clear_color: ClearColorConfig::Custom(brass(0.65)),
             ..default()
         },
@@ -1073,8 +1077,10 @@ fn hover(
     }
 }
 
+const RECIPE_BOUND: Item = Item::Glyph(GlyphKind::Output(sim::Tier::One));
+
 fn recipe_side() -> f32 {
-    look::quad(Item::Glyph(GlyphKind::Output(sim::Tier::One))).side
+    look::quad(RECIPE_BOUND).side
 }
 
 fn card_size(item: Item) -> Vec2 {
@@ -2133,11 +2139,16 @@ fn hover_card(p: &mut Painter, item: Item) {
     let picture = Vec2::new(-size.x / 2.0 + CARD_PAD + quad.side / 2.0, 0.0);
     p.sprite(item, picture - quad.centre, 0.0, z(2));
     let Some(recipe) = item.recipe() else { return };
-    let set = recipe.sim();
     let centre = Vec2::new(
         picture.x + quad.side / 2.0 + CARD_PAD + recipe_side() / 2.0,
         0.0,
     );
+    compound(p, centre, recipe);
+}
+
+fn compound(p: &mut Painter, centre: Vec2, recipe: &Recipe) {
+    let z = |k: usize| layer::z(layer::CARD, k, 5);
+    let set = recipe.sim();
     let at = |id: usize| centre + px(set.atoms[id].unwrap().pos);
     for b in &set.bonds {
         p.bond(at(b.a), at(b.b), b.kind, z(3));
@@ -2176,7 +2187,7 @@ mod shot {
     use bevy::time::TimeUpdateStrategy;
 
     use sim::{Atom, AtomKind, Bond};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
 
     const WIDE_SCALE: f32 = 1.5;
@@ -2217,11 +2228,27 @@ mod shot {
         script
     }
 
+    #[derive(Clone, Copy)]
+    pub enum Frame {
+        Micro,
+        Wide,
+        Recipe(Item),
+    }
+
+    impl Frame {
+        fn size(self) -> UVec2 {
+            match self {
+                Frame::Micro | Frame::Wide => UVec2::new(1280, 720),
+                Frame::Recipe(_) => UVec2::splat(machines::canvas(RECIPE_BOUND)),
+            }
+        }
+    }
+
     #[derive(Resource)]
     pub struct Shot {
         path: PathBuf,
         clip: Option<u32>,
-        wide: bool,
+        frame: Frame,
         script: Vec<(u32, Act)>,
         warm: u32,
         frames: u32,
@@ -2272,14 +2299,20 @@ mod shot {
         world
     }
 
-    pub fn scene(name: &str, ticks: u64) -> (World, bool, Vec<(u32, Act)>, u32) {
+    pub fn scene(name: &str, ticks: u64) -> (World, Frame, Vec<(u32, Act)>, u32) {
         use KeyCode::*;
         let mut world = World::new(sim::preloaded());
         world.running = false;
         world.pointer = Some(px(Hex::new(3, -3)));
         let mut keys = Vec::new();
         let mut script = Vec::new();
-        let mut wide = false;
+        let mut frame = Frame::Micro;
+        let machine = |name: &str| {
+            Item::ALL
+                .into_iter()
+                .find(|item| machines::name(*item) == name)
+                .unwrap_or_else(|| panic!("unknown machine {name}"))
+        };
         match name {
             "micro" => world.focus_tape(0),
             "tab-held" => script.push((2, Act::Down(Tab))),
@@ -2319,9 +2352,9 @@ mod shot {
                     }));
                 }
                 world.sim = sim;
-                wide = true;
+                frame = Frame::Wide;
             }
-            "wide" => wide = true,
+            "wide" => frame = Frame::Wide,
             "board" => world.sim = Sim::empty(),
             "bonders" => world.sim = phased(&[(Hex::new(-3, 0), 14), (Hex::new(3, 0), 15)]),
             "focus" => {
@@ -2430,12 +2463,14 @@ mod shot {
                 script.push((214, Act::Release(Hex::new(-2, -3))));
             }
             name if name.starts_with("card:") => {
-                let item = Item::ALL
-                    .into_iter()
-                    .find(|item| machines::name(*item) == &name[5..])
-                    .unwrap_or_else(|| panic!("unknown machine {name}"));
                 world.sim = Sim::empty();
-                script.push((2, Act::Hover(item)));
+                script.push((2, Act::Hover(machine(&name[5..]))));
+            }
+            name if name.starts_with("recipe:") => {
+                let item = machine(&name[7..]);
+                assert!(item.recipe().is_some(), "{name} has no recipe");
+                world.sim = Sim::empty();
+                frame = Frame::Recipe(item);
             }
             "walk" | "ghost" => {
                 let mut sim = Sim::empty();
@@ -2803,7 +2838,23 @@ mod shot {
             .last()
             .map_or(WARM, |(frame, _)| (frame + 2).max(WARM));
         script.extend(typed);
-        (world, wide, script, warm)
+        (world, frame, script, warm)
+    }
+
+    pub fn recipe(item: Item, path: &Path) {
+        let (world, frame, script, warm) = scene(&format!("recipe:{}", machines::name(item)), 0);
+        let shot = Shot {
+            path: path.to_path_buf(),
+            clip: None,
+            frame,
+            script,
+            warm,
+            frames: 0,
+            target: None,
+        };
+        let mut app = app(world, shot);
+        lit_plugin(&mut app);
+        assert_eq!(app.run(), AppExit::Success, "{}", path.display());
     }
 
     pub fn parse(args: &[String]) -> Option<(World, Shot)> {
@@ -2820,7 +2871,7 @@ mod shot {
             ),
             _ => panic!("{USAGE}"),
         };
-        let (mut world, wide, script, warm) = scene(view, ticks.parse().expect(USAGE));
+        let (mut world, frame, script, warm) = scene(view, ticks.parse().expect(USAGE));
         let clip = clip.map(|(play, tick_ms, motion)| {
             world.period = tick_ms / 1000.0;
             world.motion = motion;
@@ -2829,7 +2880,7 @@ mod shot {
         let shot = Shot {
             path: PathBuf::from(path),
             clip,
-            wide,
+            frame,
             script,
             warm,
             frames: 0,
@@ -2840,12 +2891,12 @@ mod shot {
 
     #[cfg(test)]
     pub fn still(view: &str, dir: PathBuf, frames: u32) -> App {
-        let (mut world, wide, script, warm) = scene(view, 0);
+        let (mut world, frame, script, warm) = scene(view, 0);
         world.period = f32::INFINITY;
         let shot = Shot {
             path: dir,
             clip: Some(frames),
-            wide,
+            frame,
             script,
             warm,
             frames: 0,
@@ -2878,8 +2929,28 @@ mod shot {
             )
             .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
             .add_systems(Startup, spawn_offscreen_camera)
-            .add_systems(Update, capture.after(run_ticks).before(draw));
+            .add_systems(Update, capture.after(run_ticks).before(draw))
+            .add_systems(Update, recipe_frame.after(draw));
         app
+    }
+
+    fn recipe_frame(shot: Res<Shot>, mut gizmos: Gizmos, mut commands: Commands, kiln: Res<Kiln>) {
+        let Frame::Recipe(item) = shot.frame else {
+            return;
+        };
+        let mut p = Painter {
+            gizmos: &mut gizmos,
+            commands: &mut commands,
+            kiln: &kiln,
+            ghost: false,
+            layers: CARD,
+        };
+        let recipe = item
+            .recipe()
+            .expect("a recipe frame draws a machine that has one");
+        let centroid =
+            recipe.atoms.iter().map(|(at, _)| px(*at)).sum::<Vec2>() / recipe.atoms.len() as f32;
+        compound(&mut p, -centroid, recipe);
     }
 
     fn spawn_offscreen_camera(
@@ -2887,20 +2958,37 @@ mod shot {
         mut images: ResMut<Assets<Image>>,
         mut shot: ResMut<Shot>,
     ) {
-        let mut image = Image::new_target_texture(1280, 720, TextureFormat::Rgba8UnormSrgb, None);
+        let size = shot.frame.size();
+        let mut image =
+            Image::new_target_texture(size.x, size.y, TextureFormat::Rgba8UnormSrgb, None);
         image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
         let handle = images.add(image);
         let mut projection = OrthographicProjection::default_2d();
-        let center = if shot.wide {
-            projection.scale = WIDE_SCALE;
-            let pivots: Vec<Vec2> = sim::PLACEMENTS.iter().map(|h| px(*h)).collect();
-            pivots.iter().sum::<Vec2>() / pivots.len() as f32
-        } else {
-            projection.scale = MICRO_SCALE;
-            px(FOCUS)
+        let center = match shot.frame {
+            Frame::Wide => {
+                projection.scale = WIDE_SCALE;
+                let pivots: Vec<Vec2> = sim::PLACEMENTS.iter().map(|h| px(*h)).collect();
+                pivots.iter().sum::<Vec2>() / pivots.len() as f32
+            }
+            Frame::Micro | Frame::Recipe(_) => {
+                projection.scale = MICRO_SCALE;
+                px(FOCUS)
+            }
         };
+        let recipe = matches!(shot.frame, Frame::Recipe(_));
+        if recipe {
+            commands.spawn(card_view(
+                RenderTarget::Image(handle.clone().into()),
+                1.0 / machines::scale(),
+                true,
+            ));
+        }
         commands.spawn((
             Camera2d,
+            Camera {
+                is_active: !recipe,
+                ..default()
+            },
             Projection::Orthographic(projection),
             Transform::from_translation(center.extend(0.0)),
             RenderTarget::Image(handle.clone().into()),

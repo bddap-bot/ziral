@@ -1,4 +1,4 @@
-bonder-1	0.196	0.540	0.035	0.000	fail outside 0.196 > 0.05
-bonder-2	0.152	0.507	0.048	0.000	fail outside 0.152 > 0.05
-bonder-3	0.000	0.788	0.033	0.000	pass
-bonder-4	0.176	0.362	0.075	0.000	fail outside 0.176 > 0.05
+bonder-1	0.000	0.757	0.035	0.028	pass
+bonder-2	0.000	0.703	0.079	0.000	pass
+bonder-3	0.000	0.730	0.061	0.000	pass
+bonder-4	0.000	0.836	0.065	0.000	pass

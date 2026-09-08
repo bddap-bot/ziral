@@ -1,4 +1,4 @@
-second-bond-1	0.000	0.425	0.081	0.045	pass
-second-bond-2	0.000	0.574	0.036	0.072	pass
-second-bond-3	0.153	0.256	0.026	0.028	fail outside 0.153 > 0.05
-second-bond-4	0.032	0.269	0.098	0.028	pass
+second-bond-1	0.000	0.556	0.072	0.057	pass
+second-bond-2	0.000	0.617	0.063	0.040	pass
+second-bond-3	0.000	0.639	0.063	0.020	pass
+second-bond-4	0.139	0.470	0.050	0.514	fail outside 0.139 > 0.05
