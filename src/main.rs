@@ -22,7 +22,8 @@ use bevy::window::{CursorLeft, PrimaryWindow};
 use form::{Form, recipes};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
 use sim::{
-    Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, Machine, ORIGIN, Sim, Spin, Stall,
+    Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, Machine, ORIGIN, Short, Sim, Spin,
+    Stall,
 };
 
 const TICK_MS: f32 = 400.0;
@@ -240,8 +241,7 @@ fn turn(set: &mut Sim, spin: Spin) {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Back {
-    Nowhere,
-    Inventory(Machine),
+    Inventory,
     Ghost,
     Pick(Vec<Id>),
     Cell { cell: Hex, turns: usize },
@@ -290,6 +290,12 @@ enum Press {
     Marquee { from: Vec2 },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Refused {
+    at: Hex,
+    short: Vec<Short>,
+}
+
 #[derive(Resource)]
 struct World {
     sim: Sim,
@@ -304,6 +310,7 @@ struct World {
     clipboard: Option<Sim>,
     pointer: Option<Vec2>,
     hover: Option<Item>,
+    refused: Option<Refused>,
 }
 
 impl World {
@@ -321,12 +328,14 @@ impl World {
             clipboard: None,
             pointer: None,
             hover: None,
+            refused: None,
         }
     }
 
     fn lift_inventory(&mut self, item: Item) {
+        self.refused = None;
         if let (Item::Machine(machine), Some(1..)) = (item, self.sim.inventory.count(item)) {
-            self.lift(fresh(machine), Back::Inventory(machine));
+            self.lift(fresh(machine), Back::Inventory);
         }
     }
 
@@ -393,6 +402,7 @@ impl World {
     }
 
     fn focus_tape(&mut self, arm: usize) {
+        self.refused = None;
         if self.holding() {
             return;
         }
@@ -595,7 +605,7 @@ impl World {
 
     fn paste(&mut self) {
         if let Some(set) = self.clipboard.clone() {
-            self.lift(set, Back::Nowhere);
+            self.lift(set, Back::Inventory);
         }
     }
 
@@ -615,6 +625,7 @@ impl World {
     }
 
     fn press(&mut self, screen: Vec2, point: Vec2) {
+        self.refused = None;
         let cell = hex_at(point);
         if self.holding() {
             self.place(Some(cell));
@@ -717,9 +728,12 @@ impl World {
             self.pop(*set, back);
             return;
         };
-        if let Back::Inventory(item) = back {
-            let spent = self.sim.inventory.spend(Item::Machine(item));
-            assert!(spent, "a lift at zero never holds");
+        if back == Back::Inventory
+            && let Err(short) = self.sim.inventory.spend_all(&set.bill())
+        {
+            self.refused = Some(Refused { at, short });
+            self.pop(*set, back);
+            return;
         }
         let ids = match back {
             Back::Pick(ids) => {
@@ -733,7 +747,7 @@ impl World {
                 }
                 ids
             }
-            Back::Nowhere | Back::Inventory(_) | Back::Ghost | Back::Cell { .. } => {
+            Back::Inventory | Back::Ghost | Back::Cell { .. } => {
                 let arms = self.sim.arms.len()..self.sim.arms.len() + set.arms.len();
                 let glyphs = self.sim.place(&set, at).into_iter().map(Id::Glyph);
                 arms.map(Id::Arm).chain(glyphs).collect()
@@ -745,7 +759,7 @@ impl World {
 
     fn pop(&mut self, mut set: Sim, back: Back) {
         match back {
-            Back::Nowhere | Back::Inventory(_) | Back::Ghost => {}
+            Back::Inventory | Back::Ghost => {}
             Back::Pick(ids) => self.pick(ids),
             Back::Cell { cell, turns } => {
                 for _ in 0..turns {
@@ -767,6 +781,7 @@ impl World {
 
     fn key(&mut self, key: KeyCode, shift: bool) {
         use KeyCode::*;
+        self.refused = None;
         match key {
             Space => {
                 self.running = !self.running;
@@ -799,7 +814,7 @@ impl World {
             Some(Focus::Hold { back, .. }) => match (key, instr, &mut self.focus) {
                 (Escape, _, _) => self.place(None),
                 (KeyZ, _, _) => match back {
-                    Back::Nowhere | Back::Inventory(_) | Back::Ghost => self.focus = None,
+                    Back::Inventory | Back::Ghost => self.focus = None,
                     Back::Pick(ids) => self.delete(&ids),
                     Back::Cell { .. } => {}
                 },
@@ -823,7 +838,7 @@ impl World {
                     }
                     self.copy(&ids);
                     if key == KeyX {
-                        self.remove(&machines(&ids));
+                        self.delete(&machines(&ids));
                     }
                 }
                 KeyV => self.paste(),
@@ -960,6 +975,11 @@ impl Viewport {
             + Vec2::new(screen.x - self.size.x / 2.0, self.size.y / 2.0 - screen.y) * self.scale
     }
 
+    fn screen(&self, p: Vec2) -> Vec2 {
+        let d = (p - self.cam) / self.scale;
+        Vec2::new(self.size.x / 2.0 + d.x, self.size.y / 2.0 - d.y)
+    }
+
     fn shows(&self, p: Vec2) -> bool {
         (p - self.cam).abs().cmplt(self.half()).all()
     }
@@ -973,7 +993,7 @@ fn app(world: World) -> App {
         .add_systems(
             Update,
             (
-                run_ticks, view, hover, edit, tapes, tally, board, draw, card, manual,
+                run_ticks, view, hover, edit, tapes, tally, refusal, board, draw, card, manual,
             )
                 .chain(),
         );
@@ -1078,6 +1098,82 @@ fn row(gap: f32) -> Node {
         column_gap: Val::Px(gap),
         ..default()
     }
+}
+
+fn text(s: String) -> impl Bundle {
+    (
+        Text::new(s),
+        TextColor(IVORY),
+        TextFont::from_font_size(15.0),
+    )
+}
+
+fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
+    let side = match item {
+        Item::Machine(_) => PALETTE_PX,
+        Item::Step | Item::Token(_) => SYMBOL_PX,
+    };
+    let square = Node {
+        width: Val::Px(side),
+        height: Val::Px(side),
+        justify_content: JustifyContent::Center,
+        align_items: AlignItems::Center,
+        ..default()
+    };
+    match item {
+        Item::Machine(machine) => {
+            let skin = look::machine(machine).skin;
+            entry.spawn((ImageNode::new(kiln.image(skin)), square));
+        }
+        Item::Step => {
+            entry.spawn(square).with_child(mark(0, STEP_PX, true));
+        }
+        Item::Token(instr) => {
+            let skin = key_of(instr).symbol;
+            entry.spawn((ImageNode::new(kiln.image(skin)), square));
+        }
+    }
+}
+
+#[derive(Component)]
+struct Refusal {
+    shown: Option<Refused>,
+}
+
+fn refusal(
+    mut commands: Commands,
+    kiln: Res<Kiln>,
+    world: Res<World>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
+    line: Single<(Entity, &mut Refusal, &mut Node, &mut Visibility)>,
+) {
+    let (entity, mut line, mut node, mut vis) = line.into_inner();
+    let (transform, projection) = camera.into_inner();
+    let Some(viewport) = Viewport::of(&window, transform, projection) else {
+        return;
+    };
+    let Some(refused) = &world.refused else {
+        *vis = Visibility::Hidden;
+        return;
+    };
+    *vis = Visibility::Inherited;
+    let at = viewport.screen(px(refused.at)) + Vec2::splat(HEX / viewport.scale);
+    node.left = Val::Px(at.x);
+    node.top = Val::Px(at.y);
+    if line.shown.as_ref() == Some(refused) {
+        return;
+    }
+    line.shown = Some(refused.clone());
+    commands
+        .entity(entity)
+        .despawn_children()
+        .with_children(|row| {
+            for short in &refused.short {
+                picture(row, &kiln, short.item);
+                row.spawn(text(format!("{}/{}", short.have, short.need)));
+            }
+        });
 }
 
 fn symbol(kiln: &Kiln, skin: Skin, lit: bool) -> impl Bundle {
@@ -1312,30 +1408,7 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                                 }),
                             ))
                             .with_children(|entry| {
-                                let side = match item {
-                                    Item::Machine(_) => PALETTE_PX,
-                                    Item::Step | Item::Token(_) => SYMBOL_PX,
-                                };
-                                let square = Node {
-                                    width: Val::Px(side),
-                                    height: Val::Px(side),
-                                    justify_content: JustifyContent::Center,
-                                    align_items: AlignItems::Center,
-                                    ..default()
-                                };
-                                match item {
-                                    Item::Machine(machine) => {
-                                        let skin = look::machine(machine).skin;
-                                        entry.spawn((ImageNode::new(kiln.image(skin)), square));
-                                    }
-                                    Item::Step => {
-                                        entry.spawn(square).with_child(mark(0, STEP_PX, true));
-                                    }
-                                    Item::Token(instr) => {
-                                        let skin = key_of(instr).symbol;
-                                        entry.spawn((ImageNode::new(kiln.image(skin)), square));
-                                    }
-                                }
+                                picture(entry, &kiln, item);
                                 entry.spawn((
                                     Tally { item, shown: None },
                                     Node {
@@ -1351,6 +1424,16 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                     });
             }
         });
+    commands.spawn((
+        Refusal { shown: None },
+        Node {
+            position_type: PositionType::Absolute,
+            align_items: AlignItems::Center,
+            ..row(4.0)
+        },
+        Visibility::Hidden,
+        GlobalZIndex(1),
+    ));
     commands
         .spawn(Node {
             position_type: PositionType::Absolute,
@@ -1544,11 +1627,7 @@ fn tapes(
             .despawn_children()
             .with_children(|strip| {
                 let stalled = if line.stalled { "!" } else { " " };
-                strip.spawn((
-                    Text::new(format!("{arm:<3}{stalled}")),
-                    TextColor(IVORY),
-                    TextFont::from_font_size(15.0),
-                ));
+                strip.spawn(text(format!("{arm:<3}{stalled}")));
                 for (k, instr) in line.tape.iter().enumerate() {
                     if line.cursor == Some(k) {
                         strip.spawn(cursor());
@@ -2407,7 +2486,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 33] = [
+    pub const SCENES: [&str; 34] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -2433,6 +2512,7 @@ mod shot {
         "rotation",
         "delete",
         "overlap",
+        "refuse",
         "pivot",
         "twohands",
         "heldeat",
@@ -2768,7 +2848,7 @@ mod shot {
                 }
             }
             "hold" => {
-                world.lift(fresh(Machine::Glyph(GlyphKind::Bonder)), Back::Nowhere);
+                world.lift(fresh(Machine::Glyph(GlyphKind::Bonder)), Back::Inventory);
                 keys = vec![(KeyD, false); 2];
             }
             "select" => {
@@ -2896,6 +2976,28 @@ mod shot {
                 world.sim = sim;
                 script.extend(carry(30, &[(-3, 0), (-2, 0), (-1, 0), (0, 0)], None));
                 script.extend(carry(96, &[(-3, 0), (-2, 0), (-1, 0)], None));
+            }
+            "refuse" => {
+                let mut sim = Sim::empty();
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(-2, 0), 0)));
+                sim.arms
+                    .push(Arm::new(Hex::new(1, 0), 0, vec![Instr::Grab]));
+                sim.inventory.add(Item::Machine(Machine::Arm));
+                sim.inventory.add(Item::Token(Instr::Grab));
+                world.sim = sim;
+                script.extend(tap(20, Space));
+                script.push((30, Act::Press(Hex::new(-5, -3))));
+                script.push((36, Act::Drag(Hex::new(0, 1))));
+                script.push((42, Act::Drag(Hex::new(4, 3))));
+                script.push((48, Act::Release(Hex::new(4, 3))));
+                script.extend(tap(60, KeyC));
+                script.extend(tap(72, KeyV));
+                script.push((96, Act::Press(Hex::new(2, -4))));
+                script.push((150, Act::Press(Hex::new(-2, 0))));
+                script.extend(tap(168, KeyZ));
+                script.extend(tap(192, KeyV));
+                script.push((216, Act::Press(Hex::new(2, -4))));
             }
             "pivot" => {
                 let mut sim = Sim::empty();
@@ -3819,13 +3921,17 @@ mod tests {
 
     fn cluster() -> World {
         let source = Glyph::new(GlyphKind::Source, Hex::new(0, 3), 0);
-        lone(
+        let mut w = lone(
             vec![bonder(ORIGIN, 0), source],
             vec![
                 Arm::new(Hex::new(3, 0), 3, vec![Instr::Grab, Instr::Rot(Spin::Cw)]),
                 Arm::new(Hex::new(-3, 0), 0, vec![]),
             ],
-        )
+        );
+        stock_consumables(&mut w);
+        stocked(&mut w, Machine::Arm, sim::DEFAULT_CAP);
+        stocked(&mut w, Machine::Glyph(GlyphKind::Bonder), sim::DEFAULT_CAP);
+        w
     }
 
     const CORNER_A: Hex = Hex::new(-1, -1);
@@ -3950,7 +4056,7 @@ mod tests {
         w.key(KeyCode::KeyV, false);
         assert!(matches!(
             &w.focus,
-            Some(Focus::Hold { set, back: Back::Nowhere }) if set.arms.len() == 1 && set.glyphs.len() == 1
+            Some(Focus::Hold { set, back: Back::Inventory }) if set.arms.len() == 1 && set.glyphs.len() == 1
         ));
         let to = Hex::new(5, 5);
         w.press(px(to), px(to));
@@ -4180,7 +4286,7 @@ mod tests {
         w.key(KeyCode::KeyQ, false);
         w.key(KeyCode::KeyE, false);
         assert_eq!(w.sim.glyphs[0].unwrap().dir, 2);
-        w.lift(fresh(Machine::Arm), Back::Nowhere);
+        w.lift(fresh(Machine::Arm), Back::Inventory);
         w.key(KeyCode::KeyQ, false);
         w.key(KeyCode::KeyE, false);
         assert_eq!(held_dir(&w), 0);
@@ -4197,7 +4303,7 @@ mod tests {
         w.key(KeyCode::KeyD, false);
         assert_eq!(w.sim.glyphs[0].unwrap().dir, 1);
         assert_eq!(w.prev, w.sim);
-        w.lift(fresh(Machine::Arm), Back::Nowhere);
+        w.lift(fresh(Machine::Arm), Back::Inventory);
         w.key(KeyCode::KeyD, false);
         assert_eq!(held_dir(&w), 1);
         w.key(KeyCode::KeyA, false);
@@ -4248,7 +4354,8 @@ mod tests {
     #[test]
     fn a_palette_placement_lands_its_anchor_on_the_cursor_cell() {
         let mut w = lone(vec![], vec![]);
-        w.lift(fresh(Machine::Arm), Back::Nowhere);
+        stocked(&mut w, Machine::Arm, 1);
+        w.lift(fresh(Machine::Arm), Back::Inventory);
         let to = Hex::new(-2, 3);
         w.release(Some(to));
         assert_eq!(w.sim.arms[0].pivot, to);
@@ -4378,6 +4485,7 @@ mod tests {
     #[test]
     fn an_arm_edit_at_n_is_refused_and_ghost0_is_unchanged() {
         let mut w = paused(4);
+        stocked(&mut w, Machine::Arm, 1);
         let ghost0 = w.sim.clone();
         let ghost4 = w.shown().clone();
         let pivot = ghost4.arms[0].pivot;
@@ -4389,11 +4497,12 @@ mod tests {
         w.key(KeyCode::KeyX, false);
         assert!(w.clipboard.is_none());
         w.key(KeyCode::KeyZ, false);
-        w.lift(fresh(Machine::Arm), Back::Nowhere);
+        w.lift(fresh(Machine::Arm), Back::Inventory);
         w.place(Some(Hex::new(5, 5)));
         assert_eq!(w.sim, ghost0);
         assert_eq!(*w.shown(), ghost4);
         assert_eq!(w.focus, None);
+        assert_eq!(w.refused, None);
     }
 
     #[test]
@@ -4401,7 +4510,8 @@ mod tests {
         let mut w = paused(2);
         let ghost0 = w.sim.clone();
         let at = Hex::new(5, 5);
-        w.lift(fresh(Machine::Glyph(GlyphKind::Bonder)), Back::Nowhere);
+        stocked(&mut w, Machine::Glyph(GlyphKind::Bonder), 1);
+        w.lift(fresh(Machine::Glyph(GlyphKind::Bonder)), Back::Inventory);
         w.place(Some(at));
         let placed = Some(bonder(at, 0));
         assert_eq!(w.sim.glyphs.last().copied(), Some(placed));
@@ -4714,12 +4824,15 @@ mod tests {
         );
         assert_eq!(w.sim.inventory.count(item), Some(0));
         w.clipboard = Some(fresh(Machine::Glyph(GlyphKind::Bonder)));
+        w.sim.inventory.add(item);
         w.paste();
         w.release(Some(Hex::new(4, 0)));
         assert_eq!(w.sim.glyphs.len(), 2);
+        assert_eq!(w.sim.inventory.count(item), Some(1));
         w.paste();
         w.release(Some(Hex::new(5, 0)));
         assert_eq!(w.sim.glyphs[2], Some(bonder(Hex::new(5, 0), 0)));
+        assert_eq!(w.sim.inventory.count(item), Some(0));
     }
 
     #[test]
@@ -4727,7 +4840,8 @@ mod tests {
         let other = bonder(Hex::new(3, 0), 0);
         let mut w = lone(vec![other], vec![]);
         w.running = false;
-        w.lift(fresh(Machine::Arm), Back::Nowhere);
+        stocked(&mut w, Machine::Arm, 1);
+        w.lift(fresh(Machine::Arm), Back::Inventory);
         w.release(Some(Hex::new(2, 0)));
         assert_eq!(w.sim.arms[0].hand(), other.at);
     }
@@ -4784,7 +4898,7 @@ mod tests {
     }
 
     #[test]
-    fn a_machine_lifted_from_the_inventory_is_spent_at_the_drop_and_returned_by_z_not_by_x() {
+    fn a_machine_lifted_from_the_inventory_is_spent_at_the_drop_and_returned_by_z_and_by_x() {
         let bonder = Item::from(Machine::Glyph(GlyphKind::Bonder));
         let mut w = lone(vec![], vec![]);
         w.lift_inventory(bonder);
@@ -4794,9 +4908,9 @@ mod tests {
         assert!(matches!(
             w.focus,
             Some(Focus::Hold {
-                back: Back::Inventory(item),
+                back: Back::Inventory,
                 ..
-            }) if Item::from(item) == bonder
+            })
         ));
         assert_eq!(count(&w, bonder), 1);
         w.key(KeyCode::Escape, false);
@@ -4813,7 +4927,7 @@ mod tests {
         stocked(&mut w, bonder, sim::DEFAULT_CAP);
         w.key(KeyCode::KeyX, false);
         assert_eq!(w.sim.glyphs[0], None);
-        assert_eq!(count(&w, bonder), sim::DEFAULT_CAP);
+        assert_eq!(count(&w, bonder), sim::DEFAULT_CAP + 1);
         w.key(KeyCode::KeyV, false);
         w.release(Some(to));
         assert_eq!(count(&w, bonder), sim::DEFAULT_CAP);
@@ -5048,7 +5162,7 @@ mod tests {
         pair(&mut w, ORIGIN, BondKind::Single);
         lift_at(&mut w, ORIGIN);
         let hold = w.focus.clone();
-        w.lift(fresh(Machine::Arm), Back::Nowhere);
+        w.lift(fresh(Machine::Arm), Back::Inventory);
         assert_eq!(w.focus, hold);
         w.focus_tape(0);
         assert_eq!(w.focus, hold);
@@ -5269,7 +5383,7 @@ mod tests {
     }
 
     #[test]
-    fn deleting_an_arm_returns_every_token_on_its_tape_and_a_cut_returns_none() {
+    fn deleting_or_cutting_an_arm_returns_the_arm_and_every_token_on_its_tape() {
         let tape = vec![
             Instr::Grab,
             Instr::Rot(Spin::Cw),
@@ -5296,7 +5410,8 @@ mod tests {
         w.pick(vec![Id::Arm(0)]);
         w.key(KeyCode::KeyX, false);
         assert!(w.sim.arms.is_empty());
-        assert_eq!(counts(&w), (0, 0, 0, 0, 0));
+        assert_eq!(counts(&w), (1, 2, 1, 1, 0));
+        assert!(w.clipboard.is_some());
     }
 
     #[test]
@@ -5336,5 +5451,162 @@ mod tests {
         assert_eq!(w.sim.arms[0].tape, vec![]);
         assert_eq!(count(&w, Item::Token(Instr::Grab)), 1);
         assert_eq!(w.ghosts(), 3);
+    }
+
+    const BONDER: Item = Item::Machine(Machine::Glyph(GlyphKind::Bonder));
+    const ARM: Item = Item::Machine(Machine::Arm);
+    const GRAB: Item = Item::Token(Instr::Grab);
+
+    const SECOND: Item = Item::Machine(Machine::Glyph(GlyphKind::SecondBond));
+    const SECOND_AT: Hex = Hex::new(0, -3);
+
+    fn copied() -> World {
+        let arm = Arm::new(Hex::new(3, 0), 0, vec![Instr::Grab, Instr::Grab]);
+        let second = Glyph::new(GlyphKind::SecondBond, SECOND_AT, 0);
+        let mut w = lone(vec![bonder(ORIGIN, 0), second], vec![arm]);
+        w.running = false;
+        w.pick(vec![Id::Glyph(0), Id::Glyph(1), Id::Arm(0)]);
+        w.key(KeyCode::KeyC, false);
+        w
+    }
+
+    fn counts(w: &World) -> (u32, u32, u32, u32) {
+        (
+            count(w, BONDER),
+            count(w, SECOND),
+            count(w, ARM),
+            count(w, GRAB),
+        )
+    }
+
+    fn pasted(w: &mut World, at: Hex) {
+        w.key(KeyCode::KeyV, false);
+        w.press(px(at), px(at));
+    }
+
+    fn short(item: Item, have: u32, need: u32) -> Short {
+        Short { item, have, need }
+    }
+
+    #[test]
+    fn a_paste_pays_its_whole_bill_and_a_short_one_is_refused_whole_naming_the_short_items() {
+        let at = Hex::new(0, 6);
+        let mut w = copied();
+        for (item, n) in [(BONDER, 1), (SECOND, 1), (ARM, 1), (GRAB, 1)] {
+            stocked(&mut w, item, n);
+        }
+        let before = w.sim.clone();
+        pasted(&mut w, at);
+        assert_eq!(w.sim, before);
+        assert_eq!(w.focus, None);
+        let refused = |short: Vec<Short>| Some(Refused { at, short });
+        assert_eq!(w.refused, refused(vec![short(GRAB, 1, 2)]));
+        assert!(w.sim.inventory.spend(BONDER));
+        pasted(&mut w, at);
+        assert_eq!(
+            w.sim.inventory,
+            after_spending(&before, BONDER, 1).inventory
+        );
+        assert_eq!(w.sim.glyphs, before.glyphs);
+        assert_eq!(w.sim.arms, before.arms);
+        assert_eq!(
+            w.refused,
+            refused(vec![short(BONDER, 0, 1), short(GRAB, 1, 2)])
+        );
+        stocked(&mut w, BONDER, 1);
+        stocked(&mut w, GRAB, 1);
+        pasted(&mut w, at);
+        assert_eq!(w.refused, None);
+        assert_eq!(w.sim.arms.len(), 2);
+        assert_eq!(w.sim.arms[1].tape, vec![Instr::Grab, Instr::Grab]);
+        let second = |at: Hex| Some(Glyph::new(GlyphKind::SecondBond, at, 0));
+        assert_eq!(w.sim.glyphs[2], Some(bonder(at, 0)));
+        assert_eq!(w.sim.glyphs[3], second(at.add(SECOND_AT)));
+        assert_eq!(counts(&w), (0, 0, 0, 0));
+        let pasted = [Id::Arm(1), Id::Glyph(2), Id::Glyph(3)];
+        assert_eq!(w.focus, picked(&pasted));
+        let over = at.add(DIRS[0]);
+        drag(&mut w, at, over);
+        assert_eq!(w.sim.glyphs[2], Some(bonder(over, 0)));
+        assert_eq!(counts(&w), (0, 0, 0, 0));
+        assert_eq!(w.refused, None);
+        assert_eq!(w.focus, picked(&pasted));
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(counts(&w), (1, 1, 1, 2));
+        assert_eq!(w.sim.arms.len(), 1);
+        assert_eq!(
+            w.sim.glyphs,
+            vec![Some(bonder(ORIGIN, 0)), second(SECOND_AT), None, None]
+        );
+    }
+
+    #[test]
+    fn the_refusal_line_goes_on_the_next_press_and_on_the_next_key() {
+        let at = Hex::new(0, 6);
+        let mut w = copied();
+        let before = w.sim.clone();
+        let line = Some(Refused {
+            at,
+            short: vec![
+                short(BONDER, 0, 1),
+                short(SECOND, 0, 1),
+                short(ARM, 0, 1),
+                short(GRAB, 0, 2),
+            ],
+        });
+        pasted(&mut w, at);
+        assert_eq!(w.sim, before);
+        assert_eq!(w.focus, None);
+        assert_eq!(w.refused, line);
+        let ground = Hex::new(6, 6);
+        w.press(px(ground), px(ground));
+        assert_eq!(w.refused, None);
+        w.release(Some(ground));
+        pasted(&mut w, at);
+        assert_eq!(w.refused, line);
+        w.key(KeyCode::Escape, false);
+        assert_eq!(w.refused, None);
+    }
+
+    #[test]
+    fn a_viewport_maps_screen_to_world_and_back() {
+        let v = Viewport {
+            cam: Vec2::new(30.0, -70.0),
+            size: Vec2::new(1280.0, 720.0),
+            scale: 0.5,
+        };
+        for p in [Vec2::ZERO, Vec2::new(1280.0, 720.0), Vec2::new(17.0, 400.0)] {
+            assert_eq!(v.screen(v.world(p)), p);
+        }
+        assert_eq!(v.screen(v.cam), Vec2::new(640.0, 360.0));
+    }
+
+    #[test]
+    fn the_refuse_scene_refuses_its_first_paste_and_pays_for_its_second_after_a_delete() {
+        let w = played("refuse", 120);
+        assert_eq!(w.sim.glyphs, vec![Some(bonder(Hex::new(-2, 0), 0))]);
+        assert_eq!(w.sim.arms.len(), 1);
+        assert_eq!((count(&w, ARM), count(&w, GRAB)), (1, 1));
+        assert_eq!(
+            w.refused,
+            Some(Refused {
+                at: Hex::new(2, -4),
+                short: vec![short(BONDER, 0, 1)],
+            })
+        );
+        let w = played("refuse", 160);
+        assert_eq!(w.refused, None);
+        let w = played("refuse", 200);
+        assert_eq!(w.sim.glyphs, vec![None]);
+        assert_eq!(count(&w, BONDER), 1);
+        let w = played("refuse", 240);
+        assert_eq!(w.refused, None);
+        assert_eq!(w.sim.glyphs, vec![Some(bonder(Hex::new(-1, -4), 0))]);
+        assert_eq!(w.sim.arms.len(), 2);
+        assert_eq!(w.sim.arms[1].tape, vec![Instr::Grab]);
+        assert_eq!(
+            (count(&w, BONDER), count(&w, ARM), count(&w, GRAB)),
+            (0, 0, 0)
+        );
     }
 }

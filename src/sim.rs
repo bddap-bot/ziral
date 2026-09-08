@@ -385,6 +385,13 @@ pub const DEFAULT_CAP: u32 = 16;
 pub const MAX_CAP: u32 = 256;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Short {
+    pub item: Item,
+    pub have: u32,
+    pub need: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Inventory {
     count: [u32; RECIPES.len()],
     cap: [u32; RECIPES.len()],
@@ -416,11 +423,34 @@ impl Inventory {
 
     #[must_use]
     pub fn spend(&mut self, item: Item) -> bool {
-        let Some(i) = item.index().filter(|i| self.count[*i] > 0) else {
-            return false;
-        };
-        self.count[i] -= 1;
-        true
+        self.spend_all(&[item]).is_ok()
+    }
+
+    pub fn spend_all(&mut self, bill: &[Item]) -> Result<(), Vec<Short>> {
+        let mut need = [0; RECIPES.len()];
+        for item in bill {
+            let i = item
+                .index()
+                .expect("a source is world-placed and never held");
+            need[i] += 1;
+        }
+        let short: Vec<Short> = recipes()
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| need[*i] > self.count[*i])
+            .map(|(i, (item, _))| Short {
+                item: *item,
+                have: self.count[i],
+                need: need[i],
+            })
+            .collect();
+        if !short.is_empty() {
+            return Err(short);
+        }
+        for (count, need) in self.count.iter_mut().zip(need) {
+            *count -= need;
+        }
+        Ok(())
     }
 
     pub fn set_cap(&mut self, item: Item, notches: i32) {
@@ -725,6 +755,19 @@ impl Sim {
             self.atoms[id].as_mut().unwrap().pos = at;
         }
         Ok(())
+    }
+
+    pub fn bill(&self) -> Vec<Item> {
+        let glyphs = self
+            .glyphs
+            .iter()
+            .flatten()
+            .map(|g| Item::Machine(Machine::Glyph(g.kind)));
+        let arms = self.arms.iter().flat_map(|a| {
+            std::iter::once(Item::Machine(Machine::Arm))
+                .chain(a.tape.iter().map(|instr| Item::Token(*instr)))
+        });
+        glyphs.chain(arms).collect()
     }
 
     pub fn place(&mut self, other: &Sim, at: Hex) -> Vec<usize> {
