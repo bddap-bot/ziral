@@ -7,7 +7,7 @@ shot=$(mktemp -d)
 trap 'rm -rf "$shot" "$out.part"' EXIT
 cd "$here/.."
 cards=()
-for name in bonder second-bond arm cleanup output-1 output-2 output-3; do
+for name in bonder second-bond arm output-1 output-2 output-3; do
   rect=$(cargo run -- --shot "$shot/$name.png" "card:$name" 0 | awk '$1 == "card" { print $4 "x" $5 "+" $2 "+" $3 }' | head -1)
   [ -n "$rect" ] || { echo "$name: no card rect printed" >&2; exit 1; }
   magick "$shot/$name.png" -crop "$rect" +repage "$shot/card-$name.png"

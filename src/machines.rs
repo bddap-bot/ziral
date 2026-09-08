@@ -2060,7 +2060,7 @@ mod tests {
                 "{line}"
             );
         }
-        assert_eq!(all.last().map(String::as_str), Some("8 placeholder"));
+        assert_eq!(all.last().map(String::as_str), Some("7 placeholder"));
         m.machine.get_mut("arm").expect("arm").direction = Direction::Given("an arm".into());
         let one_given = lines(&m);
         assert!(
@@ -2075,7 +2075,7 @@ mod tests {
                 .count(),
             names.len() - 1
         );
-        assert_eq!(one_given.last().map(String::as_str), Some("7 placeholder"));
+        assert_eq!(one_given.last().map(String::as_str), Some("6 placeholder"));
     }
 
     #[test]
@@ -2084,7 +2084,7 @@ mod tests {
         let art = studio(
             "recipe",
             &["right", "top", "left", "bottom"],
-            &["cleanup", "source"],
+            &["bonder", "source"],
         );
         let jobs: std::sync::Mutex<Vec<(String, Vec<PathBuf>, String)>> =
             std::sync::Mutex::new(Vec::new());
@@ -2100,12 +2100,12 @@ mod tests {
                 .push((stem, job.images.clone(), job.prompt.clone()));
             fake(job)
         };
-        let names = ["cleanup".to_string(), "source".to_string()];
+        let names = ["bonder".to_string(), "source".to_string()];
         assert!(landed(&remake(&art, &names, &painter)));
         let recorded = jobs.lock().unwrap();
         let style = art.read().style;
         for (name, item) in [
-            ("cleanup", Machine::Glyph(crate::sim::GlyphKind::Cleanup)),
+            ("bonder", Machine::Glyph(crate::sim::GlyphKind::Bonder)),
             ("source", Machine::Glyph(crate::sim::GlyphKind::Source)),
         ] {
             let dir = art.machine(name);
@@ -2143,7 +2143,7 @@ mod tests {
                 "{name}"
             );
         }
-        let recipe_png = art.machine("cleanup").join("recipe.png");
+        let recipe_png = art.machine("bonder").join("recipe.png");
         let before = read(&recipe_png);
         let recipe = open(&recipe_png);
         let canvas = canvas(Machine::Glyph(crate::sim::GlyphKind::Output(
@@ -2186,16 +2186,16 @@ mod tests {
         let art = studio(
             "exit",
             &["right", "top", "left", "bottom"],
-            &["cleanup", "source"],
+            &["bonder", "source"],
         );
         let painter = |job: &Paint| {
-            if job.output.to_string_lossy().contains("cleanup") {
+            if job.output.to_string_lossy().contains("bonder") {
                 Err("boom".to_string())
             } else {
                 fake(job)
             }
         };
-        let names = ["cleanup".to_string(), "source".to_string()];
+        let names = ["bonder".to_string(), "source".to_string()];
         let results = remake(&art, &names, &painter);
         assert!(!landed(&results));
         let by_name = |results: &[(String, Result<bool, String>)], name: &str| {
@@ -2206,20 +2206,20 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} in {results:?}"))
         };
         assert_eq!(by_name(&results, "source"), Ok(true));
-        let reason = by_name(&results, "cleanup").expect_err("cleanup did not land");
+        let reason = by_name(&results, "bonder").expect_err("bonder did not land");
         assert!(
             reason.contains("no candidate passes")
                 && reason.contains("2 of 2 paints failed")
-                && reason.contains("cleanup-1: boom"),
+                && reason.contains("bonder-1: boom"),
             "{reason}"
         );
-        assert_eq!(art.read().machine["cleanup"].kept, None);
+        assert_eq!(art.read().machine["bonder"].kept, None);
         assert!(art.read().machine["source"].kept.is_some());
         let results = remake(&art, &names, &fake);
         assert!(landed(&results), "{results:?}");
         assert_eq!(by_name(&results, "source"), Ok(false));
-        assert_eq!(by_name(&results, "cleanup"), Ok(true));
-        assert!(art.read().machine["cleanup"].kept.is_some());
+        assert_eq!(by_name(&results, "bonder"), Ok(true));
+        assert!(art.read().machine["bonder"].kept.is_some());
         assert!(landed(&remake(&art, &names[1..], &fake)));
         assert!(landed(&[]));
     }

@@ -1,4 +1,0 @@
-cleanup-1	0.132	0.677	0.140	0.000	fail outside 0.132 > 0.05
-cleanup-2	0.000	0.697	0.066	0.000	pass
-cleanup-3	0.132	0.650	0.103	0.000	fail outside 0.132 > 0.05
-cleanup-4	0.132	0.768	0.115	0.000	fail outside 0.132 > 0.05

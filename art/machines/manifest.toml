@@ -30,12 +30,6 @@ kept = 4
 painted = "26f1eef931eb51fd"
 relit = "8bb90d08a7f6055c"
 
-[machine.cleanup]
-placeholder = "The machine is a one-cell cleanup: a deep soot-dark ceramic disposal well with one empty seat over the void, a darkened-brass safety rim, a worn rubber iris, a covered ash chute, a small quencher valve and restrained scorch residue, promising containment rather than spectacle; no pure black."
-kept = 2
-painted = "ef775c058edda825"
-relit = "eb39d95a9d86c327"
-
 [machine.output-1]
 placeholder = "The machine is a seven-cell output station, the first tier: seven equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, one at the centre and six around it, each cup exactly on its mark and as far apart as the marks, joined only by slender paired brass delivery rails running from the centre cup to each outer cup, worn rubber bumpers at the rim of the cluster and one small covered exit chute on the centre cup's housing, everything lying flat and no higher than the cup housings, nothing bulging out beyond the six outer cups, looking receptive rather than transformative."
 kept = 2

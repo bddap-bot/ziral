@@ -345,7 +345,6 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
         GlyphKind::Output(Tier::One) => (Glaze::Ivory, machine!("output-1")),
         GlyphKind::Output(Tier::Two) => (Glaze::Ivory, machine!("output-2")),
         GlyphKind::Output(Tier::Three) => (Glaze::Ivory, machine!("output-3")),
-        GlyphKind::Cleanup => (Glaze::Brass, machine!("cleanup")),
     };
     Look {
         glaze,

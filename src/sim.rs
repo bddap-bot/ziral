@@ -202,18 +202,16 @@ pub enum GlyphKind {
     Bonder,
     SecondBond,
     Output(Tier),
-    Cleanup,
 }
 
 impl GlyphKind {
-    pub const ALL: [GlyphKind; 7] = [
+    pub const ALL: [GlyphKind; 6] = [
         GlyphKind::Source,
         GlyphKind::Bonder,
         GlyphKind::SecondBond,
         GlyphKind::Output(Tier::One),
         GlyphKind::Output(Tier::Two),
         GlyphKind::Output(Tier::Three),
-        GlyphKind::Cleanup,
     ];
 }
 
@@ -278,7 +276,6 @@ pub struct Rule {
     pub slots: &'static [Slot],
     pub before: &'static [(usize, usize, Option<BondKind>)],
     pub after: &'static [(usize, usize, BondKind)],
-    pub spent: bool,
 }
 
 const fn base(at: Hex) -> Slot {
@@ -307,7 +304,6 @@ const SECOND_BOND: [Slot; 3] = [
 ];
 const BONDER: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
-const CLEANUP: [Slot; 1] = [consumed(ORIGIN)];
 
 const fn hexagon<const N: usize>(radius: i32) -> [Slot; N] {
     let mut cells = [consumed(ORIGIN); N];
@@ -338,7 +334,6 @@ const fn plain(slots: &'static [Slot]) -> Rule {
         slots,
         before: &[],
         after: &[],
-        spent: false,
     }
 }
 
@@ -359,10 +354,6 @@ impl GlyphKind {
             GlyphKind::Output(Tier::One) => plain(&OUTPUT_1),
             GlyphKind::Output(Tier::Two) => plain(&OUTPUT_2),
             GlyphKind::Output(Tier::Three) => plain(&OUTPUT_3),
-            GlyphKind::Cleanup => Rule {
-                spent: true,
-                ..plain(&CLEANUP)
-            },
         }
     }
 }
@@ -573,11 +564,7 @@ impl Sim {
             let Some(g) = self.glyphs[i] else { continue };
             match g.kind {
                 GlyphKind::Output(tier) => self.craft(g.at, tier),
-                _ => {
-                    if self.fire(g) && g.kind.rule().spent {
-                        self.glyphs[i] = None;
-                    }
-                }
+                _ => self.fire(g),
             }
         }
         self.tick += 1;
@@ -643,10 +630,10 @@ impl Sim {
         Some(ids)
     }
 
-    fn fire(&mut self, g: Glyph) -> bool {
+    fn fire(&mut self, g: Glyph) {
         let rule = g.kind.rule();
         let Some(ids) = self.matched(g) else {
-            return false;
+            return;
         };
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
@@ -663,7 +650,6 @@ impl Sim {
             .map(|(_, id)| *id)
             .collect();
         self.consume(&consumed);
-        true
     }
 
     fn act(&mut self, i: usize, instr: Instr) -> bool {
@@ -867,6 +853,14 @@ pub fn preloaded() -> Sim {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn source(at: Hex) -> Glyph {
+        Glyph {
+            kind: GlyphKind::Source,
+            at,
+            dir: 0,
+        }
+    }
 
     fn bench(tape: Vec<Instr>, glyphs: Vec<Glyph>) -> Sim {
         let mut sim = Sim::empty();
@@ -1728,52 +1722,6 @@ mod tests {
         assert!(sim.atoms.len() < 60);
     }
 
-    fn cleanup(at: Hex) -> Glyph {
-        Glyph {
-            kind: GlyphKind::Cleanup,
-            at,
-            dir: 0,
-        }
-    }
-
-    #[test]
-    fn a_cleanup_eats_the_middle_of_a_chain_and_leaves_the_ends_where_they_lay_unbonded() {
-        let mut sim = Sim::empty();
-        sim.glyphs.push(Some(cleanup(ORIGIN)));
-        let left = put(&mut sim, -1, 0);
-        let mid = put(&mut sim, 0, 0);
-        let right = put(&mut sim, 1, 0);
-        bond(&mut sim, left, mid, BondKind::Single);
-        bond(&mut sim, mid, right, BondKind::Double);
-        sim.step();
-        assert!(sim.bonds.is_empty());
-        assert_eq!(sim.atoms[mid], None);
-        assert_eq!(sim.atoms[left].unwrap().pos, Hex::new(-1, 0));
-        assert_eq!(sim.atoms[right].unwrap().pos, Hex::new(1, 0));
-    }
-
-    #[test]
-    fn a_cleanup_is_spent_by_its_first_meal_and_a_later_atom_on_its_cell_survives() {
-        let mut sim = Sim::empty();
-        let source = Some(Glyph {
-            kind: GlyphKind::Source,
-            at: Hex::new(-3, 0),
-            dir: 0,
-        });
-        sim.glyphs.push(source);
-        sim.glyphs.push(Some(cleanup(ORIGIN)));
-
-        put(&mut sim, 0, 0);
-        sim.step();
-        assert_eq!(sim.glyphs, vec![source, None]);
-        let later = put(&mut sim, 0, 0);
-        sim.step();
-        assert_eq!(sim.glyphs, vec![source, None]);
-
-        assert_eq!(sim.atoms[later].unwrap().pos, ORIGIN);
-        assert!(sim.atom_at(Hex::new(-3, 0)).is_some());
-    }
-
     #[test]
     fn a_move_translates_the_pose_and_the_six_moves_compose_to_a_ring() {
         let start = (Hex::new(2, -1), 3);
@@ -1868,7 +1816,7 @@ mod tests {
 
     #[test]
     fn a_base_stalls_on_a_glyph_another_base_or_an_atom_and_walks_onto_a_free_cell() {
-        let mut sim = bench(Vec::new(), vec![cleanup(Hex::new(-1, 0))]);
+        let mut sim = bench(Vec::new(), vec![source(Hex::new(-1, 0))]);
         assert_eq!(base_move_onto(&mut sim), Some(Stall::Illegal));
         assert_eq!(sim.arms[0].pivot, ORIGIN);
 
@@ -1885,7 +1833,7 @@ mod tests {
         put(&mut sim, -1, 0);
         assert_eq!(base_move_onto(&mut sim), Some(Stall::Illegal));
 
-        let mut sim = bench(vec![Instr::Move(2)], vec![cleanup(Hex::new(1, -1))]);
+        let mut sim = bench(vec![Instr::Move(2)], vec![source(Hex::new(1, -1))]);
         sim.arms.push(Arm::new(Hex::new(-1, -1), 0, Vec::new()));
         put(&mut sim, 0, -2);
         sim.step();

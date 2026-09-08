@@ -49,7 +49,3 @@ The first tier at its heart, ringed by twelve more cups tied on by the same rail
 ## Output, third tier
 
 The second tier at its heart, ringed by eighteen more cups and a second brass ring: thirty-seven cells, radius three.
-
-## Cleanup
-
-A one-cell soot-dark disposal well with a brass safety rim, rubber iris, covered ash chute, and quencher valve. It promises containment rather than machinery spectacle.

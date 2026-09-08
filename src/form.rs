@@ -6,14 +6,13 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 21] = [
+pub const RECIPES: [(Item, &str); 20] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
         "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1-1,0",
     ),
     (Item::Machine(Machine::Arm), "B0,0 B0,1 0,0=0,1"),
-    (glyph(GlyphKind::Cleanup), "B0,0 B0,1 B0,2 0,0-0,1 0,1-0,2"),
     (
         glyph(GlyphKind::Output(Tier::One)),
         "B0,0 B0,1 B1,1 0,0-0,1 0,1-1,1",

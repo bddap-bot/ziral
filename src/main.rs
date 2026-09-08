@@ -200,6 +200,12 @@ enum Id {
     Atom(usize),
 }
 
+impl Id {
+    fn moves(self) -> bool {
+        !matches!(self, Id::Glyph(_))
+    }
+}
+
 fn fresh(item: Machine) -> Sim {
     let mut set = Sim::empty();
     match item {
@@ -270,23 +276,11 @@ impl Focus {
     }
 
     fn survive(mut self, sim: &Sim) -> Option<Focus> {
-        let lost = |id: &Id| match id {
-            Id::Arm(_) => false,
-            Id::Glyph(i) => sim.glyphs[*i].is_none(),
-            Id::Atom(i) => sim.atoms[*i].is_none(),
-        };
-        match &mut self {
-            Focus::Pick(ids) => {
-                ids.retain(|id| !lost(id));
-                if ids.is_empty() {
-                    return None;
-                }
+        if let Focus::Pick(ids) = &mut self {
+            ids.retain(|id| !matches!(id, Id::Atom(i) if sim.atoms[*i].is_none()));
+            if ids.is_empty() {
+                return None;
             }
-            Focus::Hold {
-                back: Back::Pick(ids),
-                ..
-            } if ids.iter().any(lost) => return None,
-            _ => {}
         }
         Some(self)
     }
@@ -389,8 +383,8 @@ impl World {
         self.prev = self.shown().clone();
     }
 
-    fn editable(&self, runs: bool) -> bool {
-        !runs || self.ghost.is_none()
+    fn editable(&self, moves: bool) -> bool {
+        !moves || self.ghost.is_none()
     }
 
     fn phase(&self) -> f32 {
@@ -519,17 +513,26 @@ impl World {
         }
     }
 
+    fn edits(&self, ids: &[Id]) -> bool {
+        self.editable(ids.iter().any(|id| id.moves()))
+    }
+
     fn remove(&mut self, ids: &[Id]) {
-        if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) {
+        if !self.edits(ids) {
             return;
         }
-        let mut arms: Vec<usize> = ids
-            .iter()
-            .filter_map(|id| match id {
-                Id::Arm(i) => Some(*i),
-                Id::Glyph(_) | Id::Atom(_) => None,
-            })
-            .collect();
+        let (mut arms, mut glyphs, mut atoms) = (Vec::new(), Vec::new(), Vec::new());
+        for id in ids {
+            match id {
+                Id::Arm(i) => arms.push(*i),
+                Id::Glyph(i) => glyphs.push(*i),
+                Id::Atom(i) => atoms.push(*i),
+            }
+        }
+        for i in glyphs {
+            self.sim.glyphs[i] = None;
+        }
+        self.sim.consume(&atoms);
         arms.sort_unstable_by(|a, b| b.cmp(a));
         if !arms.is_empty() {
             self.unstall();
@@ -537,18 +540,13 @@ impl World {
         for i in arms {
             self.sim.arms.remove(i);
         }
-        for id in ids {
-            if let Id::Glyph(i) = id {
-                self.sim.glyphs[*i] = None;
-            }
-        }
         self.focus = None;
         self.down = None;
         self.resim(self.ghosts());
     }
 
     fn delete(&mut self, ids: &[Id]) {
-        if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) {
+        if !self.edits(ids) {
             return;
         }
         for id in ids {
@@ -616,7 +614,7 @@ impl World {
             return;
         }
         let hit = self.hit(cell);
-        let atom = self.shown().atom_at(cell).is_some();
+        let atom = self.shown().atom_at(cell);
         let picked = hit.is_some_and(|id| self.picks(id));
         let in_pick = hit
             .is_some_and(|id| matches!(&self.focus, Some(Focus::Pick(ids)) if ids.contains(&id)));
@@ -624,11 +622,14 @@ impl World {
             Some(_) if in_pick => {}
             Some(Id::Arm(arm)) => self.focus_tape(arm),
             Some(id) => self.pick(vec![id]),
-            None if atom => self.focus = None,
-            None => {}
+            None => {
+                if let Some(i) = atom {
+                    self.pick(vec![Id::Atom(i)]);
+                }
+            }
         }
         self.down = Some(match hit {
-            _ if atom && !picked => Press::Atom { screen, cell },
+            _ if atom.is_some() && !picked => Press::Atom { screen, cell },
             Some(_) => Press::Cell { screen, cell },
             None => Press::Ground {
                 screen,
@@ -764,6 +765,7 @@ impl World {
             }
             KeyG => {
                 if !self.running && self.sim.inventory.spend(Item::Step) {
+                    self.unpick_atoms();
                     self.prev = self.sim.replay(self.ghosts());
                     self.ghost = Some(self.prev.replay(1));
                     self.since = 0.0;
@@ -801,7 +803,7 @@ impl World {
                 _ if shift => {}
                 Escape => self.focus = None,
                 KeyZ => self.delete(&ids),
-                KeyX | KeyC if !self.editable(ids.iter().any(|id| matches!(id, Id::Arm(_)))) => {}
+                KeyX | KeyC if !self.edits(&machines(&ids)) => {}
                 KeyX | KeyC => {
                     let text = self.compounds(&ids);
                     if !text.is_empty() {
@@ -809,14 +811,14 @@ impl World {
                     }
                     self.copy(&ids);
                     if key == KeyX {
-                        self.remove(&ids);
+                        self.remove(&machines(&ids));
                     }
                 }
                 KeyV => self.paste(),
                 _ => {
                     if let ([id], Some(Instr::Rot(spin))) = (ids.as_slice(), instr)
                         && !matches!(id, Id::Atom(_))
-                        && self.editable(matches!(id, Id::Arm(_)))
+                        && self.editable(id.moves())
                     {
                         self.set_pose(*id, self.anchor(*id), spin.turn(self.dir(*id)));
                         self.resim(self.ghosts());
@@ -2828,25 +2830,14 @@ mod shot {
                 }
                 world.sim = sim;
             }
-            "cleanup" => {
+            "delete" => {
                 let mut sim = Sim::empty();
-                let mut arm = Arm::new(
-                    Hex::new(0, 0),
-                    0,
-                    vec![Instr::Rot(Spin::Cw), Instr::Drop, Instr::Wait],
-                );
-                arm.holding = true;
-                sim.glyphs.push(Some(Glyph {
-                    kind: GlyphKind::Cleanup,
-                    at: arm.hand().rotate(arm.pivot, Spin::Cw),
-                    dir: 0,
-                }));
-                let chain: Vec<usize> = [DIRS[1], ORIGIN, DIRS[4]]
+                let chain: Vec<usize> = [DIRS[3], ORIGIN, DIRS[0]]
                     .iter()
-                    .map(|off| {
+                    .map(|pos| {
                         sim.spawn(Atom {
                             kind: AtomKind::Base,
-                            pos: arm.hand().add(*off),
+                            pos: *pos,
                         })
                     })
                     .collect();
@@ -2857,8 +2848,11 @@ mod shot {
                         kind: BondKind::Single,
                     });
                 }
-                sim.arms.push(arm);
                 world.sim = sim;
+                script.extend(tap(30, Space));
+                script.push((54, Act::Press(ORIGIN)));
+                script.push((60, Act::Release(ORIGIN)));
+                script.extend(tap(96, KeyZ));
             }
             "pivot" => {
                 let mut sim = Sim::empty();
@@ -3762,25 +3756,21 @@ mod tests {
     #[test]
     fn an_anchor_under_the_cursor_wins_over_a_body_cell_and_stacked_anchors_go_to_the_first_listed()
     {
-        let cleanup = Glyph {
-            kind: GlyphKind::Cleanup,
-            at: Hex::new(1, 0),
-            dir: 0,
-        };
+        let cover = bonder(Hex::new(1, 0), 0);
         let bonder = bonder(ORIGIN, 0);
         let arm = Arm::new(ORIGIN, 0, vec![]);
-        assert!(bonder.slots().any(|s| s == cleanup.at));
-        assert_eq!(arm.hand(), cleanup.at);
+        assert!(bonder.slots().any(|s| s == cover.at));
+        assert_eq!(arm.hand(), cover.at);
         assert_eq!(
-            lone(vec![bonder, cleanup], vec![arm.clone()]).hit(cleanup.at),
+            lone(vec![bonder, cover], vec![arm.clone()]).hit(cover.at),
             Some(Id::Glyph(1))
         );
         assert_eq!(
-            lone(vec![bonder, cleanup], vec![arm]).hit(ORIGIN),
+            lone(vec![bonder, cover], vec![arm]).hit(ORIGIN),
             Some(Id::Arm(0))
         );
         assert_eq!(
-            lone(vec![cleanup, cleanup], vec![]).hit(cleanup.at),
+            lone(vec![cover, cover], vec![]).hit(cover.at),
             Some(Id::Glyph(0))
         );
     }
@@ -4247,63 +4237,83 @@ mod tests {
         assert_eq!(w.focus, picked(&[Id::Arm(0)]));
     }
 
-    fn fed_cleanup() -> World {
-        let mut w = World::new(Sim::empty());
-        let glyph = |kind, q| Glyph {
-            kind,
-            at: Hex::new(q, 0),
-            dir: 0,
-        };
-        w.sim.glyphs = vec![
-            Some(glyph(GlyphKind::Source, -4)),
-            Some(glyph(GlyphKind::Cleanup, 0)),
-            Some(glyph(GlyphKind::Bonder, 4)),
-        ];
-        w.sim.spawn(Atom {
+    fn chain(w: &mut World) -> [usize; 3] {
+        let [mid, right] = pair(w, ORIGIN, BondKind::Single);
+        let left = w.sim.spawn(Atom {
             kind: AtomKind::Base,
-            pos: ORIGIN,
+            pos: DIRS[3],
         });
-        w
+        w.sim.bonds.push(Bond {
+            a: left,
+            b: mid,
+            kind: BondKind::Double,
+        });
+        w.prev = w.sim.clone();
+        [left, mid, right]
     }
 
     #[test]
-    fn a_spent_glyph_leaves_the_pick_and_the_rest_keep_their_ids() {
-        let mut w = fed_cleanup();
-        w.pick(vec![Id::Glyph(0), Id::Glyph(1), Id::Glyph(2)]);
-        w.step();
-        assert_eq!(w.focus, picked(&[Id::Glyph(0), Id::Glyph(2)]));
-        assert_eq!(w.sim.glyphs[1], None);
-        assert_eq!(w.sim.glyphs[2].unwrap().kind, GlyphKind::Bonder);
-        assert_eq!(w.hand_ids().collect::<Vec<Id>>(), vec![Id::Glyph(2)]);
-        assert!(w.prev.glyphs[1].is_some());
+    fn a_click_on_a_bare_atom_picks_it_and_z_deletes_it_severing_its_bonds_returning_nothing_where_a_glyph_returns_itself()
+     {
+        let mut w = lone(vec![bonder(Hex::new(4, 4), 0)], vec![]);
+        w.running = false;
+        let [left, mid, right] = chain(&mut w);
+        let stock = w.sim.inventory;
+        w.press(px(ORIGIN), px(ORIGIN));
+        assert_eq!(w.focus, picked(&[Id::Atom(mid)]));
+        w.release(Some(ORIGIN));
+        assert_eq!(w.focus, picked(&[Id::Atom(mid)]));
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(w.sim.atoms[mid], None);
+        assert_eq!(w.sim.atoms[left].unwrap().pos, DIRS[3]);
+        assert_eq!(w.sim.atoms[right].unwrap().pos, DIRS[0]);
+        assert!(w.sim.bonds.is_empty());
+        assert_eq!(w.sim.inventory, stock);
+        assert_eq!(w.focus, None);
+        w.press(px(Hex::new(4, 4)), px(Hex::new(4, 4)));
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(w.sim.glyphs, vec![None]);
+        assert_eq!(count(&w, Machine::Glyph(GlyphKind::Bonder)), 1);
     }
 
     #[test]
-    fn a_hold_keeps_its_glyph_id_and_a_hold_on_a_spent_glyph_cancels() {
-        let mut w = fed_cleanup();
-        w.lift(
-            w.lifted(&[Id::Glyph(2)], ORIGIN),
-            Back::Pick(vec![Id::Glyph(2)]),
-        );
-        w.step();
-        let Some(Focus::Hold { back, set }) = w.focus.clone() else {
-            panic!("{:?}", w.focus)
-        };
-        assert_eq!(back, Back::Pick(vec![Id::Glyph(2)]));
-        assert_eq!(set.glyphs.len(), 1);
-        let mut w = fed_cleanup();
-        let ids = [Id::Glyph(1), Id::Glyph(2)];
-        w.lift(w.lifted(&ids, ORIGIN), Back::Pick(ids.to_vec()));
-        w.step();
+    fn z_on_an_atom_at_a_ghost_frame_leaves_both_frames_as_they_were() {
+        let mut w = lone(vec![], vec![]);
+        w.running = false;
+        let [_, mid, _] = chain(&mut w);
+        w.resim(1);
+        let (sim, ghost) = (w.sim.clone(), w.ghost.clone());
+        w.press(px(ORIGIN), px(ORIGIN));
+        assert_eq!(w.focus, picked(&[Id::Atom(mid)]));
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(w.sim, sim);
+        assert_eq!(w.ghost, ghost);
+        assert_eq!(w.shown().bonds.len(), 2);
+    }
+
+    #[test]
+    fn g_drops_a_picked_atom_from_the_pick_as_s_does() {
+        let mut w = lone(vec![], vec![]);
+        w.running = false;
+        stock_consumables(&mut w);
+        let [_, mid, _] = chain(&mut w);
+        w.press(px(ORIGIN), px(ORIGIN));
+        assert_eq!(w.focus, picked(&[Id::Atom(mid)]));
+        w.key(KeyCode::KeyG, false);
+        assert_eq!(w.ghosts(), 1);
         assert_eq!(w.focus, None);
     }
 
     #[test]
-    fn focus_on_a_spent_glyph_alone_clears() {
-        let mut w = fed_cleanup();
-        w.pick(vec![Id::Glyph(1)]);
-        w.step();
+    fn the_delete_scene_leaves_the_ends_of_the_chain_unbonded() {
+        let w = played("delete", 90);
+        assert_eq!(w.focus, picked(&[Id::Atom(1)]));
+        assert_eq!(atoms(&w).len(), 3);
+        let w = played("delete", 100);
         assert_eq!(w.focus, None);
+        assert_eq!(atoms(&w), vec![DIRS[3], DIRS[0]]);
+        assert!(w.sim.bonds.is_empty());
+        assert!(!w.running);
     }
 
     fn paused(n: usize) -> World {
@@ -4522,7 +4532,10 @@ mod tests {
         assert_eq!(atoms(&w).len(), 3);
         w.release(None);
         w.press(px(Hex::new(3, 3)), px(Hex::new(3, 3)));
-        assert_eq!(w.focus, None);
+        assert_eq!(
+            w.focus,
+            picked(&[Id::Atom(w.sim.atom_at(Hex::new(3, 3)).unwrap())])
+        );
         assert!(matches!(w.down, Some(Press::Atom { .. })));
     }
 
@@ -4762,10 +4775,10 @@ mod tests {
         };
         let first = bent(&mut w, 0, 0);
         bent(&mut w, -6, 2);
-        let text = form::RECIPES[4].1;
+        let text = form::RECIPES[3].1;
         assert_eq!(
             Item::Machine(Machine::Glyph(GlyphKind::Output(sim::Tier::One))),
-            form::RECIPES[4].0
+            form::RECIPES[3].0
         );
         let corner = px(Hex::new(0, 0));
         let from = px(Hex::new(-1, 0));
@@ -4777,8 +4790,6 @@ mod tests {
         assert_eq!(w.compounds(&[Id::Atom(first)]), text);
         w.copy(&[Id::Atom(first)]);
         assert!(w.clipboard.is_none());
-        w.key(KeyCode::KeyZ, false);
-        assert_eq!(atoms(&w).len(), 6);
         let (lo, hi) = (px(Hex::new(-7, 0)), px(Hex::new(5, 5)));
         w.press(lo, lo);
         w.drag(hi);
@@ -5041,7 +5052,14 @@ mod tests {
         assert_eq!(w.focus, picked(&[Id::Glyph(1), Id::Glyph(2), Id::Atom(0)]));
         w.key(KeyCode::KeyZ, false);
         assert_eq!(w.sim.glyphs, vec![glyphs[0], None, None]);
-        assert_eq!(atoms(&w), vec![source.add(DIRS[0])]);
+        assert_eq!(atoms(&w), vec![]);
+        w.step();
+        let on_source = w.sim.atom_at(source).unwrap();
+        w.press(px(source), px(source));
+        assert_eq!(w.focus, picked(&[Id::Atom(on_source)]));
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(atoms(&w), vec![]);
+        assert_eq!(w.sim.glyphs, vec![glyphs[0], None, None]);
     }
 
     #[test]
