@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Hex {
     pub q: i32,
@@ -357,12 +359,39 @@ impl Sim {
         (0..self.arms.len()).find(|j| *j != i && self.held(*j).is_some_and(|id| comp.contains(&id)))
     }
 
-    fn consume(&mut self, ids: &[usize]) {
+    pub fn consume(&mut self, ids: &[usize]) {
         let gone = |id: usize| ids.contains(&id);
         self.bonds.retain(|x| !gone(x.a) && !gone(x.b));
         for id in ids {
             self.atoms[*id] = None;
         }
+    }
+
+    pub fn fragment(&self, ids: &[usize], at: Hex) -> Sim {
+        let mut sim = Sim::empty();
+        for id in ids {
+            let atom = self.atoms[*id].unwrap();
+            sim.spawn(Atom {
+                pos: atom.pos.sub(at),
+                ..atom
+            });
+        }
+        let index = |id: usize| ids.iter().position(|x| *x == id);
+        sim.bonds.extend(self.bonds.iter().filter_map(|bond| {
+            Some(Bond {
+                a: index(bond.a)?,
+                b: index(bond.b)?,
+                ..*bond
+            })
+        }));
+        sim
+    }
+
+    pub fn fits(&self, other: &Sim, at: Hex) -> bool {
+        other.atoms.iter().flatten().all(|atom| {
+            let cell = atom.pos.add(at);
+            self.atom_at(cell).is_none() && self.arms.iter().all(|a| a.pivot != cell)
+        })
     }
 
     pub fn replay(&self, ticks: u64) -> Sim {
@@ -532,13 +561,20 @@ impl Sim {
         Ok(())
     }
 
-    pub fn place(&mut self, other: &Sim, at: Hex) {
-        self.glyphs.extend(other.glyphs.iter().flatten().map(|g| {
-            Some(Glyph {
-                at: g.at.add(at),
-                ..*g
+    pub fn place(&mut self, other: &Sim, at: Hex) -> (Vec<usize>, Range<usize>) {
+        let glyphs = other
+            .glyphs
+            .iter()
+            .flatten()
+            .map(|g| {
+                let g = Glyph {
+                    at: g.at.add(at),
+                    ..*g
+                };
+                seat(&mut self.glyphs, g)
             })
-        }));
+            .collect();
+        let first_arm = self.arms.len();
         self.arms.extend(other.arms.iter().map(|a| Arm {
             pivot: a.pivot.add(at),
             ..a.clone()
@@ -560,6 +596,7 @@ impl Sim {
             b: ids[bond.b].unwrap(),
             ..*bond
         }));
+        (glyphs, first_arm..self.arms.len())
     }
 }
 
