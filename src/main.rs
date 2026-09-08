@@ -352,10 +352,6 @@ impl World {
         if span > 0.0 { self.since / span } else { 1.0 }
     }
 
-    fn focus_arm(&mut self, arm: usize) {
-        self.pick(vec![Id::Arm(arm)]);
-    }
-
     fn focus_tape(&mut self, arm: usize) {
         let cursor = self.shown().arms[arm].tape.len();
         self.focus = Some(Focus::Tape { arm, cursor });
@@ -461,7 +457,6 @@ impl World {
             Piece::Glyph(g) => Id::Glyph(sim::seat(&mut self.sim.glyphs, g)),
         }
     }
-
     fn unstall(&mut self) {
         for a in &mut self.sim.arms {
             a.stall = None;
@@ -520,8 +515,12 @@ impl World {
         }
         self.down = Some(match self.hit(cell) {
             Some(id) => {
-                if !self.focus.as_ref().is_some_and(|f| f.picks(id)) {
-                    self.pick(vec![id]);
+                let in_pick = matches!(&self.focus, Some(Focus::Pick(ids)) if ids.contains(&id));
+                if !in_pick {
+                    match id {
+                        Id::Arm(arm) => self.focus_tape(arm),
+                        Id::Glyph(_) => self.pick(vec![id]),
+                    }
                 }
                 Press::Machine { screen, cell }
             }
@@ -600,13 +599,6 @@ impl World {
         self.resim(self.ghosts());
     }
 
-    fn act(&mut self, arm: usize, instr: Instr) {
-        if self.editable(true) {
-            self.sim.act(arm, instr);
-            self.resim(self.ghosts());
-        }
-    }
-
     fn key(&mut self, key: KeyCode, shift: bool) {
         use KeyCode::*;
         match key {
@@ -653,9 +645,7 @@ impl World {
                 KeyC => self.copy(&ids),
                 KeyV => self.paste(),
                 _ => {
-                    if let ([Id::Arm(arm)], Some(instr)) = (ids.as_slice(), instr) {
-                        self.act(*arm, instr);
-                    } else if let ([id], Some(Instr::Rot(spin))) = (ids.as_slice(), instr)
+                    if let ([id], Some(Instr::Rot(spin))) = (ids.as_slice(), instr)
                         && self.editable(matches!(id, Id::Arm(_)))
                     {
                         self.set_pose(*id, self.anchor(*id), spin.turn(self.dir(*id)));
@@ -2006,7 +1996,7 @@ mod shot {
         let mut script = Vec::new();
         let mut wide = false;
         match name {
-            "micro" => world.focus_arm(0),
+            "micro" => world.focus_tape(0),
             "tab-held" => script.push((2, Act::Down(Tab))),
             "tab-released" => keys = vec![(Tab, false)],
             "texture-micro" => {
@@ -2024,7 +2014,7 @@ mod shot {
                     dir: 0,
                 }));
                 world.sim = sim;
-                world.focus_arm(0);
+                world.focus_tape(0);
             }
             "texture-wide" => {
                 let mut sim = Sim::empty();
@@ -2057,13 +2047,19 @@ mod shot {
                 world.focus_tape(world.sim.arms.len() - 1);
                 keys = KEYS.iter().map(|k| (k.code, k.shifted())).collect();
             }
-            "armfocus" => {
-                world
-                    .sim
-                    .arms
-                    .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
-                world.focus_arm(world.sim.arms.len() - 1);
-                keys = vec![(KeyD, false); 2];
+            "write" => {
+                let arm = Hex::new(-2, 0);
+                world.sim = Sim::empty();
+                world.sim.arms.push(Arm::new(arm, 0, Vec::new()));
+                world.sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: arm.add(DIRS[0]),
+                });
+                script.extend(tap(30, Space));
+                script.push((54, Act::Press(arm)));
+                script.push((60, Act::Release(arm)));
+                script.extend(tap(96, KeyF));
+                script.extend(tap(132, KeyG));
             }
             "walk" | "ghost" => {
                 let mut sim = Sim::empty();
@@ -2175,7 +2171,7 @@ mod shot {
                 sim.arms
                     .push(Arm::new(Hex::new(1, 0), 1, vec![Instr::Grab, Instr::Wait]));
                 world.sim = sim;
-                world.focus_arm(0);
+                world.focus_tape(0);
             }
             "chorus" => {
                 let mut sim = Sim::empty();
@@ -2319,7 +2315,7 @@ mod shot {
                     kind: BondKind::Single,
                 });
                 world.sim = sim;
-                world.focus_arm(0);
+                world.focus_tape(0);
             }
             "heldeat" => {
                 let (mut sim, _) = second_bond(&[Hex::new(0, 0)]);
@@ -2342,7 +2338,7 @@ mod shot {
                     vec![Instr::Grab, Instr::Rot(Spin::Ccw), Instr::Drop, Instr::Wait],
                 ));
                 world.sim = sim;
-                world.focus_arm(0);
+                world.focus_tape(0);
             }
             "heldout" => {
                 let mut sim = Sim::empty();
@@ -2368,7 +2364,7 @@ mod shot {
                 arm.holding = true;
                 sim.arms.push(arm);
                 world.sim = sim;
-                world.focus_arm(0);
+                world.focus_tape(0);
             }
             "caught" => {
                 let mut sim = Sim::empty();
@@ -2390,7 +2386,7 @@ mod shot {
                     ],
                 ));
                 world.sim = sim;
-                world.focus_arm(1);
+                world.focus_tape(1);
             }
             "grabnothing" => {
                 let mut sim = Sim::empty();
@@ -2409,7 +2405,7 @@ mod shot {
                     vec![Instr::Grab, Instr::Rot(Spin::Cw), Instr::Drop, Instr::Wait],
                 ));
                 world.sim = sim;
-                world.focus_arm(0);
+                world.focus_tape(0);
             }
             "dropfirst" | "grabfirst" => {
                 let mut sim = Sim::empty();
@@ -2434,7 +2430,7 @@ mod shot {
                     vec![grabber, dropper]
                 };
                 world.sim = sim;
-                world.focus_arm(usize::from(dropper_first));
+                world.focus_tape(usize::from(dropper_first));
             }
             other => panic!("unknown scene {other}"),
         }
@@ -3201,13 +3197,12 @@ mod tests {
     }
 
     #[test]
-    fn a_press_on_an_unselected_machine_picks_it_alone_and_a_press_on_the_ground_starts_a_marquee()
-    {
+    fn a_press_on_an_unselected_arm_focuses_it_alone_and_a_press_on_the_ground_starts_a_marquee() {
         let mut w = cluster();
         w.pick(INSIDE.to_vec());
         let lone_arm = w.sim.arms[1].pivot;
         w.press(px(lone_arm), px(lone_arm));
-        assert_eq!(w.focus, picked(&[Id::Arm(1)]));
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 1, cursor: 0 }));
         w.drag(px(lone_arm) + Vec2::new(DRAG_PX * 2.0, 0.0));
         assert!(
             matches!(&w.focus, Some(Focus::Hold { set, from }) if set.len() == 1 && *from == [Id::Arm(1)])
@@ -3307,21 +3302,40 @@ mod tests {
     }
 
     #[test]
-    fn arm_focus_keys_act_now_and_leave_the_tape_alone() {
-        let mut w = armed(vec![Instr::Wait]);
-        w.focus_arm(0);
+    fn a_click_on_an_arm_focuses_its_tape_with_the_cursor_at_the_end_and_a_reclick_puts_it_there_again()
+     {
+        let mut w = armed(vec![Instr::Wait, Instr::Wait]);
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.release(Some(ORIGIN));
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
+        w.key(KeyCode::Home, false);
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.release(Some(ORIGIN));
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
+    }
+
+    #[test]
+    fn f_and_d_on_a_clicked_fresh_arm_write_grab_and_rotate_that_run_on_the_steps_and_not_before() {
+        let mut w = armed(vec![]);
+        w.running = false;
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.release(Some(ORIGIN));
+        let before = w.sim.clone();
         w.key(KeyCode::KeyF, false);
         w.key(KeyCode::KeyD, false);
-        assert!(w.sim.arms[0].holding);
-        assert_eq!(w.sim.arms[0].dir, 1);
-        assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[1]);
-        assert_eq!(w.sim.arms[0].tape, vec![Instr::Wait]);
-        assert_eq!(w.focus, picked(&[Id::Arm(0)]));
-        w.key(KeyCode::KeyA, false);
-        w.key(KeyCode::KeyA, false);
-        assert_eq!(w.sim.arms[0].dir, 5);
-        assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[5]);
-        assert_eq!(w.prev, w.sim);
+        assert_eq!(w.sim.arms[0].tape, vec![Instr::Grab, Instr::Rot(Spin::Cw)]);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
+        assert!(!w.sim.arms[0].holding);
+        assert_eq!(w.sim.arms[0].dir, before.arms[0].dir);
+        assert_eq!(w.sim.atoms, before.atoms);
+        assert_eq!(w.ghost, None);
+        w.key(KeyCode::KeyG, false);
+        assert!(w.shown().arms[0].holding);
+        assert_eq!(w.shown().atoms[0].unwrap().pos, DIRS[0]);
+        w.key(KeyCode::KeyG, false);
+        assert_eq!(w.shown().arms[0].dir, 1);
+        assert_eq!(w.shown().atoms[0].unwrap().pos, DIRS[1]);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
     }
 
     #[test]
@@ -3335,31 +3349,14 @@ mod tests {
         w.pick(vec![Id::Glyph(0)]);
         w.key(KeyCode::KeyZ, false);
         assert_eq!(w.sim.glyphs, vec![None]);
-        w.focus_arm(0);
+        w.pick(vec![Id::Arm(0)]);
         w.key(KeyCode::KeyZ, false);
         assert!(w.sim.arms.is_empty());
         assert_eq!(w.focus, None);
     }
 
     #[test]
-    fn arm_focus_rotate_stalls_when_the_held_atom_would_sweep_into_another() {
-        let mut w = armed(vec![]);
-        w.sim.spawn(Atom {
-            kind: AtomKind::Base,
-            pos: DIRS[1],
-        });
-        w.focus_arm(0);
-        w.key(KeyCode::KeyF, false);
-        w.key(KeyCode::KeyD, false);
-        assert_eq!(w.sim.arms[0].dir, 0);
-        assert_eq!(w.sim.arms[0].stall, Some(Stall::Illegal));
-        w.key(KeyCode::KeyA, false);
-        assert_eq!(w.sim.arms[0].dir, 5);
-        assert_eq!(w.sim.arms[0].stall, None);
-    }
-
-    #[test]
-    fn the_shifted_keys_write_the_six_moves_to_a_focused_tape_and_run_nothing_on_a_focused_arm() {
+    fn the_shifted_keys_write_the_six_moves_to_a_focused_tape() {
         let mut w = armed(vec![Instr::Wait]);
         w.focus_tape(0);
         for key in [KeyCode::KeyW, KeyCode::KeyC, KeyCode::KeyF] {
@@ -3372,13 +3369,6 @@ mod tests {
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 4 }));
         w.key(KeyCode::KeyF, false);
         assert_eq!(w.sim.arms[0].tape[4], Instr::Grab);
-        w.focus_arm(0);
-        let before = w.sim.clone();
-        for key in [KeyCode::KeyW, KeyCode::KeyF, KeyCode::KeyX, KeyCode::KeyZ] {
-            w.key(key, true);
-        }
-        assert_eq!(w.sim, before);
-        assert_eq!(w.focus, picked(&[Id::Arm(0)]));
     }
 
     #[test]
@@ -3477,17 +3467,8 @@ mod tests {
     }
 
     #[test]
-    fn q_and_e_pivot_a_focused_arm_write_to_a_focused_tape_and_turn_nothing_else() {
+    fn q_and_e_write_pivots_to_a_focused_tape_and_turn_nothing_else() {
         let mut w = armed(vec![Instr::Wait]);
-        let far = w.sim.spawn(Atom {
-            kind: AtomKind::Base,
-            pos: Hex::new(2, -1),
-        });
-        w.sim.bonds.push(sim::Bond {
-            a: 0,
-            b: far,
-            kind: BondKind::Single,
-        });
         w.focus_tape(0);
         w.key(KeyCode::KeyQ, false);
         w.key(KeyCode::KeyE, false);
@@ -3496,14 +3477,6 @@ mod tests {
             vec![Instr::Wait, Instr::Pivot(Spin::Ccw), Instr::Pivot(Spin::Cw)]
         );
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 3 }));
-        w.focus_arm(0);
-        w.key(KeyCode::KeyF, false);
-        w.key(KeyCode::KeyE, false);
-        assert_eq!(w.sim.arms[0].dir, 0);
-        assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[0]);
-        assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(1, -1));
-        w.key(KeyCode::KeyQ, false);
-        assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(2, -1));
         w.sim.glyphs.push(Some(Glyph {
             kind: GlyphKind::Bonder,
             at: Hex::new(3, 3),
@@ -3702,7 +3675,6 @@ mod tests {
         drag(&mut w, pivot, pivot.add(Hex::new(3, 0)));
         assert_eq!(w.focus, picked(&[Id::Arm(0)]));
         w.key(KeyCode::KeyD, false);
-        w.key(KeyCode::KeyF, false);
         w.key(KeyCode::KeyC, false);
         w.key(KeyCode::KeyX, false);
         assert!(w.clipboard.is_empty());
@@ -3771,6 +3743,7 @@ mod tests {
 
         w.focus_tape(0);
         w.key(KeyCode::ArrowLeft, false);
+        w.key(KeyCode::KeyF, false);
         let focus = w.focus.clone();
         let tape = w.sim.arms[0].tape.clone();
         w.key(KeyCode::KeyG, false);
@@ -3785,7 +3758,7 @@ mod tests {
     #[test]
     fn s_at_ghost0_is_a_no_op() {
         let mut w = paused(0);
-        w.focus_arm(0);
+        w.focus_tape(0);
         let (sim, prev, focus, since) = (w.sim.clone(), w.prev.clone(), w.focus.clone(), w.since);
         w.key(KeyCode::KeyS, false);
         assert_eq!(w.ghosts(), 0);

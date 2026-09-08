@@ -467,7 +467,7 @@ impl Sim {
         true
     }
 
-    pub fn act(&mut self, i: usize, instr: Instr) -> bool {
+    fn act(&mut self, i: usize, instr: Instr) -> bool {
         let stall = self.exec(i, instr).err();
         self.arms[i].stall = stall;
         stall.is_none()
