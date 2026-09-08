@@ -5,7 +5,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$here"
 trap 'rm -f scaffold.png.part manual.png.part inputs.sha256.part proof/slots.png.part' EXIT
 slot=128
-slots=('f 96 128' 'r 544 128' 'a 96 352' 'd 544 352' 'q 96 576' 'e 544 576' 'x 96 800')
+slots=('f 96 64' 'r 544 64' 'a 96 200' 'd 544 200' 'q 96 336' 'e 544 336' 'x 96 472' 'shift-w 96 608' 'shift-e 544 608' 'shift-f 96 744' 'shift-c 544 744' 'shift-x 96 880' 'shift-a 544 880')
 inputs=(prompt.txt scaffold.png)
 
 scaffold() {

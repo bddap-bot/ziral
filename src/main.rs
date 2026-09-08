@@ -63,70 +63,115 @@ pub struct Key {
     pub token: Token,
 }
 
-pub const KEYS: [Key; 7] = [
-    Key {
-        code: KeyCode::KeyF,
-        instr: Instr::Grab,
-        symbol: skin!("symbols/f"),
-        token: Token {
-            face: Glaze::Terracotta,
-            field: Glaze::Ivory,
-        },
-    },
-    Key {
-        code: KeyCode::KeyR,
-        instr: Instr::Drop,
-        symbol: skin!("symbols/r"),
-        token: Token {
-            face: Glaze::BlueGreen,
-            field: Glaze::Ivory,
-        },
-    },
-    Key {
-        code: KeyCode::KeyA,
-        instr: Instr::Rot(Spin::Ccw),
-        symbol: skin!("symbols/a"),
-        token: Token {
-            face: Glaze::Amber,
-            field: Glaze::Brass,
-        },
-    },
-    Key {
-        code: KeyCode::KeyD,
-        instr: Instr::Rot(Spin::Cw),
-        symbol: skin!("symbols/d"),
-        token: Token {
-            face: Glaze::Brass,
-            field: Glaze::Amber,
-        },
-    },
-    Key {
-        code: KeyCode::KeyQ,
-        instr: Instr::Pivot(Spin::Ccw),
-        symbol: skin!("symbols/q"),
-        token: Token {
-            face: Glaze::Plum,
-            field: Glaze::Ivory,
-        },
-    },
-    Key {
-        code: KeyCode::KeyE,
-        instr: Instr::Pivot(Spin::Cw),
-        symbol: skin!("symbols/e"),
-        token: Token {
-            face: Glaze::Ivory,
-            field: Glaze::Plum,
-        },
-    },
-    Key {
-        code: KeyCode::KeyX,
-        instr: Instr::Wait,
-        symbol: skin!("symbols/x"),
-        token: Token {
-            face: Glaze::Ivory,
-            field: Glaze::Brass,
-        },
-    },
+impl Key {
+    const fn new(code: KeyCode, instr: Instr, symbol: Skin, face: Glaze, field: Glaze) -> Key {
+        Key {
+            code,
+            instr,
+            symbol,
+            token: Token { face, field },
+        }
+    }
+
+    fn shifted(&self) -> bool {
+        matches!(self.instr, Instr::Move(_))
+    }
+}
+
+const UPPER_LEFT: usize = 4;
+
+pub const KEYS: [Key; 13] = [
+    Key::new(
+        KeyCode::KeyF,
+        Instr::Grab,
+        skin!("symbols/f"),
+        Glaze::Terracotta,
+        Glaze::Ivory,
+    ),
+    Key::new(
+        KeyCode::KeyR,
+        Instr::Drop,
+        skin!("symbols/r"),
+        Glaze::BlueGreen,
+        Glaze::Ivory,
+    ),
+    Key::new(
+        KeyCode::KeyA,
+        Instr::Rot(Spin::Ccw),
+        skin!("symbols/a"),
+        Glaze::Amber,
+        Glaze::Brass,
+    ),
+    Key::new(
+        KeyCode::KeyD,
+        Instr::Rot(Spin::Cw),
+        skin!("symbols/d"),
+        Glaze::Brass,
+        Glaze::Amber,
+    ),
+    Key::new(
+        KeyCode::KeyQ,
+        Instr::Pivot(Spin::Ccw),
+        skin!("symbols/q"),
+        Glaze::Plum,
+        Glaze::Ivory,
+    ),
+    Key::new(
+        KeyCode::KeyE,
+        Instr::Pivot(Spin::Cw),
+        skin!("symbols/e"),
+        Glaze::Ivory,
+        Glaze::Plum,
+    ),
+    Key::new(
+        KeyCode::KeyX,
+        Instr::Wait,
+        skin!("symbols/x"),
+        Glaze::Ivory,
+        Glaze::Brass,
+    ),
+    Key::new(
+        KeyCode::KeyW,
+        Instr::Move(UPPER_LEFT),
+        skin!("symbols/shift-w"),
+        Glaze::Amber,
+        Glaze::Ivory,
+    ),
+    Key::new(
+        KeyCode::KeyE,
+        Instr::Move((UPPER_LEFT + 1) % 6),
+        skin!("symbols/shift-e"),
+        Glaze::BlueGreen,
+        Glaze::Clay,
+    ),
+    Key::new(
+        KeyCode::KeyF,
+        Instr::Move((UPPER_LEFT + 2) % 6),
+        skin!("symbols/shift-f"),
+        Glaze::Plum,
+        Glaze::Clay,
+    ),
+    Key::new(
+        KeyCode::KeyC,
+        Instr::Move((UPPER_LEFT + 3) % 6),
+        skin!("symbols/shift-c"),
+        Glaze::Ivory,
+        Glaze::Amber,
+    ),
+    Key::new(
+        KeyCode::KeyX,
+        Instr::Move((UPPER_LEFT + 4) % 6),
+        skin!("symbols/shift-x"),
+        Glaze::Clay,
+        Glaze::BlueGreen,
+    ),
+    Key::new(
+        KeyCode::KeyA,
+        Instr::Move((UPPER_LEFT + 5) % 6),
+        skin!("symbols/shift-a"),
+        Glaze::Clay,
+        Glaze::Plum,
+    ),
 ];
 
 fn key_of(instr: Instr) -> Key {
@@ -136,21 +181,11 @@ fn key_of(instr: Instr) -> Key {
         .unwrap_or_else(|| panic!("no key writes {instr:?}"))
 }
 
-fn instr_of(key: KeyCode) -> Option<Instr> {
-    KEYS.iter().find(|k| k.code == key).map(|k| k.instr)
+fn instr_of(key: KeyCode, shift: bool) -> Option<Instr> {
+    KEYS.iter()
+        .find(|k| k.code == key && k.shifted() == shift)
+        .map(|k| k.instr)
 }
-
-const NAV: [KeyCode; 9] = [
-    KeyCode::Escape,
-    KeyCode::KeyZ,
-    KeyCode::Backspace,
-    KeyCode::KeyC,
-    KeyCode::KeyV,
-    KeyCode::ArrowLeft,
-    KeyCode::ArrowRight,
-    KeyCode::Home,
-    KeyCode::End,
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Id {
@@ -551,9 +586,9 @@ impl World {
         self.prev = self.sim.clone();
     }
 
-    fn key(&mut self, key: KeyCode) {
+    fn key(&mut self, key: KeyCode, shift: bool) {
         use KeyCode::*;
-        let instr = instr_of(key);
+        let instr = instr_of(key, shift);
         match self.focus.clone() {
             Some(Focus::Hold { from, .. }) => match (key, instr, &mut self.focus) {
                 (Escape, _, _) => self.place(None),
@@ -562,6 +597,7 @@ impl World {
                 _ => {}
             },
             Some(Focus::Pick(ids)) => match key {
+                _ if shift => {}
                 Escape => self.focus = None,
                 KeyZ => self.remove(&ids),
                 KeyX => {
@@ -966,10 +1002,11 @@ fn edit(
         world.release(at.filter(|_| valid));
     }
 
-    for key in NAV.into_iter().chain(KEYS.iter().map(|k| k.code)) {
-        if keys.just_pressed(key) {
-            world.key(key);
-        }
+    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let mut pressed: Vec<KeyCode> = keys.get_just_pressed().copied().collect();
+    pressed.sort_unstable();
+    for key in pressed {
+        world.key(key, shift);
     }
 }
 
@@ -1492,16 +1529,19 @@ impl Frame<'_> {
             let e = Swing::from_cell(a.pivot).at(t);
             let pose = &mut frame.arms[i];
             pose.ring = grip(a.holding) + (grip(b.holding) - grip(a.holding)) * e;
-            let Some((about, spin)) = a.swung(b) else {
-                continue;
+            let (about, shift) = match (a.swung(b), px(b.pivot) - px(a.pivot)) {
+                (Some((centre, spin)), _) => (Some((px(centre), spin)), Vec2::ZERO),
+                (None, step) if step != Vec2::ZERO => (None, step * e),
+                _ => continue,
             };
-            let swept = sweep(px(a.centre(about)), spin, e);
-            pose.hand = swept(pose.hand);
+            let carried = |v: Vec2| about.map_or(v, |(c, spin)| sweep(c, spin, e)(v)) + shift;
+            pose.pivot += shift;
+            pose.hand = carried(pose.hand);
             if a.holding
                 && let Some(id) = prev.atom_at(a.hand())
             {
                 for id in prev.component(id) {
-                    frame.atoms[id] = frame.atoms[id].map(&swept);
+                    frame.atoms[id] = frame.atoms[id].map(&carried);
                 }
             }
         }
@@ -1757,7 +1797,7 @@ mod shot {
     const FRAME: Duration = Duration::from_nanos(16_666_667);
 
     #[derive(Clone, Copy)]
-    enum Act {
+    pub enum Act {
         Down(KeyCode),
         Up(KeyCode),
         Press(Hex),
@@ -1769,12 +1809,31 @@ mod shot {
         [(frame, Act::Down(key)), (frame + 1, Act::Up(key))]
     }
 
+    fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
+        let mut script = Vec::new();
+        let mut frame = 2;
+        for (key, shift) in keys {
+            if *shift {
+                script.push((frame, Act::Down(KeyCode::ShiftLeft)));
+                frame += 1;
+            }
+            script.extend(tap(frame, *key));
+            frame += 2;
+            if *shift {
+                script.push((frame, Act::Up(KeyCode::ShiftLeft)));
+                frame += 1;
+            }
+        }
+        script
+    }
+
     #[derive(Resource)]
     pub struct Shot {
         path: PathBuf,
         clip: Option<u32>,
         wide: bool,
         script: Vec<(u32, Act)>,
+        warm: u32,
         frames: u32,
     }
 
@@ -1825,7 +1884,7 @@ mod shot {
         world
     }
 
-    fn scene(name: &str, ticks: u64) -> (World, bool, Vec<(u32, Act)>) {
+    pub fn scene(name: &str, ticks: u64) -> (World, bool, Vec<(u32, Act)>, u32) {
         use KeyCode::*;
         let mut world = World::new(sim::preloaded());
         world.running = false;
@@ -1836,7 +1895,7 @@ mod shot {
         match name {
             "micro" => world.focus_arm(0),
             "tab-held" => script.push((2, Act::Down(Tab))),
-            "tab-released" => keys = vec![Tab],
+            "tab-released" => keys = vec![(Tab, false)],
             "texture-micro" => {
                 let mut sim = Sim::empty();
                 let mut arm = Arm::new(Hex::new(-1, 0), 0, Vec::new());
@@ -1883,7 +1942,7 @@ mod shot {
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
                 world.focus_tape(world.sim.arms.len() - 1);
-                keys = vec![KeyF, KeyR, KeyA, KeyD, KeyQ, KeyE, KeyX];
+                keys = KEYS.iter().map(|k| (k.code, k.shifted())).collect();
             }
             "armfocus" => {
                 world
@@ -1891,14 +1950,51 @@ mod shot {
                     .arms
                     .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
                 world.focus_arm(world.sim.arms.len() - 1);
-                keys = vec![KeyD, KeyD];
+                keys = vec![(KeyD, false); 2];
+            }
+            "walk" => {
+                let mut sim = Sim::empty();
+                let mut arm = Arm::new(
+                    Hex::new(-4, 0),
+                    0,
+                    [0, 0, 0, 2, 2, 3, 4, 4].map(Instr::Move).to_vec(),
+                );
+                arm.holding = true;
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: arm.hand(),
+                });
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: ORIGIN,
+                });
+                sim.arms.push(arm);
+                sim.arms.push(Arm::new(
+                    Hex::new(1, -1),
+                    4,
+                    vec![
+                        Instr::Wait,
+                        Instr::Wait,
+                        Instr::Wait,
+                        Instr::Grab,
+                        Instr::Rot(Spin::Cw),
+                        Instr::Wait,
+                        Instr::Wait,
+                        Instr::Rot(Spin::Ccw),
+                        Instr::Drop,
+                        Instr::Wait,
+                        Instr::Wait,
+                    ],
+                ));
+                world.sim = sim;
+                world.focus_tape(0);
             }
             "hold" => {
                 world.lift(
                     vec![Piece::fresh(Item::Glyph(GlyphKind::Bonder))],
                     Vec::new(),
                 );
-                keys = vec![KeyD, KeyD];
+                keys = vec![(KeyD, false); 2];
             }
             "select" => {
                 let walk = |f0: u32, cells: &[(i32, i32)], act: fn(Hex) -> Act| {
@@ -2221,12 +2317,12 @@ mod shot {
             world.step();
         }
         world.prev = world.sim.clone();
-        script.extend(
-            keys.into_iter()
-                .enumerate()
-                .flat_map(|(k, key)| tap(2 + k as u32, key)),
-        );
-        (world, wide, script)
+        let typed = typed(&keys);
+        let warm = typed
+            .last()
+            .map_or(WARM, |(frame, _)| (frame + 2).max(WARM));
+        script.extend(typed);
+        (world, wide, script, warm)
     }
 
     pub fn parse(args: &[String]) -> Option<(World, Shot)> {
@@ -2243,7 +2339,7 @@ mod shot {
             ),
             _ => panic!("{USAGE}"),
         };
-        let (mut world, wide, script) = scene(view, ticks.parse().expect(USAGE));
+        let (mut world, wide, script, warm) = scene(view, ticks.parse().expect(USAGE));
         let clip = clip.map(|(play, tick_ms, motion)| {
             world.period = tick_ms / 1000.0;
             world.motion = motion;
@@ -2254,6 +2350,7 @@ mod shot {
             clip,
             wide,
             script,
+            warm,
             frames: 0,
         };
         Some((world, shot))
@@ -2261,13 +2358,14 @@ mod shot {
 
     #[cfg(test)]
     pub fn still(view: &str, dir: PathBuf, frames: u32) -> App {
-        let (mut world, wide, script) = scene(view, 0);
+        let (mut world, wide, script, warm) = scene(view, 0);
         world.period = f32::INFINITY;
         let shot = Shot {
             path: dir,
             clip: Some(frames),
             wide,
             script,
+            warm,
             frames: 0,
         };
         app(world, shot)
@@ -2374,11 +2472,12 @@ mod shot {
                 }
             }
         }
-        if shot.frames == WARM && shot.clip.is_some() {
+        let warm = shot.warm;
+        if shot.frames == warm && shot.clip.is_some() {
             world.running = true;
             world.since = 0.0;
         }
-        let n = shot.frames.wrapping_sub(WARM);
+        let n = shot.frames.wrapping_sub(warm);
         let count = shot.clip.unwrap_or(1);
         if n < count {
             let path = match shot.clip {
@@ -2868,9 +2967,9 @@ mod tests {
         let slot = bonder.slots().nth(1).unwrap();
         w.press(px(slot), px(slot));
         w.drag(px(slot) + Vec2::new(DRAG_PX * 2.0, 0.0));
-        w.key(KeyCode::KeyA);
-        w.key(KeyCode::KeyA);
-        w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyA, false);
+        w.key(KeyCode::KeyA, false);
+        w.key(KeyCode::KeyD, false);
         let to = Hex::new(-1, -1);
         w.release(Some(to));
         let moved = w.sim.glyphs[0];
@@ -3007,8 +3106,8 @@ mod tests {
         let grab = ORIGIN;
         w.press(px(grab), px(grab));
         w.drag(px(grab) + Vec2::new(DRAG_PX * 2.0, 0.0));
-        w.key(KeyCode::KeyD);
-        w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyD, false);
+        w.key(KeyCode::KeyD, false);
         let to = Hex::new(4, -3);
         w.release(Some(to));
         let after = offsets(&w, &INSIDE);
@@ -3030,8 +3129,8 @@ mod tests {
         let before = w.sim.clone();
         w.press(px(ORIGIN), px(ORIGIN));
         w.drag(px(ORIGIN) + Vec2::new(DRAG_PX * 2.0, 0.0));
-        w.key(KeyCode::KeyD);
-        w.key(KeyCode::Escape);
+        w.key(KeyCode::KeyD, false);
+        w.key(KeyCode::Escape, false);
         assert_eq!(w.sim, before);
         assert_eq!(w.focus, picked(&INSIDE));
     }
@@ -3043,12 +3142,12 @@ mod tests {
         let before = offsets(&w, &INSIDE);
         let (arm, glyph) = (w.sim.arms[0].clone(), w.sim.glyphs[0]);
         let (other_arm, other_glyph) = (w.sim.arms[1].clone(), w.sim.glyphs[1]);
-        w.key(KeyCode::KeyX);
+        w.key(KeyCode::KeyX, false);
         assert_eq!(w.sim.arms, vec![other_arm.clone()]);
         assert_eq!(w.sim.glyphs, vec![other_glyph]);
         assert_eq!(w.focus, None);
         assert_eq!(w.clipboard.len(), 2);
-        w.key(KeyCode::KeyV);
+        w.key(KeyCode::KeyV, false);
         assert!(
             matches!(&w.focus, Some(Focus::Hold { set, from }) if set.len() == 2 && from.is_empty())
         );
@@ -3067,7 +3166,7 @@ mod tests {
         assert_eq!(w.sim.arms[1], Arm::new(after[0].0, after[0].1, arm.tape));
         assert_eq!(w.sim.glyphs[1].kind, glyph.kind);
         assert_eq!(w.focus, picked(&pasted));
-        w.key(KeyCode::KeyC);
+        w.key(KeyCode::KeyC, false);
         assert_eq!(w.clipboard.len(), 2);
         assert_eq!(w.sim.arms.len(), 2);
     }
@@ -3085,15 +3184,15 @@ mod tests {
     fn arm_focus_keys_act_now_and_leave_the_tape_alone() {
         let mut w = armed(vec![Instr::Wait]);
         w.focus_arm(0);
-        w.key(KeyCode::KeyF);
-        w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyF, false);
+        w.key(KeyCode::KeyD, false);
         assert!(w.sim.arms[0].holding);
         assert_eq!(w.sim.arms[0].dir, 1);
         assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[1]);
         assert_eq!(w.sim.arms[0].tape, vec![Instr::Wait]);
         assert_eq!(w.focus, picked(&[Id::Arm(0)]));
-        w.key(KeyCode::KeyA);
-        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyA, false);
+        w.key(KeyCode::KeyA, false);
         assert_eq!(w.sim.arms[0].dir, 5);
         assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[5]);
         assert_eq!(w.prev, w.sim);
@@ -3108,10 +3207,10 @@ mod tests {
             dir: 0,
         });
         w.pick(vec![Id::Glyph(0)]);
-        w.key(KeyCode::KeyZ);
+        w.key(KeyCode::KeyZ, false);
         assert!(w.sim.glyphs.is_empty());
         w.focus_arm(0);
-        w.key(KeyCode::KeyZ);
+        w.key(KeyCode::KeyZ, false);
         assert!(w.sim.arms.is_empty());
         assert_eq!(w.focus, None);
     }
@@ -3124,24 +3223,115 @@ mod tests {
             pos: DIRS[1],
         });
         w.focus_arm(0);
-        w.key(KeyCode::KeyF);
-        w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyF, false);
+        w.key(KeyCode::KeyD, false);
         assert_eq!(w.sim.arms[0].dir, 0);
         assert_eq!(w.sim.arms[0].stall, Some(Stall::Illegal));
-        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyA, false);
         assert_eq!(w.sim.arms[0].dir, 5);
         assert_eq!(w.sim.arms[0].stall, None);
+    }
+
+    #[test]
+    fn the_shifted_keys_write_the_six_moves_to_a_focused_tape_and_run_nothing_on_a_focused_arm() {
+        let mut w = armed(vec![Instr::Wait]);
+        w.focus_tape(0);
+        for key in [KeyCode::KeyW, KeyCode::KeyC, KeyCode::KeyF] {
+            w.key(key, true);
+        }
+        assert_eq!(
+            w.sim.arms[0].tape,
+            vec![Instr::Wait, Instr::Move(4), Instr::Move(1), Instr::Move(0)]
+        );
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 4 }));
+        w.key(KeyCode::KeyF, false);
+        assert_eq!(w.sim.arms[0].tape[4], Instr::Grab);
+        w.focus_arm(0);
+        let before = w.sim.clone();
+        for key in [KeyCode::KeyW, KeyCode::KeyF, KeyCode::KeyX, KeyCode::KeyZ] {
+            w.key(key, true);
+        }
+        assert_eq!(w.sim, before);
+        assert_eq!(w.focus, picked(&[Id::Arm(0)]));
+    }
+
+    #[test]
+    fn the_six_move_keys_ring_the_pivot_clockwise_from_the_upper_left_and_sum_to_nothing() {
+        let moves: Vec<(KeyCode, usize)> = KEYS
+            .iter()
+            .filter_map(|k| match k.instr {
+                Instr::Move(d) => Some((k.code, d)),
+                _ => None,
+            })
+            .collect();
+        let (codes, dirs): (Vec<KeyCode>, Vec<usize>) = moves.into_iter().unzip();
+        use KeyCode::*;
+        assert_eq!(codes, [KeyW, KeyE, KeyF, KeyC, KeyX, KeyA]);
+        assert_eq!(dirs, [4, 5, 0, 1, 2, 3]);
+        for pair in dirs.windows(2) {
+            assert_eq!(pair[1], Spin::Cw.turn(pair[0]));
+        }
+        assert_eq!(px(DIRS[dirs[0]]).x.signum(), -1.0);
+        assert_eq!(px(DIRS[dirs[0]]).y.signum(), 1.0);
+        let sum = dirs.iter().fold(ORIGIN, |h, d| h.add(DIRS[*d]));
+        assert_eq!(sum, ORIGIN);
+    }
+
+    #[test]
+    fn the_walk_scene_repeats_its_lap_with_the_same_stall() {
+        let (mut world, _, _, _) = shot::scene("walk", 0);
+        let lap = 11;
+        let stalls = |world: &mut World| -> Vec<Option<Stall>> {
+            (0..lap)
+                .map(|_| {
+                    world.step();
+                    world.sim.arms[0].stall
+                })
+                .collect()
+        };
+        let first = stalls(&mut world);
+        let home = world.sim.arms[0].clone();
+        assert_eq!(home.pivot, Hex::new(-4, 0));
+        assert_eq!(first.iter().filter(|s| s.is_some()).count(), 3);
+        assert_eq!(first[2..5], [Some(Stall::Illegal); 3]);
+        assert_eq!(stalls(&mut world), first);
+        assert_eq!(world.sim.arms[0].pivot, home.pivot);
+        assert!(world.sim.arms[1].stall.is_none());
+    }
+
+    #[test]
+    fn mid_move_the_base_hand_and_held_atom_slide_together() {
+        let mut prev = Sim::empty();
+        let mut arm = Arm::new(Hex::new(0, 0), 0, vec![Instr::Move(4), Instr::Wait]);
+        arm.holding = true;
+        prev.atoms.push(Some(Atom {
+            kind: AtomKind::Base,
+            pos: arm.hand(),
+        }));
+        prev.arms.push(arm);
+        let mut cur = prev.clone();
+        cur.step();
+        assert_eq!(cur.arms[0].pivot, DIRS[4]);
+        let f = Frame::between(&prev, &cur, 0.3);
+        let still = Frame::settled(&prev);
+        let slid = f.arms[0].pivot - still.arms[0].pivot;
+        assert!(slid.length() > 0.0 && slid.length() < px(DIRS[4]).length());
+        let near = |a: Vec2, b: Vec2| (a - b).length() < 1e-3;
+        assert!(near(f.arms[0].hand - still.arms[0].hand, slid));
+        assert!(near(f.atoms[0].unwrap() - still.atoms[0].unwrap(), slid));
+        let f = Frame::between(&prev, &cur, 1.0);
+        assert_eq!(f.arms[0].pivot, px(DIRS[4]));
     }
 
     #[test]
     fn tape_focus_keys_insert_at_the_cursor_and_leave_the_arm_alone() {
         let mut w = armed(vec![Instr::Wait, Instr::Drop]);
         w.focus_tape(0);
-        w.key(KeyCode::ArrowLeft);
-        w.key(KeyCode::KeyF);
-        w.key(KeyCode::KeyA);
-        w.key(KeyCode::KeyD);
-        w.key(KeyCode::KeyX);
+        w.key(KeyCode::ArrowLeft, false);
+        w.key(KeyCode::KeyF, false);
+        w.key(KeyCode::KeyA, false);
+        w.key(KeyCode::KeyD, false);
+        w.key(KeyCode::KeyX, false);
         assert_eq!(
             w.sim.arms[0].tape,
             vec![
@@ -3172,20 +3362,20 @@ mod tests {
             kind: BondKind::Single,
         });
         w.focus_tape(0);
-        w.key(KeyCode::KeyQ);
-        w.key(KeyCode::KeyE);
+        w.key(KeyCode::KeyQ, false);
+        w.key(KeyCode::KeyE, false);
         assert_eq!(
             w.sim.arms[0].tape,
             vec![Instr::Wait, Instr::Pivot(Spin::Ccw), Instr::Pivot(Spin::Cw)]
         );
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 3 }));
         w.focus_arm(0);
-        w.key(KeyCode::KeyF);
-        w.key(KeyCode::KeyE);
+        w.key(KeyCode::KeyF, false);
+        w.key(KeyCode::KeyE, false);
         assert_eq!(w.sim.arms[0].dir, 0);
         assert_eq!(w.sim.atoms[0].unwrap().pos, DIRS[0]);
         assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(1, -1));
-        w.key(KeyCode::KeyQ);
+        w.key(KeyCode::KeyQ, false);
         assert_eq!(w.sim.atoms[far].unwrap().pos, Hex::new(2, -1));
         w.sim.glyphs.push(Glyph {
             kind: GlyphKind::Bonder,
@@ -3193,12 +3383,12 @@ mod tests {
             dir: 2,
         });
         w.pick(vec![Id::Glyph(0)]);
-        w.key(KeyCode::KeyQ);
-        w.key(KeyCode::KeyE);
+        w.key(KeyCode::KeyQ, false);
+        w.key(KeyCode::KeyE, false);
         assert_eq!(w.sim.glyphs[0].dir, 2);
         w.lift(vec![Piece::fresh(Item::Arm)], Vec::new());
-        w.key(KeyCode::KeyQ);
-        w.key(KeyCode::KeyE);
+        w.key(KeyCode::KeyQ, false);
+        w.key(KeyCode::KeyE, false);
         assert_eq!(held_dir(&w), 0);
     }
 
@@ -3211,17 +3401,17 @@ mod tests {
         };
         let mut w = lone(vec![bonder], vec![]);
         w.pick(vec![Id::Glyph(0)]);
-        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyA, false);
         assert_eq!(w.sim.glyphs[0].dir, 5);
-        w.key(KeyCode::KeyD);
-        w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyD, false);
+        w.key(KeyCode::KeyD, false);
         assert_eq!(w.sim.glyphs[0].dir, 1);
         assert_eq!(w.prev, w.sim);
         w.lift(vec![Piece::fresh(Item::Arm)], Vec::new());
-        w.key(KeyCode::KeyD);
+        w.key(KeyCode::KeyD, false);
         assert_eq!(held_dir(&w), 1);
-        w.key(KeyCode::KeyA);
-        w.key(KeyCode::KeyA);
+        w.key(KeyCode::KeyA, false);
+        w.key(KeyCode::KeyA, false);
         assert_eq!(held_dir(&w), 5);
     }
 
@@ -3229,15 +3419,15 @@ mod tests {
     fn z_in_tape_focus_removes_the_instruction_before_the_cursor() {
         let mut w = armed(vec![Instr::Grab, Instr::Rot(Spin::Cw), Instr::Drop]);
         w.focus_tape(0);
-        w.key(KeyCode::ArrowLeft);
-        w.key(KeyCode::KeyZ);
+        w.key(KeyCode::ArrowLeft, false);
+        w.key(KeyCode::KeyZ, false);
         assert_eq!(w.sim.arms[0].tape, vec![Instr::Grab, Instr::Drop]);
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 1 }));
-        w.key(KeyCode::Home);
-        w.key(KeyCode::KeyZ);
+        w.key(KeyCode::Home, false);
+        w.key(KeyCode::KeyZ, false);
         assert_eq!(w.sim.arms[0].tape, vec![Instr::Grab, Instr::Drop]);
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 0 }));
-        w.key(KeyCode::End);
+        w.key(KeyCode::End, false);
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
     }
 
@@ -3248,8 +3438,8 @@ mod tests {
         w.sim.arms[0].holding = true;
         w.sim.arms[0].stall = Some(Stall::Illegal);
         w.pick(vec![Id::Arm(0)]);
-        w.key(KeyCode::KeyC);
-        w.key(KeyCode::KeyV);
+        w.key(KeyCode::KeyC, false);
+        w.key(KeyCode::KeyV, false);
         w.press(px(Hex::new(6, 6)), px(Hex::new(6, 6)));
         let pasted = &w.sim.arms[2];
         assert_eq!(*pasted, Arm::new(Hex::new(6, 6), 3, pasted.tape.clone()));
@@ -3259,7 +3449,7 @@ mod tests {
     fn a_press_whose_selection_was_cleared_before_the_drag_lifts_nothing() {
         let mut w = cluster();
         w.press(px(ORIGIN), px(ORIGIN));
-        w.key(KeyCode::Escape);
+        w.key(KeyCode::Escape, false);
         w.drag(px(ORIGIN) + Vec2::new(DRAG_PX * 2.0, 0.0));
         assert_eq!(w.focus, None);
         assert_eq!(w.down, None);
