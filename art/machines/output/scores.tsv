@@ -1,4 +1,4 @@
 art/machines/output/candidates/output-1.png	0.000	0.633	0.215	0.000	0.419	pass
-art/machines/output/candidates/output-2.png	0.007	0.592	0.254	0.020	0.331	pass
-art/machines/output/candidates/output-3.png	0.029	0.171	0.257	0.000	-0.116	pass
-art/machines/output/candidates/output-4.png	0.003	0.448	0.236	0.000	0.210	pass
+art/machines/output/candidates/output-2.png	0.210	0.592	0.254	0.020	0.129	fail
+art/machines/output/candidates/output-3.png	0.551	0.171	0.257	0.000	-0.638	fail
+art/machines/output/candidates/output-4.png	0.115	0.448	0.236	0.000	0.097	fail

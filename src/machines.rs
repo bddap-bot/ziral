@@ -167,6 +167,14 @@ impl Scaffold {
         self.in_cell(world, HEX).is_some()
     }
 
+    fn outside(&self, world: Vec2) -> f32 {
+        self.cells
+            .iter()
+            .map(|c| hex_distance(world - px(c.at), HEX))
+            .fold(f32::INFINITY, f32::min)
+            / HEX
+    }
+
     fn mask(&self) -> Vec<f32> {
         let n = self.canvas as usize;
         let mut mask = vec![0f32; n * n];
@@ -282,16 +290,17 @@ impl Scaffold {
         let alpha = self.alpha(candidate);
         let (origin, side) = self.crop();
         let n = self.canvas as usize;
-        let mut outside = Mean::default();
+        let mut outside = 0f32;
         let mut inside = Mean::default();
         for y in origin..origin + side {
             for x in origin..origin + side {
                 let i = y as usize * n + x as usize;
-                let c = rgb(candidate.get_pixel(x, y));
-                if self.mask[i] == 0.0 {
-                    outside.add(alpha[i]);
-                } else if self.mask[i] == 1.0 && alpha[i] == 1.0 {
-                    inside.add_rgb(c);
+                if alpha[i] > 0.0 {
+                    let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+                    outside = outside.max(self.outside(world));
+                }
+                if self.mask[i] == 1.0 && alpha[i] == 1.0 {
+                    inside.add_rgb(rgb(candidate.get_pixel(x, y)));
                 }
             }
         }
@@ -325,7 +334,7 @@ impl Scaffold {
             f32::INFINITY
         };
         Score {
-            outside: outside.value(),
+            outside,
             seat,
             palette,
             off_centre: capture.off_centre,
@@ -683,6 +692,20 @@ fn in_hex(d: Vec2, radius: f32) -> bool {
     dx <= radius * 3f32.sqrt() / 2.0 && dy <= radius - dx / 3f32.sqrt()
 }
 
+fn hex_distance(d: Vec2, radius: f32) -> f32 {
+    if in_hex(d, radius) {
+        return 0.0;
+    }
+    let corner = |k: i32| Vec2::from_angle((k as f32 + 0.5) * std::f32::consts::FRAC_PI_3) * radius;
+    (0..6)
+        .map(|k| {
+            let (a, b) = (corner(k), corner(k + 1));
+            let t = ((d - a).dot(b - a) / (b - a).length_squared()).clamp(0.0, 1.0);
+            d.distance(a + (b - a) * t)
+        })
+        .fold(f32::INFINITY, f32::min)
+}
+
 fn rgb(p: &Rgba<u8>) -> [f32; 3] {
     [p[0], p[1], p[2]].map(|c| f32::from(c) / 255.0)
 }
@@ -984,27 +1007,36 @@ mod tests {
     }
 
     #[test]
-    fn a_candidate_painted_outside_the_mask_is_rejected() {
-        let item = Item::Glyph(crate::sim::GlyphKind::Bonder);
-        let scaffold = Scaffold::of(item);
+    fn a_candidate_painted_beyond_its_footprint_is_rejected() {
+        let scaffold = Scaffold::of(Item::Glyph(crate::sim::GlyphKind::Bonder));
         let thresholds = Manifest::read().thresholds;
         let clean = fired(&scaffold, &|w| w);
-        assert!(
-            scaffold
-                .score(&scaffold.register(&clean))
-                .passes(&thresholds)
-        );
-        let mut spilled = clean.clone();
-        let (origin, side) = scaffold.crop();
-        let brass = rgba(Glaze::Brass.rgb(), 1.0);
-        for y in origin..origin + side {
-            for x in origin..origin + side / 6 {
-                spilled.put_pixel(x, y, brass);
+        let score = scaffold.score(&scaffold.register(&clean));
+        assert!(score.passes(&thresholds), "{score:?}");
+        assert!(score.outside <= SEAT_STEP, "{score:?}");
+        let face = px(scaffold.cells[0].at) - Vec2::X * HEX * 3f32.sqrt() / 2.0;
+        let dot = 2.0;
+        for (k, ok) in [(0.5, true), (1.5, false)] {
+            let at = face - Vec2::X * k * thresholds.outside * HEX;
+            assert!(
+                (scaffold.outside(at) - k * thresholds.outside).abs() < SEAT_STEP,
+                "{at} lies {} beyond the footprint",
+                scaffold.outside(at)
+            );
+            let mut painted = clean.clone();
+            let centre = scaffold.pixel(at);
+            for (x, y, p) in painted.enumerate_pixels_mut() {
+                if Vec2::new(x as f32 + 0.5, y as f32 + 0.5).distance(centre) <= dot {
+                    *p = rgba(Glaze::Brass.rgb(), 1.0);
+                }
             }
+            let score = scaffold.score(&scaffold.register(&painted));
+            assert_eq!(score.passes(&thresholds), ok, "{score:?}");
+            assert!(
+                (score.outside - k * thresholds.outside).abs() <= SEAT_STEP,
+                "{score:?} against {k} tolerances"
+            );
         }
-        let score = scaffold.score(&scaffold.register(&spilled));
-        assert!(!score.passes(&thresholds), "{score:?}");
-        assert!(score.outside > thresholds.outside, "{score:?}");
     }
 
     #[test]

@@ -405,6 +405,19 @@ pub(crate) mod tests {
         (w, h, data)
     }
 
+    fn painted(skin: Skin, side: usize) -> Vec<bool> {
+        let (w, h, data) = pixels(skin);
+        let mut painted = vec![false; side * side];
+        for y in 0..h {
+            for x in 0..w {
+                if data[(y * w + x) * 4 + 3] > 0 {
+                    painted[(y * side / h) * side + x * side / w] = true;
+                }
+            }
+        }
+        painted
+    }
+
     fn thumbnail(skin: Skin, side: usize) -> Vec<f32> {
         let (w, h, data) = pixels(skin);
         assert!(w >= side && h >= side, "{skin:?} is under {side} px");
@@ -588,8 +601,19 @@ pub(crate) mod tests {
         let [hue, value] = hue_and_value_differ(a.glaze.color(), b.glaze.color());
         let x = thumbnail(a.skin, THUMB);
         let y = thumbnail(b.skin, THUMB);
-        let texture = x.iter().zip(y).map(|(x, y)| (x - y).abs()).sum::<f32>() / x.len() as f32
-            >= TILES_APART;
+        let painted: Vec<bool> = painted(a.skin, THUMB)
+            .iter()
+            .zip(painted(b.skin, THUMB))
+            .map(|(p, q)| *p || q)
+            .collect();
+        let apart: f32 = x
+            .iter()
+            .zip(y)
+            .enumerate()
+            .filter(|(i, _)| painted[i / 3])
+            .map(|(_, (x, y))| (x - y).abs())
+            .sum();
+        let texture = apart / (3.0 * painted.iter().filter(|p| **p).count() as f32) >= TILES_APART;
         [hue, value, a.shape != b.shape, texture]
     }
 
