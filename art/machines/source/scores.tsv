@@ -1,4 +1,4 @@
-source-1	0.000	0.508	0.166	0.000	pass
-source-2	0.000	0.547	0.142	0.000	pass
-source-3	0.000	0.249	0.189	0.000	pass
-source-4	0.000	0.290	0.165	0.000	pass
+source-1	0.000	0.508	0.166	0.000	-	fail critic unreadable	[]
+source-2	0.000	0.547	0.142	0.000	5	fail critic 5 < 8	["The central seat is filled by a teal basin and raised central boss; leave the marked seat empty and open through to the board.","The seat reads as a tilted cup, with a dark far inner wall and a broad near rim; redraw it as concentric shapes seen straight down.","The pale upper-left highlights and dark lower-right shading on the central boss imply directional light; use symmetric tonal bands under even illumination."]
+source-3	0.000	0.249	0.189	0.000	-	fail critic unreadable	[]
+source-4	0.000	0.290	0.165	0.000	-	fail critic unreadable	[]

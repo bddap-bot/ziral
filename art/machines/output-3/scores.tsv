@@ -1,4 +1,4 @@
-output-3-1	0.000	0.775	0.280	0.045	pass
-output-3-2	0.000	0.592	0.294	0.100	pass
-output-3-3	0.000	0.716	0.297	0.045	pass
-output-3-4	0.000	0.617	0.272	0.020	pass
+output-3-1	0.000	0.775	0.280	0.045	5	fail critic 5 < 8	["Every seat has a dark upper-left crescent and a bright lower-right highlight; replace this directional shading with symmetric tones under diffuse light.","The pale, bulging seat interiors read as installed beads or deep cups rather than empty, open seats; flatten and clear their centres.","The connecting channels are narrow, dark double rails that lose readability against the tile seams; broaden them into clear, continuous brass paths."]
+output-3-2	0.000	0.592	0.294	0.100	-	fail critic unreadable	[]
+output-3-3	0.000	0.716	0.297	0.045	-	fail critic unreadable	[]
+output-3-4	0.000	0.617	0.272	0.020	-	fail critic unreadable	[]

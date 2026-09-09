@@ -3,3 +3,4 @@ web/dist/
 *.log
 *.part
 art/machines/*/relit/master.png
+art/machines/*/judged/

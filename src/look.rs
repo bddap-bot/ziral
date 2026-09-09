@@ -16,10 +16,16 @@ pub fn ring() -> RangeInclusive<f32> {
     FACE - half..=FACE + half
 }
 
-fn hex_distance(w: usize, h: usize, x: usize, y: usize) -> f32 {
-    let x = (2.0 * x as f32 / (w - 1) as f32 - 1.0).abs();
-    let y = (2.0 * y as f32 / (h - 1) as f32 - 1.0).abs();
+pub fn hex_norm(x: f32, y: f32) -> f32 {
+    let (x, y) = (x.abs(), y.abs());
     f32::max(2.0 * x / 3f32.sqrt(), x / 3f32.sqrt() + y)
+}
+
+fn hex_distance(w: usize, h: usize, x: usize, y: usize) -> f32 {
+    hex_norm(
+        2.0 * x as f32 / (w - 1) as f32 - 1.0,
+        2.0 * y as f32 / (h - 1) as f32 - 1.0,
+    )
 }
 
 pub fn grout(tile: &mut Image, template: &Image) {

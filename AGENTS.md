@@ -7,3 +7,5 @@ A landing on `main` is complete only when the `pages` workflow is green on that 
 No code comments. A survivor states a why the code cannot show. Prose lives here, in the README, or in DESIGN.md.
 
 `test-map.json` maps every touched path to the commands that must be green before landing.
+
+The machine textures' critic (art/MACHINES.md) is a rule, not a dial: its rubric and threshold in `art/machines/manifest.toml` are never edited to raise a score. A change to either is a taste change, made in its own commit with its reason, never inside a paint round.

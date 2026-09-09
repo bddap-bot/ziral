@@ -1,4 +1,4 @@
-bonder-1	0.000	0.757	0.035	0.028	pass
-bonder-2	0.000	0.703	0.079	0.000	pass
-bonder-3	0.000	0.730	0.061	0.000	pass
-bonder-4	0.000	0.836	0.065	0.000	pass
+bonder-1	0.000	0.757	0.035	0.028	-	fail critic unreadable	[]
+bonder-2	0.000	0.703	0.079	0.000	-	fail critic unreadable	[]
+bonder-3	0.000	0.730	0.061	0.000	-	fail critic unreadable	[]
+bonder-4	0.000	0.836	0.065	0.000	4	fail critic 4 < 8	["Both circular seats are filled by domed teal caps instead of left empty; paint open sockets centred on the scaffold dots with broad, unobstructed interiors.","The central brass connector shows a raised rear ridge and a dark front side face, making it read as an oblique view rather than a straight-down plan.","The teal caps carry upper-left highlights and lower-right shading; replace this directional lighting with even albedo and symmetric tonal structure.","Small upright brass tabs along the connector clutter the functional channel with ornamental hardware; simplify it into one broad, continuous link."]

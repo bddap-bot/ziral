@@ -1,4 +1,4 @@
-output-1-1	0.000	0.847	0.304	0.020	pass
-output-1-2	0.017	0.868	0.274	0.028	pass
-output-1-3	0.000	0.574	0.296	0.020	pass
-output-1-4	0.000	0.807	0.298	0.028	pass
+output-1-1	0.000	0.847	0.304	0.020	-	fail critic unreadable	[]
+output-1-2	0.017	0.868	0.274	0.028	5	fail critic 5 < 8	["All seven seats read as deep cups with visible far inner walls; flatten the rims and interiors into directly overhead seats.","The seats have dark upper edges and bright lower interiors, while the frame carries offset dark shading; replace this directional lighting with symmetric tones and remove cast shadows.","The crowded brass collars and small block beneath the central seat obscure the functional channels; simplify them into broad, continuous links."]
+output-1-3	0.000	0.574	0.296	0.020	-	fail critic unreadable	[]
+output-1-4	0.000	0.807	0.298	0.028	-	fail critic unreadable	[]

@@ -1,4 +1,4 @@
-second-bond-1	0.000	0.556	0.072	0.057	pass
-second-bond-2	0.000	0.617	0.063	0.040	pass
-second-bond-3	0.000	0.639	0.063	0.020	pass
-second-bond-4	0.139	0.470	0.050	0.514	fail outside 0.139 > 0.05
+second-bond-1	0.000	0.556	0.072	0.057	-	fail critic unreadable	[]
+second-bond-2	0.000	0.617	0.063	0.040	-	fail critic unreadable	[]
+second-bond-3	0.000	0.639	0.063	0.020	4	fail critic 4 < 8	["The two upper seats are filled with domed teal forms that read as atoms; paint empty, broad circular sockets with unobstructed interiors.","The lower orange seat reads as a tilted cup with a visible inner wall; redraw its opening as concentric shapes seen straight down.","Bright upper-left highlights and dark lower-right shading on the teal forms impose directional lighting; use symmetric tonal structure under even diffuse light.","The orange seat is at the bottom instead of the scaffold’s upper-left mark; restore the orange upper-left and teal lower seat arrangement."]
+second-bond-4	0.139	0.470	0.050	0.514	-	fail outside 0.139 > 0.05	[]

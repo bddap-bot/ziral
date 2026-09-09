@@ -26,6 +26,7 @@ const SPHERE_CAP: f32 = 0.5;
 const PAD: f32 = 1.6;
 const PAD_ALBEDO: f32 = 0.45;
 const SAMPLES: usize = 4;
+const CRITIC_PX: u32 = 512;
 
 #[derive(Serialize, Deserialize)]
 struct Manifest {
@@ -39,6 +40,7 @@ struct Manifest {
 struct Style {
     shared: String,
     recipe: String,
+    critic: String,
     edges: Vec<String>,
     relight: String,
 }
@@ -49,16 +51,18 @@ struct Thresholds {
     seat: f32,
     palette: f32,
     off_centre: f32,
+    critic: u8,
     sphere: f32,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Entry {
     #[serde(flatten)]
     direction: Direction,
     kept: Option<u32>,
     painted: Option<String>,
     relit: Option<String>,
+    judged: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -160,6 +164,15 @@ impl Art {
 
     fn paint_sh(&self) -> PathBuf {
         self.dir.join("../paint.sh")
+    }
+
+    fn critic_sh(&self) -> PathBuf {
+        self.dir.join("../critic.sh")
+    }
+
+    fn judged(&self, name: &str, index: u32) -> PathBuf {
+        self.machine(name)
+            .join(format!("judged/{name}-{index}.png"))
     }
 }
 
@@ -314,6 +327,35 @@ impl Scaffold {
         })
     }
 
+    fn board(&self, candidate: &RgbaImage) -> RgbaImage {
+        let side = self.quad.side.round() as u32;
+        let sprite = shrink(&self.cut(candidate), side);
+        let (tiles, grout) = tiles();
+        let half = side as f32 / 2.0;
+        let shipped = RgbaImage::from_fn(side, side, |x, y| {
+            let world =
+                self.quad.centre + Vec2::new(x as f32 + 0.5 - half, half - (y as f32 + 0.5));
+            let h = crate::hex_at(world);
+            let u = (world - px(h)) / HEX * *look::ring().end();
+            let tile = if look::hex_norm(u.x, u.y) >= *look::ring().start() {
+                grout
+            } else {
+                let skin = look::tile(h).skin;
+                &tiles[look::TILES
+                    .iter()
+                    .position(|t| *t == skin)
+                    .expect("a tile skin is one of TILES")]
+            };
+            let at = Vec2::new((u.x + 1.0) / 2.0, 1.0 - (u.y + 1.0) / 2.0) * tile.width() as f32;
+            let ground = rgb(&bilinear(tile, at));
+            let s = sprite.get_pixel(x, y);
+            let a = f32::from(s[3]) / 255.0;
+            let c = rgb(s);
+            rgba([0, 1, 2].map(|i| ground[i] * (1.0 - a) + c[i] * a), 1.0)
+        });
+        magnify(&shipped, CRITIC_PX.div_ceil(side))
+    }
+
     fn register(&self, candidate: &RgbaImage) -> Capture {
         assert_eq!(
             (candidate.width(), candidate.height()),
@@ -413,6 +455,7 @@ impl Scaffold {
             seat,
             palette,
             off_centre: capture.off_centre,
+            critic: None,
         }
     }
 
@@ -692,36 +735,117 @@ fn rotation_to_z(from: Vec3) -> bevy::math::Mat3 {
     Mat3::from_quat(Quat::from_rotation_arc(from, Vec3::Z))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Score {
     outside: f32,
     seat: f32,
     palette: f32,
     off_centre: f32,
+    critic: Option<Critic>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct Critic {
+    score: u8,
+    issues: Vec<String>,
+}
+
+impl Critic {
+    fn parse(text: &str) -> Option<Critic> {
+        let object = text.get(text.find('{')?..=text.rfind('}')?)?;
+        let mut judgement: Critic = serde_json::from_str(object).ok()?;
+        judgement.issues.truncate(5);
+        (judgement.score <= 10).then_some(judgement)
+    }
 }
 
 impl Score {
-    fn failing(&self, t: &Thresholds) -> Option<(&'static str, f32, &'static str, f32)> {
+    fn measured(&self, t: &Thresholds) -> Option<String> {
         if self.outside > t.outside {
-            Some(("outside", self.outside, ">", t.outside))
+            Some(format!("outside {:.3} > {}", self.outside, t.outside))
         } else if self.seat < t.seat {
-            Some(("seat", self.seat, "<", t.seat))
+            Some(format!("seat {:.3} < {}", self.seat, t.seat))
         } else if self.palette > t.palette {
-            Some(("palette", self.palette, ">", t.palette))
+            Some(format!("palette {:.3} > {}", self.palette, t.palette))
         } else if self.off_centre > t.off_centre {
-            Some(("off_centre", self.off_centre, ">", t.off_centre))
+            Some(format!(
+                "off_centre {:.3} > {}",
+                self.off_centre, t.off_centre
+            ))
         } else {
             None
         }
+    }
+
+    fn failing(&self, t: &Thresholds) -> Option<String> {
+        self.measured(t).or_else(|| match &self.critic {
+            Some(j) if j.score >= t.critic => None,
+            Some(j) => Some(format!("critic {} < {}", j.score, t.critic)),
+            None => Some("critic unreadable".to_string()),
+        })
     }
 
     fn passes(&self, t: &Thresholds) -> bool {
         self.failing(t).is_none()
     }
 
-    fn total(&self) -> f32 {
-        self.seat - self.outside - self.palette
+    fn rank(&self) -> (u8, f32) {
+        (
+            self.critic.as_ref().map_or(0, |j| j.score),
+            self.seat - self.outside - self.palette,
+        )
     }
+
+    fn issues(&self) -> &[String] {
+        self.critic.as_ref().map_or(&[], |j| &j.issues)
+    }
+}
+
+fn shrink(image: &RgbaImage, side: u32) -> RgbaImage {
+    let (w, h) = image.dimensions();
+    let mut bins = vec![[0f32; 5]; (side * side) as usize];
+    for (x, y, p) in image.enumerate_pixels() {
+        let bin = &mut bins[(y * side / h * side + x * side / w) as usize];
+        let a = f32::from(p[3]) / 255.0;
+        for (i, c) in rgb(p).iter().enumerate() {
+            bin[i] += c * a;
+        }
+        bin[3] += a;
+        bin[4] += 1.0;
+    }
+    RgbaImage::from_fn(side, side, |x, y| {
+        let b = bins[(y * side + x) as usize];
+        if b[3] > 0.0 {
+            rgba([b[0] / b[3], b[1] / b[3], b[2] / b[3]], b[3] / b[4])
+        } else {
+            Rgba([0, 0, 0, 0])
+        }
+    })
+}
+
+fn magnify(image: &RgbaImage, by: u32) -> RgbaImage {
+    RgbaImage::from_fn(image.width() * by, image.height() * by, |x, y| {
+        *image.get_pixel(x / by, y / by)
+    })
+}
+
+fn tiles() -> &'static (Vec<RgbaImage>, RgbaImage) {
+    static TILES: std::sync::OnceLock<(Vec<RgbaImage>, RgbaImage)> = std::sync::OnceLock::new();
+    TILES.get_or_init(|| {
+        let side = (2.0 * HEX) as u32;
+        let decode = |skin: &look::Skin| {
+            shrink(
+                &image::load_from_memory(skin.png)
+                    .unwrap_or_else(|e| panic!("{skin:?} does not decode: {e}"))
+                    .to_rgba8(),
+                side,
+            )
+        };
+        (
+            look::TILES.iter().map(decode).collect(),
+            decode(&look::GROUT),
+        )
+    })
 }
 
 #[derive(Default)]
@@ -841,6 +965,7 @@ fn save(image: &RgbaImage, path: &Path) {
 
 const PAINTERS: usize = 6;
 const RELIGHTS: u32 = 3;
+const ROUNDS: usize = 3;
 
 struct Paint {
     images: Vec<PathBuf>,
@@ -956,6 +1081,65 @@ fn relit_key(kept: &[u8], style: &Style) -> String {
     key(&[kept, style.relight.as_bytes(), edges.as_bytes()])
 }
 
+fn judged_key(art: &Art, name: &str, count: u32, style: &Style) -> String {
+    let candidates: Vec<Vec<u8>> = (1..=count)
+        .map(|i| art.candidate(name, i))
+        .filter(|p| p.exists())
+        .map(|p| read(&p))
+        .collect();
+    let mut parts: Vec<&[u8]> = vec![style.critic.as_bytes()];
+    parts.extend(candidates.iter().map(Vec::as_slice));
+    key(&parts)
+}
+
+fn revised(prompt: &str, issues: &[String]) -> String {
+    if issues.is_empty() {
+        return prompt.to_string();
+    }
+    format!(
+        "{prompt} Revise, most important first: {}",
+        issues.join(" ")
+    )
+}
+
+fn best(scored: &[(u32, Score)], keep: impl Fn(&Score) -> bool) -> Option<(u32, &Score)> {
+    scored
+        .iter()
+        .filter(|(_, s)| keep(s))
+        .max_by(|a, b| {
+            let (a, b) = (a.1.rank(), b.1.rank());
+            a.0.cmp(&b.0).then(a.1.total_cmp(&b.1))
+        })
+        .map(|(i, s)| (*i, s))
+}
+
+type CriticCommand<'a> = &'a (dyn Fn(&[PathBuf], &str) -> Result<String, String> + Sync);
+
+fn critic_sh(art: &Art, images: &[PathBuf], prompt: &str) -> Result<String, String> {
+    let mut command = std::process::Command::new(art.critic_sh());
+    for image in images {
+        command.arg("-i").arg(image);
+    }
+    let output = command
+        .arg(prompt)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("{}: {e}", art.critic_sh().display()))?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
+        eprintln!("{line}");
+    }
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+    Err(stderr
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("critic.sh failed without a word")
+        .to_string())
+}
+
 fn read(path: &Path) -> Vec<u8> {
     std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
@@ -977,19 +1161,57 @@ impl Score {
     fn verdict(&self, t: &Thresholds) -> String {
         match self.failing(t) {
             None => "pass".to_string(),
-            Some((rule, got, sign, bound)) => format!("fail {rule} {got:.3} {sign} {bound}"),
+            Some(rule) => format!("fail {rule}"),
         }
     }
 
     fn row(&self, candidate: &str, t: &Thresholds) -> String {
         format!(
-            "{candidate}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{}",
+            "{candidate}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{}\t{}\t{}",
             self.outside,
             self.seat,
             self.palette,
             self.off_centre,
-            self.verdict(t)
+            self.critic
+                .as_ref()
+                .map_or("-".to_string(), |j| j.score.to_string()),
+            self.verdict(t),
+            serde_json::to_string(self.issues()).expect("issues serialise")
         )
+    }
+
+    fn parse(row: &str) -> Option<(String, Score)> {
+        let cols: Vec<&str> = row.split('\t').collect();
+        let [
+            candidate,
+            outside,
+            seat,
+            palette,
+            off_centre,
+            critic,
+            _,
+            issues,
+        ] = cols[..]
+        else {
+            return None;
+        };
+        let critic = match critic {
+            "-" => None,
+            score => Some(Critic {
+                score: score.parse().ok()?,
+                issues: serde_json::from_str(issues).ok()?,
+            }),
+        };
+        Some((
+            candidate.to_string(),
+            Score {
+                outside: outside.parse().ok()?,
+                seat: seat.parse().ok()?,
+                palette: palette.parse().ok()?,
+                off_centre: off_centre.parse().ok()?,
+                critic,
+            },
+        ))
     }
 }
 
@@ -1010,8 +1232,9 @@ struct Remake<'a> {
     art: &'a Art,
     manifest: std::sync::Mutex<Manifest>,
     painter: Painter<'a>,
+    critic: CriticCommand<'a>,
     cap: Cap,
-    painted: std::sync::atomic::AtomicBool,
+    redraw: std::sync::atomic::AtomicBool,
 }
 
 impl Remake<'_> {
@@ -1027,8 +1250,7 @@ impl Remake<'_> {
                         };
                         match &out {
                             Ok(()) => {
-                                self.painted
-                                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                                self.redraw.store(true, std::sync::atomic::Ordering::SeqCst);
                                 println!("{label}\tpainted");
                             }
                             Err(e) => println!("{label}\tpaint failed: {e}"),
@@ -1053,12 +1275,12 @@ impl Remake<'_> {
         Ok((m.style.clone(), m.thresholds, m.candidates, entry.clone()))
     }
 
-    fn record(&self, name: &str, kept: Option<u32>, painted: &str, relit: Option<&str>) {
+    fn record(&self, name: &str, patch: impl FnOnce(&mut Entry)) {
         let mut m = self.manifest.lock().expect("the manifest is unpoisoned");
         let entry = m.machine.get_mut(name).expect("the entry read above");
-        let now = (kept, Some(painted.to_string()), relit.map(str::to_string));
-        if (entry.kept, entry.painted.clone(), entry.relit.clone()) != now {
-            (entry.kept, entry.painted, entry.relit) = now;
+        let before = entry.clone();
+        patch(entry);
+        if *entry != before {
             self.art.write(&m);
         }
     }
@@ -1071,6 +1293,95 @@ impl Remake<'_> {
                 (i, scaffold.score(&scaffold.register(&png)))
             })
             .collect()
+    }
+
+    fn assess(
+        &self,
+        name: &str,
+        scaffold: &Scaffold,
+        style: &Style,
+        thresholds: Thresholds,
+        count: u32,
+        scored: Vec<(u32, Score)>,
+    ) -> Result<Vec<(u32, Score)>, String> {
+        let dir = self.art.machine(name);
+        let judged = judged_key(self.art, name, count, style);
+        let trusted = self.entry(name)?.3.judged.as_deref() == Some(judged.as_str());
+        let previous: BTreeMap<u32, Score> = std::fs::read_to_string(dir.join("scores.tsv"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(Score::parse)
+            .filter_map(|(label, mut score)| {
+                let index: u32 = label.rsplit('-').next()?.parse().ok()?;
+                if !trusted {
+                    score.critic = None;
+                }
+                self.art
+                    .candidate(name, index)
+                    .exists()
+                    .then_some((index, score))
+            })
+            .collect();
+        let scaffold_png = dir.join("scaffold.png");
+        std::fs::create_dir_all(dir.join("judged")).map_err(|e| e.to_string())?;
+        let scored: Vec<(u32, Score)> = std::thread::scope(|s| {
+            let handles: Vec<_> = scored
+                .into_iter()
+                .map(|(i, mut score)| {
+                    let (previous, scaffold_png, style) =
+                        (previous.get(&i), scaffold_png.clone(), &style);
+                    s.spawn(move || {
+                        if score.measured(&thresholds).is_some() {
+                            return (i, score);
+                        }
+                        if let Some(critic) = previous.and_then(|p| p.critic.clone()) {
+                            score.critic = Some(critic);
+                            return (i, score);
+                        }
+                        let board = self.art.judged(name, i);
+                        let capture = scaffold.register(&open(self.art.candidate(name, i)));
+                        save(&scaffold.board(&capture.image), &board);
+                        let label = format!("{name}-{i}");
+                        self.redraw.store(true, std::sync::atomic::Ordering::SeqCst);
+                        let reply = {
+                            let _permit = self.cap.take();
+                            (self.critic)(&[board, scaffold_png], &style.critic)
+                        };
+                        score.critic = match reply {
+                            Ok(text) => {
+                                let judgement = Critic::parse(&text);
+                                if judgement.is_none() {
+                                    println!("{label}\tcritic returned no score: {}", text.trim());
+                                }
+                                judgement
+                            }
+                            Err(e) => {
+                                println!("{label}\tcritic failed: {e}");
+                                None
+                            }
+                        };
+                        (i, score)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a judgement returns"))
+                .collect()
+        });
+        let mut rows = previous;
+        rows.extend(scored.iter().cloned());
+        let text: Vec<String> = rows
+            .iter()
+            .map(|(i, s)| s.row(&format!("{name}-{i}"), &thresholds))
+            .collect();
+        std::fs::write(dir.join("scores.tsv"), text.join("\n") + "\n")
+            .map_err(|e| e.to_string())?;
+        for (i, s) in &scored {
+            println!("{}", s.row(&format!("{name}-{i}"), &thresholds));
+        }
+        self.record(name, |e| e.judged = Some(judged));
+        Ok(scored)
     }
 
     fn prepare(&self, name: &str) -> Result<Prepared, String> {
@@ -1131,10 +1442,12 @@ impl Remake<'_> {
         let dir = self.art.machine(name);
         let candidates = dir.join("candidates");
         let mut kept = entry.kept.filter(|k| self.art.candidate(name, *k).exists());
-        let mut landed = None;
-        for _ in 0..2 {
+        let mut rounds = 0;
+        let mut issues: Vec<String> = Vec::new();
+        let kept = loop {
             if wipe {
                 let _ = std::fs::remove_dir_all(&candidates);
+                let _ = std::fs::remove_file(dir.join("scores.tsv"));
                 std::fs::create_dir_all(&candidates).map_err(|e| e.to_string())?;
                 kept = None;
             }
@@ -1146,13 +1459,14 @@ impl Remake<'_> {
                         Paint {
                             images: images.clone(),
                             output: self.art.candidate(name, i),
-                            prompt: prompt.clone(),
+                            prompt: revised(&prompt, &issues),
                             size: scaffold.canvas,
                         },
                     )
                 })
                 .collect();
             let asked = jobs.len();
+            rounds += usize::from(asked > 0);
             let failed: Vec<String> = self
                 .paint(jobs)
                 .into_iter()
@@ -1161,18 +1475,12 @@ impl Remake<'_> {
             let painted_now = asked > failed.len();
             changed |= painted_now;
             if painted_now || wipe {
-                self.record(name, None, &painted, None);
+                self.record(name, |e| {
+                    e.kept = None;
+                    e.painted = Some(painted.clone());
+                    e.relit = None;
+                });
             }
-            let rows = |scored: &[(u32, Score)]| -> Vec<String> {
-                let rows: Vec<String> = scored
-                    .iter()
-                    .map(|(i, s)| s.row(&format!("{name}-{i}"), &thresholds))
-                    .collect();
-                for row in &rows {
-                    println!("{row}");
-                }
-                rows
-            };
             let only_kept = kept.filter(|_| asked == 0);
             let mut scored = match only_kept {
                 Some(k) => {
@@ -1181,48 +1489,44 @@ impl Remake<'_> {
                 }
                 None => self.score(name, &scaffold, count),
             };
-            let mut printed = rows(&scored);
+            let assess = |scored| self.assess(name, &scaffold, &style, thresholds, count, scored);
+            scored = assess(scored)?;
             let passing = |scored: &[(u32, Score)], i: u32| {
                 scored.iter().any(|(k, s)| *k == i && s.passes(&thresholds))
             };
             if let Some(k) = kept.filter(|k| passing(&scored, *k)) {
-                if asked > 0 || wipe {
-                    std::fs::write(dir.join("scores.tsv"), printed.join("\n") + "\n")
-                        .map_err(|e| e.to_string())?;
-                }
-                landed = Some(k);
-                break;
+                break k;
             }
             if only_kept.is_some() {
-                scored = self.score(name, &scaffold, count);
-                printed = rows(&scored);
+                scored = assess(self.score(name, &scaffold, count))?;
             }
-            std::fs::write(dir.join("scores.tsv"), printed.join("\n") + "\n")
-                .map_err(|e| e.to_string())?;
-            if let Some(k) = scored
+            if let Some((k, _)) = best(&scored, |s| s.passes(&thresholds)) {
+                break k;
+            }
+            if asked > 0 && failed.len() == asked {
+                return Err(format!(
+                    "no candidate passes; {} of {count} paints failed: {}",
+                    failed.len(),
+                    failed.join(", ")
+                ));
+            }
+            let measured = scored
                 .iter()
-                .filter(|(_, s)| s.passes(&thresholds))
-                .max_by(|a, b| a.1.total().total_cmp(&b.1.total()))
-                .map(|(i, _)| *i)
-            {
-                landed = Some(k);
-                break;
+                .filter(|(_, s)| s.measured(&thresholds).is_none());
+            if measured.clone().count() > 0 && measured.clone().all(|(_, s)| s.critic.is_none()) {
+                return Err("the critic read no candidate; nothing repainted".to_string());
             }
-            if asked > 0 {
-                let why = if failed.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        "; {} of {count} paints failed: {}",
-                        failed.len(),
-                        failed.join(", ")
-                    )
-                };
-                return Err(format!("no candidate passes{why}"));
+            issues = best(&scored, |s| s.measured(&thresholds).is_none())
+                .map(|(_, s)| s.issues().to_vec())
+                .unwrap_or_default();
+            if rounds == ROUNDS {
+                return Err(format!(
+                    "no candidate passes in {ROUNDS} rounds; the last issues: {}",
+                    issues.join(" ")
+                ));
             }
             wipe = true;
-        }
-        let kept = landed.ok_or_else(|| "no candidate passes".to_string())?;
+        };
         let kept_png = read(&self.art.candidate(name, kept));
         let relit = relit_key(&kept_png, &style);
         let current = entry.relit.as_deref() == Some(relit.as_str())
@@ -1232,7 +1536,11 @@ impl Remake<'_> {
             self.relief(name, &scaffold, kept, &style, thresholds)?;
             changed = true;
         }
-        self.record(name, Some(kept), &painted, Some(&relit));
+        self.record(name, |e| {
+            e.kept = Some(kept);
+            e.painted = Some(painted.clone());
+            e.relit = Some(relit.clone());
+        });
         println!(
             "{name}\t{}\tkept {name}-{kept}\t{:.0}s",
             if changed { "landed" } else { "up to date" },
@@ -1330,8 +1638,7 @@ impl Remake<'_> {
                 continue;
             };
             for row in text.lines().filter(|l| !l.is_empty()) {
-                let cols: Vec<&str> = row.split('\t').collect();
-                let [candidate, outside, seat, palette, off_centre, verdict] = cols[..] else {
+                let Some((candidate, score)) = Score::parse(row) else {
                     return Err(format!("{}: bad row {row:?}", scores.display()));
                 };
                 let index: u32 = candidate
@@ -1344,11 +1651,20 @@ impl Remake<'_> {
                 } else {
                     ""
                 };
+                let verdict = score.verdict(&m.thresholds);
                 let rule: Vec<&str> = verdict.split(' ').take(2).collect();
                 args.push("-label".into());
                 args.push(
                     format!(
-                        "{kept}{candidate}  {outside} {seat} {palette} {off_centre}  {}",
+                        "{kept}{candidate}  {:.3} {:.3} {:.3} {:.3} {}  {}",
+                        score.outside,
+                        score.seat,
+                        score.palette,
+                        score.off_centre,
+                        score
+                            .critic
+                            .as_ref()
+                            .map_or("-".to_string(), |c| c.score.to_string()),
                         rule.join(" ")
                     )
                     .into(),
@@ -1390,14 +1706,26 @@ impl Remake<'_> {
     }
 }
 
-fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<bool, String>)> {
-    let remake = Remake {
-        art,
-        manifest: std::sync::Mutex::new(art.read()),
-        painter,
-        cap: Cap::new(PAINTERS),
-        painted: std::sync::atomic::AtomicBool::new(false),
-    };
+impl<'a> Remake<'a> {
+    fn new(art: &'a Art, painter: Painter<'a>, critic: CriticCommand<'a>) -> Remake<'a> {
+        Remake {
+            art,
+            manifest: std::sync::Mutex::new(art.read()),
+            painter,
+            critic,
+            cap: Cap::new(PAINTERS),
+            redraw: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+fn remake(
+    art: &Art,
+    names: &[String],
+    painter: Painter,
+    critic: CriticCommand,
+) -> Vec<(String, Result<bool, String>)> {
+    let remake = Remake::new(art, painter, critic);
     let mut names: Vec<&String> = names.iter().collect();
     names.sort();
     names.dedup();
@@ -1422,7 +1750,7 @@ fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<
             .collect()
     });
     let sheet = art.dir.join("sheet.png");
-    if (!sheet.exists() || remake.painted.load(std::sync::atomic::Ordering::SeqCst))
+    if (!sheet.exists() || remake.redraw.load(std::sync::atomic::Ordering::SeqCst))
         && let Err(e) = remake.sheet()
     {
         eprintln!("sheet: {e}");
@@ -1433,7 +1761,11 @@ fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<
 fn violators(art: &Art, manifest: &Manifest) -> Vec<String> {
     let violates = |name: &str| {
         let dir = art.machine(name);
-        let Some(kept) = manifest.machine.get(name).and_then(|m| m.kept) else {
+        let Some(entry) = manifest.machine.get(name) else {
+            println!("{name}\thas no manifest entry");
+            return true;
+        };
+        let Some(kept) = entry.kept else {
             println!("{name}\tkeeps no candidate");
             return true;
         };
@@ -1442,8 +1774,20 @@ fn violators(art: &Art, manifest: &Manifest) -> Vec<String> {
             println!("{name}\t{name}-{kept} or its maps are missing");
             return true;
         }
+        if entry.judged.as_deref()
+            != Some(judged_key(art, name, manifest.candidates, &manifest.style).as_str())
+        {
+            println!("{name}\t{name}-{kept} is not judged under this rubric");
+            return true;
+        }
         let scaffold = Scaffold::of(item(name));
-        let score = scaffold.score(&scaffold.register(&open(png)));
+        let mut score = scaffold.score(&scaffold.register(&open(png)));
+        score.critic = std::fs::read_to_string(dir.join("scores.tsv"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(Score::parse)
+            .find(|(label, _)| *label == format!("{name}-{kept}"))
+            .and_then(|(_, s)| s.critic);
         println!("{name}-{kept}\t{}", score.verdict(&manifest.thresholds));
         !score.passes(&manifest.thresholds)
     };
@@ -1501,6 +1845,8 @@ pub fn configure(args: &[String]) -> Option<i32> {
     }
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
     let known = |n: &str| Machine::ALL.into_iter().map(name).any(|k| k == n);
+    let painter = |job: &Paint| paint_sh(&art, job);
+    let critic = |images: &[PathBuf], prompt: &str| critic_sh(&art, images, prompt);
     let names: Vec<String> = match rest.as_slice() {
         ["--all"] => Machine::ALL
             .into_iter()
@@ -1517,8 +1863,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
         println!("nothing to do");
         return Some(0);
     }
-    let painter = |job: &Paint| paint_sh(&art, job);
-    Some(i32::from(!landed(&remake(&art, &names, &painter))))
+    Some(i32::from(!landed(&remake(&art, &names, &painter, &critic))))
 }
 
 #[cfg(test)]
@@ -1621,7 +1966,26 @@ mod tests {
             let capture =
                 scaffold.register(&open(dir.join(format!("candidates/{name}-{kept}.png"))));
             let score = scaffold.score(&capture);
-            assert!(score.passes(&manifest.thresholds), "{name}: {score:?}");
+            assert!(
+                score.measured(&manifest.thresholds).is_none(),
+                "{name}: {score:?}"
+            );
+            let rows = std::fs::read_to_string(dir.join("scores.tsv")).expect("scores.tsv");
+            let judged = rows
+                .lines()
+                .filter_map(Score::parse)
+                .find(|(label, _)| *label == format!("{name}-{kept}"))
+                .and_then(|(_, s)| s.critic)
+                .unwrap_or_else(|| panic!("{name}-{kept} has no critic score in scores.tsv"));
+            assert!(judged.score <= 10, "{name}-{kept}: {judged:?}");
+            assert_eq!(
+                machine.judged.as_deref(),
+                Some(
+                    judged_key(&Art::shipped(), name, manifest.candidates, &manifest.style)
+                        .as_str()
+                ),
+                "{name}: the judgement is stale against the candidates or the critic prompt: run ziral --gen {name}"
+            );
             let (_, side) = scaffold.crop();
             let albedo = open(dir.join("albedo.png"));
             let cut = scaffold.cut(&capture.image);
@@ -1688,7 +2052,7 @@ mod tests {
         let thresholds = Art::shipped().read().thresholds;
         let clean = fired(&scaffold, &|w| w);
         let score = scaffold.score(&scaffold.register(&clean));
-        assert!(score.passes(&thresholds), "{score:?}");
+        assert!(score.measured(&thresholds).is_none(), "{score:?}");
         assert!(score.outside <= SEAT_STEP, "{score:?}");
         let face = px(scaffold.cells[0].at) - Vec2::X * HEX * 3f32.sqrt() / 2.0;
         let dot = 2.0;
@@ -1707,7 +2071,7 @@ mod tests {
                 }
             }
             let score = scaffold.score(&scaffold.register(&painted));
-            assert_eq!(score.passes(&thresholds), ok, "{score:?}");
+            assert_eq!(score.measured(&thresholds).is_none(), ok, "{score:?}");
             assert!(
                 (score.outside - k * thresholds.outside).abs() <= SEAT_STEP,
                 "{score:?} against {k} tolerances"
@@ -1728,7 +2092,7 @@ mod tests {
         };
         let clean = fired(&scaffold, &|w| w);
         let score = scaffold.score(&scaffold.register(&clean));
-        assert!(score.passes(&thresholds), "{score:?}");
+        assert!(score.measured(&thresholds).is_none(), "{score:?}");
         assert!(score.off_centre <= SEAT_STEP, "{score:?}");
         let shift = Vec2::new(2.0, -1.0).normalize() * thresholds.off_centre * 2.0 * HEX;
         let centroid = scaffold.quad.centre;
@@ -1741,7 +2105,7 @@ mod tests {
         ] {
             let capture = scaffold.register(&moved);
             let score = scaffold.score(&capture);
-            assert!(score.passes(&thresholds), "{name}: {score:?}");
+            assert!(score.measured(&thresholds).is_none(), "{name}: {score:?}");
             assert!(score.off_centre <= SEAT_STEP, "{name}: {score:?}");
             let drift = drift(&capture.image, &clean);
             assert!(
@@ -1755,13 +2119,13 @@ mod tests {
         let score = scaffold.score(&turned);
         assert!(score.off_centre > thresholds.off_centre, "{score:?}");
         assert!(score.off_centre <= shift.length() / HEX * 1.5, "{score:?}");
-        assert!(!score.passes(&thresholds), "{score:?}");
+        assert!(score.measured(&thresholds).is_some(), "{score:?}");
         let off = Score {
             off_centre: score.off_centre,
             ..scaffold.score(&scaffold.register(&clean))
         };
         assert!(
-            !off.passes(&thresholds),
+            off.measured(&thresholds).is_some(),
             "{off:?} passes on off-centre seats alone"
         );
         let beyond = Vec2::X * (SEAT_SEARCH + 2.0 * thresholds.off_centre) * HEX;
@@ -1875,6 +2239,7 @@ mod tests {
                             kept: None,
                             painted: None,
                             relit: None,
+                            judged: None,
                         },
                     )
                 })
@@ -1922,6 +2287,10 @@ mod tests {
         Ok(())
     }
 
+    fn judge(_: &[PathBuf], _: &str) -> Result<String, String> {
+        Ok(r#"{"score": 10, "issues": []}"#.to_string())
+    }
+
     fn counted<'a>(
         calls: &'a std::sync::atomic::AtomicUsize,
         painter: &'a (dyn Fn(&Paint) -> Result<(), String> + Sync),
@@ -1940,7 +2309,7 @@ mod tests {
         let names = ["source".to_string()];
         let run = |calls: &std::sync::atomic::AtomicUsize| {
             calls.store(0, std::sync::atomic::Ordering::SeqCst);
-            let results = remake(&art, &names, &painter);
+            let results = remake(&art, &names, &painter, &judge);
             assert_eq!(results.len(), 1, "{results:?}");
             let changed = results[0].1.clone().expect("source lands");
             (changed, calls.load(std::sync::atomic::Ordering::SeqCst))
@@ -2101,7 +2470,7 @@ mod tests {
             fake(job)
         };
         let names = ["bonder".to_string(), "source".to_string()];
-        assert!(landed(&remake(&art, &names, &painter)));
+        assert!(landed(&remake(&art, &names, &painter, &judge)));
         let recorded = jobs.lock().unwrap();
         let style = art.read().style;
         for (name, item) in [
@@ -2172,7 +2541,7 @@ mod tests {
         );
         let jobs_before = recorded.len();
         drop(recorded);
-        assert!(landed(&remake(&art, &names, &painter)));
+        assert!(landed(&remake(&art, &names, &painter, &judge)));
         assert_eq!(
             jobs.lock().unwrap().len(),
             jobs_before,
@@ -2196,7 +2565,7 @@ mod tests {
             }
         };
         let names = ["bonder".to_string(), "source".to_string()];
-        let results = remake(&art, &names, &painter);
+        let results = remake(&art, &names, &painter, &judge);
         assert!(!landed(&results));
         let by_name = |results: &[(String, Result<bool, String>)], name: &str| {
             results
@@ -2215,12 +2584,12 @@ mod tests {
         );
         assert_eq!(art.read().machine["bonder"].kept, None);
         assert!(art.read().machine["source"].kept.is_some());
-        let results = remake(&art, &names, &fake);
+        let results = remake(&art, &names, &fake, &judge);
         assert!(landed(&results), "{results:?}");
         assert_eq!(by_name(&results, "source"), Ok(false));
         assert_eq!(by_name(&results, "bonder"), Ok(true));
         assert!(art.read().machine["bonder"].kept.is_some());
-        assert!(landed(&remake(&art, &names[1..], &fake)));
+        assert!(landed(&remake(&art, &names[1..], &fake, &judge)));
         assert!(landed(&[]));
     }
 
@@ -2297,5 +2666,365 @@ mod tests {
         );
         assert!(stderr.contains("gave up after 4 attempts"), "{stderr}");
         assert!(took >= 7.0, "{took}s: no backoff");
+    }
+
+    fn rows(art: &Art, name: &str) -> BTreeMap<String, (String, Score)> {
+        std::fs::read_to_string(art.machine(name).join("scores.tsv"))
+            .expect("scores.tsv")
+            .lines()
+            .map(|row| {
+                let (label, score) = Score::parse(row).unwrap_or_else(|| panic!("{row:?}"));
+                let verdict = row.split('\t').nth(6).expect("a verdict").to_string();
+                (label, (verdict, score))
+            })
+            .collect()
+    }
+
+    fn index(images: &[PathBuf]) -> u32 {
+        images[0]
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.rsplit('-').next())
+            .and_then(|i| i.parse().ok())
+            .expect("judged/NAME-INDEX.png")
+    }
+
+    #[test]
+    fn the_critic_reply_is_one_json_object_or_nothing() {
+        let parsed = |text: &str| Critic::parse(text);
+        assert_eq!(
+            parsed(
+                "```json\n{\"score\": 7, \"issues\": [\"The cup at the left shows its far wall.\"]}\n```"
+            ),
+            Some(Critic {
+                score: 7,
+                issues: vec!["The cup at the left shows its far wall.".to_string()],
+            })
+        );
+        assert_eq!(
+            parsed(r#"{"score": 10, "issues": []}"#),
+            Some(Critic {
+                score: 10,
+                issues: vec![]
+            })
+        );
+        assert_eq!(parsed(r#"{"score": 11, "issues": []}"#), None);
+        assert_eq!(parsed(r#"{"score": 8}"#), None);
+        assert_eq!(parsed(r#"{"score": "eight", "issues": []}"#), None);
+        assert_eq!(parsed("A fine machine, 9/10."), None);
+        assert_eq!(parsed(""), None);
+        let six = r#"{"score": 3, "issues": ["a", "b", "c", "d", "e", "f"]}"#;
+        assert_eq!(parsed(six).expect("parses").issues.len(), 5);
+    }
+
+    #[test]
+    fn the_critic_sees_the_board_and_the_scaffold_and_a_malformed_reply_fails_only_that_candidate()
+    {
+        let art = studio("critic", &["right", "top", "left", "bottom"], &["source"]);
+        let seen: std::sync::Mutex<Vec<(Vec<PathBuf>, String)>> = std::sync::Mutex::new(vec![]);
+        let critic = |images: &[PathBuf], prompt: &str| {
+            seen.lock()
+                .unwrap()
+                .push((images.to_vec(), prompt.to_string()));
+            Ok(match index(images) {
+                1 => r#"{"score": 9, "issues": ["Slight glare on the rim."]}"#.to_string(),
+                _ => "I would rather not say.".to_string(),
+            })
+        };
+        let names = ["source".to_string()];
+        let results = remake(&art, &names, &fake, &critic);
+        assert!(landed(&results), "{results:?}");
+        assert_eq!(art.read().machine["source"].kept, Some(1));
+        let rows = rows(&art, "source");
+        assert_eq!(rows["source-1"].0, "pass");
+        assert_eq!(
+            rows["source-1"].1.critic,
+            Some(Critic {
+                score: 9,
+                issues: vec!["Slight glare on the rim.".to_string()]
+            })
+        );
+        assert_eq!(rows["source-2"].0, "fail critic unreadable");
+        assert_eq!(rows["source-2"].1.critic, None);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        let style = art.read().style;
+        for (images, prompt) in seen.iter() {
+            assert_eq!(*prompt, style.critic);
+            let i = index(images);
+            assert_eq!(
+                *images,
+                vec![
+                    art.judged("source", i),
+                    art.machine("source").join("scaffold.png")
+                ]
+            );
+            let board = open(&images[0]);
+            let scaffold = Scaffold::of(item("source"));
+            let side = scaffold.quad.side.round() as u32;
+            let by = CRITIC_PX.div_ceil(side);
+            assert_eq!((board.width(), board.height()), (side * by, side * by));
+            assert!(
+                board.pixels().all(|p| p[3] == 255),
+                "the board shows through nowhere"
+            );
+            let corner = *board.get_pixel(0, 0);
+            assert!(
+                board.pixels().any(|p| apart(rgb(p), rgb(&corner)) > 0.2),
+                "the sprite is not on the board"
+            );
+        }
+    }
+
+    #[test]
+    fn a_candidate_under_the_bar_fails_the_keep_and_the_best_scored_one_is_kept() {
+        let art = studio("bar", &["right", "top", "left", "bottom"], &["source"]);
+        let critic = |images: &[PathBuf], _: &str| {
+            Ok(match index(images) {
+                1 => r#"{"score": 7, "issues": ["The hopper shows its back wall."]}"#,
+                _ => r#"{"score": 8, "issues": []}"#,
+            }
+            .to_string())
+        };
+        let names = ["source".to_string()];
+        assert!(landed(&remake(&art, &names, &fake, &critic)));
+        assert_eq!(art.read().machine["source"].kept, Some(2));
+        let rows = rows(&art, "source");
+        assert_eq!(rows["source-1"].0, "fail critic 7 < 8");
+        assert_eq!(rows["source-2"].0, "pass");
+        let art = studio("rank", &["right", "top", "left", "bottom"], &["source"]);
+        let scaffold = Scaffold::of(item("source"));
+        let measured = |shift: f32| {
+            scaffold
+                .score(&scaffold.register(&fired(&scaffold, &|w| w - Vec2::X * shift)))
+                .rank()
+                .1
+        };
+        let lower = if measured(0.0) < measured(1.0) { 1 } else { 2 };
+        let critic = |images: &[PathBuf], _: &str| {
+            Ok(if index(images) == lower {
+                r#"{"score": 10, "issues": []}"#
+            } else {
+                r#"{"score": 9, "issues": []}"#
+            }
+            .to_string())
+        };
+        assert!(landed(&remake(&art, &names, &fake, &critic)));
+        assert_eq!(art.read().machine["source"].kept, Some(lower));
+    }
+
+    #[test]
+    fn the_best_failing_candidates_issues_revise_the_next_round_and_the_given_text_stays() {
+        let art = studio("revise", &["right", "top", "left", "bottom"], &["source"]);
+        let given = "  \"Given\", with a tab\t, a line\nbreak and trailing spaces   ";
+        let mut m = art.read();
+        m.machine.get_mut("source").expect("source").direction =
+            Direction::Given(given.to_string());
+        art.write(&m);
+        let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
+        let painter = |job: &Paint| {
+            if job.images[0].ends_with("scaffold.png") {
+                prompts.lock().unwrap().push(job.prompt.clone());
+            }
+            fake(job)
+        };
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let critic = |images: &[PathBuf], _: &str| {
+            let call = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(if call < 2 {
+                match index(images) {
+                    1 => r#"{"score": 3, "issues": ["Worse first.", "Worse second."]}"#,
+                    _ => r#"{"score": 5, "issues": ["Tipped: the hopper shows its back wall.", "A plate under it.", "Text on the gate."]}"#,
+                }
+            } else {
+                r#"{"score": 10, "issues": []}"#
+            }
+            .to_string())
+        };
+        let names = ["source".to_string()];
+        let results = remake(&art, &names, &painter, &critic);
+        assert!(landed(&results), "{results:?}");
+        let style = art.read().style;
+        let base = format!("{} {given}", style.shared);
+        let prompts = prompts.lock().unwrap();
+        assert_eq!(prompts.len(), 4, "{prompts:?}");
+        assert_eq!(&prompts[..2], &[base.clone(), base.clone()]);
+        let revised = format!(
+            "{base} Revise, most important first: Tipped: the hopper shows its back wall. A plate under it. Text on the gate."
+        );
+        assert_eq!(&prompts[2..], &[revised.clone(), revised]);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+        assert_eq!(
+            art.read().machine["source"].direction,
+            Direction::Given(given.to_string())
+        );
+        assert!(art.read().machine["source"].kept.is_some());
+    }
+
+    #[test]
+    fn three_rounds_then_not_landed_with_the_last_issues() {
+        let art = studio("rounds", &["right", "top", "left", "bottom"], &["source"]);
+        let paints = std::sync::atomic::AtomicUsize::new(0);
+        let painter = counted(&paints, &fake);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let critic = |images: &[PathBuf], _: &str| {
+            let call = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(match index(images) {
+                1 => format!(
+                    r#"{{"score": 2, "issues": ["Round {} low.", "Still tipped."]}}"#,
+                    call / 2 + 1
+                ),
+                _ => format!(
+                    r#"{{"score": 4, "issues": ["Round {} best.", "Still a plate."]}}"#,
+                    call / 2 + 1
+                ),
+            })
+        };
+        let names = ["source".to_string()];
+        let results = remake(&art, &names, &painter, &critic);
+        assert!(!landed(&results));
+        let reason = results[0].1.clone().expect_err("source does not land");
+        assert_eq!(
+            reason,
+            "no candidate passes in 3 rounds; the last issues: Round 3 best. Still a plate."
+        );
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 6);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
+        assert_eq!(art.read().machine["source"].kept, None);
+        assert!(!art.machine("source").join("albedo.png").exists());
+        let rows = rows(&art, "source");
+        assert_eq!(rows["source-1"].0, "fail critic 2 < 8");
+        assert_eq!(rows["source-2"].0, "fail critic 4 < 8");
+    }
+
+    #[test]
+    fn an_unchanged_candidate_is_never_judged_again_and_a_changed_critic_prompt_is_judged_anew() {
+        let art = studio("judged", &["right", "top", "left", "bottom"], &["source"]);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let critic = |images: &[PathBuf], prompt: &str| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            judge(images, prompt)
+        };
+        let names = ["source".to_string()];
+        let run = || {
+            calls.store(0, std::sync::atomic::Ordering::SeqCst);
+            assert!(landed(&remake(&art, &names, &fake, &critic)));
+            calls.load(std::sync::atomic::Ordering::SeqCst)
+        };
+        assert_eq!(run(), 2);
+        let judged = art.read().machine["source"].judged.clone();
+        assert!(judged.is_some());
+        assert_eq!(run(), 0);
+        assert_eq!(art.read().machine["source"].judged, judged);
+        let mut m = art.read();
+        m.style.critic += " Be harsher.";
+        art.write(&m);
+        assert_eq!(run(), 1);
+        assert_ne!(art.read().machine["source"].judged, judged);
+        assert_eq!(run(), 0);
+        let kept = art.read().machine["source"].kept.expect("kept");
+        let mut m = art.read();
+        m.machine.get_mut("source").expect("source").kept = Some(3 - kept);
+        art.write(&m);
+        assert_eq!(run(), 1);
+        assert_eq!(run(), 0);
+    }
+
+    #[test]
+    fn critic_sh_returns_the_message_and_retries_a_failed_call_with_backoff() {
+        let root = std::env::temp_dir().join(format!("ziral-critic-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("bin")).expect("a fake bin");
+        let codex = root.join("bin/codex");
+        std::fs::write(
+            &codex,
+            "#!/bin/sh\n\
+             n=$(cat \"$HOME/attempts\" 2>/dev/null || echo 0)\n\
+             n=$((n + 1))\n\
+             printf %s \"$n\" > \"$HOME/attempts\"\n\
+             printf '%s\\n' \"$@\" > \"$HOME/args-$n\"\n\
+             [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
+             echo '{\"type\":\"thread.started\",\"thread_id\":\"t1\"}'\n\
+             echo '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"{\\\"score\\\":6,\\\"issues\\\":[\\\"A far wall.\\\"]}\"}}'\n",
+        )
+        .expect("a fake codex");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let path = format!(
+            "{}:{}",
+            root.join("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let image = root.join("board.png");
+        std::fs::write(&image, b"png").expect("an image");
+        let out = std::process::Command::new(Art::shipped().critic_sh())
+            .arg("-i")
+            .arg(&image)
+            .arg("Judge this.")
+            .env("PATH", &path)
+            .env("HOME", &root)
+            .env("PASS_ON", "2")
+            .output()
+            .expect("critic.sh runs");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "{\"score\":6,\"issues\":[\"A far wall.\"]}\n"
+        );
+        assert!(stderr.contains("codex: boom 1"), "{stderr}");
+        assert!(
+            stderr.contains("attempt 1 of 4 failed, retrying in 1s"),
+            "{stderr}"
+        );
+        let args = std::fs::read_to_string(root.join("args-2")).expect("the call's args");
+        assert!(args.contains("--output-schema"), "{args}");
+        assert!(
+            args.contains(&format!("--image\n{}", image.display())),
+            "{args}"
+        );
+        let prompt = args
+            .lines()
+            .find(|l| l.starts_with("Judge this."))
+            .expect("the prompt");
+        assert!(prompt.contains("exactly one JSON object"), "{prompt}");
+        let _ = std::fs::remove_file(root.join("attempts"));
+        let out = std::process::Command::new(Art::shipped().critic_sh())
+            .arg("Judge this.")
+            .env("PATH", &path)
+            .env("HOME", &root)
+            .env("PASS_ON", "99")
+            .output()
+            .expect("critic.sh runs");
+        assert!(!out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("gave up after 4 attempts"),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    #[test]
+    fn a_critic_that_reads_no_candidate_repaints_nothing_and_keeps_the_keep() {
+        let art = studio("outage", &["right", "top", "left", "bottom"], &["source"]);
+        let names = ["source".to_string()];
+        assert!(landed(&remake(&art, &names, &fake, &judge)));
+        let kept = art.read().machine["source"].kept;
+        let mut m = art.read();
+        m.style.critic += " Be harsher.";
+        art.write(&m);
+        let paints = std::sync::atomic::AtomicUsize::new(0);
+        let painter = counted(&paints, &fake);
+        let down = |_: &[PathBuf], _: &str| Err("codex: boom".to_string());
+        let results = remake(&art, &names, &painter, &down);
+        assert!(!landed(&results));
+        let reason = results[0].1.clone().expect_err("source does not land");
+        assert_eq!(reason, "the critic read no candidate; nothing repainted");
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(art.read().machine["source"].kept, kept);
+        assert!(art.candidate("source", 1).exists() && art.candidate("source", 2).exists());
+        let rows = rows(&art, "source");
+        assert_eq!(rows["source-1"].0, "fail critic unreadable");
+        assert!(landed(&remake(&art, &names, &painter, &judge)));
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }
