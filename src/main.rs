@@ -1068,9 +1068,15 @@ impl TapeRow {
 }
 
 fn button(node: Node) -> impl Bundle {
+    (Button, plate(node))
+}
+
+fn plate(node: Node) -> impl Bundle {
     (
-        Button,
-        node,
+        Node {
+            border: UiRect::all(Val::Px(1.0)),
+            ..node
+        },
         BorderColor::all(brass(0.5)),
         BackgroundColor(strip(false)),
     )
@@ -1151,10 +1157,11 @@ fn refusal(
     commands
         .entity(entity)
         .despawn_children()
-        .with_children(|row| {
+        .with_children(|line| {
             for short in &refused.short {
-                picture(row, &kiln, short.item);
-                row.spawn(text(format!("{}/{}", short.have, short.need)));
+                picture(line, &kiln, short.item);
+                line.spawn(row(2.0))
+                    .with_children(|marks| stock(marks, short.have, short.need));
             }
         });
 }
@@ -1250,11 +1257,13 @@ fn tally(mut commands: Commands, world: Res<World>, mut rows: Query<(Entity, &mu
         commands
             .entity(entity)
             .despawn_children()
-            .with_children(|row| {
-                for k in 0..u64::from(count.max(cap)) {
-                    row.spawn(mark(k, MARK_PX, k < u64::from(count)));
-                }
-            });
+            .with_children(|row| stock(row, count, cap));
+    }
+}
+
+fn stock(row: &mut ChildSpawnerCommands, filled: u32, upto: u32) {
+    for k in 0..u64::from(filled.max(upto)) {
+        row.spawn(mark(k, MARK_PX, k < u64::from(filled)));
     }
 }
 
@@ -1386,7 +1395,6 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                                 PaletteRow(item),
                                 button(Node {
                                     padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                                    border: UiRect::all(Val::Px(1.0)),
                                     ..row(6.0)
                                 }),
                             ))
@@ -1409,11 +1417,11 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
         });
     commands.spawn((
         Refusal { shown: None },
-        Node {
+        plate(Node {
             position_type: PositionType::Absolute,
-            align_items: AlignItems::Center,
-            ..row(4.0)
-        },
+            padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+            ..row(6.0)
+        }),
         Visibility::Hidden,
         GlobalZIndex(1),
     ));
@@ -1440,7 +1448,6 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                     TapeRow { slot, line: None },
                     button(Node {
                         padding: UiRect::axes(Val::Px(6.0), Val::Px(1.0)),
-                        border: UiRect::all(Val::Px(1.0)),
                         ..row(4.0)
                     }),
                     Visibility::Hidden,
@@ -5644,6 +5651,59 @@ mod tests {
         assert_eq!(w.refused, line);
         w.key(KeyCode::Escape, false);
         assert_eq!(w.refused, None);
+    }
+
+    #[test]
+    fn the_refusal_line_shows_each_shortfall_as_beads_and_writes_nothing() {
+        let mut w = copied();
+        for item in [SECOND, ARM, GRAB] {
+            stocked(&mut w, item, 1);
+        }
+        pasted(&mut w, Hex::new(0, 6));
+        assert_eq!(
+            w.refused.as_ref().map(|r| r.short.clone()),
+            Some(vec![short(BONDER, 0, 1), short(GRAB, 1, 2)])
+        );
+        let dir = std::env::temp_dir().join(format!("ziral-refusal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("wide", dir.clone(), 1);
+        lit_plugin(&mut app);
+        app.insert_resource(w);
+        let seen = std::sync::Arc::new(std::sync::Mutex::new((0, 0, Vec::new())));
+        let probe = seen.clone();
+        app.add_systems(
+            Last,
+            move |texts: Query<&Text>,
+                  line: Single<&Children, With<Refusal>>,
+                  rows: Query<&Children>,
+                  marks: Query<&BackgroundColor>| {
+                let beads = line
+                    .iter()
+                    .filter_map(|child| rows.get(child).ok())
+                    .map(|row| {
+                        let filled = row
+                            .iter()
+                            .filter(|m| marks.get(*m).is_ok_and(|b| b.0 == IVORY))
+                            .count();
+                        (filled, row.len())
+                    })
+                    .collect::<Vec<_>>();
+                let written = line
+                    .iter()
+                    .flat_map(|child| {
+                        std::iter::once(child).chain(rows.get(child).into_iter().flatten().copied())
+                    })
+                    .filter(|e| texts.get(*e).is_ok())
+                    .count();
+                *probe.lock().unwrap() = (written, line.len(), beads);
+            },
+        );
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        std::fs::remove_dir_all(&dir).unwrap();
+        let (written, children, beads) = seen.lock().unwrap().clone();
+        assert_eq!((written, children), (0, 4));
+        assert_eq!(beads, vec![(0, 1), (1, 2)]);
     }
 
     #[test]
