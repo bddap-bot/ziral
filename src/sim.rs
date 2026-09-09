@@ -932,6 +932,137 @@ pub fn preloaded() -> Sim {
     world
 }
 
+pub struct Fixture {
+    pub sim: Sim,
+    pub ticks: u64,
+    pub done: fn(&Sim) -> bool,
+}
+
+fn armed(tape: Vec<Instr>) -> Sim {
+    let mut sim = Sim::empty();
+    sim.arms.push(Arm::new(ORIGIN, 0, tape));
+    sim
+}
+
+fn crafted(s: &Sim) -> bool {
+    s.arms.iter().all(|a| !a.holding)
+        && s.atoms.iter().all(Option::is_none)
+        && s.glyphs
+            .iter()
+            .flatten()
+            .all(|g| s.inventory.count(Item::Machine(Machine::Glyph(g.kind))) == Some(1))
+}
+
+pub fn fixture(machine: Machine) -> Fixture {
+    use Instr::{Drop, Grab, Rot};
+    let (cw, ccw) = (Rot(Spin::Cw), Rot(Spin::Ccw));
+    let base = |pos| Atom {
+        kind: AtomKind::Base,
+        pos,
+    };
+    match machine {
+        Machine::Arm => {
+            let mut sim = armed(vec![Grab, cw, Drop]);
+            sim.spawn(base(DIRS[0]));
+            Fixture {
+                sim,
+                ticks: 3,
+                done: |s| s.atom_at(DIRS[1]).is_some() && !s.arms[0].holding,
+            }
+        }
+        Machine::Glyph(GlyphKind::Source) => {
+            let mut sim = Sim::empty();
+            sim.glyphs
+                .push(Some(Glyph::new(GlyphKind::Source, ORIGIN, 0)));
+            Fixture {
+                sim,
+                ticks: 1,
+                done: |s| s.atom_at(ORIGIN).is_some(),
+            }
+        }
+        Machine::Glyph(GlyphKind::Bonder) => {
+            let mut sim = armed(vec![Grab, cw, cw, Drop, ccw, ccw, Grab, cw, Drop]);
+            sim.glyphs
+                .push(Some(Glyph::new(GlyphKind::Source, DIRS[0], 0)));
+            sim.glyphs
+                .push(Some(Glyph::new(GlyphKind::Bonder, DIRS[2], 0)));
+            Fixture {
+                sim,
+                ticks: 9,
+                done: |s| {
+                    let (Some(a), Some(b)) = (s.atom_at(DIRS[1]), s.atom_at(DIRS[2])) else {
+                        return false;
+                    };
+                    !s.arms[0].holding
+                        && s.bond_between(a, b)
+                            .is_some_and(|i| s.bonds[i].kind == BondKind::Single)
+                },
+            }
+        }
+        Machine::Glyph(GlyphKind::SecondBond) => {
+            let mut sim = armed(vec![Grab, cw, Drop]);
+            sim.glyphs
+                .push(Some(Glyph::new(GlyphKind::Source, DIRS[0], 0)));
+            let glyph = Glyph::new(GlyphKind::SecondBond, DIRS[1], 1);
+            let bonded: Vec<usize> = glyph
+                .slots()
+                .skip(1)
+                .map(|at| sim.spawn(base(at)))
+                .collect();
+            sim.bonds.push(Bond {
+                a: bonded[0],
+                b: bonded[1],
+                kind: BondKind::Single,
+            });
+            sim.glyphs.push(Some(glyph));
+            Fixture {
+                sim,
+                ticks: 3,
+                done: |s| {
+                    !s.arms[0].holding
+                        && s.atom_at(DIRS[1]).is_none()
+                        && s.bonds.len() == 1
+                        && s.bonds[0].kind == BondKind::Double
+                },
+            }
+        }
+        Machine::Glyph(GlyphKind::Output(tier)) => {
+            let form = machine.recipe().expect("every output tier has a recipe");
+            let centre = form
+                .centre(1)
+                .expect("every recipe lies within the first tier");
+            let held = form
+                .atoms()
+                .iter()
+                .map(|(at, _)| *at)
+                .find(|at| at.sub(centre).ring() == 1)
+                .expect("a recipe has an atom beside its centre");
+            let turn = (0..6)
+                .find(|t| centre.sub(held).turned(*t) == DIRS[1])
+                .expect("six turns reach every direction");
+            let landed = |at: Hex| DIRS[1].add(at.sub(held).turned(turn));
+            let grabbed = |at: Hex| landed(at).rotate(ORIGIN, Spin::Ccw);
+            let mut compound = form.sim();
+            for atom in compound.atoms.iter_mut().flatten() {
+                atom.pos = grabbed(atom.pos);
+            }
+            let reach = tier.radius() + 1;
+            let mut sim = armed(vec![Grab, cw, Drop]);
+            sim.place(&compound, ORIGIN);
+            sim.glyphs.push(Some(Glyph::new(
+                GlyphKind::Output(tier),
+                Hex::new(DIRS[1].q * reach, DIRS[1].r * reach),
+                0,
+            )));
+            Fixture {
+                sim,
+                ticks: 3,
+                done: crafted,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1931,5 +2062,38 @@ mod tests {
         sim.step();
         assert_eq!(sim.arms[0].pivot, Hex::new(2, 0));
         assert_eq!(sim.atoms[0].unwrap().pos, Hex::new(3, 0));
+    }
+
+    #[test]
+    fn every_fixture_reaches_its_outcome_on_its_last_tick_and_not_before_with_no_arm_stalled() {
+        for machine in Machine::ALL {
+            let f = fixture(machine);
+            assert!(f.ticks > 0, "{machine:?}");
+            let mut sim = f.sim.clone();
+            for tick in 0..f.ticks {
+                assert!(!(f.done)(&sim), "{machine:?} done at tick {tick}");
+                sim.step();
+                for (i, arm) in sim.arms.iter().enumerate() {
+                    assert_eq!(arm.stall, None, "{machine:?} arm {i} at tick {}", sim.tick);
+                }
+            }
+            assert!((f.done)(&sim), "{machine:?}");
+            assert_eq!(sim.tick, f.ticks, "{machine:?}");
+        }
+    }
+
+    #[test]
+    fn a_fixture_holds_only_its_machine_a_source_an_arm_and_what_they_need() {
+        for machine in Machine::ALL {
+            let f = fixture(machine);
+            let kinds: Vec<GlyphKind> = f.sim.glyphs.iter().flatten().map(|g| g.kind).collect();
+            match machine {
+                Machine::Arm => assert_eq!((kinds, f.sim.arms.len()), (vec![], 1)),
+                Machine::Glyph(kind) => {
+                    assert_eq!(kinds.last(), Some(&kind), "{machine:?}");
+                    assert!(kinds.iter().all(|k| *k == kind || *k == GlyphKind::Source));
+                }
+            }
+        }
     }
 }

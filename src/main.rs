@@ -22,8 +22,8 @@ use bevy::window::{CursorLeft, PrimaryWindow};
 use form::{Form, recipes};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
 use sim::{
-    Arm, BondKind, DIRS, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine, ORIGIN, Short, Sim, Spin,
-    Stall,
+    Arm, BondKind, DIRS, Fixture, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine, ORIGIN, Short,
+    Sim, Spin, Stall, fixture,
 };
 
 const TICK_MS: f32 = 400.0;
@@ -306,6 +306,7 @@ struct World {
     clipboard: Option<Sim>,
     pointer: Option<Vec2>,
     hover: Option<Item>,
+    play: Option<Play>,
     refused: Option<Refused>,
 }
 
@@ -324,7 +325,29 @@ impl World {
             clipboard: None,
             pointer: None,
             hover: None,
+            play: None,
             refused: None,
+        }
+    }
+
+    fn advance(&mut self, dt: f32) {
+        self.since = (self.since + dt).min(self.period);
+        if self.running && self.since >= self.period {
+            self.since = 0.0;
+            self.step();
+        }
+        let Some(Item::Machine(machine)) = self.hover else {
+            self.play = None;
+            return;
+        };
+        let play = match &mut self.play {
+            Some(play) if play.machine == machine => play,
+            _ => self.play.insert(Play::at(machine, 0)),
+        };
+        play.since = (play.since + dt).min(self.period);
+        if play.since >= self.period {
+            play.since = 0.0;
+            play.step();
         }
     }
 
@@ -389,8 +412,7 @@ impl World {
     }
 
     fn phase(&self) -> f32 {
-        let span = self.period * self.motion;
-        if span > 0.0 { self.since / span } else { 1.0 }
+        phase(self.since, self.period, self.motion)
     }
 
     fn holding(&self) -> bool {
@@ -972,11 +994,32 @@ fn app(world: World) -> App {
     let mut app = App::new();
     app.insert_resource(world)
         .insert_resource(ClearColor(brass(0.65)))
+        .insert_gizmo_config(
+            DefaultGizmoConfigGroup,
+            GizmoConfig {
+                line: GizmoLineConfig {
+                    width: LINE_PX,
+                    ..default()
+                },
+                ..default()
+            },
+        )
+        .insert_gizmo_config(
+            CardGizmos,
+            GizmoConfig {
+                render_layers: CARD,
+                line: GizmoLineConfig {
+                    width: LINE_PX,
+                    ..default()
+                },
+                ..default()
+            },
+        )
         .add_systems(Startup, (fire_kiln, spawn_ui).chain())
         .add_systems(
             Update,
             (
-                run_ticks, view, hover, edit, tapes, tally, refusal, board, draw, card, manual,
+                hover, run_ticks, view, edit, tapes, tally, refusal, board, draw, card, manual,
             )
                 .chain(),
         );
@@ -1305,13 +1348,36 @@ fn picture_side(item: Item) -> f32 {
     }
 }
 
-fn card_size(item: Item) -> Vec2 {
+struct Layout {
+    size: Vec2,
+    picture: Vec2,
+    recipe: Vec2,
+    field: Option<Vec2>,
+}
+
+fn layout(item: Item) -> Layout {
     let picture = picture_side(item);
     let recipe = recipe_side();
-    Vec2::new(
-        4.0 * CARD_PAD + picture + 2.0 * recipe,
-        2.0 * CARD_PAD + picture.max(recipe),
-    )
+    let bounds = match item {
+        Item::Machine(machine) => Some(play_bounds(&playfield(machine))),
+        Item::Step | Item::Token(_) => None,
+    };
+    let span = bounds.map_or(Vec2::ZERO, |(lo, hi)| hi - lo);
+    let width = 3.0 * CARD_PAD + picture + recipe + bounds.map_or(0.0, |_| CARD_PAD + span.x);
+    let size = Vec2::new(width, 2.0 * CARD_PAD + picture.max(recipe).max(span.y));
+    let left = -size.x / 2.0 + CARD_PAD;
+    let recipe_at = Vec2::new(left + picture + CARD_PAD + recipe / 2.0, 0.0);
+    Layout {
+        size,
+        picture: Vec2::new(left + picture / 2.0, 0.0),
+        recipe: recipe_at,
+        field: bounds
+            .map(|(lo, _)| Vec2::new(recipe_at.x + recipe / 2.0 + CARD_PAD, -span.y / 2.0) - lo),
+    }
+}
+
+fn card_size(item: Item) -> Vec2 {
+    layout(item).size
 }
 
 fn card(
@@ -1457,10 +1523,43 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
 }
 
 fn run_ticks(mut world: ResMut<World>, time: Res<Time>) {
-    world.since = (world.since + time.delta_secs()).min(world.period);
-    if world.running && world.since >= world.period {
-        world.since = 0.0;
-        world.step();
+    world.advance(time.delta_secs());
+}
+
+const HOLD: u64 = 3;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Play {
+    machine: Machine,
+    at: u64,
+    since: f32,
+}
+
+impl Play {
+    fn at(machine: Machine, at: u64) -> Play {
+        Play {
+            machine,
+            at: at.min(fixture(machine).ticks),
+            since: 0.0,
+        }
+    }
+
+    fn step(&mut self) {
+        let ticks = fixture(self.machine).ticks;
+        self.at = (self.at + 1) % (ticks + HOLD + 1);
+    }
+
+    fn sims(&self) -> (Sim, Sim) {
+        let Fixture { sim, ticks, done } = fixture(self.machine);
+        let shown = self.at.min(ticks);
+        let sim = sim.replay(shown);
+        debug_assert!(shown < ticks || done(&sim), "{:?}", self.machine);
+        let prev = if self.at > ticks || shown == 0 {
+            sim.clone()
+        } else {
+            fixture(self.machine).sim.replay(shown - 1)
+        };
+        (prev, sim)
     }
 }
 
@@ -1789,9 +1888,7 @@ fn fire_kiln(
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut lits: ResMut<Assets<Lit>>,
     mut images: ResMut<Assets<Image>>,
-    mut gizmo: ResMut<GizmoConfigStore>,
 ) {
-    gizmo.config_mut::<DefaultGizmoConfigGroup>().0.line.width = LINE_PX;
     let grout = look::GROUT.decode();
     let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
         .map(|skin| {
@@ -1899,15 +1996,59 @@ fn unworn<M: std::fmt::Debug>(look: Look<M>) -> ! {
     panic!("nothing draws {look:?}")
 }
 
-struct Painter<'a, 'gw, 'gs, 'cw, 'cs> {
-    gizmos: &'a mut Gizmos<'gw, 'gs>,
+fn phase(since: f32, period: f32, motion: f32) -> f32 {
+    let span = period * motion;
+    if span > 0.0 { since / span } else { 1.0 }
+}
+
+#[derive(Default, Reflect, GizmoConfigGroup)]
+struct CardGizmos;
+
+fn tile(kiln: &Kiln, h: Hex) -> (Mesh2d, MeshMaterial2d<ColorMaterial>, Transform) {
+    (
+        Mesh2d(kiln.hexagon.clone()),
+        MeshMaterial2d(kiln.skin(look::tile(h).skin, false).clone()),
+        Transform {
+            translation: px(h).extend(0.0),
+            rotation: Quat::IDENTITY,
+            scale: Vec3::splat(HEX),
+        },
+    )
+}
+
+struct Painter<'a, 'gw, 'gs, 'cw, 'cs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
+    gizmos: &'a mut Gizmos<'gw, 'gs, G>,
     commands: &'a mut Commands<'cw, 'cs>,
     kiln: &'a Kiln,
     ghost: bool,
     layers: RenderLayers,
+    shift: Vec2,
 }
 
-impl<'a> Painter<'a, '_, '_, '_, '_> {
+impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
+    fn shifted(&mut self, by: Vec2, draw: impl FnOnce(&mut Self)) {
+        let was = std::mem::replace(&mut self.shift, by);
+        draw(self);
+        self.shift = was;
+    }
+
+    fn tile(&mut self, h: Hex, z: f32) {
+        let (mesh, material, mut transform) = tile(self.kiln, h);
+        transform.translation += self.shift.extend(z);
+        self.commands
+            .spawn((Fill, self.layers.clone(), mesh, material, transform));
+    }
+
+    fn outline(&mut self, at: Vec2, size: f32) {
+        self.gizmos
+            .linestrip_2d(corners(at + self.shift, size), IVORY);
+    }
+
+    fn ring(&mut self, at: Vec2, r: f32) {
+        let ivory = self.line(IVORY);
+        self.gizmos.circle_2d(at + self.shift, r, ivory);
+    }
+
     fn line(&self, color: Color) -> Color {
         if self.ghost {
             color.with_alpha(GHOST)
@@ -1935,7 +2076,7 @@ impl<'a> Painter<'a, '_, '_, '_, '_> {
             Mesh2d(mesh.clone()),
             MeshMaterial2d(material.clone()),
             Transform {
-                translation: at.extend(z),
+                translation: (at + self.shift).extend(z),
                 rotation: Quat::from_rotation_z(angle),
                 scale: scale.extend(1.0),
             },
@@ -1991,7 +2132,7 @@ impl<'a> Painter<'a, '_, '_, '_, '_> {
     fn horseshoe(&mut self, at: Vec2, r: f32, toward: Vec2, glaze: Glaze) {
         use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
         let turn = toward.to_angle() - (FRAC_PI_2 + 3.0 * FRAC_PI_4);
-        let iso = Isometry2d::new(at, Rot2::radians(turn));
+        let iso = Isometry2d::new(at + self.shift, Rot2::radians(turn));
         let color = self.line(glaze.color());
         self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, color);
     }
@@ -2041,6 +2182,7 @@ mod layer {
     pub const RIM: f32 = 0.02;
     pub const HELD: Range<f32> = 0.44..0.5;
     pub const CARD: Range<f32> = 0.6..0.7;
+    pub const LIFT: f32 = 0.8;
 
     pub fn z(band: Range<f32>, i: usize, n: usize) -> f32 {
         band.start + (band.end - band.start) * (i as f32 / n as f32)
@@ -2217,44 +2359,27 @@ fn board(
     for e in &laid {
         commands.entity(e).despawn();
     }
-    let mut lay = |mesh: &Handle<Mesh>, material: &Handle<ColorMaterial>, transform: Transform| {
-        commands.spawn((
-            Board,
-            Mesh2d(mesh.clone()),
-            MeshMaterial2d(material.clone()),
-            transform,
-        ));
-    };
     match tiling {
         Tiling::Cells { r0, r1, x0, x1 } => {
             for r in r0..=r1 {
                 let (q0, q1) = (x0 - r.div_euclid(2) - 2, x1 - r.div_euclid(2) + 2);
                 for q in q0..=q1 {
-                    let h = Hex::new(q, r);
-                    let tile = look::tile(h);
-                    lay(
-                        &kiln.hexagon,
-                        kiln.skin(tile.skin, false),
-                        Transform {
-                            translation: px(h).extend(0.0),
-                            rotation: Quat::IDENTITY,
-                            scale: Vec3::splat(HEX),
-                        },
-                    );
+                    commands.spawn((Board, tile(&kiln, Hex::new(q, r))));
                 }
             }
         }
         Tiling::Slab(lo, hi) => {
             let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
-            lay(
-                &kiln.bar,
-                kiln.material(Glaze::Clay),
+            commands.spawn((
+                Board,
+                Mesh2d(kiln.bar.clone()),
+                MeshMaterial2d(kiln.material(Glaze::Clay).clone()),
                 Transform {
                     translation: ((lo + hi) / 2.0).extend(0.0),
                     scale: (hi - lo).extend(1.0),
                     ..default()
                 },
-            );
+            ));
         }
     }
     kiln.tiled = Some(tiling);
@@ -2263,6 +2388,7 @@ fn board(
 fn draw(
     world: Res<World>,
     mut gizmos: Gizmos,
+    mut card_gizmos: Gizmos<CardGizmos>,
     mut commands: Commands,
     kiln: Res<Kiln>,
     fills: Query<Entity, With<Fill>>,
@@ -2276,107 +2402,153 @@ fn draw(
         kiln: &kiln,
         ghost: world.ghosts() > 0,
         layers: RenderLayers::default(),
+        shift: Vec2::ZERO,
     };
     let f = Frame::between(&world.prev, world.shown(), world.phase());
-    for g in f.sim.glyphs.iter().flatten() {
-        p.machine(Machine::Glyph(g.kind), g.at, g.dir, layer::GLYPHS);
-    }
+    scene(&mut p, &f, 0.0);
     for (i, g) in world.shown().glyphs.iter().enumerate() {
         if let Some(g) = g
             && world.picks(Id::Glyph(i))
         {
-            p.gizmos.linestrip_2d(corners(px(g.at), HEX * 0.9), IVORY);
-        }
-    }
-    for b in &f.sim.bonds {
-        let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
-            continue;
-        };
-        p.bond(a, c, b.kind, layer::BOND);
-    }
-    for (at, atom) in f.atoms.iter().zip(&f.sim.atoms) {
-        if let (Some(at), Some(atom)) = (at, atom) {
-            p.bead(*at, look::atom(atom.kind), layer::BEAD);
+            p.outline(px(g.at), HEX * 0.9);
         }
     }
     for (i, at) in f.atoms.iter().enumerate() {
         if let Some(at) = at
             && world.picks(Id::Atom(i))
         {
-            p.gizmos.linestrip_2d(corners(*at, HEX * 0.9), IVORY);
+            p.outline(*at, HEX * 0.9);
+        }
+    }
+    for (i, arm) in f.arms.iter().enumerate() {
+        if world.picks(Id::Arm(i)) {
+            p.outline(arm.pivot, HEX * 0.9);
+        }
+    }
+    p.ghost = false;
+    if let Some(pointer) = world.pointer {
+        if let Some(Focus::Hold { set, back }) = &world.focus {
+            let grab = hex_at(pointer);
+            p.outline(px(grab), HEX * 0.9);
+            for id in world.sim.blocked(set, grab, back.picked()) {
+                for cell in world.sim.stands(id) {
+                    p.outline(px(cell), HEX * 0.9);
+                }
+            }
+            let glyphs = set.glyphs.iter().flatten();
+            let machines: Vec<(Machine, Hex, usize)> = glyphs
+                .map(|g| (Machine::Glyph(g.kind), g.at, g.dir))
+                .chain(set.arms.iter().map(|a| (Machine::Arm, a.pivot, a.dir)))
+                .collect();
+            for (i, (item, at, dir)) in machines.iter().enumerate() {
+                let z = layer::z(layer::HELD, i, machines.len());
+                p.machine(*item, grab.add(*at), *dir, z);
+            }
+            let at = |id: usize| px(grab.add(set.atoms[id].unwrap().pos));
+            for b in &set.bonds {
+                p.bond(at(b.a), at(b.b), b.kind, layer::z(layer::HELD, 0, 2));
+            }
+            for (id, atom) in set.atoms.iter().enumerate() {
+                if let Some(atom) = atom {
+                    p.bead(at(id), look::atom(atom.kind), layer::z(layer::HELD, 1, 2));
+                }
+            }
+            if set.atoms.iter().any(Option::is_some) {
+                let look = look::machine(Machine::Arm);
+                let MachineMark::Hand(glaze, _) = look.marking else {
+                    unworn(look)
+                };
+                p.horseshoe(px(grab), HEX * RING_CLOSED, Vec2::Y, glaze);
+            }
+        }
+        if let Some(Press::Marquee { from }) = world.down {
+            let centre = Isometry2d::from_translation((from + pointer) / 2.0);
+            p.gizmos.rect_2d(centre, (pointer - from).abs(), IVORY);
+        }
+    }
+    if let Some(item) = world.hover {
+        let mut p = Painter {
+            gizmos: &mut card_gizmos,
+            commands: &mut commands,
+            kiln: &kiln,
+            ghost: false,
+            layers: CARD,
+            shift: Vec2::ZERO,
+        };
+        let sims = world.play.map(|play| (play, play.sims()));
+        let play = sims.as_ref().map(|(play, (prev, sim))| {
+            Frame::between(prev, sim, phase(play.since, world.period, world.motion))
+        });
+        hover_card(&mut p, item, play.as_ref());
+    }
+}
+
+fn scene<G: GizmoConfigGroup>(p: &mut Painter<G>, f: &Frame, lift: f32) {
+    for g in f.sim.glyphs.iter().flatten() {
+        p.machine(Machine::Glyph(g.kind), g.at, g.dir, layer::GLYPHS + lift);
+    }
+    for b in &f.sim.bonds {
+        let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
+            continue;
+        };
+        p.bond(a, c, b.kind, layer::BOND + lift);
+    }
+    for (at, atom) in f.atoms.iter().zip(&f.sim.atoms) {
+        if let (Some(at), Some(atom)) = (at, atom) {
+            p.bead(*at, look::atom(atom.kind), layer::BEAD + lift);
         }
     }
     let look = look::machine(Machine::Arm);
     for (i, arm) in f.arms.iter().enumerate() {
-        let z = layer::z(layer::ARMS, i, f.arms.len());
+        let z = layer::z(layer::ARMS, i, f.arms.len()) + lift;
         p.arm(arm.pivot, arm.hand, arm.ring, look, z);
-        if world.picks(Id::Arm(i)) {
-            p.gizmos.linestrip_2d(corners(arm.pivot, HEX * 0.9), IVORY);
-        }
         let stall = f.sim.arms[i].stall;
-        let ivory = p.line(IVORY);
         if stall.is_some() {
-            p.gizmos.circle_2d(arm.pivot, HEX * 0.5, ivory);
+            p.ring(arm.pivot, HEX * 0.5);
         }
         if let Some(Stall::Hand(j)) = stall {
-            p.gizmos.circle_2d(f.arms[j].hand, HEX * 0.65, ivory);
+            p.ring(f.arms[j].hand, HEX * 0.65);
         }
-    }
-    p.ghost = false;
-    if let Some(item) = world.hover {
-        p.layers = CARD;
-        hover_card(&mut p, item);
-        p.layers = RenderLayers::default();
-    }
-    let Some(pointer) = world.pointer else { return };
-    if let Some(Focus::Hold { set, back }) = &world.focus {
-        let grab = hex_at(pointer);
-        p.gizmos.linestrip_2d(corners(px(grab), HEX * 0.9), IVORY);
-        for id in world.sim.blocked(set, grab, back.picked()) {
-            for cell in world.sim.stands(id) {
-                p.gizmos.linestrip_2d(corners(px(cell), HEX * 0.9), IVORY);
-            }
-        }
-        let glyphs = set.glyphs.iter().flatten();
-        let machines: Vec<(Machine, Hex, usize)> = glyphs
-            .map(|g| (Machine::Glyph(g.kind), g.at, g.dir))
-            .chain(set.arms.iter().map(|a| (Machine::Arm, a.pivot, a.dir)))
-            .collect();
-        for (i, (item, at, dir)) in machines.iter().enumerate() {
-            let z = layer::z(layer::HELD, i, machines.len());
-            p.machine(*item, grab.add(*at), *dir, z);
-        }
-        let at = |id: usize| px(grab.add(set.atoms[id].unwrap().pos));
-        for b in &set.bonds {
-            p.bond(at(b.a), at(b.b), b.kind, layer::z(layer::HELD, 0, 2));
-        }
-        for (id, atom) in set.atoms.iter().enumerate() {
-            if let Some(atom) = atom {
-                p.bead(at(id), look::atom(atom.kind), layer::z(layer::HELD, 1, 2));
-            }
-        }
-        if set.atoms.iter().any(Option::is_some) {
-            let look = look::machine(Machine::Arm);
-            let MachineMark::Hand(glaze, _) = look.marking else {
-                unworn(look)
-            };
-            p.horseshoe(px(grab), HEX * RING_CLOSED, Vec2::Y, glaze);
-        }
-    }
-    if let Some(Press::Marquee { from }) = world.down {
-        let centre = Isometry2d::from_translation((from + pointer) / 2.0);
-        p.gizmos.rect_2d(centre, (pointer - from).abs(), IVORY);
     }
 }
 
-fn hover_card(p: &mut Painter, item: Item) {
+fn playfield(machine: Machine) -> Vec<Hex> {
+    let sim = fixture(machine).sim;
+    let mut cells: Vec<Hex> = sim.ids().flat_map(|id| sim.stands(id)).collect();
+    cells.extend(sim.arms.iter().flat_map(|a| DIRS.map(|d| a.pivot.add(d))));
+    let mut tiles: Vec<Hex> = cells
+        .iter()
+        .flat_map(|c| DIRS.iter().map(|d| c.add(*d)).chain([*c]))
+        .collect();
+    tiles.sort_by_key(|h| (h.r, h.q));
+    tiles.dedup();
+    tiles
+}
+
+fn play_bounds(tiles: &[Hex]) -> (Vec2, Vec2) {
+    let reach = Vec2::new(HEX * 3f32.sqrt() / 2.0, HEX);
+    tiles
+        .iter()
+        .map(|h| px(*h))
+        .fold((Vec2::INFINITY, Vec2::NEG_INFINITY), |(lo, hi), p| {
+            (lo.min(p - reach), hi.max(p + reach))
+        })
+}
+
+fn hover_card<G: GizmoConfigGroup>(p: &mut Painter<G>, item: Item, play: Option<&Frame>) {
     let kiln = p.kiln;
-    let size = card_size(item);
+    let card = layout(item);
     let z = |k: usize| layer::z(layer::CARD, k, 5);
-    p.fill(&kiln.bar, &kiln.card[1], Vec2::ZERO, 0.0, size + 2.0, z(0));
-    p.fill(&kiln.bar, &kiln.card[0], Vec2::ZERO, 0.0, size, z(1));
-    let side = picture_side(item);
-    let at = Vec2::new(-size.x / 2.0 + CARD_PAD + side / 2.0, 0.0);
+    p.fill(
+        &kiln.bar,
+        &kiln.card[1],
+        Vec2::ZERO,
+        0.0,
+        card.size + 2.0,
+        z(0),
+    );
+    p.fill(&kiln.bar, &kiln.card[0], Vec2::ZERO, 0.0, card.size, z(1));
+    let at = card.picture;
     match item {
         Item::Machine(machine) => p.sprite(machine, at - look::quad(machine).centre, 0.0, z(2)),
         Item::Step => p.fill(
@@ -2392,16 +2564,25 @@ fn hover_card(p: &mut Painter, item: Item) {
             p.skin(key_of(instr).symbol),
             at,
             0.0,
-            Vec2::splat(side),
+            Vec2::splat(picture_side(item)),
             z(2),
         ),
     }
-    let Some(recipe) = item.recipe() else { return };
-    let centre = Vec2::new(at.x + side / 2.0 + CARD_PAD + recipe_side() / 2.0, 0.0);
-    compound(p, centre, recipe);
+    if let Some(recipe) = item.recipe() {
+        compound(p, card.recipe, recipe);
+    }
+    let (Item::Machine(machine), Some(field), Some(f)) = (item, card.field, play) else {
+        return;
+    };
+    p.shifted(field, |p| {
+        for h in playfield(machine) {
+            p.tile(h, layer::LIFT);
+        }
+        scene(p, f, layer::LIFT);
+    });
 }
 
-fn compound(p: &mut Painter, centre: Vec2, form: &Form) {
+fn compound<G: GizmoConfigGroup>(p: &mut Painter<G>, centre: Vec2, form: &Form) {
     let z = |k: usize| layer::z(layer::CARD, k, 5);
     let set = form.sim();
     let centroid =
@@ -2459,7 +2640,6 @@ mod shot {
         Press(Hex),
         Drag(Hex),
         Release(Hex),
-        Hover(Item),
         Lift(Machine),
     }
 
@@ -2782,8 +2962,12 @@ mod shot {
                 }
             }
             name if name.starts_with("card:") => {
+                let machine = machine(&name[5..]);
                 world.sim = Sim::empty();
-                script.push((2, Act::Hover(Item::Machine(machine(&name[5..])))));
+                world.period = f32::INFINITY;
+                world.motion = 0.0;
+                world.hover = Some(Item::Machine(machine));
+                world.play = Some(Play::at(machine, ticks));
             }
             name if name.starts_with("recipe:") => {
                 let item = machine(&name[7..]);
@@ -3289,6 +3473,7 @@ mod shot {
             kiln: &kiln,
             ghost: false,
             layers: CARD,
+            shift: Vec2::ZERO,
         };
         let recipe = item
             .recipe()
@@ -3391,7 +3576,6 @@ mod shot {
                     world.pointer = Some(px(cell));
                     world.release(Some(cell));
                 }
-                Act::Hover(item) => world.hover = Some(item),
                 Act::Lift(item) => world.lift_inventory(item.into()),
             }
         }
@@ -4929,13 +5113,18 @@ mod tests {
 
     #[test]
     fn nothing_in_a_shipped_layout_shares_a_cell_but_an_atom_on_a_glyph() {
-        let scenes = shot::SCENES.iter().map(|name| shot::scene(name, 0).0.sim);
-        let sims = [sim::layout(), sim::start(), sim::preloaded()];
-        for (name, sim) in shot::SCENES
+        let scenes = shot::SCENES
             .iter()
-            .zip(scenes)
-            .chain(["layout", "start", "preloaded"].iter().zip(sims))
-        {
+            .map(|name| (name.to_string(), shot::scene(name, 0).0.sim));
+        let sims = [sim::layout(), sim::start(), sim::preloaded()];
+        let named = ["layout", "start", "preloaded"]
+            .iter()
+            .map(|n| n.to_string())
+            .zip(sims);
+        let fixtures = Machine::ALL
+            .into_iter()
+            .map(|m| (format!("{m:?} fixture"), fixture(m).sim));
+        for (name, sim) in scenes.chain(named).chain(fixtures) {
             for id in sim.ids() {
                 for cell in sim.stands(id) {
                     for other in sim.on(cell) {
@@ -5125,49 +5314,193 @@ mod tests {
         assert!(w.clipboard.as_ref().unwrap().atoms.is_empty());
     }
 
+    fn card_fills(machine: Machine, ticks: u64) -> Vec<(Vec3, f32)> {
+        let name = machines::name(machine);
+        let dir =
+            std::env::temp_dir().join(format!("ziral-card-{name}-{ticks}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still(&format!("card:{name}"), dir.clone(), 1);
+        lit_plugin(&mut app);
+        app.world_mut().resource_mut::<World>().play = Some(Play::at(machine, ticks));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let probe = seen.clone();
+        app.add_systems(
+            Last,
+            move |fills: Query<(&RenderLayers, &Transform), With<Fill>>,
+                  camera: Single<&Camera, With<CardCamera>>| {
+                assert!(camera.is_active);
+                assert_eq!(
+                    camera.viewport.as_ref().unwrap().physical_size,
+                    card_size(machine.into()).as_uvec2()
+                );
+                *probe.lock().unwrap() = fills
+                    .iter()
+                    .filter(|(l, _)| **l == CARD)
+                    .map(|(_, t)| (t.translation, t.scale.x))
+                    .collect();
+            },
+        );
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        std::fs::remove_dir_all(&dir).unwrap();
+        seen.lock().unwrap().clone()
+    }
+
+    fn bars(sim: &Sim) -> usize {
+        sim.bonds
+            .iter()
+            .map(|bond| match look::bond(bond.kind).shape {
+                Shape::Bars(n) => n,
+                _ => unreachable!(),
+            })
+            .sum()
+    }
+
     #[test]
-    fn the_hover_card_draws_the_picture_and_the_recipe_on_its_own_layer() {
-        for (name, item) in [
-            ("bonder", Machine::Glyph(GlyphKind::Bonder)),
-            ("arm", Machine::Arm),
-        ] {
-            let dir =
-                std::env::temp_dir().join(format!("ziral-card-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            let mut app = shot::still(&format!("card:{name}"), dir.clone(), 1);
-            lit_plugin(&mut app);
-            let seen = std::sync::Arc::new(std::sync::Mutex::new((0, false, UVec2::ZERO)));
-            let probe = seen.clone();
-            app.add_systems(
-                Last,
-                move |fills: Query<&RenderLayers, With<Fill>>,
-                      camera: Single<&Camera, With<CardCamera>>| {
-                    let on_card = fills.iter().filter(|l| **l == CARD).count();
-                    let size = camera
-                        .viewport
-                        .as_ref()
-                        .map_or(UVec2::ZERO, |v| v.physical_size);
-                    *probe.lock().unwrap() = (on_card, camera.is_active, size);
-                },
+    fn the_card_draws_the_picture_the_recipe_and_the_fixture_at_tick_t_as_the_sim_has_it() {
+        let bonder = Machine::Glyph(GlyphKind::Bonder);
+        for (machine, t) in [(bonder, 0), (bonder, 4), (bonder, 9), (Machine::Arm, 2)] {
+            let fills = card_fills(machine, t);
+            let f = fixture(machine);
+            let sim = f.sim.replay(t);
+            let card = layout(machine.into());
+            let recipe = machine.recipe().unwrap().sim();
+            let at = |z: f32| {
+                fills
+                    .iter()
+                    .filter(|(p, _)| (p.z - z).abs() < 1e-3)
+                    .map(|(p, s)| (p.truncate(), *s))
+                    .collect::<Vec<_>>()
+            };
+            let name = format!("{machine:?} at {t}");
+            assert_eq!(
+                at(layer::LIFT).len(),
+                playfield(machine).len(),
+                "{name} tiles"
             );
-            assert_eq!(app.run(), bevy::app::AppExit::Success);
-            std::fs::remove_dir_all(&dir).unwrap();
-            let (on_card, active, size) = *seen.lock().unwrap();
-            let recipe = item.recipe().unwrap();
-            let bars: usize = recipe
-                .sim()
-                .bonds
+            assert_eq!(
+                at(layer::GLYPHS + layer::LIFT).len(),
+                sim.glyphs.iter().flatten().count(),
+                "{name} glyphs"
+            );
+            assert_eq!(
+                at(layer::BOND + layer::LIFT).len(),
+                bars(&sim),
+                "{name} bonds"
+            );
+            let beads = at(layer::BEAD + layer::LIFT);
+            let atoms: Vec<Vec2> = sim
+                .atoms
                 .iter()
-                .map(|bond| match look::bond(bond.kind).shape {
-                    Shape::Bars(n) => n,
-                    _ => unreachable!(),
+                .flatten()
+                .map(|a| card.field.unwrap() + px(a.pos))
+                .collect();
+            assert_eq!(beads.len(), atoms.len(), "{name} beads");
+            for atom in &atoms {
+                assert!(
+                    beads
+                        .iter()
+                        .any(|(p, s)| p.distance(*atom) < 1e-3 && *s == HEX * 0.4),
+                    "{name}: no bead at {atom}"
+                );
+            }
+            let arms: Vec<(Vec2, f32)> = fills
+                .iter()
+                .filter(|(p, _)| {
+                    (layer::ARMS.start + layer::LIFT..layer::ARMS.end + layer::LIFT).contains(&p.z)
                 })
-                .sum();
-            assert_eq!(on_card, 3 + bars + 2 * recipe.atoms().len(), "{name}");
-            assert!(active, "{name}");
-            assert_eq!(size, card_size(item.into()).as_uvec2(), "{name}");
+                .map(|(p, s)| (p.truncate(), *s))
+                .collect();
+            assert_eq!(arms.len(), sim.arms.len(), "{name} arms");
+            for arm in &sim.arms {
+                let quad = look::quad(Machine::Arm);
+                let angle = (px(arm.hand()) - px(arm.pivot)).to_angle();
+                let centre = card.field.unwrap()
+                    + px(arm.pivot)
+                    + Vec2::from_angle(angle).rotate(quad.centre);
+                assert!(
+                    arms.iter().any(|(p, _)| p.distance(centre) < 1e-3),
+                    "{name}: no arm at {centre}"
+                );
+            }
+            let recipe_beads: Vec<Vec2> = at(layer::z(layer::CARD, 4, 5))
+                .iter()
+                .map(|(p, _)| *p)
+                .collect();
+            assert_eq!(
+                recipe_beads.len(),
+                recipe.atoms.len(),
+                "{name} recipe beads"
+            );
+            assert_eq!(
+                at(layer::z(layer::CARD, 3, 5)).len(),
+                bars(&recipe),
+                "{name} recipe bars"
+            );
+            assert_eq!(
+                fills.len(),
+                3 + bars(&recipe)
+                    + 2 * recipe.atoms.len()
+                    + playfield(machine).len()
+                    + sim.glyphs.iter().flatten().count()
+                    + bars(&sim)
+                    + 2 * atoms.len()
+                    + sim.arms.len(),
+                "{name}: something else on the card"
+            );
         }
+    }
+
+    #[test]
+    fn the_playback_ticks_with_the_world_clock_holds_its_last_frame_and_loops() {
+        let bonder = Machine::Glyph(GlyphKind::Bonder);
+        let f = fixture(bonder);
+        let mut w = World::new(Sim::empty());
+        w.hover = Some(bonder.into());
+        w.advance(0.0);
+        for t in 0..=f.ticks + HOLD + 1 {
+            let (sim, prev) = match t {
+                0 => (0, 0),
+                t if t <= f.ticks => (t, t - 1),
+                t if t <= f.ticks + HOLD => (f.ticks, f.ticks),
+                _ => (0, 0),
+            };
+            let play = w.play.as_ref().unwrap();
+            let (before, now) = play.sims();
+            assert_eq!(now, f.sim.replay(sim), "tick {t}");
+            assert_eq!(before, f.sim.replay(prev), "tick {t} prev");
+            w.advance(w.period);
+        }
+        w.hover = Some(Machine::Arm.into());
+        w.advance(0.0);
+        assert_eq!(w.play.unwrap().sims().1, fixture(Machine::Arm).sim);
+        w.hover = None;
+        w.advance(0.0);
+        assert!(w.play.is_none());
+        let past = Play::at(bonder, f.ticks + 99);
+        assert_eq!((past.at, past.sims().1), (f.ticks, f.sim.replay(f.ticks)));
+    }
+
+    #[test]
+    fn a_token_or_step_card_ends_at_its_recipe_and_a_machine_card_holds_its_playfield() {
+        for item in [Item::Step, Item::Token(Instr::Grab)] {
+            let card = layout(item);
+            assert_eq!(card.field, None, "{item:?}");
+            assert_eq!(
+                card.size.x,
+                3.0 * CARD_PAD + picture_side(item) + recipe_side(),
+                "{item:?}"
+            );
+        }
+        let bonder = Machine::Glyph(GlyphKind::Bonder);
+        let (lo, hi) = play_bounds(&playfield(bonder));
+        let card = layout(bonder.into());
+        assert_eq!(
+            card.size.x,
+            4.0 * CARD_PAD + picture_side(bonder.into()) + recipe_side() + (hi - lo).x
+        );
+        let corner = Vec2::new(card.size.x / 2.0 - CARD_PAD, (hi - lo).y / 2.0);
+        assert!((card.field.unwrap() + hi).distance(corner) < 1e-3);
     }
 
     #[test]
@@ -5300,7 +5633,6 @@ mod tests {
                         w.pointer = Some(px(cell));
                         w.release(Some(cell));
                     }
-                    shot::Act::Hover(item) => w.hover = Some(item),
                     shot::Act::Lift(item) => w.lift_inventory(item.into()),
                 }
             }
