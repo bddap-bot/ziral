@@ -470,6 +470,26 @@ pub struct Sim {
     pub inventory: Inventory,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Id {
+    Arm(usize),
+    Glyph(usize),
+    Atom(usize),
+}
+
+impl Id {
+    pub fn moves(self) -> bool {
+        !matches!(self, Id::Glyph(_))
+    }
+
+    pub fn may_share(self, other: Id) -> bool {
+        matches!(
+            (self, other),
+            (Id::Atom(_), Id::Glyph(_)) | (Id::Glyph(_), Id::Atom(_))
+        )
+    }
+}
+
 impl Sim {
     pub fn empty() -> Self {
         Sim {
@@ -486,12 +506,6 @@ impl Sim {
         self.atoms
             .iter()
             .position(|a| a.is_some_and(|a| a.pos == at))
-    }
-
-    pub fn glyph_at(&self, at: Hex) -> Option<usize> {
-        self.glyphs
-            .iter()
-            .position(|g| g.is_some_and(|g| g.slots().any(|s| s == at)))
     }
 
     pub fn bond_between(&self, a: usize, b: usize) -> Option<usize> {
@@ -564,16 +578,47 @@ impl Sim {
         sim
     }
 
-    pub fn fits(&self, other: &Sim, at: Hex, lifted: &[usize]) -> bool {
-        other.atoms.iter().flatten().all(|atom| {
-            let cell = atom.pos.add(at);
-            self.atom_at(cell).is_none() && self.arms.iter().all(|a| a.pivot != cell)
-        }) && other.glyphs.iter().flatten().all(|g| {
-            g.slots().all(|cell| {
-                self.glyph_at(cell.add(at))
-                    .is_none_or(|i| lifted.contains(&i))
+    pub fn ids(&self) -> impl Iterator<Item = Id> + '_ {
+        let arms = (0..self.arms.len()).map(Id::Arm);
+        let glyphs = self.glyphs.iter().enumerate();
+        let atoms = self.atoms.iter().enumerate();
+        arms.chain(glyphs.filter_map(|(i, g)| g.map(|_| Id::Glyph(i))))
+            .chain(atoms.filter_map(|(i, a)| a.map(|_| Id::Atom(i))))
+    }
+
+    pub fn stands(&self, id: Id) -> impl Iterator<Item = Hex> + '_ {
+        let (arm, glyph, atom) = match id {
+            Id::Arm(i) => (Some(self.arms[i].pivot), None, None),
+            Id::Glyph(i) => (None, self.glyphs[i].as_ref(), None),
+            Id::Atom(i) => (None, None, self.atoms[i].map(|a| a.pos)),
+        };
+        arm.into_iter()
+            .chain(glyph.into_iter().flat_map(Glyph::slots))
+            .chain(atom)
+    }
+
+    pub fn on(&self, cell: Hex) -> impl Iterator<Item = Id> + '_ {
+        self.ids()
+            .filter(move |id| self.stands(*id).any(|c| c == cell))
+    }
+
+    pub fn blocked<'a>(
+        &'a self,
+        set: &'a Sim,
+        at: Hex,
+        picked: &'a [Id],
+    ) -> impl Iterator<Item = Id> + 'a {
+        set.ids()
+            .flat_map(move |id| set.stands(id).map(move |cell| (id, cell)))
+            .flat_map(move |(id, cell)| {
+                self.on(cell.add(at))
+                    .filter(move |other| !id.may_share(*other))
             })
-        })
+            .filter(move |other| !picked.contains(other))
+    }
+
+    pub fn fits(&self, set: &Sim, at: Hex, picked: &[Id]) -> bool {
+        self.blocked(set, at, picked).next().is_none()
     }
 
     pub fn replay(&self, ticks: u64) -> Sim {
@@ -737,17 +782,18 @@ impl Sim {
             .iter()
             .map(|id| (*id, to(self.atoms[*id].unwrap().pos)))
             .collect();
-        let free = |at: Hex| {
-            self.atom_at(at).is_none_or(|other| comp.contains(&other))
-                && !self
-                    .arms
-                    .iter()
-                    .enumerate()
-                    .any(|(j, a)| j != i && a.pivot == at)
+        let clear = |id: Id, at: Hex| {
+            self.on(at).all(|other| {
+                id.may_share(other)
+                    || matches!(other, Id::Arm(j) if j == i)
+                    || matches!(other, Id::Atom(a) if comp.contains(&a))
+            })
         };
         let stepped = pivot != self.arms[i].pivot;
-        if (stepped && (self.glyph_at(pivot).is_some() || !free(pivot)))
-            || moved.iter().any(|(_, at)| !free(*at) || *at == pivot)
+        if (stepped && !clear(Id::Arm(i), pivot))
+            || moved
+                .iter()
+                .any(|(id, at)| !clear(Id::Atom(*id), *at) || *at == pivot)
         {
             return Err(Stall::Illegal);
         }
