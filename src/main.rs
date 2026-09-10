@@ -59,7 +59,10 @@ const IVORY: Color = Glaze::Ivory.color();
 struct PaletteRow(Item);
 
 fn palette() -> impl Iterator<Item = Item> {
-    recipes().iter().map(|(item, _)| *item)
+    recipes()
+        .iter()
+        .map(|(item, _)| *item)
+        .chain(sim::AtomKind::ALL.map(Item::Atom))
 }
 
 #[derive(Clone, Copy)]
@@ -194,11 +197,15 @@ fn instr_of(key: KeyCode, shift: bool) -> Option<Instr> {
         .map(|k| k.instr)
 }
 
-fn fresh(item: Machine) -> Sim {
+fn fresh(item: Item) -> Sim {
     let mut set = Sim::empty();
     match item {
-        Machine::Arm => set.arms.push(Arm::new(ORIGIN, 0, Vec::new())),
-        Machine::Glyph(kind) => set.glyphs.push(Some(Glyph::new(kind, ORIGIN, 0))),
+        Item::Machine(Machine::Arm) => set.arms.push(Arm::new(ORIGIN, 0, Vec::new())),
+        Item::Machine(Machine::Glyph(kind)) => set.glyphs.push(Some(Glyph::new(kind, ORIGIN, 0))),
+        Item::Atom(kind) => {
+            set.spawn(sim::Atom { kind, pos: ORIGIN });
+        }
+        Item::Step | Item::Token(_) => {}
     }
     set
 }
@@ -353,8 +360,14 @@ impl World {
 
     fn lift_inventory(&mut self, item: Item) {
         self.refused = None;
-        if let (Item::Machine(machine), Some(1..)) = (item, self.sim.inventory.count(item)) {
-            self.lift(fresh(machine), Back::Inventory);
+        if matches!(item, Item::Machine(_) | Item::Atom(_))
+            && self
+                .sim
+                .inventory
+                .count(item)
+                .is_some_and(|count| count > 0)
+        {
+            self.lift(fresh(item), Back::Inventory);
         }
     }
 
@@ -611,9 +624,30 @@ impl World {
     }
 
     fn paste(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if clipboard_text().is_some_and(|text| self.paste_text(&text)) {
+                return;
+            }
+            self.paste_machines();
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        clipboard_text();
+    }
+
+    fn paste_machines(&mut self) {
         if let Some(set) = self.clipboard.clone() {
             self.lift(set, Back::Inventory);
         }
+    }
+
+    fn paste_text(&mut self, text: &str) -> bool {
+        let Ok(form) = text.parse::<Form>() else {
+            return false;
+        };
+        self.lift(form.sim(), Back::Inventory);
+        true
     }
 
     fn lift(&mut self, set: Sim, back: Back) {
@@ -918,6 +952,13 @@ fn clipboard(text: &str) {
     written.unwrap_or_else(|e| panic!("the clipboard refused the compound: {e}"));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn clipboard_text() -> Option<String> {
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.get_text())
+        .ok()
+}
+
 #[cfg(target_arch = "wasm32")]
 fn clipboard(text: &str) {
     let written = web_sys::window()
@@ -931,6 +972,37 @@ fn clipboard(text: &str) {
             .unwrap_or_else(|e| panic!("the clipboard refused the compound: {e:?}"));
     });
 }
+
+#[cfg(target_arch = "wasm32")]
+fn clipboard_text() {
+    let read = web_sys::window()
+        .expect("a window")
+        .navigator()
+        .clipboard()
+        .read_text();
+    wasm_bindgen_futures::spawn_local(async move {
+        let text = wasm_bindgen_futures::JsFuture::from(read)
+            .await
+            .ok()
+            .and_then(|text| text.as_string());
+        *PASTED.lock().unwrap() = Some(text);
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+static PASTED: std::sync::Mutex<Option<Option<String>>> = std::sync::Mutex::new(None);
+
+#[cfg(target_arch = "wasm32")]
+fn clipboard_paste(mut world: ResMut<World>) {
+    if let Some(text) = PASTED.lock().unwrap().take() {
+        if !text.is_some_and(|text| world.paste_text(&text)) {
+            world.paste_machines();
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn clipboard_paste() {}
 
 fn hex_at(p: Vec2) -> Hex {
     let r = p.y / (HEX * 1.5);
@@ -1019,7 +1091,18 @@ fn app(world: World) -> App {
         .add_systems(
             Update,
             (
-                hover, run_ticks, view, edit, tapes, tally, refusal, board, draw, card, manual,
+                clipboard_paste,
+                hover,
+                run_ticks,
+                view,
+                edit,
+                tapes,
+                tally,
+                refusal,
+                board,
+                draw,
+                card,
+                manual,
             )
                 .chain(),
         );
@@ -1143,6 +1226,7 @@ fn text(s: String) -> impl Bundle {
 fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
     let side = match item {
         Item::Machine(_) => PALETTE_PX,
+        Item::Atom(_) => PALETTE_PX,
         Item::Step | Item::Token(_) => SYMBOL_PX,
     };
     let square = Node {
@@ -1156,6 +1240,10 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
         Item::Machine(machine) => {
             let skin = look::machine(machine).skin;
             entry.spawn((ImageNode::new(kiln.image(skin)), square));
+        }
+        Item::Atom(kind) => {
+            let look = look::atom(kind);
+            entry.spawn((ImageNode::new(kiln.image(look.skin)), square));
         }
         Item::Step => {
             entry.spawn(square).with_child(mark(0, STEP_PX, true));
@@ -1344,6 +1432,7 @@ fn recipe_side() -> f32 {
 fn picture_side(item: Item) -> f32 {
     match item {
         Item::Machine(machine) => look::quad(machine).side,
+        Item::Atom(_) => PALETTE_PX,
         Item::Step | Item::Token(_) => SYMBOL_PX,
     }
 }
@@ -1360,7 +1449,7 @@ fn layout(item: Item) -> Layout {
     let recipe = recipe_side();
     let bounds = match item {
         Item::Machine(machine) => Some(play_bounds(&playfield(machine))),
-        Item::Step | Item::Token(_) => None,
+        Item::Atom(_) | Item::Step | Item::Token(_) => None,
     };
     let span = bounds.map_or(Vec2::ZERO, |(lo, hi)| hi - lo);
     let width = 3.0 * CARD_PAD + picture + recipe + bounds.map_or(0.0, |_| CARD_PAD + span.x);
@@ -2551,6 +2640,7 @@ fn hover_card<G: GizmoConfigGroup>(p: &mut Painter<G>, item: Item, play: Option<
     let at = card.picture;
     match item {
         Item::Machine(machine) => p.sprite(machine, at - look::quad(machine).centre, 0.0, z(2)),
+        Item::Atom(kind) => p.bead(at, look::atom(kind), z(2)),
         Item::Step => p.fill(
             &kiln.circle,
             kiln.material(Glaze::Ivory),
@@ -2641,6 +2731,7 @@ mod shot {
         Drag(Hex),
         Release(Hex),
         Lift(Machine),
+        Paste(&'static str),
     }
 
     fn tap(frame: u32, key: KeyCode) -> [(u32, Act); 2] {
@@ -2661,7 +2752,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 35] = [
+    pub const SCENES: [&str; 36] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -2697,6 +2788,7 @@ mod shot {
         "dropfirst",
         "grabfirst",
         "base",
+        "reification",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -3029,7 +3121,10 @@ mod shot {
                 }
             }
             "hold" => {
-                world.lift(fresh(Machine::Glyph(GlyphKind::Bonder)), Back::Inventory);
+                world.lift(
+                    fresh(Item::Machine(Machine::Glyph(GlyphKind::Bonder))),
+                    Back::Inventory,
+                );
                 keys = vec![(KeyD, false); 2];
             }
             "select" => {
@@ -3188,6 +3283,22 @@ mod shot {
                 script.extend(tap(168, KeyZ));
                 script.extend(tap(192, KeyV));
                 script.push((216, Act::Press(Hex::new(2, -4))));
+            }
+            "reification" => {
+                let machine = Machine::Glyph(GlyphKind::Reification);
+                let form = machine.recipe().unwrap();
+                let centre = form.centre(sim::Tier::Two.radius()).unwrap();
+                let mut sim = Sim::empty();
+                sim.place(&form.sim(), Hex::new(-4, 0).sub(centre));
+                let centre_atom = sim.atom_at(Hex::new(-4, 0)).unwrap();
+                sim.atoms[centre_atom].as_mut().unwrap().kind = AtomKind::Amber;
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Reification, Hex::new(-4, 0), 0)));
+                sim.inventory.add(Item::Atom(AtomKind::Base));
+                sim.inventory.add(Item::Atom(AtomKind::Base));
+                world.sim = sim;
+                script.push((52, Act::Paste("B0,0 B1,0 0,0-1,0")));
+                script.push((58, Act::Press(Hex::new(3, 0))));
             }
             "pivot" => {
                 let mut sim = Sim::empty();
@@ -3577,6 +3688,9 @@ mod shot {
                     world.release(Some(cell));
                 }
                 Act::Lift(item) => world.lift_inventory(item.into()),
+                Act::Paste(text) => {
+                    world.paste_text(text);
+                }
             }
         }
         let warm = shot.warm;
@@ -4476,7 +4590,7 @@ mod tests {
         w.key(KeyCode::KeyQ, false);
         w.key(KeyCode::KeyE, false);
         assert_eq!(w.sim.glyphs[0].unwrap().dir, 2);
-        w.lift(fresh(Machine::Arm), Back::Inventory);
+        w.lift(fresh(Item::Machine(Machine::Arm)), Back::Inventory);
         w.key(KeyCode::KeyQ, false);
         w.key(KeyCode::KeyE, false);
         assert_eq!(held_dir(&w), 0);
@@ -4493,7 +4607,7 @@ mod tests {
         w.key(KeyCode::KeyD, false);
         assert_eq!(w.sim.glyphs[0].unwrap().dir, 1);
         assert_eq!(w.prev, w.sim);
-        w.lift(fresh(Machine::Arm), Back::Inventory);
+        w.lift(fresh(Item::Machine(Machine::Arm)), Back::Inventory);
         w.key(KeyCode::KeyD, false);
         assert_eq!(held_dir(&w), 1);
         w.key(KeyCode::KeyA, false);
@@ -4545,7 +4659,7 @@ mod tests {
     fn a_palette_placement_lands_its_anchor_on_the_cursor_cell() {
         let mut w = lone(vec![], vec![]);
         stocked(&mut w, Machine::Arm, 1);
-        w.lift(fresh(Machine::Arm), Back::Inventory);
+        w.lift(fresh(Item::Machine(Machine::Arm)), Back::Inventory);
         let to = Hex::new(-2, 3);
         w.release(Some(to));
         assert_eq!(w.sim.arms[0].pivot, to);
@@ -4687,7 +4801,7 @@ mod tests {
         w.key(KeyCode::KeyX, false);
         assert!(w.clipboard.is_none());
         w.key(KeyCode::KeyZ, false);
-        w.lift(fresh(Machine::Arm), Back::Inventory);
+        w.lift(fresh(Item::Machine(Machine::Arm)), Back::Inventory);
         w.place(Some(Hex::new(5, 5)));
         assert_eq!(w.sim, ghost0);
         assert_eq!(*w.shown(), ghost4);
@@ -4701,7 +4815,10 @@ mod tests {
         let ghost0 = w.sim.clone();
         let at = Hex::new(5, 5);
         stocked(&mut w, Machine::Glyph(GlyphKind::Bonder), 1);
-        w.lift(fresh(Machine::Glyph(GlyphKind::Bonder)), Back::Inventory);
+        w.lift(
+            fresh(Item::Machine(Machine::Glyph(GlyphKind::Bonder))),
+            Back::Inventory,
+        );
         w.place(Some(at));
         let placed = Some(bonder(at, 0));
         assert_eq!(w.sim.glyphs.last().copied(), Some(placed));
@@ -5013,7 +5130,7 @@ mod tests {
             vec![Some(other), Some(bonder(Hex::new(1, 0), 0))]
         );
         assert_eq!(w.sim.inventory.count(item), Some(0));
-        w.clipboard = Some(fresh(Machine::Glyph(GlyphKind::Bonder)));
+        w.clipboard = Some(fresh(Item::Machine(Machine::Glyph(GlyphKind::Bonder))));
         w.sim.inventory.add(item);
         w.paste();
         w.release(Some(Hex::new(4, 0)));
@@ -5031,7 +5148,7 @@ mod tests {
         let mut w = lone(vec![other], vec![]);
         w.running = false;
         stocked(&mut w, Machine::Arm, 1);
-        w.lift(fresh(Machine::Arm), Back::Inventory);
+        w.lift(fresh(Item::Machine(Machine::Arm)), Back::Inventory);
         w.release(Some(Hex::new(2, 0)));
         assert_eq!(w.sim.arms[0].hand(), other.at);
     }
@@ -5251,6 +5368,7 @@ mod tests {
             .map(Item::Machine)
             .chain([Item::Step])
             .chain(KEYS.map(|k| Item::Token(k.instr)))
+            .chain(AtomKind::ALL.map(Item::Atom))
             .collect();
         assert_eq!(listed.len(), all.len());
         assert!(all.iter().all(|item| listed.contains(item)));
@@ -5580,7 +5698,7 @@ mod tests {
         pair(&mut w, ORIGIN, BondKind::Single);
         lift_at(&mut w, ORIGIN);
         let hold = w.focus.clone();
-        w.lift(fresh(Machine::Arm), Back::Inventory);
+        w.lift(fresh(Item::Machine(Machine::Arm)), Back::Inventory);
         assert_eq!(w.focus, hold);
         w.focus_tape(0);
         assert_eq!(w.focus, hold);
@@ -5634,6 +5752,9 @@ mod tests {
                         w.release(Some(cell));
                     }
                     shot::Act::Lift(item) => w.lift_inventory(item.into()),
+                    shot::Act::Paste(text) => {
+                        w.paste_text(text);
+                    }
                 }
             }
             if frame == warm {
@@ -5955,6 +6076,85 @@ mod tests {
             w.sim.glyphs,
             vec![Some(bonder(ORIGIN, 0)), second(SECOND_AT), None, None]
         );
+    }
+
+    #[test]
+    fn a_compound_paste_pays_for_its_atoms_and_double_bonds_or_changes_nothing() {
+        let base = Item::Atom(AtomKind::Base);
+        let text = "B0,0 B1,0 0,0=1,0";
+        let at = Hex::new(4, 4);
+        let mut affordable = lone(vec![], vec![]);
+        stocked(&mut affordable, base, 3);
+        assert!(affordable.paste_text(text));
+        affordable.place(Some(at));
+        assert_eq!(count(&affordable, base), 0);
+        assert_eq!(affordable.sim.atoms.iter().flatten().count(), 2);
+        assert_eq!(affordable.sim.bonds.len(), 1);
+        assert_eq!(affordable.sim.bonds[0].kind, BondKind::Double);
+
+        let mut unaffordable = lone(vec![], vec![]);
+        stocked(&mut unaffordable, base, 2);
+        let before = unaffordable.sim.clone();
+        assert!(unaffordable.paste_text(text));
+        unaffordable.place(Some(at));
+        assert_eq!(unaffordable.sim, before);
+        assert_eq!(
+            unaffordable.refused,
+            Some(Refused {
+                at,
+                short: vec![short(base, 2, 3)]
+            })
+        );
+    }
+
+    #[test]
+    fn an_atom_drag_from_the_palette_places_one_atom_and_spends_one() {
+        let item = Item::Atom(AtomKind::Amber);
+        let at = Hex::new(4, 4);
+        let mut w = lone(vec![], vec![]);
+        stocked(&mut w, item, 1);
+        w.lift_inventory(item);
+        w.place(Some(at));
+        assert_eq!(count(&w, item), 0);
+        assert_eq!(
+            w.sim.atom_at(at).map(|id| w.sim.atoms[id].unwrap().kind),
+            Some(AtomKind::Amber)
+        );
+    }
+
+    #[test]
+    fn a_compound_paste_is_refused_on_an_atom_and_beyond_ghost_zero() {
+        let base = Item::Atom(AtomKind::Base);
+        let text = "B0,0 B1,0 0,0-1,0";
+        let at = Hex::new(4, 4);
+        let mut occupied = lone(vec![], vec![]);
+        stocked(&mut occupied, base, 4);
+        occupied.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: at,
+        });
+        let before = occupied.sim.clone();
+        assert!(occupied.paste_text(text));
+        occupied.place(Some(at));
+        assert_eq!(occupied.sim, before);
+        assert_eq!(occupied.refused, None);
+
+        let mut on_base = lone(vec![], vec![Arm::new(at, 0, vec![])]);
+        stocked(&mut on_base, base, 2);
+        let before = on_base.sim.clone();
+        assert!(on_base.paste_text(text));
+        on_base.place(Some(at));
+        assert_eq!(on_base.sim, before);
+        assert_eq!(count(&on_base, base), 2);
+
+        let mut ghost = lone(vec![], vec![]);
+        stocked(&mut ghost, base, 2);
+        ghost.resim(1);
+        let before = ghost.sim.clone();
+        assert!(ghost.paste_text(text));
+        ghost.place(Some(at));
+        assert_eq!(ghost.sim, before);
+        assert_eq!(count(&ghost, base), 2);
     }
 
     #[test]

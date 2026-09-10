@@ -1869,6 +1869,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::look::light;
     use crate::sim::{Arm, Glyph, Hex, ORIGIN};
 
@@ -2429,7 +2430,7 @@ mod tests {
                 "{line}"
             );
         }
-        assert_eq!(all.last().map(String::as_str), Some("7 placeholder"));
+        assert_eq!(all.last(), Some(&format!("{} placeholder", names.len())));
         m.machine.get_mut("arm").expect("arm").direction = Direction::Given("an arm".into());
         let one_given = lines(&m);
         assert!(
@@ -2444,7 +2445,10 @@ mod tests {
                 .count(),
             names.len() - 1
         );
-        assert_eq!(one_given.last().map(String::as_str), Some("6 placeholder"));
+        assert_eq!(
+            one_given.last(),
+            Some(&format!("{} placeholder", names.len() - 1))
+        );
     }
 
     #[test]

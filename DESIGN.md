@@ -46,7 +46,6 @@ Research tree. Enemies. Power. Fluids. Multiplayer. More than one molecule famil
 - Metals become transferable over long distances via a reaction resembling electroplating. Make it extra complicated, perhaps consuming a consumable on the receiving end.
 - Select a machine by entering a code, like d-pad codes. The fun may be there.
 - Clever matter-positive interactions between glyphs might be the progression later.
-- A reification glyph taking an atom wrapped in two layers of fully bonded atoms of some specific type allows the player to add an atom to their inventory for manual placement.
 
 ## Open questions
 
@@ -493,7 +492,7 @@ The one-format rule. The recipe table, `form::RECIPES`, is the machines and thei
 
 The canvas. The world is where a recipe is designed: build the compound by hand, drag a marquee over any part of it, press C. The marquee takes atoms as it takes machines, `Id::Atom`, and a picked atom is ringed as a picked machine is; C and X write every whole compound that any picked atom belongs to, one line each, sorted, to the system clipboard, and the machines in the same pick go to the toy's own clipboard as before, so copy and paste of machines are as they were. A press on an atom still lifts its compound, so a marquee starts on bare ground. Z, X, a drag and a turn leave a picked atom where it is; the pick is read-only for atoms, and a picked atom belongs to the frame it was picked in, so a step into or out of a ghost frame drops the atoms from the pick and keeps the machines. A refused clipboard write is a panic that names the reason, on the desktop from `arboard` over X11 or Wayland, on the web from the browser's promise awaited through `web-sys`; nothing is written silently.
 
-Pasting is not in this round. The reification glyph in the parking lot puts atoms into the inventory for manual placement; a paste will then read the clipboard through this parser and draw the atoms from that inventory, so the parser is the input of the paste to come and nothing here forecloses it.
+The parser is also the input of compound paste; the reification glyph and inventory rule below decide where its atoms come from.
 
 Three alternatives disposed. A screenshot carries the shape but not the cells, and nothing reads it back. A separate recipe editor is a second surface that draws what the world already draws and edits what the hand already edits. A notation for the clipboard alone leaves the table in another form, so a copied compound is transcribed by hand into the table, which is the step the directive removes.
 
@@ -637,3 +636,19 @@ Alternatives disposed. Words on the card: the rule, and the directive keeps it. 
 Deleted: the room the card reserved beside every recipe, the token and step cards included, which now end at the recipe; `Act::Hover`, since the card scene sets its hover and playback directly; the board's own tile-spawning closure, folded into the one `tile` the card's painter also lays; `art/reference/proof/cards.png`.
 
 Tests: every fixture reaches its outcome on its last tick and not the tick before, with no arm stalled on the way; every fixture holds its machine, at most a source and an arm, and nothing else; no fixture stands two things on one cell but an atom on a glyph; the playback advances with the world's clock, holds its last frame three ticks, loops to t=0, resets when the hovered machine changes and is gone when nothing is hovered; the card at tick t of the bonder's fixture, at 0, 4 and 9, and of the arm's at 2, draws on its layer exactly the playfield's tiles, the sim's glyphs, bars and arms, and a bead at the shifted cell of every atom the sim holds at tick t, beside the recipe's own beads and bars and the card's three plates, and nothing else. Mutation-tested both ways. `art/reference/proof/card-bonder.gif` (`art/gif.sh art/reference/proof/card-bonder.gif card:bonder 12 405:184:8:16`) is the bonder's card playing one loop at the shipped size; `art/reference/proof/cards-played.png` (`art/cards.sh`) is every card at 1:1 on one sheet, each playback at its last frame.
+
+### Toy 1 reifies atoms and pastes compounds
+
+Atoms are inventory items, counted by kind under the same per-item cap and drawn in the palette beside the machines. A palette drag holds one atom and its drop goes through the same placement and inventory spend as a machine. Deleting an atom still consumes it without a refund: inventory is ingress, not an undo buffer.
+
+The reification glyph moves from the parking lot into the model. It is a machine with a tier-two recipe and a nineteen-cell well: the centre, its six neighbours and their twelve neighbours. The centre accepts either atom kind; every outer cell demands a base atom; every adjacent pair in the radius-two hexagon must have a single or double bond. On a complete match the whole wrap is consumed and one atom of the centre's kind enters the inventory. A missing bond or a wrong outer kind leaves the wrap untouched.
+
+The glyph ships with candidate four, the best of its three paint rounds, at critic score 5 with the judgement recorded beside the candidates; the rubric and threshold are unchanged.
+
+V first reads the system clipboard through `Form::from_str`, the one compound parser. A parsed compound becomes the held `Sim` used by machine paste and its drop goes through `Sim::fits`, `Inventory::spend_all` and `Sim::place`, the one placement path. Its bill is every atom plus one base atom for every double bond; single bonds cost nothing. The check spends the whole bill together or refuses with #44's picture-and-beads line, leaving both board and inventory unchanged. An atom or arm base under any pasted atom refuses the placement before spending, and a compound cannot be placed beyond ghost zero. Machine copy and paste keep their own buffer when the system clipboard is not a compound.
+
+Three alternatives are disposed. Refunding deleted atoms makes deletion a second ingress beside the glyph. A cheaper wrap weakens the decided radius-two, fully bonded cost into another recipe. Letting paste create atoms from nothing bypasses both the glyph and the inventory check.
+
+Open question. Should the notation carry machines and tapes too, making the system clipboard the one buffer, or should compound text and the machine buffer remain separate?
+
+Tests: the complete wrap reifies either centre kind, while one missing bond or one amber outer atom leaves it untouched; an affordable double-bonded pair spends its two atoms and one sacrificial base atom and lands with its bond, while one base atom short changes nothing and shows the refusal; a paste onto an atom and a paste beyond ghost zero are refused. The recipe test holds the reification row distinct under every turn from every other recipe and inside its tier-two bound.

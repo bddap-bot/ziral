@@ -108,10 +108,11 @@ pub enum Stall {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AtomKind {
     Base,
+    Amber,
 }
 
 impl AtomKind {
-    pub const ALL: [AtomKind; 1] = [AtomKind::Base];
+    pub const ALL: [AtomKind; 2] = [AtomKind::Base, AtomKind::Amber];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,14 +202,16 @@ pub enum GlyphKind {
     Source,
     Bonder,
     SecondBond,
+    Reification,
     Output(Tier),
 }
 
 impl GlyphKind {
-    pub const ALL: [GlyphKind; 6] = [
+    pub const ALL: [GlyphKind; 7] = [
         GlyphKind::Source,
         GlyphKind::Bonder,
         GlyphKind::SecondBond,
+        GlyphKind::Reification,
         GlyphKind::Output(Tier::One),
         GlyphKind::Output(Tier::Two),
         GlyphKind::Output(Tier::Three),
@@ -240,6 +243,7 @@ impl Machine {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
     Machine(Machine),
+    Atom(AtomKind),
     Step,
     Token(Instr),
 }
@@ -252,7 +256,16 @@ impl From<Machine> for Item {
 
 impl Item {
     fn index(self) -> Option<usize> {
-        recipes().iter().position(|(item, _)| *item == self)
+        recipes()
+            .iter()
+            .position(|(item, _)| *item == self)
+            .or_else(|| match self {
+                Item::Atom(kind) => AtomKind::ALL
+                    .iter()
+                    .position(|other| *other == kind)
+                    .map(|i| RECIPES.len() + i),
+                _ => None,
+            })
     }
 
     pub fn recipe(self) -> Option<&'static Form> {
@@ -328,6 +341,7 @@ const fn hexagon<const N: usize>(radius: i32) -> [Slot; N] {
 const OUTPUT_1: [Slot; 7] = hexagon(Tier::One.radius());
 const OUTPUT_2: [Slot; 19] = hexagon(Tier::Two.radius());
 const OUTPUT_3: [Slot; 37] = hexagon(Tier::Three.radius());
+const REIFICATION: [Slot; 19] = hexagon(Tier::Two.radius());
 
 const fn plain(slots: &'static [Slot]) -> Rule {
     Rule {
@@ -351,6 +365,7 @@ impl GlyphKind {
                 after: &[(1, 2, BondKind::Double)],
                 ..plain(&SECOND_BOND)
             },
+            GlyphKind::Reification => plain(&REIFICATION),
             GlyphKind::Output(Tier::One) => plain(&OUTPUT_1),
             GlyphKind::Output(Tier::Two) => plain(&OUTPUT_2),
             GlyphKind::Output(Tier::Three) => plain(&OUTPUT_3),
@@ -393,14 +408,14 @@ pub struct Short {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Inventory {
-    count: [u32; RECIPES.len()],
-    cap: [u32; RECIPES.len()],
+    count: [u32; RECIPES.len() + AtomKind::ALL.len()],
+    cap: [u32; RECIPES.len() + AtomKind::ALL.len()],
 }
 
 impl Inventory {
     pub const EMPTY: Inventory = Inventory {
-        count: [0; RECIPES.len()],
-        cap: [DEFAULT_CAP; RECIPES.len()],
+        count: [0; RECIPES.len() + AtomKind::ALL.len()],
+        cap: [DEFAULT_CAP; RECIPES.len() + AtomKind::ALL.len()],
     };
 
     pub fn count(&self, item: Item) -> Option<u32> {
@@ -427,19 +442,22 @@ impl Inventory {
     }
 
     pub fn spend_all(&mut self, bill: &[Item]) -> Result<(), Vec<Short>> {
-        let mut need = [0; RECIPES.len()];
+        let mut need = [0; RECIPES.len() + AtomKind::ALL.len()];
         for item in bill {
             let i = item
                 .index()
                 .expect("a source is world-placed and never held");
             need[i] += 1;
         }
-        let short: Vec<Short> = recipes()
+        let items = recipes()
             .iter()
+            .map(|(item, _)| *item)
+            .chain(AtomKind::ALL.map(Item::Atom));
+        let short: Vec<Short> = items
             .enumerate()
             .filter(|(i, _)| need[*i] > self.count[*i])
-            .map(|(i, (item, _))| Short {
-                item: *item,
+            .map(|(i, item)| Short {
+                item,
                 have: self.count[i],
                 need: need[i],
             })
@@ -695,7 +713,10 @@ impl Sim {
             .zip(rule.slots)
             .map(|(at, slot)| {
                 self.atom_at(at)
-                    .filter(|id| self.atoms[*id].unwrap().kind == slot.kind)
+                    .filter(|id| {
+                        g.kind == GlyphKind::Reification && slot.at == ORIGIN
+                            || self.atoms[*id].unwrap().kind == slot.kind
+                    })
                     .filter(|id| !slot.lone || self.bonds.iter().all(|x| x.a != *id && x.b != *id))
             })
             .collect::<Option<_>>()?;
@@ -706,6 +727,17 @@ impl Sim {
             .any(|(a, b, want)| bonded(ids[*a], ids[*b]) != *want)
         {
             return None;
+        }
+        if g.kind == GlyphKind::Reification {
+            for a in 0..ids.len() {
+                for b in a + 1..ids.len() {
+                    let (aa, bb) = (self.atoms[ids[a]].unwrap(), self.atoms[ids[b]].unwrap());
+                    if aa.pos.sub(bb.pos).ring() == 1 && self.bond_between(ids[a], ids[b]).is_none()
+                    {
+                        return None;
+                    }
+                }
+            }
         }
         for (a, b, _) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
@@ -725,6 +757,17 @@ impl Sim {
         let Some(ids) = self.matched(g) else {
             return;
         };
+        if g.kind == GlyphKind::Reification {
+            let centre = rule
+                .slots
+                .iter()
+                .position(|slot| slot.at == ORIGIN)
+                .unwrap();
+            let item = Item::Atom(self.atoms[ids[centre]].unwrap().kind);
+            if self.inventory.full(item) {
+                return;
+            }
+        }
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
             match self.bond_between(a, b) {
@@ -739,7 +782,18 @@ impl Sim {
             .filter(|(slot, _)| slot.consumed)
             .map(|(_, id)| *id)
             .collect();
+        let made = (g.kind == GlyphKind::Reification).then(|| {
+            let centre = rule
+                .slots
+                .iter()
+                .position(|slot| slot.at == ORIGIN)
+                .unwrap();
+            self.atoms[ids[centre]].unwrap().kind
+        });
         self.consume(&consumed);
+        if let Some(kind) = made {
+            self.inventory.add(Item::Atom(kind));
+        }
     }
 
     fn act(&mut self, i: usize, instr: Instr) -> bool {
@@ -813,7 +867,17 @@ impl Sim {
             std::iter::once(Item::Machine(Machine::Arm))
                 .chain(a.tape.iter().map(|instr| Item::Token(*instr)))
         });
-        glyphs.chain(arms).collect()
+        let atoms = self
+            .atoms
+            .iter()
+            .flatten()
+            .map(|atom| Item::Atom(atom.kind));
+        let double = self
+            .bonds
+            .iter()
+            .filter(|bond| bond.kind == BondKind::Double)
+            .map(|_| Item::Atom(AtomKind::Base));
+        glyphs.chain(arms).chain(atoms).chain(double).collect()
     }
 
     pub fn place(&mut self, other: &Sim, at: Hex) -> Vec<usize> {
@@ -1023,6 +1087,24 @@ pub fn fixture(machine: Machine) -> Fixture {
                         && s.atom_at(DIRS[1]).is_none()
                         && s.bonds.len() == 1
                         && s.bonds[0].kind == BondKind::Double
+                },
+            }
+        }
+        Machine::Glyph(GlyphKind::Reification) => {
+            let form = machine
+                .recipe()
+                .expect("the reification glyph has a recipe");
+            let centre = form.centre(Tier::Two.radius()).expect("a centred wrap");
+            let mut sim = Sim::empty();
+            sim.place(&form.sim(), ORIGIN.sub(centre));
+            sim.glyphs
+                .push(Some(Glyph::new(GlyphKind::Reification, ORIGIN, 0)));
+            Fixture {
+                sim,
+                ticks: 1,
+                done: |s| {
+                    s.atoms.iter().all(Option::is_none)
+                        && s.inventory.count(Item::Atom(AtomKind::Base)) == Some(1)
                 },
             }
         }
@@ -1389,14 +1471,18 @@ mod tests {
     }
 
     #[test]
-    fn every_recipe_is_one_distinct_compound_bonded_across_adjacent_cells_that_fits_the_first_tier()
-    {
+    fn every_recipe_is_one_distinct_compound_bonded_across_adjacent_cells_that_fits_its_tier() {
         let forms: Vec<&Form> = recipes().iter().map(|(_, form)| form).collect();
         for (k, (item, recipe)) in recipes().iter().enumerate() {
             let sim = recipe.sim();
+            let tier = if *item == Item::Machine(Machine::Glyph(GlyphKind::Reification)) {
+                Tier::Two
+            } else {
+                Tier::One
+            };
             let centre = recipe
-                .centre(Tier::One.radius())
-                .unwrap_or_else(|| panic!("{item:?} hangs off the first tier"));
+                .centre(tier.radius())
+                .unwrap_or_else(|| panic!("{item:?} hangs off its tier"));
             assert_eq!(
                 sim.component(0).len(),
                 recipe.atoms().len(),
@@ -1424,7 +1510,7 @@ mod tests {
                 "{item:?} is listed twice"
             );
             let mut world = Sim::empty();
-            world.glyphs.push(Some(output(Tier::One, ORIGIN)));
+            world.glyphs.push(Some(output(tier, ORIGIN)));
             lay(&mut world, recipe, 0, ORIGIN.sub(centre));
             world.step();
             assert_eq!(count(&world, *item), 1, "{item:?} does not craft itself");
@@ -1491,7 +1577,7 @@ mod tests {
             .iter()
             .filter_map(|(item, _)| match item {
                 Item::Token(instr) => Some(*instr),
-                Item::Machine(_) | Item::Step => None,
+                Item::Machine(_) | Item::Atom(_) | Item::Step => None,
             })
             .collect();
         for instr in tokens {
@@ -1568,6 +1654,64 @@ mod tests {
             }
         }
         assert_eq!((fired, refused), (6 * 14, 6 * 10));
+    }
+
+    fn wrapped(centre_kind: AtomKind) -> Sim {
+        let machine = Machine::Glyph(GlyphKind::Reification);
+        let form = machine.recipe().unwrap();
+        let centre = form.centre(Tier::Two.radius()).unwrap();
+        let mut sim = Sim::empty();
+        sim.place(&form.sim(), ORIGIN.sub(centre));
+        let centre_atom = sim.atom_at(ORIGIN).unwrap();
+        sim.atoms[centre_atom].as_mut().unwrap().kind = centre_kind;
+        sim.glyphs
+            .push(Some(Glyph::new(GlyphKind::Reification, ORIGIN, 0)));
+        sim
+    }
+
+    #[test]
+    fn the_complete_wrap_reifies_its_centre_kind() {
+        for kind in AtomKind::ALL {
+            let mut sim = wrapped(kind);
+            sim.step();
+            assert!(sim.atoms.iter().all(Option::is_none));
+            assert!(sim.bonds.is_empty());
+            assert_eq!(sim.inventory.count(Item::Atom(kind)), Some(1));
+        }
+    }
+
+    #[test]
+    fn a_full_atom_count_holds_the_wrap() {
+        let mut sim = wrapped(AtomKind::Base);
+        for _ in 0..DEFAULT_CAP {
+            sim.inventory.add(Item::Atom(AtomKind::Base));
+        }
+        let before = sim.clone();
+        sim.step();
+        assert_eq!(sim.atoms, before.atoms);
+        assert_eq!(sim.bonds, before.bonds);
+        assert_eq!(sim.inventory, before.inventory);
+    }
+
+    #[test]
+    fn a_wrap_missing_one_bond_or_holding_a_wrong_outer_kind_stays_untouched() {
+        let complete = wrapped(AtomKind::Base);
+        let mut missing = complete.clone();
+        missing.bonds.pop();
+        let before = missing.clone();
+        missing.step();
+        assert_eq!(missing.atoms, before.atoms);
+        assert_eq!(missing.bonds, before.bonds);
+        assert_eq!(missing.inventory, before.inventory);
+
+        let mut wrong = complete;
+        let outer = wrong.atom_at(Hex::new(2, 0)).unwrap();
+        wrong.atoms[outer].as_mut().unwrap().kind = AtomKind::Amber;
+        let before = wrong.clone();
+        wrong.step();
+        assert_eq!(wrong.atoms, before.atoms);
+        assert_eq!(wrong.bonds, before.bonds);
+        assert_eq!(wrong.inventory, before.inventory);
     }
 
     #[test]

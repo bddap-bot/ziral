@@ -315,6 +315,12 @@ pub fn atom(kind: AtomKind) -> Look<()> {
             shape: Shape::Bead,
             marking: (),
         },
+        AtomKind::Amber => Look {
+            glaze: Glaze::Amber,
+            skin: skin!("textures/atom-amber"),
+            shape: Shape::Bead,
+            marking: (),
+        },
     }
 }
 
@@ -348,6 +354,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
         GlyphKind::Source => (Glaze::BlueGreen, machine!("source")),
         GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
         GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
+        GlyphKind::Reification => (Glaze::Amber, machine!("reification")),
         GlyphKind::Output(Tier::One) => (Glaze::Ivory, machine!("output-1")),
         GlyphKind::Output(Tier::Two) => (Glaze::Ivory, machine!("output-2")),
         GlyphKind::Output(Tier::Three) => (Glaze::Ivory, machine!("output-3")),

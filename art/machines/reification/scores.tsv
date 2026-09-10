@@ -1,0 +1,4 @@
+reification-1	0.833	0.144	0.072	0.502	-	fail outside 0.833 > 0.05	[]
+reification-2	0.678	0.198	0.033	0.500	-	fail outside 0.678 > 0.05	[]
+reification-3	0.566	0.145	0.067	0.506	-	fail outside 0.566 > 0.05	[]
+reification-4	0.000	0.823	0.275	0.045	5	fail critic 5 < 8	["All nineteen seats read as deep cups with dark upper inner walls and bright lower lips, breaking the straight-down view.","The seats carry directional shading and pale highlights; paint their curvature with concentric tones under even light so the lighting does not rotate with the machine.","The connecting channels are thin, dark, uneven cords between oversized rims; broaden them into clear, one-piece rubbed-brass links that remain readable beneath atoms."]

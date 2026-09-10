@@ -55,6 +55,13 @@ painted = "67da911b67203421"
 relit = "e9d3d0d9998a9f6a"
 judged = "550dabe0cf3de8b6"
 
+[machine.reification]
+placeholder = "The machine is the reification glyph, a nineteen-cell amber kiln well: one central receiving cup and two complete hexagonal rings of six and twelve equal empty atom seats, every neighbouring pair joined by a broad continuous fired-clay channel, with an inward brass collector around the centre. Every seat is exactly on its mark and remains unobstructed; the compact honeycomb fills only its radius-two footprint and reads as consuming the complete wrap into the central inventory atom."
+kept = 4
+painted = "bc9d46614c0cfe38"
+relit = "bc3a6dc4b8d68075"
+judged = "c2b7b6e8b0868f51"
+
 [machine.second-bond]
 placeholder = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
 kept = 3
