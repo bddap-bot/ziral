@@ -63,6 +63,8 @@ struct Entry {
     painted: Option<String>,
     relit: Option<String>,
     judged: Option<String>,
+    #[serde(default)]
+    parts: Vec<crate::rig::Part>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -1846,6 +1848,21 @@ mod tests {
     const RELIEF: f32 = 0.1;
     const TILT: f32 = 0.15;
     const ASPECT: f32 = 0.02;
+
+    #[test]
+    fn machine_generator_manifest_round_trip_keeps_every_rig_part() {
+        let manifest = Art::shipped().read();
+        let text = toml::to_string_pretty(&manifest).unwrap();
+        let round: Manifest = toml::from_str(&text).unwrap();
+        for machine in Machine::ALL {
+            let name = name(machine);
+            assert_eq!(
+                round.machine[name].parts, manifest.machine[name].parts,
+                "{name}"
+            );
+            assert!(!round.machine[name].parts.is_empty(), "{name}");
+        }
+    }
     const KEYED: f32 = 0.01;
     const REGISTERED: f32 = 0.02;
 
@@ -2210,6 +2227,7 @@ mod tests {
                             painted: None,
                             relit: None,
                             judged: None,
+                            parts: Vec::new(),
                         },
                     )
                 })

@@ -919,6 +919,10 @@ pub(crate) mod tests {
             AtomKind::ALL.len()
                 + BondKind::ALL.len()
                 + 2 * Machine::ALL.len()
+                + 2 * Machine::ALL
+                    .into_iter()
+                    .map(|machine| crate::rig::parts(machine).len())
+                    .sum::<usize>()
                 + TILES.len()
                 + KEYS.len()
                 + 1

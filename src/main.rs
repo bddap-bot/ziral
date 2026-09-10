@@ -2832,7 +2832,7 @@ mod shot {
 
     const WIDE_SCALE: f32 = 1.5;
 
-    const WARM: u32 = 12;
+    const WARM: u32 = 24;
     const FRAME: Duration = Duration::from_nanos(16_666_667);
 
     #[derive(Clone, Copy)]
@@ -5668,7 +5668,11 @@ mod tests {
             );
             assert_eq!(
                 at(layer::GLYPHS + layer::LIFT).len(),
-                sim.glyphs.iter().flatten().count(),
+                sim.glyphs
+                    .iter()
+                    .flatten()
+                    .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len())
+                    .sum::<usize>(),
                 "{name} glyphs"
             );
             assert_eq!(
@@ -5699,7 +5703,11 @@ mod tests {
                 })
                 .map(|(p, s)| (p.truncate(), *s))
                 .collect();
-            assert_eq!(arms.len(), sim.arms.len(), "{name} arms");
+            assert_eq!(
+                arms.len(),
+                sim.arms.len() * rig::parts(Machine::Arm).len(),
+                "{name} arms"
+            );
             for arm in &sim.arms {
                 let quad = look::quad(Machine::Arm);
                 let angle = (px(arm.hand()) - px(arm.pivot)).to_angle();
@@ -5730,10 +5738,15 @@ mod tests {
                 3 + bars(&recipe)
                     + 2 * recipe.atoms.len()
                     + playfield(machine).len()
-                    + sim.glyphs.iter().flatten().count()
+                    + sim
+                        .glyphs
+                        .iter()
+                        .flatten()
+                        .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len())
+                        .sum::<usize>()
                     + bars(&sim)
                     + 2 * atoms.len()
-                    + sim.arms.len(),
+                    + sim.arms.len() * rig::parts(Machine::Arm).len(),
                 "{name}: something else on the card"
             );
         }

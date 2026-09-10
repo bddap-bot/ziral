@@ -1,9 +1,9 @@
 use crate::sim::{Machine, TickEvent};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Motion {
     Clamp,
@@ -11,14 +11,14 @@ pub enum Motion {
     Dilate,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Event {
     Fired,
     Rotated,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Mask {
     Outside,
@@ -35,7 +35,7 @@ impl Event {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Part {
     pub name: String,
     pub mask: Mask,
@@ -139,6 +139,19 @@ mod tests {
                     (normal.width(), normal.height())
                 );
                 assert_eq!(albedo.width(), albedo.height());
+                let visible = albedo
+                    .data
+                    .as_ref()
+                    .expect("a decoded part has pixels")
+                    .chunks_exact(4)
+                    .filter(|pixel| pixel[3] > 0)
+                    .count();
+                assert!(visible > 10, "{machine:?} {} is empty", part.name);
+                assert!(
+                    visible < (albedo.width() * albedo.height()) as usize,
+                    "{machine:?} {} has no transparency",
+                    part.name
+                );
             }
         }
     }
