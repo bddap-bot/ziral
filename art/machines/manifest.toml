@@ -34,6 +34,20 @@ painted = "26f1eef931eb51fd"
 relit = "8bb90d08a7f6055c"
 judged = "f948af8197c64b52"
 
+[machine.converter-amber]
+placeholder = "The machine is a compact three-cell amber converter drawn as a flat plan: three equal empty circular amber seats at the scaffold dots, each only a thin concentric ring with no wall, lip, cavity, plug, highlight or shadow, joined by one broad continuous darkened-brass Y channel flowing toward the origin ring. Every fill is uniform unlit base colour with clean edges and no depth cues. The asymmetric fork lies tight to the three marks, with no bead, atom, plate, text, or exposed clockwork."
+kept = 1
+painted = "2cc8f7191c0ec5c4"
+relit = "187aa8d30b9ba6d3"
+judged = "30f0c6c2bcc64c98"
+
+[machine.converter-plum]
+placeholder = "The machine is a compact three-cell plum converter drawn as a flat plan: one empty amber circular ring at the origin and two empty plum circular rings at the other scaffold dots, every seat only a thin concentric ring with no wall, lip, cavity, plug, highlight or shadow. A broad uniform plum channel and paired darkened-brass rail make one angular bend through the rings. Every fill is uniform unlit base colour with clean edges and no depth cues; no bead, atom, plate, text, or exposed clockwork."
+kept = 1
+painted = "d9e844b5e93e9c52"
+relit = "8e66e81fa45722fc"
+judged = "2cce178b69aab19f"
+
 [machine.output-1]
 placeholder = "The machine is a seven-cell output station, the first tier: seven equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, one at the centre and six around it, each cup exactly on its mark and as far apart as the marks, joined only by slender paired brass delivery rails running from the centre cup to each outer cup, worn rubber bumpers at the rim of the cluster and one small covered exit chute on the centre cup's housing, everything lying flat and no higher than the cup housings, nothing bulging out beyond the six outer cups, looking receptive rather than transformative."
 kept = 2

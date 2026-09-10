@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 21] = [
+pub const RECIPES: [(Item, &str); 23] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
@@ -14,12 +14,20 @@ pub const RECIPES: [(Item, &str); 21] = [
     ),
     (Item::Machine(Machine::Arm), "B0,0 B0,1 0,0=0,1"),
     (
+        glyph(GlyphKind::Converter(AtomKind::Amber)),
+        "B0,0 B0,1 B1,0 B1,1 0,0-0,1 0,0=1,0 0,1-1,1",
+    ),
+    (
         glyph(GlyphKind::Output(Tier::One)),
         "B0,0 B0,1 B1,1 0,0-0,1 0,1-1,1",
     ),
     (
         glyph(GlyphKind::Output(Tier::Two)),
         "B0,1 B1,1 B1,2 B2,0 0,1-1,1 1,1-1,2 1,1-2,0",
+    ),
+    (
+        glyph(GlyphKind::Converter(AtomKind::Plum)),
+        "B0,0 B0,1 B0,2 A0,3 0,0-0,1 0,1=0,2 0,2-0,3",
     ),
     (
         glyph(GlyphKind::Output(Tier::Three)),
@@ -76,6 +84,11 @@ pub const RECIPES: [(Item, &str); 21] = [
         Item::Token(Instr::Move(3)),
         "B0,0 B0,1 B1,0 B1,1 0,0-0,1 0,1-1,0 1,0=1,1",
     ),
+];
+
+pub const CONVERTER_INPUTS: [(AtomKind, &str); 2] = [
+    (AtomKind::Amber, "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0"),
+    (AtomKind::Plum, "A0,0 B0,1 B1,1 0,0-0,1 0,1=1,1"),
 ];
 
 const fn glyph(kind: GlyphKind) -> Item {
@@ -183,6 +196,7 @@ fn letter(kind: AtomKind) -> char {
     match kind {
         AtomKind::Base => 'B',
         AtomKind::Amber => 'A',
+        AtomKind::Plum => 'P',
     }
 }
 
@@ -190,6 +204,7 @@ fn kind(letter: char) -> Option<AtomKind> {
     match letter {
         'B' => Some(AtomKind::Base),
         'A' => Some(AtomKind::Amber),
+        'P' => Some(AtomKind::Plum),
         _ => None,
     }
 }

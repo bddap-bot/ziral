@@ -16,6 +16,12 @@ Use case: game-texture. Asset type: hexagonal board tile albedo. Restyle the sup
 atom-base.png — candidate 1; input: art/reference/texture-sheet.png
 Use case: game-texture. Asset type: detailed atom sphere sprite. One complete blue-green #4F8A8B glazed ceramic bead viewed straight-on, matching the lower-left concept: visibly curved sphere, deep translucent glaze, fine crazing, tiny kiln pinholes, and one inset darkened-brass equatorial band. Centered and filling most of the square. Soft symmetric studio illumination that describes curvature without a directional highlight or cast shadow, so the sprite remains correct when rotated. Photoreal ceramic and brass. Plain blue-green edge-safe background that can be clipped by a circular mesh. No text, logo, extra bead, hard highlight, directional shadow, or motif. [STYLE LOCK]
 
+atom-amber.png — candidate 1
+Use case: game-texture. Asset type: detailed atom bead sprite. One complete round amber #E0A458 glazed ceramic bead viewed straight-on, with a broad inset darkened-brass equatorial band crossing its face, deep translucent glaze, fine crazing and tiny kiln pinholes. Centered and filling most of the square. Even symmetric illumination, no directional highlight or cast shadow, so it remains correct when rotated. Plain amber edge-safe background clipped by the bead mesh. No text, logo, extra bead, pure black or white. [STYLE LOCK]
+
+atom-plum.png — candidate 1
+Use case: game-texture. Asset type: detailed atom bead sprite. One complete plum #7D5BA6 glazed ceramic bead viewed straight-on, a softly faceted six-lobed bead with one small ivory ceramic inset at its centre, deep glaze, fine crazing and tiny kiln pinholes. Centered and filling most of the square. Even symmetric illumination, no directional highlight or cast shadow, so it remains correct when rotated. Plain plum edge-safe background clipped by the bead mesh. No brass band, text, logo, extra bead, pure black or white. [STYLE LOCK]
+
 bond-single.png — candidate 1
 Use case: game-texture. Asset type: rotatable bond albedo. Straight-on macro of one darkened-brass joining bar with cast shoulders, shallow rivet sockets, worn rubber inset, and fine nondirectional wear. The material fills the frame edge to edge and reads as one sturdy connector. Even diffuse non-directional studio lighting, no directional highlight, cast shadow, perspective, text, symbol, or surrounding object. [STYLE LOCK]
 

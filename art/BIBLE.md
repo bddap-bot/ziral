@@ -55,7 +55,8 @@ The classes: atoms, bonds, glyphs, machines. A machine is a primitive the palett
 | kind | glaze | shape | marking |
 |---|---|---|---|
 | base | blue-green | bead | one highlight, upper left |
-| (next kind) | amber | bead | a brass band; differs from base in hue and marking |
+| amber | amber | ringed bead | a brass band; differs from base in hue, shape and marking |
+| plum | plum | faceted bead | an ivory inset; differs from amber in hue, shape and marking |
 
 ### Bonds
 
@@ -74,6 +75,8 @@ Single and double differ in hue (26° vs 267°) and shape.
 | source | blue-green | one-cell well | a ring and a centre dot |
 | bonder | terracotta | two-cell well, bar | one spoke per slot; no ring |
 | second bond | plum | three-cell well, triangle | two spokes per slot; ring on the sacrificial slot |
+| amber converter | amber | three-cell fork | three brass-ringed seats and a Y channel |
+| plum converter | plum | three-cell bend | one amber seat, two plum seats and paired rails |
 | output, first tier | ivory | seven-cell well, hexagon | seven cups with brass rims, rails from the centre cup |
 | output, second tier | ivory | nineteen-cell well, hexagon | the first tier ringed by twelve cups and a brass ring |
 | output, third tier | ivory | thirty-seven-cell well, hexagon | the second tier ringed by eighteen cups and a second brass ring |

@@ -271,9 +271,12 @@ pub fn tile(h: Hex) -> Tile {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shape {
     Bead,
+    RingedBead,
+    FacetedBead,
     Bars(usize),
     Radial,
     Cells(usize),
+    Converter(AtomKind),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -318,7 +321,13 @@ pub fn atom(kind: AtomKind) -> Look<()> {
         AtomKind::Amber => Look {
             glaze: Glaze::Amber,
             skin: skin!("textures/atom-amber"),
-            shape: Shape::Bead,
+            shape: Shape::RingedBead,
+            marking: (),
+        },
+        AtomKind::Plum => Look {
+            glaze: Glaze::Plum,
+            skin: skin!("textures/atom-plum"),
+            shape: Shape::FacetedBead,
             marking: (),
         },
     }
@@ -355,6 +364,9 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
         GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
         GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
         GlyphKind::Reification => (Glaze::Amber, machine!("reification")),
+        GlyphKind::Converter(AtomKind::Amber) => (Glaze::Amber, machine!("converter-amber")),
+        GlyphKind::Converter(AtomKind::Plum) => (Glaze::Plum, machine!("converter-plum")),
+        GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
         GlyphKind::Output(Tier::One) => (Glaze::Ivory, machine!("output-1")),
         GlyphKind::Output(Tier::Two) => (Glaze::Ivory, machine!("output-2")),
         GlyphKind::Output(Tier::Three) => (Glaze::Ivory, machine!("output-3")),
@@ -362,7 +374,10 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
     Look {
         glaze,
         skin,
-        shape: Shape::Cells(kind.rule().slots.len()),
+        shape: match kind {
+            GlyphKind::Converter(atom) => Shape::Converter(atom),
+            _ => Shape::Cells(kind.rule().slots.len()),
+        },
         marking: MachineMark::Sprite(normal),
     }
 }

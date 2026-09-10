@@ -2752,7 +2752,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 36] = [
+    pub const SCENES: [&str; 38] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -2788,6 +2788,8 @@ mod shot {
         "dropfirst",
         "grabfirst",
         "base",
+        "converters",
+        "converter-sheet",
         "reification",
     ];
 
@@ -3020,6 +3022,40 @@ mod shot {
                 ));
             }
             "start" => world.sim = sim::start(),
+            "converters" => {
+                let mut sim = Sim::empty();
+                sim.place(
+                    &sim::fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim,
+                    Hex::new(-2, 0),
+                );
+                sim.place(
+                    &sim::fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Plum))).sim,
+                    Hex::new(2, 0),
+                );
+                world.sim = sim;
+            }
+            "converter-sheet" => {
+                let mut sim = Sim::empty();
+                for (kind, at) in [
+                    (AtomKind::Base, Hex::new(-2, -1)),
+                    (AtomKind::Amber, Hex::new(0, -1)),
+                    (AtomKind::Plum, Hex::new(2, -1)),
+                ] {
+                    sim.spawn(Atom { kind, pos: at });
+                }
+                sim.glyphs.push(Some(Glyph::new(
+                    GlyphKind::Converter(AtomKind::Amber),
+                    Hex::new(-1, 1),
+                    0,
+                )));
+                sim.glyphs.push(Some(Glyph::new(
+                    GlyphKind::Converter(AtomKind::Plum),
+                    Hex::new(2, 1),
+                    0,
+                )));
+                world.sim = sim;
+                world.period = f32::INFINITY;
+            }
             "craft" | "copy" => {
                 let mut sim = sim::start();
                 sim.spawn(Atom {
@@ -5403,11 +5439,12 @@ mod tests {
         };
         let first = bent(&mut w, 0, 0);
         bent(&mut w, -6, 2);
-        let text = form::RECIPES[3].1;
-        assert_eq!(
-            Item::Machine(Machine::Glyph(GlyphKind::Output(sim::Tier::One))),
-            form::RECIPES[3].0
-        );
+        let output = Item::Machine(Machine::Glyph(GlyphKind::Output(sim::Tier::One)));
+        let text = form::RECIPES
+            .iter()
+            .find(|(item, _)| *item == output)
+            .unwrap()
+            .1;
         let corner = px(Hex::new(0, 0));
         let from = px(Hex::new(-1, 0));
         w.press(from, from);
