@@ -5735,7 +5735,8 @@ mod tests {
             );
             assert_eq!(
                 fills.len(),
-                3 + bars(&recipe)
+                2 + rig::parts(machine).len()
+                    + bars(&recipe)
                     + 2 * recipe.atoms.len()
                     + playfield(machine).len()
                     + sim
