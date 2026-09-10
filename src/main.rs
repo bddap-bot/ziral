@@ -2,6 +2,7 @@ mod form;
 mod look;
 #[cfg(not(target_arch = "wasm32"))]
 mod machines;
+mod rig;
 mod sim;
 
 use bevy::asset::RenderAssetUsages;
@@ -2045,14 +2046,15 @@ fn fire_kiln(
     };
     let lit = Machine::ALL
         .into_iter()
-        .map(|item| {
-            let look = look::machine(item);
+        .flat_map(|item| rig::parts(item).iter().map(move |part| (item, part)))
+        .map(|(item, part)| {
+            let (skin, normal) = look::rig(item, &part.name);
             let lit = lits.add(Lit {
                 light: look::light().extend(look::AMBIENT),
-                albedo: image(look.skin),
-                relief: image(look.marking.normal()),
+                albedo: image(skin),
+                relief: image(normal),
             });
-            (look.skin, lit)
+            (skin, lit)
         })
         .collect();
     commands.insert_resource(Kiln {
@@ -2247,35 +2249,76 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, color);
     }
 
-    fn sprite(&mut self, item: Machine, origin: Vec2, angle: f32, z: f32) {
+    fn rig(&mut self, item: Machine, origin: Vec2, angle: f32, z: f32, fired: bool, phase: f32) {
         let quad = look::quad(item);
-        let centre = origin + Vec2::from_angle(angle).rotate(quad.centre);
         let kiln = self.kiln;
-        let skin = look::machine(item).skin;
-        if self.ghost {
-            self.fill(&kiln.bar, self.skin(skin), centre, angle, quad.size(), z);
-        } else {
-            self.fill(&kiln.bar, kiln.lit(skin), centre, angle, quad.size(), z);
+        let pulse = rig::pulse(fired, phase);
+        for (index, part) in rig::parts(item).iter().enumerate() {
+            let (skin, _) = look::rig(item, &part.name);
+            let pivot = Vec2::new(part.pivot[0], part.pivot[1]) * HEX;
+            let (shift, turn, scale) = match part.motion {
+                Some(rig::Motion::Clamp) => (Vec2::new(-0.16 * HEX * pulse, 0.0), 0.0, 1.0),
+                Some(rig::Motion::Turn) => (Vec2::ZERO, 0.35 * pulse, 1.0),
+                Some(rig::Motion::Dilate) => (Vec2::ZERO, 0.0, 1.0 + 0.12 * pulse),
+                None => (Vec2::ZERO, 0.0, 1.0),
+            };
+            let local = Vec2::from_angle(turn).rotate(quad.centre - pivot) + pivot + shift;
+            let at = origin + Vec2::from_angle(angle).rotate(local);
+            let part_z = z + index as f32 * 0.0001;
+            if self.ghost {
+                self.fill(
+                    &kiln.bar,
+                    self.skin(skin),
+                    at,
+                    angle + turn,
+                    quad.size() * scale,
+                    part_z,
+                );
+            } else {
+                self.fill(
+                    &kiln.bar,
+                    kiln.lit(skin),
+                    at,
+                    angle + turn,
+                    quad.size() * scale,
+                    part_z,
+                );
+            }
         }
     }
 
-    fn arm(&mut self, pivot: Vec2, hand: Vec2, ring: f32, look: Look<MachineMark>, z: f32) {
-        self.sprite(Machine::Arm, pivot, (hand - pivot).to_angle(), z);
+    fn arm(
+        &mut self,
+        pivot: Vec2,
+        hand: Vec2,
+        ring: f32,
+        look: Look<MachineMark>,
+        z: f32,
+        motion: (bool, f32),
+    ) {
+        self.rig(
+            Machine::Arm,
+            pivot,
+            (hand - pivot).to_angle(),
+            z,
+            motion.0,
+            motion.1,
+        );
         match look.marking {
             MachineMark::Hand(glaze, _) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
         };
     }
 
-    fn machine(&mut self, item: Machine, at: Hex, dir: usize, z: f32) {
+    fn machine(&mut self, item: Machine, at: Hex, dir: usize, z: f32, fired: bool, phase: f32) {
         let look = look::machine(item);
         match (item, look.marking) {
             (Machine::Arm, MachineMark::Hand(_, _)) => {
                 let hand = px(at.add(DIRS[dir % 6]));
-                self.arm(px(at), hand, RING_OPEN, look, z);
+                self.arm(px(at), hand, RING_OPEN, look, z, (false, 1.0));
             }
             (Machine::Glyph(_), MachineMark::Sprite(_)) => {
-                self.sprite(item, px(at), look::turn(dir), z);
+                self.rig(item, px(at), look::turn(dir), z, fired, phase);
             }
             _ => unworn(look),
         }
@@ -2515,7 +2558,11 @@ fn draw(
         shift: Vec2::ZERO,
     };
     let f = Frame::between(&world.prev, world.shown(), world.phase());
-    scene(&mut p, &f, 0.0);
+    let events = world
+        .events
+        .last()
+        .map_or(&[][..], |tick| tick.events.as_slice());
+    scene(&mut p, &f, 0.0, events, world.phase());
     for (i, g) in world.shown().glyphs.iter().enumerate() {
         if let Some(g) = g
             && world.picks(Id::Glyph(i))
@@ -2552,7 +2599,7 @@ fn draw(
                 .collect();
             for (i, (item, at, dir)) in machines.iter().enumerate() {
                 let z = layer::z(layer::HELD, i, machines.len());
-                p.machine(*item, grab.add(*at), *dir, z);
+                p.machine(*item, grab.add(*at), *dir, z, false, 1.0);
             }
             let at = |id: usize| px(grab.add(set.atoms[id].unwrap().pos));
             for b in &set.bonds {
@@ -2589,13 +2636,40 @@ fn draw(
         let play = sims.as_ref().map(|(play, (prev, sim))| {
             Frame::between(prev, sim, phase(play.since, world.period, world.motion))
         });
-        hover_card(&mut p, item, play.as_ref());
+        let card_events = world.play.as_ref().and_then(|play| {
+            let shown = play.at.min(play.events.len() as u64);
+            shown
+                .checked_sub(1)
+                .and_then(|index| play.events.get(index as usize))
+        });
+        hover_card(
+            &mut p,
+            item,
+            play.as_ref(),
+            card_events.map_or(&[][..], |tick| tick.events.as_slice()),
+            world
+                .play
+                .as_ref()
+                .map_or(1.0, |play| phase(play.since, world.period, world.motion)),
+        );
     }
 }
 
-fn scene<G: GizmoConfigGroup>(p: &mut Painter<G>, f: &Frame, lift: f32) {
-    for g in f.sim.glyphs.iter().flatten() {
-        p.machine(Machine::Glyph(g.kind), g.at, g.dir, layer::GLYPHS + lift);
+fn scene<G: GizmoConfigGroup>(
+    p: &mut Painter<G>,
+    f: &Frame,
+    lift: f32,
+    events: &[sim::TickEvent],
+    phase: f32,
+) {
+    for (index, glyph) in f.sim.glyphs.iter().enumerate() {
+        let Some(g) = glyph else { continue };
+        let item = Machine::Glyph(g.kind);
+        let fired = rig::parts(item).iter().any(|part| {
+            part.event
+                .is_some_and(|kind| events.iter().any(|event| kind.matches(event, index)))
+        });
+        p.machine(item, g.at, g.dir, layer::GLYPHS + lift, fired, phase);
     }
     for b in &f.sim.bonds {
         let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
@@ -2611,7 +2685,11 @@ fn scene<G: GizmoConfigGroup>(p: &mut Painter<G>, f: &Frame, lift: f32) {
     let look = look::machine(Machine::Arm);
     for (i, arm) in f.arms.iter().enumerate() {
         let z = layer::z(layer::ARMS, i, f.arms.len()) + lift;
-        p.arm(arm.pivot, arm.hand, arm.ring, look, z);
+        let fired = rig::parts(Machine::Arm).iter().any(|part| {
+            part.event
+                .is_some_and(|kind| events.iter().any(|event| kind.matches(event, i)))
+        });
+        p.arm(arm.pivot, arm.hand, arm.ring, look, z, (fired, phase));
         let stall = f.sim.arms[i].stall;
         if stall.is_some() {
             p.ring(arm.pivot, HEX * 0.5);
@@ -2645,7 +2723,13 @@ fn play_bounds(tiles: &[Hex]) -> (Vec2, Vec2) {
         })
 }
 
-fn hover_card<G: GizmoConfigGroup>(p: &mut Painter<G>, item: Item, play: Option<&Frame>) {
+fn hover_card<G: GizmoConfigGroup>(
+    p: &mut Painter<G>,
+    item: Item,
+    play: Option<&Frame>,
+    events: &[sim::TickEvent],
+    phase: f32,
+) {
     let kiln = p.kiln;
     let card = layout(item);
     let z = |k: usize| layer::z(layer::CARD, k, 5);
@@ -2660,7 +2744,14 @@ fn hover_card<G: GizmoConfigGroup>(p: &mut Painter<G>, item: Item, play: Option<
     p.fill(&kiln.bar, &kiln.card[0], Vec2::ZERO, 0.0, card.size, z(1));
     let at = card.picture;
     match item {
-        Item::Machine(machine) => p.sprite(machine, at - look::quad(machine).centre, 0.0, z(2)),
+        Item::Machine(machine) => p.rig(
+            machine,
+            at - look::quad(machine).centre,
+            0.0,
+            z(2),
+            false,
+            1.0,
+        ),
         Item::Atom(kind) => p.bead(at, look::atom(kind), z(2)),
         Item::Step => p.fill(
             &kiln.circle,
@@ -2689,7 +2780,7 @@ fn hover_card<G: GizmoConfigGroup>(p: &mut Painter<G>, item: Item, play: Option<
         for h in playfield(machine) {
             p.tile(h, layer::LIFT);
         }
-        scene(p, f, layer::LIFT);
+        scene(p, f, layer::LIFT, events, phase);
     });
 }
 
@@ -2773,7 +2864,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 38] = [
+    pub const SCENES: [&str; 39] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -2812,6 +2903,7 @@ mod shot {
         "converters",
         "converter-sheet",
         "reification",
+        "rig",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -3054,6 +3146,24 @@ mod shot {
                     Hex::new(2, 0),
                 );
                 world.sim = sim;
+            }
+            "rig" => {
+                let mut sim = Sim::empty();
+                let bonder = Glyph::new(GlyphKind::Bonder, Hex::new(-2, 0), 0);
+                sim.glyphs.push(Some(bonder));
+                for pos in bonder.slots() {
+                    sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos,
+                    });
+                }
+                let (applicator, _) = second_bond(&[]);
+                sim.place(&applicator, Hex::new(3, 0));
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Source, Hex::new(-5, 1), 0)));
+                world.sim = sim;
+                world.prev = world.sim.clone();
+                world.period = TICK_MS / 1000.0;
             }
             "converter-sheet" => {
                 let mut sim = Sim::empty();

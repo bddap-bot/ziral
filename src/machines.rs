@@ -1828,7 +1828,11 @@ pub fn configure(args: &[String]) -> Option<i32> {
         println!("nothing to do");
         return Some(0);
     }
-    Some(i32::from(!landed(&remake(&art, &names, &painter, &critic))))
+    let generated = landed(&remake(&art, &names, &painter, &critic));
+    let split = std::process::Command::new(art.dir.join("rig.sh"))
+        .status()
+        .is_ok_and(|status| status.success());
+    Some(i32::from(!(generated && split)))
 }
 
 #[cfg(test)]

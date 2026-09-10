@@ -382,6 +382,60 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
     }
 }
 
+pub fn rig(item: Machine, part: &str) -> (Skin, Skin) {
+    let name = match item {
+        Machine::Arm => "arm",
+        Machine::Glyph(GlyphKind::Source) => "source",
+        Machine::Glyph(GlyphKind::Bonder) => "bonder",
+        Machine::Glyph(GlyphKind::SecondBond) => "second-bond",
+        Machine::Glyph(GlyphKind::Reification) => "reification",
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)) => "converter-amber",
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)) => "converter-plum",
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Base)) => {
+            panic!("the base atom has a source")
+        }
+        Machine::Glyph(GlyphKind::Output(Tier::One)) => "output-1",
+        Machine::Glyph(GlyphKind::Output(Tier::Two)) => "output-2",
+        Machine::Glyph(GlyphKind::Output(Tier::Three)) => "output-3",
+    };
+    macro_rules! pair {
+        ($machine:literal, $part:literal) => {{
+            let albedo = finish!(
+                concat!("machines/", $machine, "/parts/albedo-", $part),
+                Finish::Sprite
+            );
+            let normal = finish!(
+                concat!("machines/", $machine, "/parts/normal-", $part),
+                Finish::Relief
+            );
+            (albedo, normal)
+        }};
+    }
+    match (name, part) {
+        ("arm", "base") => pair!("arm", "base"),
+        ("arm", "hand") => pair!("arm", "moving"),
+        ("bonder", "base") => pair!("bonder", "base"),
+        ("bonder", "bar") => pair!("bonder", "moving"),
+        ("converter-amber", "base") => pair!("converter-amber", "base"),
+        ("converter-amber", "ring") => pair!("converter-amber", "moving"),
+        ("converter-plum", "base") => pair!("converter-plum", "base"),
+        ("converter-plum", "ring") => pair!("converter-plum", "moving"),
+        ("output-1", "base") => pair!("output-1", "base"),
+        ("output-1", "rim") => pair!("output-1", "moving"),
+        ("output-2", "base") => pair!("output-2", "base"),
+        ("output-2", "rim") => pair!("output-2", "moving"),
+        ("output-3", "base") => pair!("output-3", "base"),
+        ("output-3", "rim") => pair!("output-3", "moving"),
+        ("reification", "base") => pair!("reification", "base"),
+        ("reification", "rim") => pair!("reification", "moving"),
+        ("second-bond", "base") => pair!("second-bond", "base"),
+        ("second-bond", "ring") => pair!("second-bond", "moving"),
+        ("source", "base") => pair!("source", "base"),
+        ("source", "rim") => pair!("source", "moving"),
+        _ => panic!("machine {name} has no part {part}"),
+    }
+}
+
 pub fn skins() -> impl Iterator<Item = Skin> {
     AtomKind::ALL
         .into_iter()
@@ -393,6 +447,12 @@ pub fn skins() -> impl Iterator<Item = Skin> {
                 .into_iter()
                 .map(|item| machine(item).marking.normal()),
         )
+        .chain(Machine::ALL.into_iter().flat_map(|item| {
+            crate::rig::parts(item).iter().flat_map(move |part| {
+                let (albedo, normal) = rig(item, &part.name);
+                [albedo, normal]
+            })
+        }))
         .chain(TILES)
         .chain(crate::KEYS.iter().map(|k| k.symbol))
         .chain([MANUAL])

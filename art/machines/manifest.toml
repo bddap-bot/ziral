@@ -89,3 +89,143 @@ kept = 2
 painted = "38dfd1b060b04971"
 relit = "9b24ad26d7dc2604"
 judged = "fae20dd01bf9ae02"
+
+[[machine.arm.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.0, 0.0]
+score = 8
+
+[[machine.arm.parts]]
+name = "hand"
+mask = "inside"
+pivot = [0.0, 0.0]
+score = 8
+motion = "turn"
+event = "rotated"
+
+[[machine.bonder.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.5, 0.0]
+score = 8
+
+[[machine.bonder.parts]]
+name = "bar"
+mask = "inside"
+pivot = [0.5, 0.0]
+score = 8
+motion = "clamp"
+event = "fired"
+
+[[machine.converter-amber.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.5, 0.5]
+score = 8
+
+[[machine.converter-amber.parts]]
+name = "ring"
+mask = "inside"
+pivot = [0.5, 0.5]
+score = 8
+motion = "turn"
+event = "fired"
+
+[[machine.converter-plum.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.5, 0.5]
+score = 8
+
+[[machine.converter-plum.parts]]
+name = "ring"
+mask = "inside"
+pivot = [0.5, 0.5]
+score = 8
+motion = "turn"
+event = "fired"
+
+[[machine.output-1.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.0, 0.0]
+score = 8
+
+[[machine.output-1.parts]]
+name = "rim"
+mask = "inside"
+pivot = [0.0, 0.0]
+score = 8
+motion = "dilate"
+event = "fired"
+
+[[machine.output-2.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.0, 0.0]
+score = 8
+
+[[machine.output-2.parts]]
+name = "rim"
+mask = "inside"
+pivot = [0.0, 0.0]
+score = 8
+motion = "dilate"
+event = "fired"
+
+[[machine.output-3.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.0, 0.0]
+score = 8
+
+[[machine.output-3.parts]]
+name = "rim"
+mask = "inside"
+pivot = [0.0, 0.0]
+score = 8
+motion = "dilate"
+event = "fired"
+
+[[machine.reification.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.0, 0.0]
+score = 8
+
+[[machine.reification.parts]]
+name = "rim"
+mask = "inside"
+pivot = [0.0, 0.0]
+score = 8
+motion = "dilate"
+event = "fired"
+
+[[machine.second-bond.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.5, 0.5]
+score = 8
+
+[[machine.second-bond.parts]]
+name = "ring"
+mask = "inside"
+pivot = [0.5, 0.5]
+score = 8
+motion = "turn"
+event = "fired"
+
+[[machine.source.parts]]
+name = "base"
+mask = "outside"
+pivot = [0.0, 0.0]
+score = 8
+
+[[machine.source.parts]]
+name = "rim"
+mask = "inside"
+pivot = [0.0, 0.0]
+score = 8
+motion = "dilate"
+event = "fired"
