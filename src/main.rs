@@ -46,6 +46,9 @@ const CARD_SCALE: f32 = 1.0;
 const CARD_PAD: f32 = 12.0;
 const CARD: RenderLayers = RenderLayers::layer(1);
 
+#[cfg(test)]
+static RENDER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
 }
@@ -3649,6 +3652,8 @@ mod shot {
     }
 
     pub fn recipe(item: Machine, path: &Path) {
+        #[cfg(test)]
+        let _render = crate::RENDER_TEST.lock().unwrap();
         let (world, frame, script, warm) = scene(&format!("recipe:{}", machines::name(item)), 0);
         let shot = Shot {
             path: path.to_path_buf(),
@@ -3896,6 +3901,7 @@ mod tests {
     const BLUR_PX: f32 = 1.0;
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
+        let _render = RENDER_TEST.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("ziral-{view}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -5603,6 +5609,7 @@ mod tests {
     }
 
     fn card_fills(machine: Machine, ticks: u64) -> Vec<(Vec3, f32)> {
+        let _render = RENDER_TEST.lock().unwrap();
         let name = machines::name(machine);
         let dir =
             std::env::temp_dir().join(format!("ziral-card-{name}-{ticks}-{}", std::process::id()));
@@ -6385,6 +6392,7 @@ mod tests {
 
     #[test]
     fn the_refusal_line_shows_each_shortfall_as_beads_and_writes_nothing() {
+        let _render = RENDER_TEST.lock().unwrap();
         let mut w = copied();
         for item in [SECOND, ARM, GRAB] {
             stocked(&mut w, item, 1);
