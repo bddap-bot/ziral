@@ -63,6 +63,7 @@ struct Entry {
     painted: Option<String>,
     relit: Option<String>,
     judged: Option<String>,
+    instrument: crate::sound::Instrument,
     #[serde(default)]
     parts: Vec<crate::rig::Part>,
 }
@@ -2228,6 +2229,7 @@ mod tests {
                             painted: None,
                             relit: None,
                             judged: None,
+                            instrument: crate::sound::instrument(item(name)),
                             parts: Vec::new(),
                         },
                     )

@@ -12,7 +12,7 @@
       "why": "prose; nothing executes it"
     },
     {
-      "paths": ["proofs/*.png", "proofs/*.gif"],
+      "paths": ["proofs/*.png", "proofs/*.gif", "proofs/*.mp4"],
       "tests": [],
       "why": "visual proof assets are inspected at their native dimensions"
     },

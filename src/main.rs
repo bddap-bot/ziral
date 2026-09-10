@@ -4,6 +4,7 @@ mod look;
 mod machines;
 mod rig;
 mod sim;
+mod sound;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::RenderTarget;
@@ -319,6 +320,7 @@ struct World {
     hover: Option<Item>,
     play: Option<Play>,
     events: Vec<sim::TickEvents>,
+    score: Option<sim::TickEvents>,
     refused: Option<Refused>,
 }
 
@@ -339,6 +341,7 @@ impl World {
             hover: None,
             play: None,
             events: Vec::new(),
+            score: None,
             refused: None,
         }
     }
@@ -413,7 +416,9 @@ impl World {
         }
         self.ghost = None;
         self.prev = self.sim.clone();
-        self.events = vec![self.sim.step()];
+        let tick = self.sim.step();
+        self.score = Some(tick.clone());
+        self.events = vec![tick];
 
         self.focus = self.focus.take().and_then(|f| f.survive(&self.sim));
     }
@@ -1105,7 +1110,9 @@ fn app(world: World) -> App {
             (
                 clipboard_paste,
                 hover,
+                sound::unlock,
                 run_ticks,
+                play_sound,
                 view,
                 edit,
                 tapes,
@@ -1151,6 +1158,10 @@ fn main() {
     if let Some(status) = machines::configure(&args) {
         std::process::exit(status);
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(status) = shot::sound(&args) {
+        std::process::exit(status);
+    }
     let mut app = match shot::parse(&args) {
         Some((world, shot)) => shot::app(world, shot),
         None => {
@@ -1164,12 +1175,22 @@ fn main() {
                 }),
                 ..default()
             }))
-            .add_systems(Startup, spawn_camera);
+            .add_systems(Startup, (spawn_camera, sound::load));
             app
         }
     };
     lit_plugin(&mut app);
     app.run();
+}
+
+fn play_sound(mut commands: Commands, mut world: ResMut<World>, bank: Option<Res<sound::Bank>>) {
+    let Some(tick) = world.score.take() else {
+        return;
+    };
+    let Some(bank) = bank.filter(|bank| bank.unlocked) else {
+        return;
+    };
+    sound::play(&mut commands, &bank, &sound::score(&tick));
 }
 
 fn spawn_camera(mut commands: Commands) {
@@ -2904,7 +2925,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 39] = [
+    pub const SCENES: [&str; 40] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -2944,6 +2965,7 @@ mod shot {
         "converter-sheet",
         "reification",
         "rig",
+        "sound",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -3202,6 +3224,26 @@ mod shot {
                 sim.place(&applicator, Hex::new(3, 0));
                 sim.glyphs
                     .push(Some(Glyph::new(GlyphKind::Source, Hex::new(-5, 1), 0)));
+                world.sim = sim;
+                world.prev = world.sim.clone();
+                world.period = TICK_MS / 1000.0;
+            }
+            "sound" => {
+                let mut sim = Sim::empty();
+                sim.place(
+                    &sim::fixture(Machine::Glyph(GlyphKind::Bonder)).sim,
+                    Hex::new(-3, 0),
+                );
+                let shared = Hex::new(3, 0);
+                let left = Arm::new(Hex::new(2, 0), 0, vec![Instr::Grab, Instr::Drop]);
+                let mut right = Arm::new(Hex::new(4, 0), 3, vec![Instr::Drop, Instr::Grab]);
+                right.holding = true;
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: shared,
+                });
+                sim.arms.push(left);
+                sim.arms.push(right);
                 world.sim = sim;
                 world.prev = world.sim.clone();
                 world.period = TICK_MS / 1000.0;
@@ -3741,6 +3783,24 @@ mod shot {
             target: None,
         };
         Some((world, shot))
+    }
+
+    pub fn sound(args: &[String]) -> Option<i32> {
+        const USAGE: &str = "usage: ziral --sound-proof <wav> <score> <scene> <ticks>";
+        let [_, flag, wav, score, view, ticks] = args else {
+            return None;
+        };
+        if flag != "--sound-proof" {
+            return None;
+        }
+        let (mut world, _, _, _) = scene(view, 0);
+        let events = (0..ticks.parse().expect(USAGE))
+            .map(|_| world.sim.step())
+            .collect::<Vec<_>>();
+        let (text, audio) = crate::sound::proof(&events);
+        std::fs::write(wav, audio).unwrap_or_else(|error| panic!("{wav}: {error}"));
+        std::fs::write(score, text).unwrap_or_else(|error| panic!("{score}: {error}"));
+        Some(0)
     }
 
     #[cfg(test)]
@@ -5847,7 +5907,7 @@ mod tests {
         assert!(play.events.iter().any(|tick| {
             tick.events
                 .iter()
-                .any(|event| matches!(event, sim::TickEvent::Fired { glyph: 0 }))
+                .any(|event| matches!(event, sim::TickEvent::Fired { glyph: 0, .. }))
         }));
     }
 

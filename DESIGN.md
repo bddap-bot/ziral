@@ -39,6 +39,10 @@ Activation energy is typed simulation state on every arm and glyph. The event na
 
 The pipeline derives an emissive mask for every rig part from the same painted machine and the same split mask as its albedo and normal map. Only the firing feature inside the moving mask is white; every base mask is black. The material uses activation energy once to warm the existing glaze, flare the existing brass response through the emissive mask, and ripple the sampled normal. These channels introduce no colour outside the existing glaze and brass palette.
 
+Sound uses the tick as its only transport: 400 ms is 150 BPM, and the hits derived for tick t are scheduled together on that tick boundary. A hit is data naming the machine kind and its manifest instrument. Each machine kind declares one typed brass, ceramic, or wood instrument beside its rig in `art/machines/manifest.toml`. The score is a pure projection of `TickEvents`; playback only turns its hits into Bevy audio entities and owns neither a score nor a clock. A stalled arm produces no hit, so backpressure is heard as the silence where its beat would have been.
+
+The instruments are synthesised in code once at startup. This is the smallest design that gives every machine kind a distinct voice in the workshop's material palette while keeping the manifest as the one declaration and the tick score directly reproducible for proof. Sample files produced by a pipeline step were rejected because recording, generation, normalization, storage, and asset loading would add a second production system without making the score or its timing more expressive.
+
 The stages land in dependency order: the typed stream with replay and card playback consuming it; rigged sprites; material response and its pipeline-made emissive mask; sound; then manifest-declared default particles and rig overrides. The stream comes first because every later layer must read the same deterministic fact of what happened at tick t, and because replay already requires that fact to remain testable. No expressive layer belongs in the simulation.
 
 ## First playable

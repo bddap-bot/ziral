@@ -115,6 +115,7 @@ pub struct TickEvents {
 pub enum TickEvent {
     Fired {
         glyph: usize,
+        machine: Machine,
     },
     BondWritten {
         glyph: usize,
@@ -769,7 +770,10 @@ impl Sim {
         for i in 0..self.glyphs.len() {
             let Some(g) = self.glyphs[i] else { continue };
             if g.kind == GlyphKind::Source && self.atom_at(g.at).is_none() {
-                events.push(TickEvent::Fired { glyph: i });
+                events.push(TickEvent::Fired {
+                    glyph: i,
+                    machine: Machine::Glyph(g.kind),
+                });
                 let atom = self.spawn(Atom {
                     kind: AtomKind::Base,
                     pos: g.at,
@@ -803,7 +807,7 @@ impl Sim {
         }
         for event in &events {
             match event {
-                TickEvent::Fired { glyph } => {
+                TickEvent::Fired { glyph, .. } => {
                     self.glyphs[*glyph].as_mut().unwrap().energy = ActivationEnergy::FULL;
                 }
                 TickEvent::Rotated { arm, .. } => {
@@ -840,7 +844,10 @@ impl Sim {
             if self.inventory.full(item) {
                 continue;
             }
-            events.push(TickEvent::Fired { glyph });
+            events.push(TickEvent::Fired {
+                glyph,
+                machine: Machine::Glyph(self.glyphs[glyph].unwrap().kind),
+            });
             events.push(TickEvent::Consumed {
                 glyph,
                 atoms: compound.clone(),
@@ -927,7 +934,10 @@ impl Sim {
                 return;
             }
         }
-        events.push(TickEvent::Fired { glyph });
+        events.push(TickEvent::Fired {
+            glyph,
+            machine: Machine::Glyph(g.kind),
+        });
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
             match self.bond_between(a, b) {
@@ -2603,7 +2613,10 @@ mod tests {
             TickEvents {
                 tick: 0,
                 events: vec![
-                    TickEvent::Fired { glyph: 0 },
+                    TickEvent::Fired {
+                        glyph: 0,
+                        machine: Machine::Glyph(GlyphKind::Source),
+                    },
                     TickEvent::Spawned {
                         glyph: 0,
                         atom: 0,

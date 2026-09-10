@@ -12,6 +12,7 @@ pkgs.mkShell {
     rustfmt
     shellcheck
     pkg-config
+    alsa-lib
     udev
     vulkan-loader
     libx11
@@ -27,6 +28,7 @@ pkgs.mkShell {
     dejavu_fonts
     xclip
     xvfb
+    ffmpeg
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
@@ -38,5 +40,6 @@ pkgs.mkShell {
     libxcursor
     libxi
     libxrandr
+    alsa-lib
   ]);
 }

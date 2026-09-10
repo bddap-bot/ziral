@@ -28,7 +28,7 @@ pub enum Mask {
 impl Event {
     pub fn matches(self, event: &TickEvent, index: usize) -> bool {
         match (self, event) {
-            (Event::Fired, TickEvent::Fired { glyph }) => *glyph == index,
+            (Event::Fired, TickEvent::Fired { glyph, .. }) => *glyph == index,
             (Event::Rotated, TickEvent::Rotated { arm, .. }) => *arm == index,
             _ => false,
         }
@@ -121,7 +121,7 @@ mod tests {
                 assert_eq!(part.motion.is_some(), part.event.is_some());
                 if let Some(event) = part.event {
                     let sample = match event {
-                        Event::Fired => TickEvent::Fired { glyph: 7 },
+                        Event::Fired => TickEvent::Fired { glyph: 7, machine },
                         Event::Rotated => TickEvent::Rotated {
                             arm: 7,
                             spin: crate::sim::Spin::Cw,
