@@ -2,6 +2,7 @@ mod form;
 mod look;
 #[cfg(not(target_arch = "wasm32"))]
 mod machines;
+mod particles;
 mod rig;
 mod sim;
 mod sound;
@@ -2368,6 +2369,40 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
             _ => unworn(look),
         }
     }
+
+    fn particles(
+        &mut self,
+        machine: Machine,
+        index: usize,
+        events: &[sim::TickEvent],
+        state: (Vec2, sim::ActivationEnergy, f32, f32),
+    ) {
+        let (at, energy, phase, z) = state;
+        let Some((emitter, count)) = particles::burst(machine, index, energy, events) else {
+            return;
+        };
+        let glaze = match emitter.look {
+            particles::Look::Spark => Glaze::Amber,
+            particles::Look::Steam => Glaze::Ivory,
+            particles::Look::Dust => Glaze::Clay,
+        };
+        let age = (sim::ActivationEnergy::FULL.level() - energy.level()) as f32 + phase;
+        for i in 0..count {
+            let seed = (index as u32).wrapping_mul(31).wrapping_add(i as u32 * 17);
+            let angle = seed as f32 * 2.399_963;
+            let distance = HEX * (0.18 + 0.13 * age + 0.035 * i as f32);
+            let position = at + Vec2::from_angle(angle) * distance;
+            let radius = HEX * (0.045 + 0.012 * ((seed % 3) as f32));
+            self.fill(
+                &self.kiln.circle,
+                self.kiln.material(glaze),
+                position,
+                0.0,
+                Vec2::splat(radius),
+                z,
+            );
+        }
+    }
 }
 
 mod layer {
@@ -2607,7 +2642,7 @@ fn draw(
         .events
         .last()
         .map_or(&[][..], |tick| tick.events.as_slice());
-    scene(&mut p, &f, 0.0, events, world.phase());
+    scene(&mut p, &f, 0.0, events, world.phase(), true);
     for (i, g) in world.shown().glyphs.iter().enumerate() {
         if let Some(g) = g
             && world.picks(Id::Glyph(i))
@@ -2712,6 +2747,7 @@ fn scene<G: GizmoConfigGroup>(
     lift: f32,
     events: &[sim::TickEvent],
     phase: f32,
+    particles: bool,
 ) {
     for (index, glyph) in f.sim.glyphs.iter().enumerate() {
         let Some(g) = glyph else { continue };
@@ -2726,6 +2762,15 @@ fn scene<G: GizmoConfigGroup>(
             layer::GLYPHS + lift,
             (fired, phase, g.energy),
         );
+        if particles {
+            let particle_z = match particles::response(item) {
+                particles::Response::Default(e) | particles::Response::Rig(e) => match e.layer {
+                    particles::Layer::Behind => layer::GLYPHS - 0.01,
+                    particles::Layer::On => layer::GLYPHS + 0.01,
+                },
+            } + lift;
+            p.particles(item, index, events, (px(g.at), g.energy, phase, particle_z));
+        }
     }
     for b in &f.sim.bonds {
         let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
@@ -2752,6 +2797,20 @@ fn scene<G: GizmoConfigGroup>(
             z,
             (fired, phase, f.sim.arms[i].energy),
         );
+        if particles {
+            let particle_z = match particles::response(Machine::Arm) {
+                particles::Response::Default(e) | particles::Response::Rig(e) => match e.layer {
+                    particles::Layer::Behind => layer::ARMS.start - 0.01,
+                    particles::Layer::On => layer::ARMS.end + 0.01,
+                },
+            } + lift;
+            p.particles(
+                Machine::Arm,
+                i,
+                events,
+                (arm.pivot, f.sim.arms[i].energy, phase, particle_z),
+            );
+        }
         let stall = f.sim.arms[i].stall;
         if stall.is_some() {
             p.ring(arm.pivot, HEX * 0.5);
@@ -2841,7 +2900,7 @@ fn hover_card<G: GizmoConfigGroup>(
         for h in playfield(machine) {
             p.tile(h, layer::LIFT);
         }
-        scene(p, f, layer::LIFT, events, phase);
+        scene(p, f, layer::LIFT, events, phase, false);
     });
 }
 
@@ -2925,7 +2984,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 40] = [
+    pub const SCENES: [&str; 41] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -2965,6 +3024,7 @@ mod shot {
         "converter-sheet",
         "reification",
         "rig",
+        "particles",
         "sound",
     ];
 
@@ -3210,7 +3270,7 @@ mod shot {
                 );
                 world.sim = sim;
             }
-            "rig" => {
+            "rig" | "particles" => {
                 let mut sim = Sim::empty();
                 let bonder = Glyph::new(GlyphKind::Bonder, Hex::new(-2, 0), 0);
                 sim.glyphs.push(Some(bonder));
@@ -3224,6 +3284,10 @@ mod shot {
                 sim.place(&applicator, Hex::new(3, 0));
                 sim.glyphs
                     .push(Some(Glyph::new(GlyphKind::Source, Hex::new(-5, 1), 0)));
+                if name == "particles" {
+                    sim.arms
+                        .push(Arm::new(Hex::new(0, 3), 0, vec![Instr::Grab]));
+                }
                 world.sim = sim;
                 world.prev = world.sim.clone();
                 world.period = TICK_MS / 1000.0;

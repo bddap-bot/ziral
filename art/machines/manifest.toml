@@ -22,6 +22,8 @@ sphere = 25.0
 
 [machine.arm]
 instrument = { voice = "brass", note = 43 }
+emitter = { look = "dust", count = 3, lifetime = 2, event = "rotated", layer = "behind", energy_scaled = true }
+rig_emitter = { look = "spark", count = 4, lifetime = 2, event = "rotated", layer = "on", energy_scaled = true }
 placeholder = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-black-rubber horseshoe gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
 kept = 2
 painted = "4bc50ac26b5149de"
@@ -30,6 +32,8 @@ judged = "9796133c38c4cd52"
 
 [machine.bonder]
 instrument = { voice = "wood", note = 48 }
+emitter = { look = "dust", count = 4, lifetime = 2, event = "fired", layer = "behind", energy_scaled = true }
+rig_emitter = { look = "spark", count = 6, lifetime = 2, event = "fired", layer = "on", energy_scaled = true }
 placeholder = "The machine is a two-cell bonder: two equal empty blue-green ceramic atom seats in terracotta housings, joined by one heavy darkened-brass compression channel with opposed clamp jaws, worn rubber collars, pressure pipes and a squat kiln port, everything lying flat along the line between the two seats and no taller than the seat housings, the port and pipes on the channel itself, nothing rising above or hanging below the channel at its middle, so both atoms survive and leave joined; no third seat."
 kept = 2
 painted = "26f1eef931eb51fd"
@@ -38,6 +42,7 @@ judged = "b6b823455442ec5d"
 
 [machine.converter-amber]
 instrument = { voice = "ceramic", note = 62 }
+emitter = { look = "steam", count = 5, lifetime = 3, event = "fired", layer = "behind", energy_scaled = true }
 placeholder = "The machine is a compact three-cell amber converter drawn as a flat plan: three equal empty circular amber seats at the scaffold dots, each only a thin concentric ring with no wall, lip, cavity, plug, highlight or shadow, joined by one broad continuous darkened-brass Y channel flowing toward the origin ring. Every fill is uniform unlit base colour with clean edges and no depth cues. The asymmetric fork lies tight to the three marks, with no bead, atom, plate, text, or exposed clockwork."
 kept = 1
 painted = "2cc8f7191c0ec5c4"
@@ -46,6 +51,7 @@ judged = "30f0c6c2bcc64c98"
 
 [machine.converter-plum]
 instrument = { voice = "ceramic", note = 65 }
+emitter = { look = "steam", count = 5, lifetime = 3, event = "fired", layer = "behind", energy_scaled = true }
 placeholder = "The machine is a compact three-cell plum converter drawn as a flat plan: one empty amber circular ring at the origin and two empty plum circular rings at the other scaffold dots, every seat only a thin concentric ring with no wall, lip, cavity, plug, highlight or shadow. A broad uniform plum channel and paired darkened-brass rail make one angular bend through the rings. Every fill is uniform unlit base colour with clean edges and no depth cues; no bead, atom, plate, text, or exposed clockwork."
 kept = 1
 painted = "d9e844b5e93e9c52"
@@ -54,6 +60,7 @@ judged = "2cce178b69aab19f"
 
 [machine.output-1]
 instrument = { voice = "brass", note = 55 }
+emitter = { look = "steam", count = 4, lifetime = 2, event = "fired", layer = "on", energy_scaled = false }
 placeholder = "The machine is a seven-cell output station, the first tier: seven equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, one at the centre and six around it, each cup exactly on its mark and as far apart as the marks, joined only by slender paired brass delivery rails running from the centre cup to each outer cup, worn rubber bumpers at the rim of the cluster and one small covered exit chute on the centre cup's housing, everything lying flat and no higher than the cup housings, nothing bulging out beyond the six outer cups, looking receptive rather than transformative."
 kept = 2
 painted = "1b53d32435cd4fee"
@@ -62,6 +69,7 @@ judged = "a6cecac9e48b1385"
 
 [machine.output-2]
 instrument = { voice = "brass", note = 58 }
+emitter = { look = "steam", count = 6, lifetime = 2, event = "fired", layer = "on", energy_scaled = false }
 placeholder = "The machine is a nineteen-cell output station, the second tier: the seven-cup ivory station of the first tier at its heart, a centre cup with six around it joined by slender paired brass rails, now ringed by twelve more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, each cup exactly on its mark and as far apart as the marks, the outer ring tied to the inner by the same slender brass rails and a thin brass hoop, the rubber bumpers and covered exit chute of the first tier kept, everything lying flat and no higher than the cup housings, nothing beyond the outer ring of cups."
 kept = 4
 painted = "a3e42f65b6749ec1"
@@ -70,6 +78,7 @@ judged = "715cf28fdd159716"
 
 [machine.output-3]
 instrument = { voice = "brass", note = 60 }
+emitter = { look = "steam", count = 8, lifetime = 2, event = "fired", layer = "on", energy_scaled = false }
 placeholder = "The machine is a thirty-seven-cell output station, the third tier: the nineteen-cup ivory station of the second tier at its heart, its centre cup, inner ring of six and outer ring of twelve joined by slender paired brass rails and a thin brass hoop, now ringed by eighteen more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, thirty-seven cups in a hexagon of rows of four, five, six, seven, six, five and four, each cup small, its rim no wider than the ring mark it sits on and its centre exactly on the mark's dot, the cups as far apart as the marks and no closer, so that the outermost rims sit on the outermost marks and the green margin all around stays empty, the new ring tied on by the same slender rails and a second brass hoop no wider than the cups, the rubber bumpers and covered exit chute of the earlier tiers kept small and inside the outer rims, everything lying flat and no higher than the cup housings, nothing at all beyond the outermost ring of cups."
 kept = 1
 painted = "67da911b67203421"
@@ -78,6 +87,7 @@ judged = "550dabe0cf3de8b6"
 
 [machine.reification]
 instrument = { voice = "wood", note = 36 }
+emitter = { look = "dust", count = 8, lifetime = 3, event = "fired", layer = "behind", energy_scaled = true }
 placeholder = "The machine is the reification glyph, a nineteen-cell amber kiln well: one central receiving cup and two complete hexagonal rings of six and twelve equal empty atom seats, every neighbouring pair joined by a broad continuous fired-clay channel, with an inward brass collector around the centre. Every seat is exactly on its mark and remains unobstructed; the compact honeycomb fills only its radius-two footprint and reads as consuming the complete wrap into the central inventory atom."
 kept = 4
 painted = "bc9d46614c0cfe38"
@@ -86,6 +96,8 @@ judged = "c2b7b6e8b0868f51"
 
 [machine.second-bond]
 instrument = { voice = "wood", note = 52 }
+emitter = { look = "dust", count = 4, lifetime = 2, event = "fired", layer = "behind", energy_scaled = true }
+rig_emitter = { look = "spark", count = 7, lifetime = 3, event = "fired", layer = "on", energy_scaled = true }
 placeholder = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
 kept = 4
 painted = "88ae6ec55d3dab10"
@@ -94,6 +106,7 @@ judged = "d0dd74546a7324ae"
 
 [machine.source]
 instrument = { voice = "ceramic", note = 67 }
+emitter = { look = "spark", count = 3, lifetime = 2, event = "fired", layer = "behind", energy_scaled = true }
 placeholder = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."
 kept = 2
 painted = "38dfd1b060b04971"

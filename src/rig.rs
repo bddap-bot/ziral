@@ -46,8 +46,10 @@ pub struct Part {
 }
 
 #[derive(Deserialize)]
-struct Entry {
-    parts: Vec<Part>,
+pub struct Entry {
+    pub emitter: crate::particles::Emitter,
+    pub rig_emitter: Option<crate::particles::Emitter>,
+    pub parts: Vec<Part>,
 }
 
 #[derive(Deserialize)]
@@ -64,17 +66,21 @@ fn manifest() -> &'static Manifest {
 }
 
 pub fn parts(machine: Machine) -> &'static [Part] {
+    &entry(machine).parts
+}
+
+pub fn entry(machine: Machine) -> &'static Entry {
     let name = crate::look::machine(machine)
         .skin
         .name
         .split('/')
         .nth(1)
         .expect("a machine skin lives in art/machines/<name>/");
-    let parts = &manifest()
+    let entry = manifest()
         .machine
         .get(name)
-        .unwrap_or_else(|| panic!("machine {name} has no rig"))
-        .parts;
+        .unwrap_or_else(|| panic!("machine {name} has no rig"));
+    let parts = &entry.parts;
     assert!(
         (2..=4).contains(&parts.len()),
         "machine {name} rig has {} parts",
@@ -88,7 +94,7 @@ pub fn parts(machine: Machine) -> &'static [Part] {
             part.name
         );
     }
-    parts
+    entry
 }
 
 pub fn activation(machine: Machine) -> Event {

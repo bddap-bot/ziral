@@ -64,6 +64,9 @@ struct Entry {
     relit: Option<String>,
     judged: Option<String>,
     instrument: crate::sound::Instrument,
+    emitter: crate::particles::Emitter,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rig_emitter: Option<crate::particles::Emitter>,
     #[serde(default)]
     parts: Vec<crate::rig::Part>,
 }
@@ -2230,6 +2233,8 @@ mod tests {
                             relit: None,
                             judged: None,
                             instrument: crate::sound::instrument(item(name)),
+                            emitter: crate::rig::entry(item(name)).emitter,
+                            rig_emitter: crate::rig::entry(item(name)).rig_emitter,
                             parts: Vec::new(),
                         },
                     )
