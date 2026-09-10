@@ -1096,7 +1096,12 @@ fn judged_key(art: &Art, name: &str, count: u32, style: &Style) -> String {
     key(&parts)
 }
 
-fn revised(prompt: &str, issues: &[String]) -> String {
+fn revised(prompt: &str, issues: &[String], round: usize) -> String {
+    if round == ROUNDS {
+        return format!(
+            "{prompt} Start again from the machine description. Secure the whole object's straight-down gameplay read and its seat layout first; simplify or remove any detail that competes with them."
+        );
+    }
     if issues.is_empty() {
         return prompt.to_string();
     }
@@ -1463,7 +1468,7 @@ impl Remake<'_> {
                         Paint {
                             images: images.clone(),
                             output: self.art.candidate(name, i),
-                            prompt: revised(&prompt, &issues),
+                            prompt: revised(&prompt, &issues, rounds + 1),
                             size: scaffold.canvas,
                         },
                     )
@@ -2778,7 +2783,7 @@ mod tests {
     }
 
     #[test]
-    fn the_best_failing_candidates_issues_revise_the_next_round_and_the_given_text_stays() {
+    fn the_best_candidates_issues_revise_then_the_last_round_starts_again() {
         let art = studio("revise", &["right", "top", "left", "bottom"], &["source"]);
         let given = "  \"Given\", with a tab\t, a line\nbreak and trailing spaces   ";
         let mut m = art.read();
@@ -2795,7 +2800,7 @@ mod tests {
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let critic = |images: &[PathBuf], _: &str| {
             let call = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(if call < 2 {
+            Ok(if call < 4 {
                 match index(images) {
                     1 => r#"{"score": 3, "issues": ["Worse first.", "Worse second."]}"#,
                     _ => r#"{"score": 5, "issues": ["Tipped: the hopper shows its back wall.", "A plate under it.", "Text on the gate."]}"#,
@@ -2811,13 +2816,17 @@ mod tests {
         let style = art.read().style;
         let base = format!("{} {given}", style.shared);
         let prompts = prompts.lock().unwrap();
-        assert_eq!(prompts.len(), 4, "{prompts:?}");
+        assert_eq!(prompts.len(), 6, "{prompts:?}");
         assert_eq!(&prompts[..2], &[base.clone(), base.clone()]);
         let revised = format!(
             "{base} Revise, most important first: Tipped: the hopper shows its back wall. A plate under it. Text on the gate."
         );
-        assert_eq!(&prompts[2..], &[revised.clone(), revised]);
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+        assert_eq!(&prompts[2..4], &[revised.clone(), revised]);
+        let reset = format!(
+            "{base} Start again from the machine description. Secure the whole object's straight-down gameplay read and its seat layout first; simplify or remove any detail that competes with them."
+        );
+        assert_eq!(&prompts[4..], &[reset.clone(), reset]);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(
             art.read().machine["source"].direction,
             Direction::Given(given.to_string())

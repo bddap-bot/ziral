@@ -12,6 +12,11 @@
       "why": "prose; nothing executes it"
     },
     {
+      "paths": ["proofs/*.png"],
+      "tests": [],
+      "why": "visual proof assets are inspected at their native dimensions"
+    },
+    {
       "paths": ["art/symbols/*.png", "art/overlay/**"],
       "tests": ["nix-shell --run 'shellcheck art/overlay/*.sh && art/overlay/gen.sh -c'"],
       "why": "the manual page is generated over the symbols at their slots and its prompt; the check rebuilds the scaffold and says whether the shipped page still matches them"

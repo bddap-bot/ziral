@@ -29,10 +29,10 @@ judged = "9796133c38c4cd52"
 
 [machine.bonder]
 placeholder = "The machine is a two-cell bonder: two equal empty blue-green ceramic atom seats in terracotta housings, joined by one heavy darkened-brass compression channel with opposed clamp jaws, worn rubber collars, pressure pipes and a squat kiln port, everything lying flat along the line between the two seats and no taller than the seat housings, the port and pipes on the channel itself, nothing rising above or hanging below the channel at its middle, so both atoms survive and leave joined; no third seat."
-kept = 4
+kept = 2
 painted = "26f1eef931eb51fd"
-relit = "8bb90d08a7f6055c"
-judged = "f948af8197c64b52"
+relit = "2e37efc4ba2d639a"
+judged = "b6b823455442ec5d"
 
 [machine.converter-amber]
 placeholder = "The machine is a compact three-cell amber converter drawn as a flat plan: three equal empty circular amber seats at the scaffold dots, each only a thin concentric ring with no wall, lip, cavity, plug, highlight or shadow, joined by one broad continuous darkened-brass Y channel flowing toward the origin ring. Every fill is uniform unlit base colour with clean edges and no depth cues. The asymmetric fork lies tight to the three marks, with no bead, atom, plate, text, or exposed clockwork."
@@ -78,10 +78,10 @@ judged = "c2b7b6e8b0868f51"
 
 [machine.second-bond]
 placeholder = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
-kept = 3
+kept = 4
 painted = "88ae6ec55d3dab10"
-relit = "6750664008d168c8"
-judged = "08e0cc1b38141a4c"
+relit = "9b0c6fc8bb1817be"
+judged = "d0dd74546a7324ae"
 
 [machine.source]
 placeholder = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."

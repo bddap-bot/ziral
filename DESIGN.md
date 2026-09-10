@@ -621,6 +621,16 @@ Alternatives disposed. A panel of critics: one critic is the technique as source
 
 Result of the first run. The critic judged the seven shipped keeps and sent every one back: arm 6, bonder 4, source 5, second bond 4, the output tiers 5, 5 and 5. The findings were real and of the kind no measured rule sees: the second bond's sacrificial seat glazed terracotta on the bottom cell where the scaffold marks it upper-left; seats painted as filled teal domes on the source, bonder and second bond; cups showing a far inner wall on every output tier; upper-left highlights and lower-right shade on every pivot and rim. Three revised rounds per machine, eighty-three paints, raised the best to arm 7 and every other machine 6; nothing reached 8. The issues converged on two sentences, "seats read as deep cups with visible far inner walls" and "directional light", which the shared paint prompt already forbids in as many words and the image tool does not obey. So no keep changed: the shipped candidates stand and each keep's first judgement is recorded in `scores.tsv` under its `judged` key; the round-3 revisions, none better than the keeps under the rule, were not kept. The rubric and threshold were not touched. `art/machines/proof/critic.png` sets the second bond's keep beside its best revision, both as the critic saw them, with the issues each drew.
 
+### The third paint round starts again from the object
+
+Directive (verbatim): "8 is target but after 3 rounds we accept what where it got. It's not a violation. I wonder if the worker could improve results with lateral thinking. Maybe zooming out."
+
+Directive (verbatim): "I didn't mean literal zoom out but sure if you see it helping."
+
+Reading. Lateral thinking is a change of approach, not a camera instruction. Repeating an accumulated fault list made the painter optimize local rims and highlights while preserving the same object decomposition. The smallest different move is on the last round only: discard that list, start again from the unchanged shared prompt and machine description, secure the whole straight-down gameplay read and seat layout first, and simplify detail that competes with them. The rubric, target, shared prompt and machine direction do not change.
+
+Tried. The two score-4 keeps ran through the normal three rounds. The bonder's best scores were 5, 5 and 6; the second bond's were 6, 6 and 6. Both beat their prior keep, so the reset stays and the normal path kept bonder-2 and second-bond-4 at 6. `proofs/critic-55.png` places the second bond's prior score-4 keep beside its new score-6 keep at the shipped size, without scaling.
+
 ### Toy 1 shows what a machine does
 
 The directive is the one quoted under Toy 1 crafts its machines: keep the text rule, put no words on the tooltips, and show each machine by playing its test case in the popup beside the recipe.
