@@ -3653,7 +3653,9 @@ mod shot {
 
     pub fn recipe(item: Machine, path: &Path) {
         #[cfg(test)]
-        let _render = crate::RENDER_TEST.lock().unwrap();
+        let _render = crate::RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (world, frame, script, warm) = scene(&format!("recipe:{}", machines::name(item)), 0);
         let shot = Shot {
             path: path.to_path_buf(),
@@ -3885,7 +3887,7 @@ mod shot {
                 ))
                 .observe(save_to_disk(path));
         }
-        if n == count + 28 {
+        if n == count + 120 {
             exit.write(AppExit::Success);
         }
     }
@@ -3901,7 +3903,9 @@ mod tests {
     const BLUR_PX: f32 = 1.0;
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
-        let _render = RENDER_TEST.lock().unwrap();
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = std::env::temp_dir().join(format!("ziral-{view}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -5609,7 +5613,9 @@ mod tests {
     }
 
     fn card_fills(machine: Machine, ticks: u64) -> Vec<(Vec3, f32)> {
-        let _render = RENDER_TEST.lock().unwrap();
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let name = machines::name(machine);
         let dir =
             std::env::temp_dir().join(format!("ziral-card-{name}-{ticks}-{}", std::process::id()));
@@ -6392,7 +6398,9 @@ mod tests {
 
     #[test]
     fn the_refusal_line_shows_each_shortfall_as_beads_and_writes_nothing() {
-        let _render = RENDER_TEST.lock().unwrap();
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut w = copied();
         for item in [SECOND, ARM, GRAB] {
             stocked(&mut w, item, 1);
