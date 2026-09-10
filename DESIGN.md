@@ -35,6 +35,10 @@ A rig is two to four ordered parts declared on each machine in `art/machines/man
 
 The pipeline paints the complete machine and splits its albedo and normal map with the declared masks. This keeps the already-judged seat layout and makes the seam between parts deterministic. Painting parts independently was rejected because separate generations have no shared geometry to guarantee that their seams, scale, and seats agree; it would add a registration problem without improving the three required motions. The three-round critic loop still judges every resulting part and records its selected score beside that part in the manifest.
 
+Activation energy is typed simulation state on every arm and glyph. The event named by that machine's manifest entry sets it to full strength, and one pure linear decay advances it on each 400 ms tick until it reaches zero. The renderer only reads that value; it does not own a timer or reconstruct energy from elapsed wall time. Renderer state was rejected because replay and card playback need energy at tick t to be exactly as assertable as atoms and bonds, while a second clock would make the visible result depend on when it was drawn.
+
+The pipeline derives an emissive mask for every rig part from the same painted machine and the same split mask as its albedo and normal map. Only the firing feature inside the moving mask is white; every base mask is black. The material uses activation energy once to warm the existing glaze, flare the existing brass response through the emissive mask, and ripple the sampled normal. These channels introduce no colour outside the existing glaze and brass palette.
+
 The stages land in dependency order: the typed stream with replay and card playback consuming it; rigged sprites; material response and its pipeline-made emissive mask; sound; then manifest-declared default particles and rig overrides. The stream comes first because every later layer must read the same deterministic fact of what happened at tick t, and because replay already requires that fact to remain testable. No expressive layer belongs in the simulation.
 
 ## First playable
