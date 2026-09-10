@@ -1909,6 +1909,7 @@ mod tests {
                     kind,
                     at: ORIGIN,
                     dir: 0,
+                    energy: crate::sim::ActivationEnergy::default(),
                 }
                 .slots()
                 .collect(),

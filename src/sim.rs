@@ -194,6 +194,21 @@ pub struct Bond {
     pub kind: BondKind,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ActivationEnergy(u8);
+
+impl ActivationEnergy {
+    pub const FULL: Self = Self(3);
+
+    pub const fn decayed(self) -> Self {
+        Self(self.0.saturating_sub(1))
+    }
+
+    pub const fn level(self) -> usize {
+        self.0 as usize
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Arm {
     pub pivot: Hex,
@@ -202,6 +217,7 @@ pub struct Arm {
     pub pc: usize,
     pub holding: bool,
     pub stall: Option<Stall>,
+    pub energy: ActivationEnergy,
 }
 
 impl Arm {
@@ -213,6 +229,7 @@ impl Arm {
             pc: 0,
             holding: false,
             stall: None,
+            energy: ActivationEnergy::default(),
         }
     }
 
@@ -461,11 +478,17 @@ pub struct Glyph {
     pub kind: GlyphKind,
     pub at: Hex,
     pub dir: usize,
+    pub energy: ActivationEnergy,
 }
 
 impl Glyph {
     pub fn new(kind: GlyphKind, at: Hex, dir: usize) -> Self {
-        Glyph { kind, at, dir }
+        Glyph {
+            kind,
+            at,
+            dir,
+            energy: ActivationEnergy::default(),
+        }
     }
 
     pub fn slots(&self) -> impl Iterator<Item = Hex> + '_ {
@@ -736,6 +759,12 @@ impl Sim {
     }
 
     pub fn step(&mut self) -> TickEvents {
+        for arm in &mut self.arms {
+            arm.energy = arm.energy.decayed();
+        }
+        for glyph in self.glyphs.iter_mut().flatten() {
+            glyph.energy = glyph.energy.decayed();
+        }
         let mut events = Vec::new();
         for i in 0..self.glyphs.len() {
             let Some(g) = self.glyphs[i] else { continue };
@@ -770,6 +799,17 @@ impl Sim {
                 GlyphKind::Output(tier) => self.craft(i, g.at, tier, &mut events),
                 GlyphKind::Source => {}
                 _ => self.fire(i, g, &mut events),
+            }
+        }
+        for event in &events {
+            match event {
+                TickEvent::Fired { glyph } => {
+                    self.glyphs[*glyph].as_mut().unwrap().energy = ActivationEnergy::FULL;
+                }
+                TickEvent::Rotated { arm, .. } => {
+                    self.arms[*arm].energy = ActivationEnergy::FULL;
+                }
+                _ => {}
             }
         }
         let tick = self.tick;
@@ -1381,11 +1421,29 @@ pub fn fixture(machine: Machine) -> Fixture {
 mod tests {
     use super::*;
 
+    #[test]
+    fn activation_energy_is_set_by_its_tick_event_and_decays_exactly_on_the_tick_grid() {
+        let mut sim = Sim::empty();
+        sim.glyphs
+            .push(Some(Glyph::new(GlyphKind::Source, ORIGIN, 0)));
+
+        assert_eq!(sim.glyphs[0].unwrap().energy.level(), 0);
+        sim.step();
+        assert_eq!(sim.glyphs[0].unwrap().energy.level(), 3);
+        sim.step();
+        assert_eq!(sim.glyphs[0].unwrap().energy.level(), 2);
+        sim.step();
+        assert_eq!(sim.glyphs[0].unwrap().energy.level(), 1);
+        sim.step();
+        assert_eq!(sim.glyphs[0].unwrap().energy.level(), 0);
+    }
+
     fn source(at: Hex) -> Glyph {
         Glyph {
             kind: GlyphKind::Source,
             at,
             dir: 0,
+            energy: ActivationEnergy::default(),
         }
     }
 
@@ -1529,6 +1587,7 @@ mod tests {
             kind: GlyphKind::Bonder,
             at: Hex::new(0, 0),
             dir: 0,
+            energy: ActivationEnergy::default(),
         };
         let mut sim = bench(vec![Instr::Wait], vec![bonder]);
         chain(&mut sim, 0, left);
@@ -1557,6 +1616,7 @@ mod tests {
             kind: GlyphKind::Bonder,
             at: Hex::new(1, 0),
             dir: 1,
+            energy: ActivationEnergy::default(),
         };
         assert_eq!(
             bonder.slots().collect::<Vec<_>>(),
@@ -1588,6 +1648,7 @@ mod tests {
             kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
+            energy: ActivationEnergy::default(),
         };
         assert_eq!(
             second.slots().collect::<Vec<_>>(),
@@ -1636,6 +1697,7 @@ mod tests {
             kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
+            energy: ActivationEnergy::default(),
         };
         let mut sim = bench(vec![Instr::Wait], vec![second]);
         let sacrificial = put(&mut sim, 1, 0);
@@ -1656,6 +1718,7 @@ mod tests {
             kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
+            energy: ActivationEnergy::default(),
         };
         let mut sim = bench(vec![Instr::Wait], vec![second]);
         let sacrificial = put(&mut sim, 1, 0);
@@ -1679,6 +1742,7 @@ mod tests {
             kind: GlyphKind::Output(tier),
             at,
             dir: 0,
+            energy: ActivationEnergy::default(),
         }
     }
 
@@ -2146,6 +2210,7 @@ mod tests {
             kind: GlyphKind::SecondBond,
             at: Hex::new(1, 0),
             dir: 1,
+            energy: ActivationEnergy::default(),
         };
         let mut sim = bench(vec![Grab, Wait], vec![second]);
         let sacrificial = put(&mut sim, 1, 0);
@@ -2169,6 +2234,7 @@ mod tests {
             kind: GlyphKind::SecondBond,
             at: Hex::new(1, -1),
             dir: 0,
+            energy: ActivationEnergy::default(),
         };
         assert_eq!(
             second.slots().collect::<Vec<_>>(),

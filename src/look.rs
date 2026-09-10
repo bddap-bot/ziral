@@ -382,7 +382,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
     }
 }
 
-pub fn rig(item: Machine, part: &str) -> (Skin, Skin) {
+pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
     let name = match item {
         Machine::Arm => "arm",
         Machine::Glyph(GlyphKind::Source) => "source",
@@ -408,7 +408,11 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin) {
                 concat!("machines/", $machine, "/parts/normal-", $part),
                 Finish::Relief
             );
-            (albedo, normal)
+            let emissive = finish!(
+                concat!("machines/", $machine, "/parts/emissive-", $part),
+                Finish::Sprite
+            );
+            (albedo, normal, emissive)
         }};
     }
     match (name, part) {
@@ -449,8 +453,8 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         )
         .chain(Machine::ALL.into_iter().flat_map(|item| {
             crate::rig::parts(item).iter().flat_map(move |part| {
-                let (albedo, normal) = rig(item, &part.name);
-                [albedo, normal]
+                let (albedo, normal, emissive) = rig(item, &part.name);
+                [albedo, normal, emissive]
             })
         }))
         .chain(TILES)
@@ -919,7 +923,7 @@ pub(crate) mod tests {
             AtomKind::ALL.len()
                 + BondKind::ALL.len()
                 + 2 * Machine::ALL.len()
-                + 2 * Machine::ALL
+                + 3 * Machine::ALL
                     .into_iter()
                     .map(|machine| crate::rig::parts(machine).len())
                     .sum::<usize>()

@@ -1871,7 +1871,7 @@ struct Kiln {
     patina: [Handle<ColorMaterial>; 2],
     card: [Handle<ColorMaterial>; 2],
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
-    lit: Vec<(Skin, Handle<Lit>)>,
+    lit: Vec<(Skin, [Handle<Lit>; 4])>,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
@@ -1884,6 +1884,11 @@ struct Lit {
     #[texture(3)]
     #[sampler(4)]
     relief: Handle<Image>,
+    #[texture(5)]
+    #[sampler(6)]
+    emissive: Handle<Image>,
+    #[uniform(7)]
+    response: Vec4,
 }
 
 impl Material2d for Lit {
@@ -1924,11 +1929,11 @@ impl Kiln {
         self.fired(skin).1.clone()
     }
 
-    fn lit(&self, skin: Skin) -> &Handle<Lit> {
+    fn lit(&self, skin: Skin, energy: sim::ActivationEnergy) -> &Handle<Lit> {
         self.lit
             .iter()
             .find(|(s, _)| *s == skin)
-            .map(|(_, lit)| lit)
+            .map(|(_, lit)| &lit[energy.level()])
             .unwrap_or_else(|| panic!("{skin:?} carries no relief"))
     }
 }
@@ -2051,11 +2056,20 @@ fn fire_kiln(
         .into_iter()
         .flat_map(|item| rig::parts(item).iter().map(move |part| (item, part)))
         .map(|(item, part)| {
-            let (skin, normal) = look::rig(item, &part.name);
-            let lit = lits.add(Lit {
-                light: look::light().extend(look::AMBIENT),
-                albedo: image(skin),
-                relief: image(normal),
+            let (skin, normal, emissive) = look::rig(item, &part.name);
+            let lit = std::array::from_fn(|level| {
+                lits.add(Lit {
+                    light: look::light().extend(look::AMBIENT),
+                    albedo: image(skin),
+                    relief: image(normal),
+                    emissive: image(emissive),
+                    response: Vec4::new(
+                        level as f32 / sim::ActivationEnergy::FULL.level() as f32,
+                        Glaze::Amber.rgb()[0],
+                        Glaze::Amber.rgb()[1],
+                        Glaze::Amber.rgb()[2],
+                    ),
+                })
             });
             (skin, lit)
         })
@@ -2252,12 +2266,19 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, color);
     }
 
-    fn rig(&mut self, item: Machine, origin: Vec2, angle: f32, z: f32, fired: bool, phase: f32) {
+    fn rig(
+        &mut self,
+        item: Machine,
+        origin: Vec2,
+        angle: f32,
+        z: f32,
+        response: (bool, f32, sim::ActivationEnergy),
+    ) {
         let quad = look::quad(item);
         let kiln = self.kiln;
-        let pulse = rig::pulse(fired, phase);
+        let pulse = rig::pulse(response.0, response.1);
         for (index, part) in rig::parts(item).iter().enumerate() {
-            let (skin, _) = look::rig(item, &part.name);
+            let (skin, _, _) = look::rig(item, &part.name);
             let pivot = Vec2::new(part.pivot[0], part.pivot[1]) * HEX;
             let (shift, turn, scale) = match part.motion {
                 Some(rig::Motion::Clamp) => (Vec2::new(-0.16 * HEX * pulse, 0.0), 0.0, 1.0),
@@ -2280,7 +2301,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
             } else {
                 self.fill(
                     &kiln.bar,
-                    kiln.lit(skin),
+                    kiln.lit(skin, response.2),
                     at,
                     angle + turn,
                     quad.size() * scale,
@@ -2297,31 +2318,31 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         ring: f32,
         look: Look<MachineMark>,
         z: f32,
-        motion: (bool, f32),
+        motion: (bool, f32, sim::ActivationEnergy),
     ) {
-        self.rig(
-            Machine::Arm,
-            pivot,
-            (hand - pivot).to_angle(),
-            z,
-            motion.0,
-            motion.1,
-        );
+        self.rig(Machine::Arm, pivot, (hand - pivot).to_angle(), z, motion);
         match look.marking {
             MachineMark::Hand(glaze, _) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
         };
     }
 
-    fn machine(&mut self, item: Machine, at: Hex, dir: usize, z: f32, fired: bool, phase: f32) {
+    fn machine(
+        &mut self,
+        item: Machine,
+        at: Hex,
+        dir: usize,
+        z: f32,
+        response: (bool, f32, sim::ActivationEnergy),
+    ) {
         let look = look::machine(item);
         match (item, look.marking) {
             (Machine::Arm, MachineMark::Hand(_, _)) => {
                 let hand = px(at.add(DIRS[dir % 6]));
-                self.arm(px(at), hand, RING_OPEN, look, z, (false, 1.0));
+                self.arm(px(at), hand, RING_OPEN, look, z, response);
             }
             (Machine::Glyph(_), MachineMark::Sprite(_)) => {
-                self.rig(item, px(at), look::turn(dir), z, fired, phase);
+                self.rig(item, px(at), look::turn(dir), z, response);
             }
             _ => unworn(look),
         }
@@ -2602,7 +2623,13 @@ fn draw(
                 .collect();
             for (i, (item, at, dir)) in machines.iter().enumerate() {
                 let z = layer::z(layer::HELD, i, machines.len());
-                p.machine(*item, grab.add(*at), *dir, z, false, 1.0);
+                p.machine(
+                    *item,
+                    grab.add(*at),
+                    *dir,
+                    z,
+                    (false, 1.0, sim::ActivationEnergy::default()),
+                );
             }
             let at = |id: usize| px(grab.add(set.atoms[id].unwrap().pos));
             for b in &set.bonds {
@@ -2668,11 +2695,16 @@ fn scene<G: GizmoConfigGroup>(
     for (index, glyph) in f.sim.glyphs.iter().enumerate() {
         let Some(g) = glyph else { continue };
         let item = Machine::Glyph(g.kind);
-        let fired = rig::parts(item).iter().any(|part| {
-            part.event
-                .is_some_and(|kind| events.iter().any(|event| kind.matches(event, index)))
-        });
-        p.machine(item, g.at, g.dir, layer::GLYPHS + lift, fired, phase);
+        let fired = events
+            .iter()
+            .any(|event| rig::activation(item).matches(event, index));
+        p.machine(
+            item,
+            g.at,
+            g.dir,
+            layer::GLYPHS + lift,
+            (fired, phase, g.energy),
+        );
     }
     for b in &f.sim.bonds {
         let (Some(a), Some(c)) = (f.atoms[b.a], f.atoms[b.b]) else {
@@ -2688,11 +2720,17 @@ fn scene<G: GizmoConfigGroup>(
     let look = look::machine(Machine::Arm);
     for (i, arm) in f.arms.iter().enumerate() {
         let z = layer::z(layer::ARMS, i, f.arms.len()) + lift;
-        let fired = rig::parts(Machine::Arm).iter().any(|part| {
-            part.event
-                .is_some_and(|kind| events.iter().any(|event| kind.matches(event, i)))
-        });
-        p.arm(arm.pivot, arm.hand, arm.ring, look, z, (fired, phase));
+        let fired = events
+            .iter()
+            .any(|event| rig::activation(Machine::Arm).matches(event, i));
+        p.arm(
+            arm.pivot,
+            arm.hand,
+            arm.ring,
+            look,
+            z,
+            (fired, phase, f.sim.arms[i].energy),
+        );
         let stall = f.sim.arms[i].stall;
         if stall.is_some() {
             p.ring(arm.pivot, HEX * 0.5);
@@ -2752,8 +2790,7 @@ fn hover_card<G: GizmoConfigGroup>(
             at - look::quad(machine).centre,
             0.0,
             z(2),
-            false,
-            1.0,
+            (false, 1.0, sim::ActivationEnergy::default()),
         ),
         Item::Atom(kind) => p.bead(at, look::atom(kind), z(2)),
         Item::Step => p.fill(
@@ -3046,6 +3083,7 @@ mod shot {
                         kind: GlyphKind::ALL[k % GlyphKind::ALL.len()],
                         at: pivot.add(Hex::new(away.q * 4, away.r * 4)),
                         dir,
+                        energy: sim::ActivationEnergy::default(),
                     }));
                 }
                 world.sim = sim;
@@ -3330,6 +3368,7 @@ mod shot {
                         kind: GlyphKind::Output(sim::Tier::One),
                         at,
                         dir: k,
+                        energy: sim::ActivationEnergy::default(),
                     }));
                     sim.place(&recipe.sim(), at.sub(recipe.centre(1).unwrap()));
                 }
@@ -3370,6 +3409,7 @@ mod shot {
                         kind: GlyphKind::Bonder,
                         at: Hex::new(q, 2),
                         dir,
+                        energy: sim::ActivationEnergy::default(),
                     };
                     sim.glyphs.push(Some(glyph));
                     let ends: Vec<usize> = glyph
@@ -4317,6 +4357,7 @@ mod tests {
             kind: GlyphKind::Bonder,
             at,
             dir,
+            energy: sim::ActivationEnergy::default(),
         }
     }
 
@@ -6024,6 +6065,7 @@ mod tests {
         assert_eq!(w.sim.glyphs, glyphs);
         assert_eq!(w.focus, None);
         w.step();
+        let glyphs = w.sim.glyphs.clone();
         lift_at(&mut w, source);
         assert_eq!(held(&w).2, taken(source));
         w.release(Some(source.add(DIRS[0])));

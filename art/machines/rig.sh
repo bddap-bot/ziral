@@ -17,6 +17,8 @@ for dir in "$here"/*; do
     magick "$dir/$map.png" "$mask" -compose DstIn -composite "$dir/parts/${map}-moving.png"
     magick "$dir/$map.png" \( "$mask" -channel A -negate +channel \) -compose DstIn -composite "$dir/parts/${map}-base.png"
   done
+  magick "$dir/parts/albedo-base.png" -fill black -colorize 100 "$dir/parts/emissive-base.png"
+  magick "$dir/parts/albedo-moving.png" -fill white -colorize 100 "$dir/parts/emissive-moving.png"
   rm -f "$mask"
   trap - EXIT
 done

@@ -91,6 +91,13 @@ pub fn parts(machine: Machine) -> &'static [Part] {
     parts
 }
 
+pub fn activation(machine: Machine) -> Event {
+    parts(machine)
+        .iter()
+        .find_map(|part| part.event)
+        .expect("a machine rig carries an event")
+}
+
 pub fn pulse(fired: bool, phase: f32) -> f32 {
     if fired {
         (std::f32::consts::PI * phase.min(1.0)).sin()
@@ -127,16 +134,22 @@ mod tests {
     }
 
     #[test]
-    fn every_part_has_an_equal_sized_albedo_and_normal_map_without_stretching() {
+    fn every_part_has_equal_sized_maps_and_only_its_firing_feature_is_emissive() {
         for machine in Machine::ALL {
             for part in parts(machine) {
-                let (albedo, normal) = crate::look::rig(machine, &part.name);
+                let (albedo, normal, emissive) = crate::look::rig(machine, &part.name);
                 assert_ne!(albedo.name, normal.name);
+                assert_ne!(albedo.name, emissive.name);
                 let albedo = albedo.decode();
                 let normal = normal.decode();
+                let emissive = emissive.decode();
                 assert_eq!(
                     (albedo.width(), albedo.height()),
                     (normal.width(), normal.height())
+                );
+                assert_eq!(
+                    (albedo.width(), albedo.height()),
+                    (emissive.width(), emissive.height())
                 );
                 assert_eq!(albedo.width(), albedo.height());
                 let visible = albedo
@@ -152,6 +165,15 @@ mod tests {
                     "{machine:?} {} has no transparency",
                     part.name
                 );
+                let albedo_pixels = albedo.data.as_ref().unwrap().chunks_exact(4);
+                let emissive_pixels = emissive.data.as_ref().unwrap().chunks_exact(4);
+                let strength = if part.motion.is_some() { 255 } else { 0 };
+                for (albedo, emissive) in albedo_pixels.zip(emissive_pixels) {
+                    assert_eq!(emissive[3], albedo[3]);
+                    if emissive[3] > 0 {
+                        assert_eq!(&emissive[..3], &[strength; 3]);
+                    }
+                }
             }
         }
     }
