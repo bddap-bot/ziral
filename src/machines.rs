@@ -778,15 +778,19 @@ impl Score {
     }
 
     fn failing(&self, t: &Thresholds) -> Option<String> {
-        self.measured(t).or_else(|| match &self.critic {
-            Some(j) if j.score >= t.critic => None,
-            Some(j) => Some(format!("critic {} < {}", j.score, t.critic)),
-            None => Some("critic unreadable".to_string()),
-        })
+        self.measured(t)
     }
 
     fn passes(&self, t: &Thresholds) -> bool {
         self.failing(t).is_none()
+    }
+
+    fn reaches(&self, t: &Thresholds) -> bool {
+        self.passes(t)
+            && self
+                .critic
+                .as_ref()
+                .is_some_and(|critic| critic.score >= t.critic)
     }
 
     fn rank(&self) -> (u8, f32) {
@@ -1491,16 +1495,18 @@ impl Remake<'_> {
             };
             let assess = |scored| self.assess(name, &scaffold, &style, thresholds, count, scored);
             scored = assess(scored)?;
-            let passing = |scored: &[(u32, Score)], i: u32| {
-                scored.iter().any(|(k, s)| *k == i && s.passes(&thresholds))
+            let reaching = |scored: &[(u32, Score)], i: u32| {
+                scored
+                    .iter()
+                    .any(|(k, s)| *k == i && s.reaches(&thresholds))
             };
-            if let Some(k) = kept.filter(|k| passing(&scored, *k)) {
+            if let Some(k) = kept.filter(|k| reaching(&scored, *k)) {
                 break k;
             }
             if only_kept.is_some() {
                 scored = assess(self.score(name, &scaffold, count))?;
             }
-            if let Some((k, _)) = best(&scored, |s| s.passes(&thresholds)) {
+            if let Some((k, _)) = best(&scored, |s| s.reaches(&thresholds)) {
                 break k;
             }
             if asked > 0 && failed.len() == asked {
@@ -1520,9 +1526,11 @@ impl Remake<'_> {
                 .map(|(_, s)| s.issues().to_vec())
                 .unwrap_or_default();
             if rounds == ROUNDS {
+                if let Some((k, _)) = best(&scored, |s| s.passes(&thresholds)) {
+                    break k;
+                }
                 return Err(format!(
-                    "no candidate passes in {ROUNDS} rounds; the last issues: {}",
-                    issues.join(" ")
+                    "no candidate passes the measured rules in {ROUNDS} rounds"
                 ));
             }
             wipe = true;
@@ -1758,52 +1766,6 @@ fn remake(
     results
 }
 
-fn violators(art: &Art, manifest: &Manifest) -> Vec<String> {
-    let violates = |name: &str| {
-        let dir = art.machine(name);
-        let Some(entry) = manifest.machine.get(name) else {
-            println!("{name}\thas no manifest entry");
-            return true;
-        };
-        let Some(kept) = entry.kept else {
-            println!("{name}\tkeeps no candidate");
-            return true;
-        };
-        let png = art.candidate(name, kept);
-        if !png.exists() || !dir.join("albedo.png").exists() || !dir.join("normal.png").exists() {
-            println!("{name}\t{name}-{kept} or its maps are missing");
-            return true;
-        }
-        if entry.judged.as_deref()
-            != Some(judged_key(art, name, manifest.candidates, &manifest.style).as_str())
-        {
-            println!("{name}\t{name}-{kept} is not judged under this rubric");
-            return true;
-        }
-        let scaffold = Scaffold::of(item(name));
-        let mut score = scaffold.score(&scaffold.register(&open(png)));
-        score.critic = std::fs::read_to_string(dir.join("scores.tsv"))
-            .unwrap_or_default()
-            .lines()
-            .filter_map(Score::parse)
-            .find(|(label, _)| *label == format!("{name}-{kept}"))
-            .and_then(|(_, s)| s.critic);
-        println!("{name}-{kept}\t{}", score.verdict(&manifest.thresholds));
-        !score.passes(&manifest.thresholds)
-    };
-    std::thread::scope(|s| {
-        let handles: Vec<_> = Machine::ALL
-            .into_iter()
-            .map(name)
-            .map(|name| s.spawn(move || violates(name).then(|| name.to_string())))
-            .collect();
-        handles
-            .into_iter()
-            .filter_map(|h| h.join().expect("a verdict returns"))
-            .collect()
-    })
-}
-
 fn plan(manifest: &Manifest) -> String {
     let mut out = String::new();
     let mut placeholders = 0;
@@ -1833,8 +1795,7 @@ fn landed(results: &[(String, Result<bool, String>)]) -> bool {
 }
 
 pub fn configure(args: &[String]) -> Option<i32> {
-    const USAGE: &str =
-        "usage: ziral --plan | ziral --gen NAME... | ziral --gen --all | ziral --gen --violators";
+    const USAGE: &str = "usage: ziral --plan | ziral --gen NAME... | ziral --gen --all";
     let art = Art::shipped();
     if args.get(1).map(String::as_str) == Some("--plan") {
         print!("{}", plan(&art.read()));
@@ -1852,7 +1813,6 @@ pub fn configure(args: &[String]) -> Option<i32> {
             .into_iter()
             .map(|i| name(i).to_string())
             .collect(),
-        ["--violators"] => violators(&art, &art.read()),
         [_, ..] if rest.iter().all(|n| known(n)) => rest.iter().map(|n| n.to_string()).collect(),
         _ => {
             eprintln!("{USAGE}");
@@ -2748,7 +2708,7 @@ mod tests {
                 issues: vec!["Slight glare on the rim.".to_string()]
             })
         );
-        assert_eq!(rows["source-2"].0, "fail critic unreadable");
+        assert_eq!(rows["source-2"].0, "pass");
         assert_eq!(rows["source-2"].1.critic, None);
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 2);
@@ -2781,7 +2741,7 @@ mod tests {
     }
 
     #[test]
-    fn a_candidate_under_the_bar_fails_the_keep_and_the_best_scored_one_is_kept() {
+    fn a_candidate_at_the_target_ends_the_rounds_and_the_best_scored_one_is_kept() {
         let art = studio("bar", &["right", "top", "left", "bottom"], &["source"]);
         let critic = |images: &[PathBuf], _: &str| {
             Ok(match index(images) {
@@ -2794,7 +2754,7 @@ mod tests {
         assert!(landed(&remake(&art, &names, &fake, &critic)));
         assert_eq!(art.read().machine["source"].kept, Some(2));
         let rows = rows(&art, "source");
-        assert_eq!(rows["source-1"].0, "fail critic 7 < 8");
+        assert_eq!(rows["source-1"].0, "pass");
         assert_eq!(rows["source-2"].0, "pass");
         let art = studio("rank", &["right", "top", "left", "bottom"], &["source"]);
         let scaffold = Scaffold::of(item("source"));
@@ -2866,7 +2826,7 @@ mod tests {
     }
 
     #[test]
-    fn three_rounds_then_not_landed_with_the_last_issues() {
+    fn three_rounds_then_keep_the_best_with_its_score_and_issues() {
         let art = studio("rounds", &["right", "top", "left", "bottom"], &["source"]);
         let paints = std::sync::atomic::AtomicUsize::new(0);
         let painter = counted(&paints, &fake);
@@ -2886,19 +2846,19 @@ mod tests {
         };
         let names = ["source".to_string()];
         let results = remake(&art, &names, &painter, &critic);
-        assert!(!landed(&results));
-        let reason = results[0].1.clone().expect_err("source does not land");
-        assert_eq!(
-            reason,
-            "no candidate passes in 3 rounds; the last issues: Round 3 best. Still a plate."
-        );
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 6);
+        assert!(landed(&results), "{results:?}");
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(art.read().machine["source"].kept, None);
-        assert!(!art.machine("source").join("albedo.png").exists());
+        assert_eq!(art.read().machine["source"].kept, Some(2));
+        assert!(art.machine("source").join("albedo.png").exists());
         let rows = rows(&art, "source");
-        assert_eq!(rows["source-1"].0, "fail critic 2 < 8");
-        assert_eq!(rows["source-2"].0, "fail critic 4 < 8");
+        assert_eq!(rows["source-1"].0, "pass");
+        assert_eq!(rows["source-2"].0, "pass");
+        assert_eq!(rows["source-2"].1.critic.as_ref().unwrap().score, 4);
+        assert_eq!(
+            rows["source-2"].1.issues(),
+            ["Round 3 best.", "Still a plate."]
+        );
     }
 
     #[test]
@@ -3027,7 +2987,7 @@ mod tests {
         assert_eq!(art.read().machine["source"].kept, kept);
         assert!(art.candidate("source", 1).exists() && art.candidate("source", 2).exists());
         let rows = rows(&art, "source");
-        assert_eq!(rows["source-1"].0, "fail critic unreadable");
+        assert_eq!(rows["source-1"].0, "pass");
         assert!(landed(&remake(&art, &names, &painter, &judge)));
         assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
