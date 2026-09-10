@@ -25,6 +25,14 @@ Each primitive machine is itself built as a compound and dropped on an output pa
 
 Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included. Mouse and keyboard only.
 
+### Tick events and material response
+
+Each 400 ms simulation tick produces one ordered `TickEvents` value. Its typed events carry the arm or glyph and the atoms, bond, motion, position or stall reason involved in firing, writing a bond, consuming, spawning, grabbing, dropping, moving and stalling. Event order is simulation order, so equal starting state and input produce equal state and equal events. Replay and card playback retain this output while stepping; neither infers action by comparing states or keeps another action log.
+
+Every expressive layer is a pure consumer of the tick stream. A machine responds through three material layers in order: two to four procedurally rigged sprite parts with their normal maps; activation energy in the material shader, decaying from a warm glaze, brass flare or normal ripple; and sound on the 400 ms grid, where each machine kind is an instrument and a stall is a dropped beat. The machine manifest drives each response. Generic kiln sparks and steam are the default particle response, implemented underneath by `bevy_hanabi`, and a rig overrides that default when present. Particles alone are not the design because they float over the machine instead of making its material respond.
+
+The stages land in dependency order: the typed stream with replay and card playback consuming it; rigged sprites; material response and its pipeline-made emissive mask; sound; then manifest-declared default particles and rig overrides. The stream comes first because every later layer must read the same deterministic fact of what happened at tick t, and because replay already requires that fact to remain testable. No expressive layer belongs in the simulation.
+
 ## First playable
 
 One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by whatever transport the player builds from the same primitives. No readout. We might not ever need to provide an explicit goal. Graybox, circles and lines, until the art bible (art/BIBLE.md) replaced it.

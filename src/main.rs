@@ -314,6 +314,7 @@ struct World {
     pointer: Option<Vec2>,
     hover: Option<Item>,
     play: Option<Play>,
+    events: Vec<sim::TickEvents>,
     refused: Option<Refused>,
 }
 
@@ -333,6 +334,7 @@ impl World {
             pointer: None,
             hover: None,
             play: None,
+            events: Vec::new(),
             refused: None,
         }
     }
@@ -407,7 +409,7 @@ impl World {
         }
         self.ghost = None;
         self.prev = self.sim.clone();
-        self.sim.step();
+        self.events = vec![self.sim.step()];
 
         self.focus = self.focus.take().and_then(|f| f.survive(&self.sim));
     }
@@ -416,7 +418,9 @@ impl World {
         if n > 0 || self.ghost.is_some() {
             self.unpick_atoms();
         }
-        self.ghost = (n > 0).then(|| self.sim.replay(n));
+        let (ghost, events) = self.sim.replayed(n);
+        self.events = events;
+        self.ghost = (n > 0).then_some(ghost);
         self.prev = self.shown().clone();
     }
 
@@ -832,8 +836,12 @@ impl World {
             KeyG => {
                 if !self.running && self.sim.inventory.spend(Item::Step) {
                     self.unpick_atoms();
-                    self.prev = self.sim.replay(self.ghosts());
-                    self.ghost = Some(self.prev.replay(1));
+                    let (prev, mut events) = self.sim.replayed(self.ghosts());
+                    let mut ghost = prev.clone();
+                    events.push(ghost.step());
+                    self.prev = prev;
+                    self.ghost = Some(ghost);
+                    self.events = events;
                     self.since = 0.0;
                 }
                 return;
@@ -1617,36 +1625,49 @@ fn run_ticks(mut world: ResMut<World>, time: Res<Time>) {
 
 const HOLD: u64 = 3;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Play {
     machine: Machine,
     at: u64,
     since: f32,
+    frames: Vec<Sim>,
+    events: Vec<sim::TickEvents>,
 }
 
 impl Play {
     fn at(machine: Machine, at: u64) -> Play {
+        let fixture = fixture(machine);
+        let mut sim = fixture.sim;
+        let mut frames = vec![sim.clone()];
+        let mut events = Vec::new();
+        for _ in 0..fixture.ticks {
+            events.push(sim.step());
+            frames.push(sim.clone());
+        }
         Play {
             machine,
-            at: at.min(fixture(machine).ticks),
+            at: at.min(fixture.ticks),
             since: 0.0,
+            frames,
+            events,
         }
     }
 
     fn step(&mut self) {
-        let ticks = fixture(self.machine).ticks;
+        let ticks = self.events.len() as u64;
         self.at = (self.at + 1) % (ticks + HOLD + 1);
     }
 
     fn sims(&self) -> (Sim, Sim) {
-        let Fixture { sim, ticks, done } = fixture(self.machine);
+        let Fixture { done, .. } = fixture(self.machine);
+        let ticks = self.events.len() as u64;
         let shown = self.at.min(ticks);
-        let sim = sim.replay(shown);
+        let sim = self.frames[shown as usize].clone();
         debug_assert!(shown < ticks || done(&sim), "{:?}", self.machine);
         let prev = if self.at > ticks || shown == 0 {
             sim.clone()
         } else {
-            fixture(self.machine).sim.replay(shown - 1)
+            self.frames[shown as usize - 1].clone()
         };
         (prev, sim)
     }
@@ -2564,7 +2585,7 @@ fn draw(
             layers: CARD,
             shift: Vec2::ZERO,
         };
-        let sims = world.play.map(|play| (play, play.sims()));
+        let sims = world.play.as_ref().map(|play| (play, play.sims()));
         let play = sims.as_ref().map(|(play, (prev, sim))| {
             Frame::between(prev, sim, phase(play.since, world.period, world.motion))
         });
@@ -4795,10 +4816,12 @@ mod tests {
         let w = paused(0);
         let ghost0 = w.sim.clone();
         let w = paused(5);
+        let (_, expected_events) = w.sim.replayed(5);
         assert_eq!(w.ghosts(), 5);
         assert_eq!(w.sim, after_spending(&ghost0, Item::Step, 5));
         assert_eq!(*w.shown(), w.sim.replay(5));
         assert_eq!(w.prev, w.sim.replay(4));
+        assert_eq!(w.events, expected_events);
         assert_ne!(*w.shown(), ghost0);
         assert_eq!(w.since, 0.0);
     }
@@ -5628,12 +5651,26 @@ mod tests {
         }
         w.hover = Some(Machine::Arm.into());
         w.advance(0.0);
-        assert_eq!(w.play.unwrap().sims().1, fixture(Machine::Arm).sim);
+        assert_eq!(w.play.as_ref().unwrap().sims().1, fixture(Machine::Arm).sim);
         w.hover = None;
         w.advance(0.0);
         assert!(w.play.is_none());
         let past = Play::at(bonder, f.ticks + 99);
         assert_eq!((past.at, past.sims().1), (f.ticks, f.sim.replay(f.ticks)));
+    }
+
+    #[test]
+    fn the_card_playback_keeps_the_fixture_tick_stream_that_made_its_frames() {
+        let machine = Machine::Glyph(GlyphKind::Bonder);
+        let play = Play::at(machine, 0);
+        let (_, expected) = fixture(machine).sim.replayed(fixture(machine).ticks);
+        assert_eq!(play.events, expected);
+        assert_eq!(play.frames.len(), play.events.len() + 1);
+        assert!(play.events.iter().any(|tick| {
+            tick.events
+                .iter()
+                .any(|event| matches!(event, sim::TickEvent::Fired { glyph: 0 }))
+        }));
     }
 
     #[test]

@@ -105,6 +105,61 @@ pub enum Stall {
     Hand(usize),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TickEvents {
+    pub tick: u64,
+    pub events: Vec<TickEvent>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TickEvent {
+    Fired {
+        glyph: usize,
+    },
+    BondWritten {
+        glyph: usize,
+        a: usize,
+        b: usize,
+        kind: BondKind,
+    },
+    Consumed {
+        glyph: usize,
+        atoms: Vec<usize>,
+    },
+    Spawned {
+        glyph: usize,
+        atom: usize,
+        kind: AtomKind,
+        at: Hex,
+    },
+    Grabbed {
+        arm: usize,
+        atom: usize,
+    },
+    Dropped {
+        arm: usize,
+        atom: usize,
+    },
+    Rotated {
+        arm: usize,
+        spin: Spin,
+    },
+    Pivoted {
+        arm: usize,
+        spin: Spin,
+    },
+    Moved {
+        arm: usize,
+        from: Hex,
+        to: Hex,
+    },
+    Stalled {
+        arm: usize,
+        instruction: Instr,
+        reason: Stall,
+    },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AtomKind {
     Base,
@@ -668,20 +723,33 @@ impl Sim {
     }
 
     pub fn replay(&self, ticks: u64) -> Sim {
-        let mut sim = self.clone();
-        for _ in 0..ticks {
-            sim.step();
-        }
-        sim
+        self.replayed(ticks).0
     }
 
-    pub fn step(&mut self) {
+    pub fn replayed(&self, ticks: u64) -> (Sim, Vec<TickEvents>) {
+        let mut sim = self.clone();
+        let mut events = Vec::new();
+        for _ in 0..ticks {
+            events.push(sim.step());
+        }
+        (sim, events)
+    }
+
+    pub fn step(&mut self) -> TickEvents {
+        let mut events = Vec::new();
         for i in 0..self.glyphs.len() {
             let Some(g) = self.glyphs[i] else { continue };
             if g.kind == GlyphKind::Source && self.atom_at(g.at).is_none() {
-                self.spawn(Atom {
+                events.push(TickEvent::Fired { glyph: i });
+                let atom = self.spawn(Atom {
                     kind: AtomKind::Base,
                     pos: g.at,
+                });
+                events.push(TickEvent::Spawned {
+                    glyph: i,
+                    atom,
+                    kind: AtomKind::Base,
+                    at: g.at,
                 });
             }
         }
@@ -692,21 +760,24 @@ impl Sim {
             } else {
                 arm.tape[arm.pc % arm.tape.len()]
             };
-            if self.act(i, instr) {
+            if self.act(i, instr, &mut events) {
                 self.arms[i].pc = self.arms[i].pc.wrapping_add(1);
             }
         }
         for i in 0..self.glyphs.len() {
             let Some(g) = self.glyphs[i] else { continue };
             match g.kind {
-                GlyphKind::Output(tier) => self.craft(g.at, tier),
-                _ => self.fire(g),
+                GlyphKind::Output(tier) => self.craft(i, g.at, tier, &mut events),
+                GlyphKind::Source => {}
+                _ => self.fire(i, g, &mut events),
             }
         }
+        let tick = self.tick;
         self.tick += 1;
+        TickEvents { tick, events }
     }
 
-    fn craft(&mut self, centre: Hex, tier: Tier) {
+    fn craft(&mut self, glyph: usize, centre: Hex, tier: Tier, events: &mut Vec<TickEvent>) {
         let within = |atom: Atom| atom.pos.sub(centre).ring() <= tier.radius();
         let mut seen = Vec::new();
         for id in 0..self.atoms.len() {
@@ -729,6 +800,11 @@ impl Sim {
             if self.inventory.full(item) {
                 continue;
             }
+            events.push(TickEvent::Fired { glyph });
+            events.push(TickEvent::Consumed {
+                glyph,
+                atoms: compound.clone(),
+            });
             self.consume(&compound);
             self.inventory.add(item);
         }
@@ -795,7 +871,7 @@ impl Sim {
         Some(ids)
     }
 
-    fn fire(&mut self, g: Glyph) {
+    fn fire(&mut self, glyph: usize, g: Glyph, events: &mut Vec<TickEvent>) {
         let rule = g.kind.rule();
         let Some(ids) = self.matched(g) else {
             return;
@@ -811,12 +887,19 @@ impl Sim {
                 return;
             }
         }
+        events.push(TickEvent::Fired { glyph });
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
             match self.bond_between(a, b) {
                 Some(i) => self.bonds[i].kind = *kind,
                 None => self.bonds.push(Bond { a, b, kind: *kind }),
             }
+            events.push(TickEvent::BondWritten {
+                glyph,
+                a,
+                b,
+                kind: *kind,
+            });
         }
         let consumed: Vec<usize> = rule
             .slots
@@ -833,18 +916,58 @@ impl Sim {
                 .unwrap();
             self.atoms[ids[centre]].unwrap().kind
         });
+        if !consumed.is_empty() {
+            events.push(TickEvent::Consumed {
+                glyph,
+                atoms: consumed.clone(),
+            });
+        }
         self.consume(&consumed);
         if let Some(kind) = made {
             self.inventory.add(Item::Atom(kind));
         }
         if let GlyphKind::Converter(kind) = g.kind {
-            self.spawn(Atom { kind, pos: g.at });
+            let atom = self.spawn(Atom { kind, pos: g.at });
+            events.push(TickEvent::Spawned {
+                glyph,
+                atom,
+                kind,
+                at: g.at,
+            });
         }
     }
 
-    fn act(&mut self, i: usize, instr: Instr) -> bool {
+    fn act(&mut self, i: usize, instr: Instr, events: &mut Vec<TickEvent>) -> bool {
+        let from = self.arms[i].pivot;
+        let held = self.held(i);
         let stall = self.exec(i, instr).err();
         self.arms[i].stall = stall;
+        match stall {
+            Some(reason) => events.push(TickEvent::Stalled {
+                arm: i,
+                instruction: instr,
+                reason,
+            }),
+            None => match instr {
+                Instr::Grab => events.push(TickEvent::Grabbed {
+                    arm: i,
+                    atom: self.held(i).expect("a successful grab holds an atom"),
+                }),
+                Instr::Drop => {
+                    if let Some(atom) = held {
+                        events.push(TickEvent::Dropped { arm: i, atom });
+                    }
+                }
+                Instr::Rot(spin) => events.push(TickEvent::Rotated { arm: i, spin }),
+                Instr::Pivot(spin) => events.push(TickEvent::Pivoted { arm: i, spin }),
+                Instr::Move(_) => events.push(TickEvent::Moved {
+                    arm: i,
+                    from,
+                    to: self.arms[i].pivot,
+                }),
+                Instr::Wait => {}
+            },
+        }
         stall.is_none()
     }
 
@@ -2400,6 +2523,54 @@ mod tests {
             assert!((f.done)(&sim), "{machine:?}");
             assert_eq!(sim.tick, f.ticks, "{machine:?}");
         }
+    }
+
+    #[test]
+    fn tick_zero_emits_the_exact_source_and_stall_events_in_simulation_order() {
+        let mut sim = Sim::empty();
+        sim.glyphs
+            .push(Some(Glyph::new(GlyphKind::Source, Hex::new(2, 0), 0)));
+        sim.arms.push(Arm::new(ORIGIN, 0, vec![Instr::Grab]));
+        let tick = sim.step();
+        assert_eq!(
+            tick,
+            TickEvents {
+                tick: 0,
+                events: vec![
+                    TickEvent::Fired { glyph: 0 },
+                    TickEvent::Spawned {
+                        glyph: 0,
+                        atom: 0,
+                        kind: AtomKind::Base,
+                        at: Hex::new(2, 0),
+                    },
+                    TickEvent::Stalled {
+                        arm: 0,
+                        instruction: Instr::Grab,
+                        reason: Stall::Illegal,
+                    },
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn replay_returns_the_same_tick_events_and_state_as_stepping() {
+        let initial = fixture(Machine::Glyph(GlyphKind::Bonder)).sim;
+        let (replayed, events) = initial.replayed(9);
+        let mut stepped = initial;
+        let expected: Vec<TickEvents> = (0..9).map(|_| stepped.step()).collect();
+        assert_eq!(events, expected);
+        assert_eq!(replayed, stepped);
+        assert!(events.iter().any(|tick| tick.events.iter().any(|event| {
+            matches!(
+                event,
+                TickEvent::BondWritten {
+                    kind: BondKind::Single,
+                    ..
+                }
+            )
+        })));
     }
 
     #[test]
