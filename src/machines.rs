@@ -57,8 +57,7 @@ struct Thresholds {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Entry {
-    #[serde(flatten)]
-    direction: Direction,
+    direction: String,
     kept: Option<u32>,
     painted: Option<String>,
     relit: Option<String>,
@@ -69,64 +68,6 @@ struct Entry {
     rig_emitter: Option<crate::particles::Emitter>,
     #[serde(default)]
     parts: Vec<crate::rig::Part>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(try_from = "DirectionKeys", into = "DirectionKeys")]
-enum Direction {
-    Placeholder(String),
-    Given(String),
-}
-
-#[derive(Serialize, Deserialize, Default)]
-struct DirectionKeys {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    placeholder: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    given: Option<String>,
-}
-
-impl TryFrom<DirectionKeys> for Direction {
-    type Error = String;
-
-    fn try_from(d: DirectionKeys) -> Result<Direction, String> {
-        match (d.placeholder, d.given) {
-            (Some(text), None) => Ok(Direction::Placeholder(text)),
-            (None, Some(text)) => Ok(Direction::Given(text)),
-            (Some(_), Some(_)) => Err("placeholder and given direction both set; keep one".into()),
-            (None, None) => Err("neither placeholder nor given direction".into()),
-        }
-    }
-}
-
-impl From<Direction> for DirectionKeys {
-    fn from(d: Direction) -> DirectionKeys {
-        match d {
-            Direction::Placeholder(text) => DirectionKeys {
-                placeholder: Some(text),
-                ..DirectionKeys::default()
-            },
-            Direction::Given(text) => DirectionKeys {
-                given: Some(text),
-                ..DirectionKeys::default()
-            },
-        }
-    }
-}
-
-impl Direction {
-    fn kind(&self) -> &'static str {
-        match self {
-            Direction::Placeholder(_) => "placeholder",
-            Direction::Given(_) => "given",
-        }
-    }
-
-    fn text(&self) -> &str {
-        match self {
-            Direction::Placeholder(text) | Direction::Given(text) => text,
-        }
-    }
 }
 
 struct Art {
@@ -1079,10 +1020,10 @@ fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, recipe: Option<&F
     ])
 }
 
-fn prompt(style: &Style, item: Machine, direction: &Direction) -> String {
+fn prompt(style: &Style, item: Machine, direction: &str) -> String {
     match item.recipe() {
-        Some(_) => format!("{} {} {}", style.shared, style.recipe, direction.text()),
-        None => format!("{} {}", style.shared, direction.text()),
+        Some(_) => format!("{} {} {}", style.shared, style.recipe, direction),
+        None => format!("{} {}", style.shared, direction),
     }
 }
 
@@ -1777,20 +1718,16 @@ fn remake(
     results
 }
 
-fn plan(manifest: &Manifest) -> String {
+fn plan() -> String {
     let mut out = String::new();
-    let mut placeholders = 0;
     for item in Machine::ALL {
         let name = name(item);
-        let entry = &manifest.machine[name];
-        placeholders += usize::from(matches!(entry.direction, Direction::Placeholder(_)));
         let recipe = match item.recipe() {
             Some(_) => "recipe",
             None => "no recipe",
         };
-        out += &format!("{name}\t{}\t{recipe}\n", entry.direction.kind());
+        out += &format!("{name}\t{recipe}\n");
     }
-    out += &format!("{placeholders} placeholder\n");
     out
 }
 
@@ -1809,7 +1746,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
     const USAGE: &str = "usage: ziral --plan | ziral --gen NAME... | ziral --gen --all";
     let art = Art::shipped();
     if args.get(1).map(String::as_str) == Some("--plan") {
-        print!("{}", plan(&art.read()));
+        print!("{}", plan());
         return Some(0);
     }
     if args.get(1).map(String::as_str) != Some("--gen") {
@@ -2227,7 +2164,7 @@ mod tests {
                     (
                         name.to_string(),
                         Entry {
-                            direction: Direction::Placeholder(format!("a {name}")),
+                            direction: format!("a {name}"),
                             kept: None,
                             painted: None,
                             relit: None,
@@ -2345,8 +2282,7 @@ mod tests {
         art.write(&m);
         assert_eq!(run(&calls), (false, 0));
         let mut m = art.read();
-        m.machine.get_mut("source").expect("source").direction =
-            Direction::Placeholder("another source".into());
+        m.machine.get_mut("source").expect("source").direction = "another source".into();
         art.write(&m);
         assert_eq!(run(&calls), (true, 2));
         let mut m = art.read();
@@ -2356,94 +2292,6 @@ mod tests {
         assert_eq!(art.read().machine["source"].kept, Some(3 - kept));
         assert_ne!(read(&dir.join("albedo.png")), albedo);
         assert_eq!(run(&calls), (false, 0));
-    }
-
-    #[test]
-    fn given_direction_survives_the_manifest_byte_identical_under_the_shared_text() {
-        let art = studio("given", &["right", "top"], &["source"]);
-        let text =
-            "  \"Quoted\", back\\slash, tab\t, a line\nbreak, an em—dash, and trailing spaces   ";
-        let mut m = art.read();
-        m.machine.get_mut("source").expect("source").direction = Direction::Given(text.into());
-        art.write(&m);
-        let written = std::fs::read_to_string(art.manifest()).expect("the manifest");
-        assert!(written.contains("\ngiven = "), "{written}");
-        assert!(!written.contains("placeholder"), "{written}");
-        let read = art.read();
-        let direction = &read.machine["source"].direction;
-        assert_eq!(*direction, Direction::Given(text.into()));
-        assert_eq!(
-            prompt(
-                &read.style,
-                Machine::Glyph(crate::sim::GlyphKind::Source),
-                direction
-            ),
-            format!("{} {text}", read.style.shared)
-        );
-    }
-
-    #[test]
-    fn an_entry_with_both_or_neither_direction_is_refused() {
-        let shipped = std::fs::read_to_string(Art::shipped().manifest()).expect("the manifest");
-        let source = shipped.find("[machine.source]").expect("a source entry");
-        let line = shipped[source..]
-            .find("\nplaceholder = ")
-            .map(|i| source + i + 1)
-            .expect("the source's placeholder line");
-        let end = line + shipped[line..].find('\n').expect("a line end");
-        let both = format!(
-            "{}\ngiven = \"a source\"{}",
-            &shipped[..end],
-            &shipped[end..]
-        );
-        let neither = format!("{}{}", &shipped[..line], &shipped[end + 1..]);
-        assert!(toml::from_str::<Manifest>(&shipped).is_ok());
-        let err = |text: &str| {
-            toml::from_str::<Manifest>(text)
-                .err()
-                .expect("refused")
-                .to_string()
-        };
-        assert!(
-            err(&both).contains("placeholder and given"),
-            "{}",
-            err(&both)
-        );
-        assert!(err(&neither).contains("neither"), "{}", err(&neither));
-    }
-
-    #[test]
-    fn the_plan_names_every_placeholder_machine_and_counts_them() {
-        let mut m = Art::shipped().read();
-        let names: Vec<&str> = Machine::ALL.into_iter().map(name).collect();
-        let lines = |m: &Manifest| plan(m).lines().map(str::to_string).collect::<Vec<_>>();
-        let all = lines(&m);
-        assert_eq!(all.len(), names.len() + 1);
-        for (line, name) in all.iter().zip(&names) {
-            assert!(
-                line.starts_with(&format!("{name}\tplaceholder\t")),
-                "{line}"
-            );
-        }
-        assert_eq!(all.last(), Some(&format!("{} placeholder", names.len())));
-        m.machine.get_mut("arm").expect("arm").direction = Direction::Given("an arm".into());
-        let one_given = lines(&m);
-        assert!(
-            one_given.contains(&"arm\tgiven\trecipe".to_string()),
-            "{one_given:?}"
-        );
-        assert!(one_given.contains(&"source\tplaceholder\tno recipe".to_string()));
-        assert_eq!(
-            one_given
-                .iter()
-                .filter(|l| l.contains("\tplaceholder\t"))
-                .count(),
-            names.len() - 1
-        );
-        assert_eq!(
-            one_given.last(),
-            Some(&format!("{} placeholder", names.len() - 1))
-        );
     }
 
     #[test]
@@ -2815,10 +2663,9 @@ mod tests {
     #[test]
     fn the_best_candidates_issues_revise_then_the_last_round_starts_again() {
         let art = studio("revise", &["right", "top", "left", "bottom"], &["source"]);
-        let given = "  \"Given\", with a tab\t, a line\nbreak and trailing spaces   ";
+        let direction = "  art direction with a tab\t, a line\nbreak and trailing spaces   ";
         let mut m = art.read();
-        m.machine.get_mut("source").expect("source").direction =
-            Direction::Given(given.to_string());
+        m.machine.get_mut("source").expect("source").direction = direction.to_string();
         art.write(&m);
         let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
         let painter = |job: &Paint| {
@@ -2844,7 +2691,7 @@ mod tests {
         let results = remake(&art, &names, &painter, &critic);
         assert!(landed(&results), "{results:?}");
         let style = art.read().style;
-        let base = format!("{} {given}", style.shared);
+        let base = format!("{} {direction}", style.shared);
         let prompts = prompts.lock().unwrap();
         assert_eq!(prompts.len(), 6, "{prompts:?}");
         assert_eq!(&prompts[..2], &[base.clone(), base.clone()]);
@@ -2857,10 +2704,7 @@ mod tests {
         );
         assert_eq!(&prompts[4..], &[reset.clone(), reset]);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(
-            art.read().machine["source"].direction,
-            Direction::Given(given.to_string())
-        );
+        assert_eq!(art.read().machine["source"].direction, direction);
         assert!(art.read().machine["source"].kept.is_some());
     }
 
