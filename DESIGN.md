@@ -701,3 +701,13 @@ Three alternatives are disposed. Refunding deleted atoms makes deletion a second
 Open question. Should the notation carry machines and tapes too, making the system clipboard the one buffer, or should compound text and the machine buffer remain separate?
 
 Tests: the complete wrap reifies either centre kind, while one missing bond or one amber outer atom leaves it untouched; an affordable double-bonded pair spends its two atoms and one sacrificial base atom and lands with its bond, while one base atom short changes nothing and shows the refusal; a paste onto an atom and a paste beyond ghost zero are refused. The recipe test holds the reification row distinct under every turn from every other recipe and inside its tier-two bound.
+
+### Inventory pictures sit on clay
+
+Directive (verbatim): "Inventory items are difficult to see. They are desiged for a light tile background but displayed on dark brown."
+
+The rule. Every machine and atom picture in an inventory row sits on a circular clay field the same size as its picture. The field is the world tile's existing clay material, behind the existing transparent picture, while the row remains its dark brass plate. `picture` draws the one treatment in both the palette and a refusal line. Step beads and instruction tokens keep their existing fields because they were made for the strip, not the world tile.
+
+The dumber choice is the field: changing every row to clay would erase the dark strip shared with the tally and turn the whole inventory into board; repainting each world picture for brass would fork it from the same picture on the board. One field at the one picture draw site supplies the surface the art already expects without another asset or rendering path.
+
+Test: every machine and atom picture directly under a palette row has one clay circular field, while every instruction picture has no field. Mutation-tested both ways: removing the clay fill and removing its circular edge each fail the test.

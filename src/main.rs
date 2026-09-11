@@ -1276,35 +1276,54 @@ fn text(s: String) -> impl Bundle {
 }
 
 fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
+    let (square, field) = picture_square(item);
+    match item {
+        Item::Machine(machine) => {
+            let skin = look::machine(machine).skin;
+            entry.spawn((ImageNode::new(kiln.image(skin)), square, field));
+        }
+        Item::Atom(kind) => {
+            let look = look::atom(kind);
+            entry.spawn((ImageNode::new(kiln.image(look.skin)), square, field));
+        }
+        Item::Step => {
+            entry
+                .spawn((square, field))
+                .with_child(mark(0, STEP_PX, true));
+        }
+        Item::Token(instr) => {
+            let skin = key_of(instr).symbol;
+            entry.spawn((ImageNode::new(kiln.image(skin)), square, field));
+        }
+    }
+}
+
+fn picture_square(item: Item) -> (Node, BackgroundColor) {
     let side = match item {
         Item::Machine(_) => PALETTE_PX,
         Item::Atom(_) => PALETTE_PX,
         Item::Step | Item::Token(_) => SYMBOL_PX,
     };
-    let square = Node {
-        width: Val::Px(side),
-        height: Val::Px(side),
-        justify_content: JustifyContent::Center,
-        align_items: AlignItems::Center,
-        ..default()
-    };
-    match item {
-        Item::Machine(machine) => {
-            let skin = look::machine(machine).skin;
-            entry.spawn((ImageNode::new(kiln.image(skin)), square));
-        }
-        Item::Atom(kind) => {
-            let look = look::atom(kind);
-            entry.spawn((ImageNode::new(kiln.image(look.skin)), square));
-        }
-        Item::Step => {
-            entry.spawn(square).with_child(mark(0, STEP_PX, true));
-        }
-        Item::Token(instr) => {
-            let skin = key_of(instr).symbol;
-            entry.spawn((ImageNode::new(kiln.image(skin)), square));
-        }
-    }
+    let world = matches!(item, Item::Machine(_) | Item::Atom(_));
+    (
+        Node {
+            width: Val::Px(side),
+            height: Val::Px(side),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            border_radius: if world {
+                BorderRadius::MAX
+            } else {
+                BorderRadius::default()
+            },
+            ..default()
+        },
+        BackgroundColor(if world {
+            Glaze::Clay.color()
+        } else {
+            Color::NONE
+        }),
+    )
 }
 
 #[derive(Component)]
@@ -5771,6 +5790,20 @@ mod tests {
             .collect();
         assert_eq!(listed.len(), all.len());
         assert!(all.iter().all(|item| listed.contains(item)));
+    }
+
+    #[test]
+    fn world_pictures_in_inventory_rows_have_one_circular_clay_field() {
+        for item in palette() {
+            let (node, field) = picture_square(item);
+            if matches!(item, Item::Machine(_) | Item::Atom(_)) {
+                assert_eq!(field.0, Glaze::Clay.color());
+                assert_eq!(node.border_radius, BorderRadius::MAX);
+            } else {
+                assert_eq!(field.0, Color::NONE);
+                assert_eq!(node.border_radius, BorderRadius::default());
+            }
+        }
     }
 
     fn spawn(w: &mut World, q: i32, r: i32) -> usize {
