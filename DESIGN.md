@@ -265,13 +265,13 @@ Q2: A grab over nothing stalls until an atom arrives, then closes on it, so the 
 
 ### Toy 1 shows motion between ticks
 
-The sim is still one discrete tick after another; only the drawing changed. Between ticks the toy draws the way from the last pose to the next: an arm's rotate sweeps its 60° the way the instruction turns, the atoms in its hand ride the sweep, a grab shrinks the hand shut and a drop lets it open wide, and what a glyph made or ate shows at the end of the sweep, so nothing changes hands mid-arc. One ease drives the sweep and the grip: the arm creeps a little as if pushing against a stop, the stop lets go, and the arm follows one monotonic eased run to rest. The reference sketch is art/reference/arm-swing-curve.jpg; art/reference/arm-swing-curve-fit.png preserves the superseded oscillating fit.
+The sim is still one discrete tick after another; only the drawing changed. Between ticks the toy draws the way from the last pose to the next: an arm's rotate sweeps its 60° the way the instruction turns, the atoms in its hand ride the sweep, a grab shrinks the hand shut and a drop lets it open wide, and what a glyph made or ate shows at the end of the sweep, so nothing changes hands mid-arc. One ease drives the sweep and the grip: the arm creeps a little as if pushing against a stop, the stop lets go, the arm runs to its target, overshoots, and rings out through the final frame. The reference sketch is art/reference/arm-swing-curve.jpg; art/reference/arm-swing-curve-fit.png lays the curve over it.
 
 One knob: the tick period. An instruction's duration is its animation, as in Opus Magnum. Default 400 ms; the old 167 ms was too fast to read a sweep. Videos at 0 (hard cut), 120, 250, 400, 650 and 1000 ms, and 400 ms moving for the first 60% then holding, are for choosing it.
 
-Directive (verbatim): "The arm rotate animation is buggy."
+Directive (verbatim): "From the gif, it looks like it does fix the issue, but it also removes my cute custom animation curve. I liked that curve."
 
-The frame owns the arm's one rotation about its simulation pivot, and every painted part follows rigidly. The cell-specific creep leads into one monotonic ease that reaches rest with zero terminal velocity. This is the dumbest design satisfying the directive because it deletes the rig's second turn and the swing's unsettled tail while keeping the existing pivot, timing, and art. Cancelling either defect with another transform was rejected because two errors balancing each other is still two rotation paths.
+The frame still owns the arm's only rotation about its simulation pivot, with no turn on a painted part. Its former cell-specific creep, release, run, decay, half-bounces, and spread return unchanged; the final phase is evaluated as the end of that curve, where its whole half-bounces meet exact rest, instead of replacing the curve value at the boundary. This is the dumbest design satisfying the directive because it restores the one removed implementation and changes only how its endpoint is reached. A second part turn or a parallel endpoint animation was rejected because either would restore the double transform or add another path to the same pose.
 
 ### Toy 1 wears the Fired Workshop look
 
