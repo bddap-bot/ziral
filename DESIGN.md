@@ -106,6 +106,19 @@ One card camera draws every inventory item's card into one fixed region of one o
 
 ## Parking lot
 
+### Machine coverage proposals
+
+Directive (verbatim): "I'd like to see some proposals for an art system where the machines cover more of the tiles. Large glyphs would
+not show much tile beneath."
+
+The first proposal removes the empty capture margin and paints broad rounded housings tight to every seat and connection. It is the dumbest design satisfying the directive because it changes only how much of the existing footprint the one sprite paints. Its trade-off is strong machine presence while tile corners remain visible, at the cost of crowding the grout and making adjacent machines feel nearly joined.
+
+The second proposal masks a glazed body to every occupied hex. Its trade-off is immediate, exact footprint legibility and consistent coverage at every machine size, at the cost of looking like a second tile laid over the board and making different silhouettes more alike.
+
+The third proposal broadens the body around the seats and connections and bounds it with a brass rim. Its trade-off is preserved tile corners, readable seats and a clearer object edge, at the cost of less coverage and more perimeter detail on large footprints.
+
+These remain three alternatives rather than a hidden preference. Repainting all machines before choosing was rejected because it would spend the full pipeline on a taste decision that the shipped-size comparison can make first.
+
 - Creating a bond requires an atom: the atom becomes the bond between two other atoms.
 - A jam element: a bane in the early game, until the player learns they need it and builds machines to manufacture it on purpose.
 - Metals become transferable over long distances via a reaction resembling electroplating. Make it extra complicated, perhaps consuming a consumable on the receiving end.
