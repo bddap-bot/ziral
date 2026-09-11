@@ -48,6 +48,8 @@ const PALETTE_WIDTH: f32 = PALETTE_PX + SYMBOL_PX + 2.0 * (TALLY_PX + 24.0) + 8.
 const CARD_SCALE: f32 = 1.0;
 const CARD_PAD: f32 = 12.0;
 const CARD: RenderLayers = RenderLayers::layer(1);
+const CARD_SURFACE: UVec2 = UVec2::new(4096, 4096);
+const CARD_SLOT: UVec2 = UVec2::new(1024, 512);
 
 fn atom_index(kind: sim::AtomKind) -> usize {
     sim::AtomKind::ALL
@@ -217,6 +219,7 @@ enum Focus {
     Pick(Vec<Id>),
     Tape { arm: usize, cursor: usize },
     Hold { set: Box<Sim>, back: Back },
+    Card(u64),
 }
 
 impl Focus {
@@ -224,7 +227,7 @@ impl Focus {
         match self {
             Focus::Pick(ids) => ids.contains(&id),
             Focus::Tape { arm, .. } => id == Id::Arm(*arm),
-            Focus::Hold { .. } => false,
+            Focus::Hold { .. } | Focus::Card(_) => false,
         }
     }
 
@@ -232,7 +235,7 @@ impl Focus {
         match self {
             Focus::Pick(ids) => ids.clone(),
             Focus::Tape { arm, .. } => vec![Id::Arm(*arm)],
-            Focus::Hold { .. } => Vec::new(),
+            Focus::Hold { .. } | Focus::Card(_) => Vec::new(),
         }
     }
 
@@ -259,6 +262,21 @@ enum Press {
 struct Refused {
     at: Hex,
     short: Vec<Short>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Pinned {
+    id: u64,
+    item: Item,
+    at: Vec2,
+    scale: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CardDrag {
+    Move { id: u64, grab: Vec2 },
+    New { id: u64, grab: Vec2 },
+    Resize { id: u64, from: Vec2, scale: f32 },
 }
 
 #[derive(Resource)]
@@ -302,6 +320,10 @@ struct World {
     pointer: Option<Vec2>,
     hover: Option<Item>,
     play: Option<Play>,
+    pinned: Vec<Pinned>,
+    pinned_play: Vec<Play>,
+    next_card: u64,
+    card_drag: Option<CardDrag>,
     events: Vec<sim::TickEvents>,
     score: Option<sim::TickEvents>,
     refused: Option<Refused>,
@@ -323,6 +345,10 @@ impl World {
             pointer: None,
             hover: None,
             play: None,
+            pinned: Vec::new(),
+            pinned_play: Vec::new(),
+            next_card: 0,
+            card_drag: None,
             events: Vec::new(),
             score: None,
             refused: None,
@@ -335,19 +361,112 @@ impl World {
             self.since = 0.0;
             self.step();
         }
-        let Some(Item::Machine(machine)) = self.hover else {
+        if let Some(Item::Machine(machine)) = self.hover {
+            let play = match &mut self.play {
+                Some(play) if play.machine == machine => play,
+                _ => self.play.insert(Play::at(machine, 0)),
+            };
+            play.advance(dt, self.period);
+        } else {
             self.play = None;
+        }
+        for play in &mut self.pinned_play {
+            play.advance(dt, self.period);
+        }
+    }
+
+    fn pin(&mut self, item: Item, at: Vec2) -> u64 {
+        let id = self.next_card;
+        self.next_card += 1;
+        if let Item::Machine(machine) = item
+            && self.pinned_play.iter().all(|play| play.machine != machine)
+        {
+            self.pinned_play.push(Play::at(machine, 0));
+        }
+        self.pinned.push(Pinned {
+            id,
+            item,
+            at,
+            scale: 1.0,
+        });
+        self.focus = Some(Focus::Card(id));
+        id
+    }
+
+    fn begin_pin(&mut self, item: Item, pointer: Vec2) {
+        if self.holding() || self.down.is_some() {
+            return;
+        }
+        let grab = card_size(item) / 2.0;
+        let id = self.pin(item, pointer - grab);
+        self.card_drag = Some(CardDrag::New { id, grab });
+    }
+
+    fn card_press(&mut self, id: u64, resize: bool, pointer: Vec2) {
+        if self.holding() || self.down.is_some() {
+            return;
+        }
+        let Some(card) = self.pinned.iter().find(|card| card.id == id) else {
             return;
         };
-        let play = match &mut self.play {
-            Some(play) if play.machine == machine => play,
-            _ => self.play.insert(Play::at(machine, 0)),
+        self.focus = Some(Focus::Card(id));
+        self.card_drag = Some(if resize {
+            CardDrag::Resize {
+                id,
+                from: pointer,
+                scale: card.scale,
+            }
+        } else {
+            CardDrag::Move {
+                id,
+                grab: pointer - card.at,
+            }
+        });
+    }
+
+    fn card_drag(&mut self, pointer: Vec2, window: Vec2) {
+        let Some(drag) = self.card_drag else { return };
+        let id = match drag {
+            CardDrag::Move { id, .. } | CardDrag::New { id, .. } | CardDrag::Resize { id, .. } => {
+                id
+            }
         };
-        play.since = (play.since + dt).min(self.period);
-        if play.since >= self.period {
-            play.since = 0.0;
-            play.step();
+        let Some(card) = self.pinned.iter_mut().find(|card| card.id == id) else {
+            self.card_drag = None;
+            return;
+        };
+        let base = card_size(card.item);
+        match drag {
+            CardDrag::Move { grab, .. } | CardDrag::New { grab, .. } => {
+                card.at = (pointer - grab)
+                    .clamp(Vec2::ZERO, (window - base * card.scale).max(Vec2::ZERO));
+            }
+            CardDrag::Resize { from, scale, .. } => {
+                let wanted = scale + (pointer - from).dot(base) / base.length_squared();
+                let room = ((window - card.at) / base).min_element().max(0.05);
+                card.scale = wanted.clamp(0.05, room);
+            }
         }
+    }
+
+    fn fit_cards(&mut self, window: Vec2) {
+        for card in &mut self.pinned {
+            let base = card_size(card.item);
+            card.scale = card.scale.min((window / base).min_element().max(0.05));
+            let size = base * card.scale;
+            card.at = card.at.clamp(Vec2::ZERO, (window - size).max(Vec2::ZERO));
+        }
+    }
+
+    fn unpin(&mut self, id: u64) {
+        self.pinned.retain(|card| card.id != id);
+        self.pinned_play.retain(|play| {
+            self.pinned
+                .iter()
+                .any(|card| card.item == Item::Machine(play.machine))
+        });
+        self.card_drag = None;
+        self.focus = None;
     }
 
     fn lift_inventory(&mut self, item: Item) {
@@ -955,6 +1074,11 @@ impl World {
                     self.resim(self.ghosts());
                 }
             }
+            Some(Focus::Card(id)) => match key {
+                Escape => self.focus = None,
+                KeyZ => self.unpin(id),
+                _ => {}
+            },
             None => {
                 if key == KeyV {
                     self.paste();
@@ -1155,8 +1279,22 @@ fn app(world: World) -> App {
 #[derive(Component)]
 struct CardCamera;
 
-fn card_camera(target: RenderTarget) -> impl Bundle {
-    (CardCamera, card_view(target, CARD_SCALE, false))
+#[derive(Resource)]
+struct CardSurface(Handle<Image>);
+
+fn spawn_card_camera(commands: &mut Commands, images: &mut Assets<Image>) -> Handle<Image> {
+    let image = images.add(Image::new_target_texture(
+        CARD_SURFACE.x,
+        CARD_SURFACE.y,
+        TextureFormat::Rgba8UnormSrgb,
+        None,
+    ));
+    commands.spawn((
+        CardCamera,
+        card_view(RenderTarget::Image(image.clone().into()), CARD_SCALE, true),
+    ));
+    commands.insert_resource(CardSurface(image.clone()));
+    image
 }
 
 fn card_view(target: RenderTarget, scale: f32, active: bool) -> impl Bundle {
@@ -1167,7 +1305,7 @@ fn card_view(target: RenderTarget, scale: f32, active: bool) -> impl Bundle {
         Camera {
             order: 1,
             is_active: active,
-            clear_color: ClearColorConfig::Custom(brass(0.65)),
+            clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         },
         target,
@@ -1227,7 +1365,7 @@ fn play_sound(
     sound::play(&mut commands, &bank, &sound::score(&tick), view.sound());
 }
 
-fn spawn_camera(mut commands: Commands) {
+fn spawn_camera(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let mut projection = OrthographicProjection::default_2d();
     projection.scale = MICRO_SCALE;
     commands.spawn((
@@ -1236,7 +1374,7 @@ fn spawn_camera(mut commands: Commands) {
         Projection::Orthographic(projection),
         Transform::from_translation(px(FOCUS).extend(0.0)),
     ));
-    commands.spawn(card_camera(RenderTarget::default()));
+    spawn_card_camera(&mut commands, &mut images);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1559,31 +1697,175 @@ fn card_size(item: Item) -> Vec2 {
     layout(item).size
 }
 
+#[cfg(test)]
+fn card_slot_count() -> usize {
+    (CARD_SURFACE.x / CARD_SLOT.x * (CARD_SURFACE.y / CARD_SLOT.y)) as usize
+}
+
+fn card_slot(item: Item) -> usize {
+    palette().position(|entry| entry == item).unwrap() + 1
+}
+
+fn card_slot_at(slot: usize) -> Vec2 {
+    let columns = (CARD_SURFACE.x / CARD_SLOT.x) as usize;
+    let column = slot % columns;
+    let row = slot / columns;
+    Vec2::new(
+        -(CARD_SURFACE.x as f32) / 2.0 + (column as f32 + 0.5) * CARD_SLOT.x as f32,
+        CARD_SURFACE.y as f32 / 2.0 - (row as f32 + 0.5) * CARD_SLOT.y as f32,
+    )
+}
+
+fn card_source(slot: usize, item: Item) -> Rect {
+    let columns = (CARD_SURFACE.x / CARD_SLOT.x) as usize;
+    let origin = Vec2::new(
+        (slot % columns) as f32 * CARD_SLOT.x as f32,
+        (slot / columns) as f32 * CARD_SLOT.y as f32,
+    );
+    let size = card_size(item);
+    let min = origin + (CARD_SLOT.as_vec2() - size) / 2.0;
+    Rect::from_corners(min, min + size)
+}
+
+#[derive(Component)]
+struct HoverCard;
+
+#[derive(Clone, Copy, Component)]
+struct PinnedCard(u64);
+
+#[derive(Clone, Copy, Component)]
+struct CardCorner(u64);
+
+type HoverCards<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static mut ImageNode,
+        &'static mut Node,
+        &'static mut Visibility,
+    ),
+    (With<HoverCard>, Without<PinnedCard>),
+>;
+
+type PinnedCards<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static PinnedCard,
+        &'static mut ImageNode,
+        &'static mut Node,
+        &'static mut BorderColor,
+        &'static mut GlobalZIndex,
+    ),
+    (With<PinnedCard>, Without<HoverCard>),
+>;
+
 fn card(
-    world: Res<World>,
+    mut commands: Commands,
+    mut world: ResMut<World>,
     window: Single<&Window, With<PrimaryWindow>>,
     column: Single<(&ComputedNode, &UiGlobalTransform), With<Palette>>,
-    camera: Single<&mut Camera, With<CardCamera>>,
+    surface: Option<Res<CardSurface>>,
+    mut hover: HoverCards,
+    mut pinned: PinnedCards,
 ) {
-    let mut camera = camera.into_inner();
-    let Some(item) = world.hover else {
-        camera.is_active = false;
+    let Some(surface) = surface else { return };
+    world.fit_cards(Vec2::new(window.width(), window.height()));
+    if hover.is_empty() {
+        commands.spawn((
+            HoverCard,
+            ImageNode::new(surface.0.clone()).with_mode(NodeImageMode::Stretch),
+            Node {
+                position_type: PositionType::Absolute,
+                ..default()
+            },
+            Visibility::Hidden,
+            GlobalZIndex(1),
+        ));
         return;
-    };
-    let (node, transform) = column.into_inner();
-    let scale = window.scale_factor();
-    let size = card_size(item) * scale / CARD_SCALE;
-    let top_left = transform.translation - node.size() / 2.0;
-    let target = window.physical_size().as_vec2();
-    let size = size.min(target);
-    let at = Vec2::new(top_left.x, top_left.y - CARD_PAD * scale - size.y)
-        .clamp(Vec2::ZERO, target - size);
-    camera.viewport = Some(bevy::camera::Viewport {
-        physical_position: at.as_uvec2(),
-        physical_size: size.as_uvec2(),
-        ..default()
-    });
-    camera.is_active = true;
+    }
+    let (_, mut image, mut node, mut visibility) = hover.single_mut().unwrap();
+    if let Some(item) = world.hover {
+        let (column, transform) = column.into_inner();
+        let size = card_size(item) / CARD_SCALE;
+        let top_left = (transform.translation - column.size() / 2.0) / window.scale_factor();
+        let target = Vec2::new(window.width(), window.height());
+        let at = Vec2::new(top_left.x, top_left.y - CARD_PAD - size.y)
+            .clamp(Vec2::ZERO, (target - size).max(Vec2::ZERO));
+        image.rect = Some(card_source(0, item));
+        node.left = Val::Px(at.x);
+        node.top = Val::Px(at.y);
+        node.width = Val::Px(size.x);
+        node.height = Val::Px(size.y);
+        *visibility = Visibility::Inherited;
+    } else {
+        *visibility = Visibility::Hidden;
+    }
+
+    for (entity, shown, _, _, _, _) in &mut pinned {
+        if world.pinned.iter().all(|card| card.id != shown.0) {
+            commands.entity(entity).despawn();
+        }
+    }
+    for card in &world.pinned {
+        if pinned
+            .iter()
+            .all(|(_, shown, _, _, _, _)| shown.0 != card.id)
+        {
+            commands
+                .spawn((
+                    Button,
+                    PinnedCard(card.id),
+                    ImageNode {
+                        visual_box: VisualBox::BorderBox,
+                        ..ImageNode::new(surface.0.clone())
+                            .with_rect(card_source(card_slot(card.item), card.item))
+                            .with_mode(NodeImageMode::Stretch)
+                    },
+                    Node {
+                        position_type: PositionType::Absolute,
+                        border: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    BorderColor::all(brass(0.5)),
+                    GlobalZIndex(2),
+                ))
+                .with_child((
+                    Button,
+                    CardCorner(card.id),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: Val::Px(3.0),
+                        bottom: Val::Px(3.0),
+                        width: Val::Px(16.0),
+                        height: Val::Px(16.0),
+                        border: UiRect {
+                            right: Val::Px(3.0),
+                            bottom: Val::Px(3.0),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    BorderColor::all(IVORY),
+                ));
+        }
+    }
+    for (_, shown, mut image, mut node, mut border, mut z) in &mut pinned {
+        let Some(card) = world.pinned.iter().find(|card| card.id == shown.0) else {
+            continue;
+        };
+        let size = card_size(card.item) * card.scale;
+        image.rect = Some(card_source(card_slot(card.item), card.item));
+        node.left = Val::Px(card.at.x);
+        node.top = Val::Px(card.at.y);
+        node.width = Val::Px(size.x);
+        node.height = Val::Px(size.y);
+        let focused = world.focus == Some(Focus::Card(card.id));
+        *border = BorderColor::all(if focused { IVORY } else { brass(0.5) });
+        z.0 = if focused { 3 } else { 2 };
+    }
 }
 
 fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
@@ -1811,6 +2093,14 @@ impl Play {
         self.at = (self.at + 1) % (ticks + HOLD + 1);
     }
 
+    fn advance(&mut self, dt: f32, period: f32) {
+        self.since = (self.since + dt).min(period);
+        if self.since >= period {
+            self.since = 0.0;
+            self.step();
+        }
+    }
+
     fn sims(&self) -> (Sim, Sim) {
         let Fixture { done, .. } = fixture(self.machine);
         let ticks = self.events.len() as u64;
@@ -1826,14 +2116,21 @@ impl Play {
     }
 }
 
+type ViewInput<'w> = (
+    Res<'w, ButtonInput<MouseButton>>,
+    Res<'w, AccumulatedMouseScroll>,
+    Res<'w, AccumulatedMouseMotion>,
+);
+
 fn view(
-    buttons: Res<ButtonInput<MouseButton>>,
-    scroll: Res<AccumulatedMouseScroll>,
-    motion: Res<AccumulatedMouseMotion>,
+    world: Res<World>,
+    input: ViewInput,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>,
     palette: Query<&Interaction, With<PaletteRow>>,
+    mut right_pan: Local<bool>,
 ) {
+    let (buttons, scroll, motion) = input;
     let (mut transform, mut projection) = camera.into_inner();
     let Some(mut viewport) = Viewport::of(&window, &transform, &projection) else {
         return;
@@ -1854,11 +2151,54 @@ fn view(
         viewport.scale = ortho.scale;
         transform.translation += (before - viewport.world(c)).extend(0.0);
     }
-    if buttons.pressed(MouseButton::Middle) || buttons.pressed(MouseButton::Right) {
+    if buttons.just_pressed(MouseButton::Right) {
+        *right_pan = world.card_drag.is_none()
+            && palette
+                .iter()
+                .all(|interaction| *interaction == Interaction::None);
+    }
+    if buttons.just_released(MouseButton::Right) {
+        *right_pan = false;
+    }
+    if buttons.pressed(MouseButton::Middle) || buttons.pressed(MouseButton::Right) && *right_pan {
         let pan = Vec2::new(-motion.delta.x, motion.delta.y);
         transform.translation += (pan * ortho.scale).extend(0.0);
     }
 }
+
+type EditUi<'w, 's> = (
+    Query<
+        'w,
+        's,
+        (
+            Option<&'static PaletteRow>,
+            Option<&'static TapeRow>,
+            Option<&'static PinnedCard>,
+            Option<&'static CardCorner>,
+            &'static Interaction,
+        ),
+    >,
+    Query<
+        'w,
+        's,
+        (
+            &'static PaletteRow,
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+        ),
+    >,
+    Query<
+        'w,
+        's,
+        (
+            &'static ComputedNode,
+            &'static UiGlobalTransform,
+            &'static InheritedVisibility,
+        ),
+        Or<(With<PaletteRow>, With<TapeRow>, With<SaveAction>)>,
+    >,
+    Query<'w, 's, &'static Interaction, With<SaveAction>>,
+);
 
 fn edit(
     mut world: ResMut<World>,
@@ -1866,9 +2206,9 @@ fn edit(
     buttons: Res<ButtonInput<MouseButton>>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
-    ui: Query<(Option<&PaletteRow>, Option<&TapeRow>, &Interaction)>,
-    save: Query<&Interaction, With<SaveAction>>,
+    edit_ui: EditUi,
 ) {
+    let (ui, inventory, panels, save) = edit_ui;
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
         return;
@@ -1877,16 +2217,63 @@ fn edit(
     if let Some(c) = screen {
         world.pointer = Some(viewport.world(c));
     }
-    let over_ui = keys.pressed(KeyCode::Tab)
-        || ui.iter().any(|(_, _, i)| *i != Interaction::None)
+    let covered = screen.is_some_and(|point| {
+        world.pinned.iter().any(|card| {
+            let size = card_size(card.item) * card.scale;
+            point.cmpge(card.at).all() && point.cmple(card.at + size).all()
+        })
+    });
+    let physical = screen.map(|point| point * window.scale_factor());
+    let inventory_at = physical
+        .filter(|_| !covered && !keys.pressed(KeyCode::Tab))
+        .and_then(|point| {
+            inventory
+                .iter()
+                .find(|(_, node, transform)| node.contains_point(**transform, point))
+                .map(|(row, _, _)| row.0)
+        });
+    let over_panel = keys.pressed(KeyCode::Tab)
+        || physical.is_some_and(|point| {
+            panels.iter().any(|(node, transform, visible)| {
+                visible.get() && node.contains_point(*transform, point)
+            })
+        })
+        || ui.iter().any(|(_, _, card, corner, i)| {
+            card.is_none() && corner.is_none() && *i != Interaction::None
+        })
         || save.iter().any(|i| *i != Interaction::None);
+    let over_ui = over_panel
+        || ui.iter().any(|(_, _, _, _, i)| *i != Interaction::None)
+        || inventory_at.is_some();
     let at = world.pointer.map(hex_at);
 
-    if buttons.just_pressed(MouseButton::Left) {
-        let pressed = ui.iter().find(|(_, _, i)| **i == Interaction::Pressed);
-        if let Some((Some(entry), _, _)) = pressed {
+    if buttons.just_pressed(MouseButton::Right)
+        && world.card_drag.is_none()
+        && let (Some(item), Some(pointer)) = (inventory_at, screen)
+    {
+        world.begin_pin(item, pointer);
+    }
+    if buttons.just_pressed(MouseButton::Left)
+        && !matches!(world.card_drag, Some(CardDrag::New { .. }))
+    {
+        let pressed = ui
+            .iter()
+            .find(|(_, _, _, corner, i)| corner.is_some() && **i == Interaction::Pressed)
+            .or_else(|| {
+                ui.iter()
+                    .find(|(_, _, _, _, i)| **i == Interaction::Pressed)
+            });
+        if let Some((_, _, _, Some(corner), _)) = pressed {
+            if let Some(pointer) = screen {
+                world.card_press(corner.0, true, pointer);
+            }
+        } else if let Some((_, _, Some(card), _, _)) = pressed {
+            if let Some(pointer) = screen {
+                world.card_press(card.0, false, pointer);
+            }
+        } else if let Some((Some(entry), _, _, _, _)) = pressed {
             world.lift_inventory(entry.0);
-        } else if let Some((_, Some(row), _)) = pressed {
+        } else if let Some((_, Some(row), _, _, _)) = pressed {
             if let Some(arm) = row.arm().filter(|a| *a < world.shown().arms.len()) {
                 world.focus_tape(arm);
             }
@@ -1894,14 +2281,33 @@ fn edit(
             world.press(c, p);
         }
     }
-    if buttons.pressed(MouseButton::Left)
+    if (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right))
         && let Some(c) = screen
     {
-        world.drag(c);
+        if world.card_drag.is_some() {
+            world.card_drag(c, Vec2::new(window.width(), window.height()));
+        } else {
+            world.drag(c);
+        }
     }
     if buttons.just_released(MouseButton::Left) {
-        let valid = !over_ui && screen.is_some();
-        world.release(at.filter(|_| valid));
+        if matches!(
+            world.card_drag,
+            Some(CardDrag::Move { .. } | CardDrag::Resize { .. })
+        ) {
+            world.card_drag = None;
+        } else if world.card_drag.is_none() {
+            let valid = !over_ui && screen.is_some();
+            world.release(at.filter(|_| valid));
+        }
+    }
+    if buttons.just_released(MouseButton::Right)
+        && let Some(CardDrag::New { id, .. }) = world.card_drag
+    {
+        world.card_drag = None;
+        if over_panel {
+            world.unpin(id);
+        }
     }
 
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
@@ -2370,7 +2776,8 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs, G: GizmoConfigGroup = DefaultGizmoConfigG
 
 impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
     fn shifted(&mut self, by: Vec2, draw: impl FnOnce(&mut Self)) {
-        let was = std::mem::replace(&mut self.shift, by);
+        let was = self.shift;
+        self.shift += by;
         draw(self);
         self.shift = was;
     }
@@ -2913,36 +3320,61 @@ fn draw(
         };
         preview.bead(Vec2::ZERO, look::atom(atom.0), layer::BEAD);
     }
+    let mut p = Painter {
+        gizmos: &mut card_gizmos,
+        commands: &mut commands,
+        kiln: &kiln,
+        ghost: false,
+        layers: CARD,
+        shift: Vec2::ZERO,
+    };
     if let Some(item) = world.hover {
-        let mut p = Painter {
-            gizmos: &mut card_gizmos,
-            commands: &mut commands,
-            kiln: &kiln,
-            ghost: false,
-            layers: CARD,
-            shift: Vec2::ZERO,
-        };
-        let sims = world.play.as_ref().map(|play| (play, play.sims()));
-        let play = sims.as_ref().map(|(play, (prev, sim))| {
-            Frame::between(prev, sim, phase(play.since, world.period, world.motion))
-        });
-        let card_events = world.play.as_ref().and_then(|play| {
-            let shown = play.at.min(play.events.len() as u64);
-            shown
-                .checked_sub(1)
-                .and_then(|index| play.events.get(index as usize))
-        });
-        hover_card(
-            &mut p,
-            item,
-            play.as_ref(),
-            card_events.map_or(&[][..], |tick| tick.events.as_slice()),
-            world
-                .play
-                .as_ref()
-                .map_or(1.0, |play| phase(play.since, world.period, world.motion)),
-        );
+        rendered_card(&mut p, item, world.play.as_ref(), 0, &world);
     }
+    for (index, card) in world.pinned.iter().enumerate() {
+        if world.pinned[..index]
+            .iter()
+            .any(|shown| shown.item == card.item)
+        {
+            continue;
+        }
+        let play = match card.item {
+            Item::Machine(machine) => world
+                .pinned_play
+                .iter()
+                .find(|play| play.machine == machine),
+            _ => None,
+        };
+        rendered_card(&mut p, card.item, play, card_slot(card.item), &world);
+    }
+}
+
+fn rendered_card<G: GizmoConfigGroup>(
+    p: &mut Painter<G>,
+    item: Item,
+    play: Option<&Play>,
+    slot: usize,
+    world: &World,
+) {
+    let sims = play.map(|play| (play, play.sims()));
+    let frame = sims.as_ref().map(|(play, (prev, sim))| {
+        Frame::between(prev, sim, phase(play.since, world.period, world.motion))
+    });
+    let events = play.and_then(|play| {
+        let shown = play.at.min(play.events.len() as u64);
+        shown
+            .checked_sub(1)
+            .and_then(|index| play.events.get(index as usize))
+    });
+    p.shifted(card_slot_at(slot), |p| {
+        hover_card(
+            p,
+            item,
+            frame.as_ref(),
+            events.map_or(&[][..], |tick| tick.events.as_slice()),
+            play.map_or(1.0, |play| phase(play.since, world.period, world.motion)),
+        );
+    });
 }
 
 fn scene<G: GizmoConfigGroup>(
@@ -3168,6 +3600,44 @@ mod shot {
         Release(Hex),
         Lift(Machine),
         Paste(&'static str),
+        BeginPin(Item, Vec2),
+        MoveCard(usize, Vec2),
+        ResizeCard(usize, f32),
+        FocusCard(usize),
+    }
+
+    impl Act {
+        pub(super) fn card(self, world: &mut World) -> bool {
+            match self {
+                Act::BeginPin(item, pointer) => world.begin_pin(item, pointer),
+                Act::MoveCard(index, delta) => {
+                    if let Some(card) = world.pinned.get(index) {
+                        let id = card.id;
+                        let pointer = card.at + Vec2::splat(10.0);
+                        world.card_press(id, false, pointer);
+                        world.card_drag(pointer + delta, Vec2::new(1280.0, 720.0));
+                        world.card_drag = None;
+                    }
+                }
+                Act::ResizeCard(index, delta) => {
+                    if let Some(card) = world.pinned.get(index) {
+                        let id = card.id;
+                        let base = card_size(card.item);
+                        let pointer = card.at + base * card.scale;
+                        world.card_press(id, true, pointer);
+                        world.card_drag(pointer + base * delta, Vec2::new(1280.0, 720.0));
+                        world.card_drag = None;
+                    }
+                }
+                Act::FocusCard(index) => {
+                    if let Some(card) = world.pinned.get(index) {
+                        world.focus = Some(Focus::Card(card.id));
+                    }
+                }
+                _ => return false,
+            }
+            true
+        }
     }
 
     fn tap(frame: u32, key: KeyCode) -> [(u32, Act); 2] {
@@ -3188,7 +3658,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 41] = [
+    pub const SCENES: [&str; 42] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -3230,6 +3700,7 @@ mod shot {
         "rig",
         "particles",
         "sound",
+        "cards",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -3338,6 +3809,31 @@ mod shot {
         };
         match name {
             "micro" => world.focus_tape(0),
+            "cards" => {
+                world.hover = None;
+                script.push((
+                    4,
+                    Act::BeginPin(
+                        Machine::Glyph(GlyphKind::Bonder).into(),
+                        Vec2::new(90.0, 610.0),
+                    ),
+                ));
+                for step in 0..10 {
+                    script.push((6 + step * 2, Act::MoveCard(0, Vec2::new(24.0, -22.0))));
+                }
+                script.push((
+                    32,
+                    Act::BeginPin(Machine::Arm.into(), Vec2::new(90.0, 610.0)),
+                ));
+                for step in 0..10 {
+                    script.push((34 + step * 2, Act::MoveCard(1, Vec2::new(38.0, -9.0))));
+                }
+                for step in 0..10 {
+                    script.push((62 + step * 2, Act::ResizeCard(1, 0.05)));
+                }
+                script.push((92, Act::FocusCard(0)));
+                script.extend(tap(100, KeyZ));
+            }
             "tab-held" => script.push((2, Act::Down(Tab))),
             "tab-released" => keys = vec![(Tab, false)],
             "texture-micro" => {
@@ -4186,7 +4682,7 @@ mod shot {
             RenderTarget::Image(handle.clone().into()),
             IsDefaultUiCamera,
         ));
-        commands.spawn(card_camera(RenderTarget::Image(handle.clone().into())));
+        spawn_card_camera(&mut commands, &mut images);
         shot.target = Some(handle);
     }
 
@@ -4221,6 +4717,9 @@ mod shot {
             if frame != shot.frames {
                 continue;
             }
+            if act.card(&mut world) {
+                continue;
+            }
             match act {
                 Act::Down(code) => {
                     keyboard.write(key(code, ButtonState::Pressed, *window));
@@ -4244,6 +4743,10 @@ mod shot {
                 Act::Paste(text) => {
                     world.paste_text(text);
                 }
+                Act::BeginPin(_, _)
+                | Act::MoveCard(_, _)
+                | Act::ResizeCard(_, _)
+                | Act::FocusCard(_) => unreachable!(),
             }
         }
         let warm = shot.warm;
@@ -6095,14 +6598,11 @@ mod tests {
             move |fills: Query<(&RenderLayers, &Transform), With<Fill>>,
                   camera: Single<&Camera, With<CardCamera>>| {
                 assert!(camera.is_active);
-                assert_eq!(
-                    camera.viewport.as_ref().unwrap().physical_size,
-                    card_size(machine.into()).as_uvec2()
-                );
+                assert!(camera.viewport.is_none());
                 *probe.lock().unwrap() = fills
                     .iter()
                     .filter(|(l, _)| **l == CARD)
-                    .map(|(_, t)| (t.translation, t.scale.x))
+                    .map(|(_, t)| (t.translation - card_slot_at(0).extend(0.0), t.scale.x))
                     .collect();
             },
         );
@@ -6275,6 +6775,67 @@ mod tests {
     }
 
     #[test]
+    fn right_drags_pin_several_inventory_cards_and_z_removes_only_the_focused_card() {
+        let mut world = World::new(Sim::empty());
+        for (item, pointer) in [
+            (Machine::Glyph(GlyphKind::Bonder).into(), Vec2::splat(20.0)),
+            (Machine::Arm.into(), Vec2::splat(60.0)),
+        ] {
+            world.begin_pin(item, pointer);
+            assert!(matches!(world.card_drag, Some(CardDrag::New { .. })));
+            world.card_drag = None;
+        }
+        assert_eq!(world.pinned.len(), 2);
+        assert_ne!(
+            card_slot(world.pinned[0].item),
+            card_slot(world.pinned[1].item)
+        );
+        let kept = world.pinned[0].id;
+        assert_eq!(world.focus, Some(Focus::Card(world.pinned[1].id)));
+        world.key(KeyCode::KeyZ, false);
+        assert_eq!(
+            world.pinned.iter().map(|card| card.id).collect::<Vec<_>>(),
+            [kept]
+        );
+        assert_eq!(world.focus, None);
+    }
+
+    #[test]
+    fn a_card_drags_by_its_plate_and_resizes_from_its_corner_without_stretching() {
+        let item = Machine::Glyph(GlyphKind::Bonder).into();
+        let mut world = World::new(Sim::empty());
+        world.pin(item, Vec2::splat(20.0));
+        let id = world.pinned[0].id;
+        world.card_press(id, false, Vec2::splat(30.0));
+        world.card_drag(Vec2::new(310.0, 170.0), Vec2::new(1280.0, 720.0));
+        assert_eq!(world.pinned[0].at, Vec2::new(300.0, 160.0));
+        world.card_drag = None;
+        let at = world.pinned[0].at;
+        let base = card_size(item);
+        world.card_press(id, true, at + base);
+        world.card_drag(at + base * 1.5, Vec2::new(1280.0, 720.0));
+        assert!((world.pinned[0].scale - 1.5).abs() < 1e-5);
+        assert_eq!(card_size(item) * world.pinned[0].scale, base * 1.5);
+        assert_eq!(world.pinned[0].at, at);
+        world.fit_cards(base * 0.4);
+        assert!((world.pinned[0].scale - 0.4).abs() < 1e-5);
+        assert_eq!(world.pinned[0].at, Vec2::ZERO);
+    }
+
+    #[test]
+    fn every_card_region_fits_one_non_overlapping_surface_slot() {
+        assert!(palette().count() < card_slot_count());
+        for item in palette() {
+            let slot = card_slot(item);
+            let rect = card_source(slot, item);
+            assert!(rect.width() <= CARD_SLOT.x as f32);
+            assert!(rect.height() <= CARD_SLOT.y as f32);
+            assert!(rect.min.cmpge(Vec2::ZERO).all());
+            assert!(rect.max.cmple(CARD_SURFACE.as_vec2()).all());
+        }
+    }
+
+    #[test]
     fn a_token_or_step_card_ends_at_its_recipe_and_a_machine_card_holds_its_playfield() {
         for item in [Item::Step, Item::Token(Instr::Grab)] {
             let card = layout(item);
@@ -6411,6 +6972,9 @@ mod tests {
                 if *at != frame {
                     continue;
                 }
+                if act.card(&mut w) {
+                    continue;
+                }
                 match *act {
                     shot::Act::Down(key) => w.key(key, false),
                     shot::Act::Up(_) => {}
@@ -6430,6 +6994,10 @@ mod tests {
                     shot::Act::Paste(text) => {
                         w.paste_text(text);
                     }
+                    shot::Act::BeginPin(_, _)
+                    | shot::Act::MoveCard(_, _)
+                    | shot::Act::ResizeCard(_, _)
+                    | shot::Act::FocusCard(_) => unreachable!(),
                 }
             }
             if frame == warm {
