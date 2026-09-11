@@ -68,6 +68,17 @@ The bridge that should prevent that: Opus Magnum's three scores are Factorio's t
 
 Research tree. Enemies. Power. Fluids. Multiplayer. More than one molecule family. Save compatibility.
 
+### Tape symbols
+
+Directive (verbatim): "Looking  at this  plethora of tape symbols I realize we should do less. The attempt to combine symbology with
+letter art didn't work. Here's what we'll do: a modular system, letter goes on bottom-left, a to-the-point
+semantic symbol goes on top-right. They go on a square together, rounded edges on bottom left and top right.
+Rounded edges with larger radius on the other corners. Consistent colors throughout."
+
+Every instruction uses one generated plum square with an ivory key letter at bottom-left and an amber semantic mark at top-right. The bottom-left and top-right corners have the same small radius; the other corners have the same larger radius. Grab uses inward points around a bead, drop uses a bead leaving an open point, rotate uses a circular arrow, pivot uses a circular arrow around a fixed point, wait uses two bars, and each move uses an arrow in its board direction. These are the plainest readings because they show only the changed relation: held, released, turned, turned about a hand, unchanged, or translated.
+
+One vector source generates every square, letter, mark, tape asset, and proof without stretching. This is the dumbest design satisfying the directive because the shared parts have one geometry and one palette while only the key and semantic mark vary. Repainting thirteen complete tokens was rejected because it would preserve the fused compositions and per-token variation that the modular system removes.
+
 ### Amber atom
 
 Directive (verbatim): "This gold-colored atom is visually washed out and looks similar to B0."
