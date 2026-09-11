@@ -124,7 +124,6 @@ name = "hand"
 mask = "inside"
 pivot = [0.0, 0.0]
 score = 8
-motion = "turn"
 event = "rotated"
 
 [[machine.bonder.parts]]

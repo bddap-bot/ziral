@@ -81,27 +81,33 @@ pub fn entry(machine: Machine) -> &'static Entry {
         .get(name)
         .unwrap_or_else(|| panic!("machine {name} has no rig"));
     let parts = &entry.parts;
+    let activation = entry.emitter.event;
+    if let Some(emitter) = entry.rig_emitter {
+        assert_eq!(
+            emitter.event, activation,
+            "machine {name} emitters disagree"
+        );
+    }
     assert!(
         (2..=4).contains(&parts.len()),
         "machine {name} rig has {} parts",
         parts.len()
     );
     for part in parts {
-        assert_eq!(
-            part.motion.is_some(),
-            part.event.is_some(),
-            "machine {name} part {} has an incomplete driver",
+        assert!(
+            part.motion.is_none() || part.event.is_some(),
+            "machine {name} part {} has motion without an event",
             part.name
         );
+        if let Some(event) = part.event {
+            assert_eq!(event, activation, "machine {name} part events disagree");
+        }
     }
     entry
 }
 
 pub fn activation(machine: Machine) -> Event {
-    parts(machine)
-        .iter()
-        .find_map(|part| part.event)
-        .expect("a machine rig carries an event")
+    entry(machine).emitter.event
 }
 
 pub fn pulse(fired: bool, phase: f32) -> f32 {
@@ -121,10 +127,10 @@ mod tests {
         for machine in Machine::ALL {
             let parts = parts(machine);
             assert!((2..=4).contains(&parts.len()));
-            assert_eq!(parts.iter().filter(|part| part.motion.is_none()).count(), 1);
+            assert!(parts.iter().any(|part| part.motion.is_none()));
             for part in parts {
                 assert!(part.score >= 8);
-                assert_eq!(part.motion.is_some(), part.event.is_some());
+                assert!(part.motion.is_none() || part.event.is_some());
                 if let Some(event) = part.event {
                     let sample = match event {
                         Event::Fired => TickEvent::Fired {
@@ -142,6 +148,11 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn an_arm_has_no_part_rotation_beside_its_frame_sweep() {
+        assert!(parts(Machine::Arm).iter().all(|part| part.motion.is_none()));
     }
 
     #[test]
@@ -178,7 +189,7 @@ mod tests {
                 );
                 let albedo_pixels = albedo.data.as_ref().unwrap().chunks_exact(4);
                 let emissive_pixels = emissive.data.as_ref().unwrap().chunks_exact(4);
-                let strength = if part.motion.is_some() { 255 } else { 0 };
+                let strength = if part.event.is_some() { 255 } else { 0 };
                 for (albedo, emissive) in albedo_pixels.zip(emissive_pixels) {
                     assert_eq!(emissive[3], albedo[3]);
                     if emissive[3] > 0 {
