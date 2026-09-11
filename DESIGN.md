@@ -91,6 +91,17 @@ Directive (verbatim): "I'd like to be able to playtest this without starting fro
 
 The complete simulation is serialized inside an envelope carrying the build tag. The browser writes that same envelope to local storage whenever the simulation changes, exports it as a file on demand, and imports a chosen file. Loading replaces the current simulation; a different build tag is an error. This is the dumbest design satisfying the directive because local recovery and portable files cross one serialization boundary and have one compatibility rule. A separate browser model or migration layer was rejected because either would create a second representation of the simulation while save compatibility remains out of scope.
 
+### Info cards
+
+Directive (verbatim): "I like this ability to hover and see an info card. I would like to be able to pin that info card, multiple
+actually, to see them while working. It will help keep on track during complex recipes. Would it make the code a
+mess to make those info-cards draggable and resizable? The elegant \"delete card\" affordance is focus-then-z. I
+don't know what the elegant \"pin-card\" affordance is."
+
+Hover then P pins a card and focuses it. Several cards may remain at once. A pinned card drags by its plate, resizes proportionally from its lower-right corner, and Z removes it through the same focus grammar as every other focused thing. Its pictures remain wordless and keep their aspect ratio at every size.
+
+One card camera draws every card into one offscreen surface, and ordinary UI image nodes show regions of that surface. This is the dumbest design satisfying the directive because the existing card drawing stays singular while UI already owns pointer interaction, placement, and size. A camera per card was rejected because it would multiply projection, render target, ordering, and cleanup state for identical pictures.
+
 ## Parking lot
 
 - Creating a bond requires an atom: the atom becomes the bond between two other atoms.
