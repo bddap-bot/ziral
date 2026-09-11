@@ -68,6 +68,12 @@ The bridge that should prevent that: Opus Magnum's three scores are Factorio's t
 
 Research tree. Enemies. Power. Fluids. Multiplayer. More than one molecule family. Save compatibility.
 
+### Amber atom
+
+Directive (verbatim): "This gold-colored atom is visually washed out and looks similar to B0."
+
+The amber texture keeps its existing ringed bead and is regraded toward its existing amber glaze. Its glaze-wearing gate now limits lost chroma as well as hue and luminance drift. This is the dumbest design satisfying the directive because one texture correction and one focused material invariant address the faded appearance without adding a glaze, asset variant, or rendering path. Repainting was rejected because the silhouette and surface already carry the intended ringed ceramic form; replacing them would solve more than the color defect.
+
 ### Playtest saves
 
 Directive (verbatim): "I'd like to be able to playtest this without starting from scratch each time. Time for save-load functionality?"

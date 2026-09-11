@@ -477,6 +477,7 @@ pub(crate) mod tests {
     const TEMPLATE_GRAIN: f32 = 0.04;
     const RING_STEPS: usize = 6;
     const SHADING: f32 = 2.0 * VALUE_APART;
+    const AMBER_MAX_CHROMA_LOSS: f32 = 0.15;
     const SPLIT_ROUNDS: usize = 8;
 
     fn hue_and_value_differ(a: Color, b: Color) -> [bool; 2] {
@@ -797,6 +798,19 @@ pub(crate) mod tests {
                 Glaze::Clay,
             );
         }
+    }
+
+    #[test]
+    fn the_amber_atom_loses_at_most_point_one_five_chroma() {
+        let look = atom(AtomKind::Amber);
+        let chroma = |c: Hsva| c.saturation * c.value;
+        let loss = chroma(Hsva::from(look.glaze.color())) - chroma(Hsva::from(mean(look.skin)));
+        assert!(
+            loss <= AMBER_MAX_CHROMA_LOSS,
+            "{:?} loses {loss:.3} chroma from its {:?} glaze",
+            look.skin,
+            look.glaze
+        );
     }
 
     #[test]

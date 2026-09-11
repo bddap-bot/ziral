@@ -14,11 +14,11 @@ Seven glazes. Every drawn thing takes its fill from this list; a new color is a 
 | dark brass | `#6B4F3A` | 26° | 0.09 | arm pivot and link; single bond; rims; grout; UI strips |
 | terracotta | `#C8553D` | 10° | 0.19 | the hand; the bonder glyph |
 | blue-green | `#4F8A8B` | 181° | 0.22 | the base atom; the source glyph |
-| amber | `#E0A458` | 34° | 0.43 | reserved for the next atom kind |
+| amber | `#E0A458` | 34° | 0.43 | the amber atom; saturated gold |
 | plum | `#7D5BA6` | 267° | 0.15 | the second-bond glyph; the double bond |
 | ivory | `#F4EDE4` | — | 0.85 | the output cup; the pick and stall marks; UI text |
 
-Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth naming (chroma 0.06); it reads by value only. Structure that is neither glaze nor state (grout, wells, rims, strips, borders) is dark brass lifted toward clay by some fraction, never a new color.
+Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth naming (chroma 0.06); it reads by value only. The amber atom loses no more than 0.15 chroma from its glaze, keeping its gold saturated through the surface variation. Structure that is neither glaze nor state (grout, wells, rims, strips, borders) is dark brass lifted toward clay by some fraction, never a new color.
 
 ## 2. Language
 
@@ -84,6 +84,8 @@ Single and double differ in hue (26° vs 267°) and shape.
 Every pair differs in at least two ways. The near cases: arm vs bonder share a hue family and value (brass 26° / 0.09 against terracotta 10° / 0.19) and are told apart by shape and marking; bonder vs second bond are told apart by hue, shape, and marking; the three output tiers share glaze and value and are told apart by size, seven, nineteen and thirty-seven cells, and by texture; the texture term is judged on a sixteen-pixel thumbnail of each sprite, since at eight the second and third tiers, whose cups differ two to one in size, read as one ivory blur.
 
 ## 4. Reference
+
+`../proofs/amber-63.png` places the base, amber, and plum atoms side by side in the world at shipped size after the amber texture's saturation regrade.
 
 `proofs/view-sound-58.mp4` moves the shipped view from one running side of the board to the other while the tick mix follows the visible cells and zoom.
 
