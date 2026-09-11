@@ -98,7 +98,9 @@ actually, to see them while working. It will help keep on track during complex r
 mess to make those info-cards draggable and resizable? The elegant \"delete card\" affordance is focus-then-z. I
 don't know what the elegant \"pin-card\" affordance is."
 
-Hover then P pins a card and focuses it. Several cards may remain at once. A pinned card drags by its plate, resizes proportionally from its lower-right corner, and Z removes it through the same focus grammar as every other focused thing. Its pictures remain wordless and keep their aspect ratio at every size.
+Directive (verbatim): "I figured out how we can intuitively pin inventory cards by the way. Right click and drag from inventory to create a new pinned card. It is more intuitive than requiring the user to press p."
+
+Right-dragging an inventory row onto the board creates and focuses its card; releasing it over the panels cancels the drag. Several cards may remain at once. A pinned card drags by its plate, resizes proportionally from its lower-right corner, and Z removes it through the same focus grammar as every other focused thing. Its pictures remain wordless and keep their aspect ratio at every size. There is no key binding for pinning.
 
 One card camera draws every card into one offscreen surface, and ordinary UI image nodes show regions of that surface. This is the dumbest design satisfying the directive because the existing card drawing stays singular while UI already owns pointer interaction, placement, and size. A camera per card was rejected because it would multiply projection, render target, ordering, and cleanup state for identical pictures.
 
