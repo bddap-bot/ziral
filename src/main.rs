@@ -1078,6 +1078,14 @@ impl Viewport {
     fn shows(&self, p: Vec2) -> bool {
         (p - self.cam).abs().cmplt(self.half()).all()
     }
+
+    fn sound(&self) -> sound::View {
+        sound::View {
+            center: self.cam,
+            half: self.half(),
+            scale: self.scale,
+        }
+    }
 }
 
 fn app(world: World) -> App {
@@ -1112,9 +1120,9 @@ fn app(world: World) -> App {
                 clipboard_paste,
                 hover,
                 sound::unlock,
+                view,
                 run_ticks,
                 play_sound,
-                view,
                 edit,
                 tapes,
                 tally,
@@ -1184,14 +1192,24 @@ fn main() {
     app.run();
 }
 
-fn play_sound(mut commands: Commands, mut world: ResMut<World>, bank: Option<Res<sound::Bank>>) {
+fn play_sound(
+    mut commands: Commands,
+    mut world: ResMut<World>,
+    bank: Option<Res<sound::Bank>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
+) {
     let Some(tick) = world.score.take() else {
         return;
     };
     let Some(bank) = bank.filter(|bank| bank.unlocked) else {
         return;
     };
-    sound::play(&mut commands, &bank, &sound::score(&tick));
+    let (transform, projection) = camera.into_inner();
+    let Some(view) = Viewport::of(&window, transform, projection) else {
+        return;
+    };
+    sound::play(&mut commands, &bank, &sound::score(&tick), view.sound());
 }
 
 fn spawn_camera(mut commands: Commands) {
@@ -3071,6 +3089,7 @@ mod shot {
         warm: u32,
         frames: u32,
         target: Option<Handle<Image>>,
+        moving_view: bool,
     }
 
     fn second_bond(extra: &[Hex]) -> (Sim, Vec<usize>) {
@@ -3296,11 +3315,11 @@ mod shot {
                 let mut sim = Sim::empty();
                 sim.place(
                     &sim::fixture(Machine::Glyph(GlyphKind::Bonder)).sim,
-                    Hex::new(-3, 0),
+                    Hex::new(-8, 0),
                 );
-                let shared = Hex::new(3, 0);
-                let left = Arm::new(Hex::new(2, 0), 0, vec![Instr::Grab, Instr::Drop]);
-                let mut right = Arm::new(Hex::new(4, 0), 3, vec![Instr::Drop, Instr::Grab]);
+                let shared = Hex::new(8, 0);
+                let left = Arm::new(Hex::new(7, 0), 0, vec![Instr::Grab, Instr::Drop]);
+                let mut right = Arm::new(Hex::new(9, 0), 3, vec![Instr::Drop, Instr::Grab]);
                 right.holding = true;
                 sim.spawn(Atom {
                     kind: AtomKind::Base,
@@ -3811,6 +3830,7 @@ mod shot {
             warm,
             frames: 0,
             target: None,
+            moving_view: false,
         };
         let mut app = app(world, shot);
         lit_plugin(&mut app);
@@ -3845,23 +3865,30 @@ mod shot {
             warm,
             frames: 0,
             target: None,
+            moving_view: view == "sound",
         };
         Some((world, shot))
     }
 
     pub fn sound(args: &[String]) -> Option<i32> {
-        const USAGE: &str = "usage: ziral --sound-proof <wav> <score> <scene> <ticks>";
-        let [_, flag, wav, score, view, ticks] = args else {
+        const USAGE: &str = "usage: ziral --sound-proof <wav> <score> <ticks>";
+        let [_, flag, wav, score, ticks] = args else {
             return None;
         };
         if flag != "--sound-proof" {
             return None;
         }
-        let (mut world, _, _, _) = scene(view, 0);
-        let events = (0..ticks.parse().expect(USAGE))
-            .map(|_| world.sim.step())
+        let (mut world, _, _, _) = scene("sound", 0);
+        let count = ticks.parse().expect(USAGE);
+        let ticks = (0..count)
+            .map(|tick| {
+                (
+                    world.sim.step(),
+                    sound_view(tick as f32 / count.max(1) as f32),
+                )
+            })
             .collect::<Vec<_>>();
-        let (text, audio) = crate::sound::proof(&events);
+        let (text, audio) = crate::sound::proof(&ticks);
         std::fs::write(wav, audio).unwrap_or_else(|error| panic!("{wav}: {error}"));
         std::fs::write(score, text).unwrap_or_else(|error| panic!("{score}: {error}"));
         Some(0)
@@ -3879,6 +3906,7 @@ mod shot {
             warm,
             frames: 0,
             target: None,
+            moving_view: false,
         };
         app(world, shot)
     }
@@ -3907,6 +3935,7 @@ mod shot {
             )
             .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
             .add_systems(Startup, spawn_offscreen_camera)
+            .add_systems(Update, move_sound_view.before(view))
             .add_systems(Update, capture.after(run_ticks).before(draw))
             .add_systems(Update, recipe_frame.after(draw));
         app
@@ -4053,6 +4082,32 @@ mod shot {
         }
         if n == count + 120 {
             exit.write(AppExit::Success);
+        }
+    }
+
+    fn move_sound_view(
+        shot: Res<Shot>,
+        mut world: ResMut<World>,
+        mut camera: Single<&mut Transform, (With<IsDefaultUiCamera>, Without<CardCamera>)>,
+    ) {
+        if !shot.moving_view {
+            return;
+        }
+        let count = shot.clip.unwrap_or(1);
+        let progress =
+            shot.frames.saturating_add(1).saturating_sub(shot.warm) as f32 / count.max(1) as f32;
+        camera.translation = sound_view(progress).center.extend(0.0);
+        if shot.clip.is_some() && shot.frames + 1 == shot.warm {
+            world.running = true;
+            world.since = world.period;
+        }
+    }
+
+    fn sound_view(progress: f32) -> crate::sound::View {
+        crate::sound::View {
+            center: px(Hex::new(-8, 0)).lerp(px(Hex::new(8, 0)), progress),
+            half: Vec2::new(1280.0, 720.0) * MICRO_SCALE / 2.0,
+            scale: MICRO_SCALE,
         }
     }
 }

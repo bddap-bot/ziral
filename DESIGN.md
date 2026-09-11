@@ -43,6 +43,13 @@ The pipeline derives an emissive mask for every rig part from the same painted m
 
 Sound uses the tick as its only transport: 400 ms is 150 BPM, and the hits derived for tick t are scheduled together on that tick boundary. A hit is data naming the machine kind and its manifest instrument. Each machine kind declares one typed brass, ceramic, or wood instrument beside its rig in `art/machines/manifest.toml`. The score is a pure projection of `TickEvents`; playback only turns its hits into Bevy audio entities and owns neither a score nor a clock. A stalled arm produces no hit, so backpressure is heard as the silence where its beat would have been.
 
+Directive (verbatim): "Sounds are not playing in-browser but that video you sent with the sounds is so cool. The way a beat arises
+accidentally is heckin neato. I think soundscape is going to just fall out. To avoid cacophony we will need to
+avoid playing all the effects all the time. For one, it should respond  to zoom and location. Roughly: what is on
+screen is what gets heard."
+
+Sound begins on the first mouse press, key press, or touch press. Each scored hit carries the cell already present in its tick event. One pure gain function rejects a cell outside the camera rectangle and makes a close view louder than a wide view; browser playback and the offline mix both call it with the view for that tick. This is the dumbest design satisfying the directive because it adds one decision between the existing score and player. Positional audio was rejected: it would add listener, falloff, and stereo state while still needing the same screen gate, and the visible mix needs only membership and zoom.
+
 The instruments are synthesised in code once at startup. This is the smallest design that gives every machine kind a distinct voice in the workshop's material palette while keeping the manifest as the one declaration and the tick score directly reproducible for proof. Sample files produced by a pipeline step were rejected because recording, generation, normalization, storage, and asset loading would add a second production system without making the score or its timing more expressive.
 
 The stages land in dependency order: the typed stream with replay and card playback consuming it; rigged sprites; material response and its pipeline-made emissive mask; sound; then manifest-declared default particles and rig overrides. The stream comes first because every later layer must read the same deterministic fact of what happened at tick t, and because replay already requires that fact to remain testable. No expressive layer belongs in the simulation.

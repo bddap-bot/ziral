@@ -1,5 +1,5 @@
 use crate::sim::{Machine, TickEvent, TickEvents};
-use bevy::audio::{AudioPlayer, AudioSource, PlaybackSettings};
+use bevy::audio::{AudioPlayer, AudioSource, PlaybackSettings, Volume};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,6 +23,22 @@ pub struct Instrument {
 pub struct Hit {
     pub machine: Machine,
     pub instrument: Instrument,
+    pub at: crate::sim::Hex,
+}
+
+#[derive(Clone, Copy)]
+pub struct View {
+    pub center: Vec2,
+    pub half: Vec2,
+    pub scale: f32,
+}
+
+pub fn gain(cell: crate::sim::Hex, view: View) -> Option<f32> {
+    let inside = (crate::look::px(cell) - view.center)
+        .abs()
+        .cmple(view.half)
+        .all();
+    inside.then(|| 1.0 / (1.0 + view.scale))
 }
 
 #[derive(Deserialize)]
@@ -61,13 +77,13 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
     tick.events
         .iter()
         .filter_map(|event| {
-            let machine = match event {
-                TickEvent::Fired { machine, .. } => *machine,
-                TickEvent::Grabbed { .. }
-                | TickEvent::Dropped { .. }
-                | TickEvent::Rotated { .. }
-                | TickEvent::Pivoted { .. }
-                | TickEvent::Moved { .. } => Machine::Arm,
+            let (machine, at) = match event {
+                TickEvent::Fired { machine, at, .. } => (*machine, *at),
+                TickEvent::Grabbed { at, .. }
+                | TickEvent::Dropped { at, .. }
+                | TickEvent::Rotated { at, .. }
+                | TickEvent::Pivoted { at, .. } => (Machine::Arm, *at),
+                TickEvent::Moved { to, .. } => (Machine::Arm, *to),
                 TickEvent::BondWritten { .. }
                 | TickEvent::Consumed { .. }
                 | TickEvent::Spawned { .. }
@@ -76,6 +92,7 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
             Some(Hit {
                 machine,
                 instrument: instrument(machine),
+                at,
             })
         })
         .collect()
@@ -111,10 +128,15 @@ pub fn load(mut commands: Commands, mut assets: ResMut<Assets<AudioSource>>) {
 pub fn unlock(
     mut commands: Commands,
     buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
     bank: Option<ResMut<Bank>>,
 ) {
     let Some(mut bank) = bank else { return };
-    if !bank.unlocked && buttons.get_just_pressed().next().is_some() {
+    let pressed = buttons.get_just_pressed().next().is_some()
+        || keys.get_just_pressed().next().is_some()
+        || touches.any_just_pressed();
+    if !bank.unlocked && pressed {
         bank.unlocked = true;
         commands.spawn((
             AudioPlayer::new(bank.silence.clone()),
@@ -123,8 +145,11 @@ pub fn unlock(
     }
 }
 
-pub fn play(commands: &mut Commands, bank: &Bank, hits: &[Hit]) {
+pub fn play(commands: &mut Commands, bank: &Bank, hits: &[Hit], view: View) {
     for hit in hits {
+        let Some(gain) = gain(hit.at, view) else {
+            continue;
+        };
         let handle = bank
             .voices
             .iter()
@@ -132,7 +157,13 @@ pub fn play(commands: &mut Commands, bank: &Bank, hits: &[Hit]) {
             .expect("every machine has a loaded instrument")
             .1
             .clone();
-        commands.spawn((AudioPlayer::new(handle), PlaybackSettings::DESPAWN));
+        commands.spawn((
+            AudioPlayer::new(handle),
+            PlaybackSettings {
+                volume: Volume::Linear(gain),
+                ..PlaybackSettings::DESPAWN
+            },
+        ));
     }
 }
 
@@ -181,23 +212,26 @@ fn wav_bytes(samples: &[i16], rate: u32) -> Vec<u8> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn proof(ticks: &[TickEvents]) -> (String, Vec<u8>) {
+pub fn proof(ticks: &[(TickEvents, View)]) -> (String, Vec<u8>) {
     let rate = 48_000;
     let beat = rate * 2 / 5;
     let tail = rate * 3 / 20;
     let mut mixed = vec![0_i32; ticks.len() * beat + tail];
     let mut text = String::new();
-    for (index, tick) in ticks.iter().enumerate() {
-        let hits = score(tick);
-        let names = hits
+    for (index, (tick, view)) in ticks.iter().enumerate() {
+        let heard = score(tick)
+            .into_iter()
+            .filter_map(|hit| gain(hit.at, *view).map(|gain| (hit, gain)))
+            .collect::<Vec<_>>();
+        let names = heard
             .iter()
-            .map(|hit| crate::machines::name(hit.machine))
+            .map(|(hit, _)| crate::machines::name(hit.machine))
             .collect::<Vec<_>>()
             .join(", ");
         text.push_str(&format!("tick {} -> [{}]\n", tick.tick, names));
-        for hit in hits {
+        for (hit, gain) in heard {
             for (at, sample) in samples(hit.instrument).into_iter().enumerate() {
-                mixed[index * beat + at] += i32::from(sample);
+                mixed[index * beat + at] += (f32::from(sample) * gain) as i32;
             }
         }
     }
@@ -231,6 +265,7 @@ mod tests {
                 TickEvent::Fired {
                     glyph: 2,
                     machine: source,
+                    at: crate::sim::ORIGIN,
                 },
                 TickEvent::Spawned {
                     glyph: 2,
@@ -246,6 +281,7 @@ mod tests {
                 TickEvent::Rotated {
                     arm: 1,
                     spin: crate::sim::Spin::Cw,
+                    at: crate::sim::ORIGIN,
                 },
             ],
         };
@@ -255,12 +291,37 @@ mod tests {
                 Hit {
                     machine: source,
                     instrument: instrument(source),
+                    at: crate::sim::ORIGIN,
                 },
                 Hit {
                     machine: Machine::Arm,
                     instrument: instrument(Machine::Arm),
+                    at: crate::sim::ORIGIN,
                 },
             ]
         );
+    }
+
+    #[test]
+    fn view_keeps_on_screen_hits_and_rejects_off_screen_hits() {
+        let view = View {
+            center: Vec2::ZERO,
+            half: Vec2::splat(crate::look::HEX * 2.0),
+            scale: 0.5,
+        };
+        assert!(gain(crate::sim::ORIGIN, view).is_some());
+        assert!(gain(crate::sim::Hex::new(3, 0), view).is_none());
+    }
+
+    #[test]
+    fn closer_view_has_more_gain_than_wider_view() {
+        let view = |scale| View {
+            center: Vec2::ZERO,
+            half: Vec2::splat(1000.0),
+            scale,
+        };
+        let close = gain(crate::sim::ORIGIN, view(0.5)).unwrap();
+        let wide = gain(crate::sim::ORIGIN, view(2.0)).unwrap();
+        assert!(close > wide);
     }
 }

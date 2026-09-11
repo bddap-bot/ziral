@@ -127,10 +127,15 @@ mod tests {
                 assert_eq!(part.motion.is_some(), part.event.is_some());
                 if let Some(event) = part.event {
                     let sample = match event {
-                        Event::Fired => TickEvent::Fired { glyph: 7, machine },
+                        Event::Fired => TickEvent::Fired {
+                            glyph: 7,
+                            machine,
+                            at: crate::sim::ORIGIN,
+                        },
                         Event::Rotated => TickEvent::Rotated {
                             arm: 7,
                             spin: crate::sim::Spin::Cw,
+                            at: crate::sim::ORIGIN,
                         },
                     };
                     assert!(event.matches(&sample, 7));

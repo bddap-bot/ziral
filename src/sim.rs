@@ -116,6 +116,7 @@ pub enum TickEvent {
     Fired {
         glyph: usize,
         machine: Machine,
+        at: Hex,
     },
     BondWritten {
         glyph: usize,
@@ -136,18 +137,22 @@ pub enum TickEvent {
     Grabbed {
         arm: usize,
         atom: usize,
+        at: Hex,
     },
     Dropped {
         arm: usize,
         atom: usize,
+        at: Hex,
     },
     Rotated {
         arm: usize,
         spin: Spin,
+        at: Hex,
     },
     Pivoted {
         arm: usize,
         spin: Spin,
+        at: Hex,
     },
     Moved {
         arm: usize,
@@ -773,6 +778,7 @@ impl Sim {
                 events.push(TickEvent::Fired {
                     glyph: i,
                     machine: Machine::Glyph(g.kind),
+                    at: g.at,
                 });
                 let atom = self.spawn(Atom {
                     kind: AtomKind::Base,
@@ -847,6 +853,7 @@ impl Sim {
             events.push(TickEvent::Fired {
                 glyph,
                 machine: Machine::Glyph(self.glyphs[glyph].unwrap().kind),
+                at: centre,
             });
             events.push(TickEvent::Consumed {
                 glyph,
@@ -937,6 +944,7 @@ impl Sim {
         events.push(TickEvent::Fired {
             glyph,
             machine: Machine::Glyph(g.kind),
+            at: g.at,
         });
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
@@ -1002,14 +1010,27 @@ impl Sim {
                 Instr::Grab => events.push(TickEvent::Grabbed {
                     arm: i,
                     atom: self.held(i).expect("a successful grab holds an atom"),
+                    at: self.arms[i].pivot,
                 }),
                 Instr::Drop => {
                     if let Some(atom) = held {
-                        events.push(TickEvent::Dropped { arm: i, atom });
+                        events.push(TickEvent::Dropped {
+                            arm: i,
+                            atom,
+                            at: self.arms[i].pivot,
+                        });
                     }
                 }
-                Instr::Rot(spin) => events.push(TickEvent::Rotated { arm: i, spin }),
-                Instr::Pivot(spin) => events.push(TickEvent::Pivoted { arm: i, spin }),
+                Instr::Rot(spin) => events.push(TickEvent::Rotated {
+                    arm: i,
+                    spin,
+                    at: self.arms[i].pivot,
+                }),
+                Instr::Pivot(spin) => events.push(TickEvent::Pivoted {
+                    arm: i,
+                    spin,
+                    at: self.arms[i].pivot,
+                }),
                 Instr::Move(_) => events.push(TickEvent::Moved {
                     arm: i,
                     from,
@@ -2616,6 +2637,7 @@ mod tests {
                     TickEvent::Fired {
                         glyph: 0,
                         machine: Machine::Glyph(GlyphKind::Source),
+                        at: Hex::new(2, 0),
                     },
                     TickEvent::Spawned {
                         glyph: 0,

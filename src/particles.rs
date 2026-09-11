@@ -108,7 +108,11 @@ mod tests {
     #[test]
     fn bursts_start_on_the_driving_tick_finish_in_their_lifetime_and_stalls_start_nothing() {
         let machine = Machine::Glyph(GlyphKind::Bonder);
-        let fired = [TickEvent::Fired { glyph: 4, machine }];
+        let fired = [TickEvent::Fired {
+            glyph: 4,
+            machine,
+            at: crate::sim::ORIGIN,
+        }];
         let (emitter, _) = burst(machine, 4, ActivationEnergy::FULL, &fired).unwrap();
         let mut energy = ActivationEnergy::FULL;
         for _ in 1..emitter.lifetime {
