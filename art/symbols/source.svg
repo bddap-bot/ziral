@@ -18,7 +18,7 @@
   <g id="f" transform="translate(0 0)">
     <use href="#tile"/>
     <text class="letter" x="142" y="434">F</text>
-    <g class="mark" stroke-width="34">
+    <g class="mark">
       <path d="M318 100L354 145 318 190"/>
       <path d="M442 100L406 145 442 190"/>
       <circle cx="380" cy="145" r="17" fill="#E0A458" stroke="none"/>
@@ -27,7 +27,7 @@
   <g id="r" transform="translate(512 0)">
     <use href="#tile"/>
     <text class="letter" x="146" y="434">R</text>
-    <g class="mark" stroke-width="34">
+    <g class="mark">
       <path d="M330 92V130Q380 177 430 130V92"/>
       <path d="M380 178V211"/>
       <circle cx="380" cy="226" r="17" fill="#E0A458" stroke="none"/>
@@ -56,11 +56,11 @@
   <g id="x" transform="translate(3072 0)">
     <use href="#tile"/>
     <text class="letter" x="146" y="434">X</text>
-    <g class="mark" stroke-width="42"><path d="M350 92V198M415 92V198"/></g>
+    <g class="mark"><path d="M350 92V198M415 92V198"/></g>
   </g>
   <g id="shift-w" transform="translate(3584 0)">
     <use href="#tile"/>
-    <text class="letter" x="155" y="434" font-size="210">W</text>
+    <text class="letter" x="155" y="434">W</text>
     <g class="mark" transform="rotate(240 380 146)"><use href="#right"/></g>
   </g>
   <g id="shift-e" transform="translate(4096 0)">
