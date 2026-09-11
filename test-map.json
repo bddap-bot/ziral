@@ -18,8 +18,8 @@
     },
     {
       "paths": ["art/symbols/**", "art/overlay/**"],
-      "tests": ["nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && art/overlay/gen.sh -c && git diff --exit-code -- art/symbols/*.png proofs/tape-symbols-57.png art/overlay/scaffold.png'"],
-      "why": "one vector source regenerates every symbol and its shipped-size proof; the overlay check rebuilds the scaffold and says whether the shipped page still matches them"
+      "tests": ["nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && art/overlay/gen.sh -c && git diff --exit-code -- art/symbols/*.png proofs/tape-symbols-57.png art/overlay/manual.png'"],
+      "why": "one vector source regenerates every symbol and its shipped-size proof; the manual composites those exact symbols over its reusable page"
     },
     {
       "paths": ["art/machines/**"],

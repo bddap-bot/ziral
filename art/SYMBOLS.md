@@ -1,6 +1,6 @@
 # Tape symbols
 
-Each instruction is one modular square generated from `art/symbols/source.svg`. `art/symbols/gen.sh` renders the thirteen 512 px assets without changing aspect, rebuilds `art/symbols/sheet.png`, and writes the shipped-size proof. The tape displays each asset at 26 px. The manual page held on Tab is regenerated over the same assets.
+Each instruction is one modular square generated from `art/symbols/source.svg`. `art/symbols/gen.sh` renders the thirteen 512 px assets without changing aspect, rebuilds `art/symbols/sheet.png`, and writes the shipped-size proof. The tape displays each asset at 26 px. The manual page held on Tab composites those exact assets over one reusable painted page.
 
 The square is plum with a dark-brass edge. Its bottom-left and top-right corners use a 28-unit radius; its top-left and bottom-right corners use a 96-unit radius. Every ivory key letter occupies the bottom-left and every amber semantic mark occupies the top-right. These colors and positions do not vary by instruction.
 
