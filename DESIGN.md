@@ -68,6 +68,12 @@ The bridge that should prevent that: Opus Magnum's three scores are Factorio's t
 
 Research tree. Enemies. Power. Fluids. Multiplayer. More than one molecule family. Save compatibility.
 
+### Playtest saves
+
+Directive (verbatim): "I'd like to be able to playtest this without starting from scratch each time. Time for save-load functionality?"
+
+The complete simulation is serialized inside an envelope carrying the build tag. The browser writes that same envelope to local storage whenever the simulation changes, exports it as a file on demand, and imports a chosen file. Loading replaces the current simulation; a different build tag is an error. This is the dumbest design satisfying the directive because local recovery and portable files cross one serialization boundary and have one compatibility rule. A separate browser model or migration layer was rejected because either would create a second representation of the simulation while save compatibility remains out of scope.
+
 ## Parking lot
 
 - Creating a bond requires an atom: the atom becomes the bond between two other atoms.

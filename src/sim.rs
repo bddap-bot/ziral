@@ -1,6 +1,7 @@
 use crate::form::{CONVERTER_INPUTS, Form, RECIPES, recipes};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Hex {
     pub q: i32,
     pub r: i32,
@@ -63,7 +64,7 @@ impl Hex {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Spin {
     Cw,
     Ccw,
@@ -79,7 +80,7 @@ impl Spin {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Instr {
     Grab,
     Drop,
@@ -99,7 +100,7 @@ impl Instr {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Stall {
     Illegal,
     Hand(usize),
@@ -166,7 +167,7 @@ pub enum TickEvent {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AtomKind {
     Base,
     Amber,
@@ -177,13 +178,13 @@ impl AtomKind {
     pub const ALL: [AtomKind; 3] = [AtomKind::Base, AtomKind::Amber, AtomKind::Plum];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Atom {
     pub kind: AtomKind,
     pub pos: Hex,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BondKind {
     Single,
     Double,
@@ -193,14 +194,14 @@ impl BondKind {
     pub const ALL: [BondKind; 2] = [BondKind::Single, BondKind::Double];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Bond {
     pub a: usize,
     pub b: usize,
     pub kind: BondKind,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ActivationEnergy(u8);
 
 impl ActivationEnergy {
@@ -215,7 +216,7 @@ impl ActivationEnergy {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Arm {
     pub pivot: Hex,
     pub dir: usize,
@@ -259,7 +260,7 @@ impl Arm {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Tier {
     One,
     Two,
@@ -276,7 +277,7 @@ impl Tier {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum GlyphKind {
     Source,
     Bonder,
@@ -479,7 +480,7 @@ impl GlyphKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Glyph {
     pub kind: GlyphKind,
     pub at: Hex,
@@ -518,7 +519,7 @@ pub struct Short {
     pub need: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Inventory {
     count: [u32; RECIPES.len() + AtomKind::ALL.len()],
     cap: [u32; RECIPES.len() + AtomKind::ALL.len()],
@@ -540,6 +541,10 @@ impl Inventory {
 
     pub fn full(&self, item: Item) -> bool {
         item.index().is_none_or(|i| self.count[i] >= self.cap[i])
+    }
+
+    pub fn valid(&self) -> bool {
+        self.cap.iter().all(|cap| *cap <= MAX_CAP)
     }
 
     pub fn add(&mut self, item: Item) {
@@ -590,7 +595,7 @@ impl Inventory {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Sim {
     pub glyphs: Vec<Option<Glyph>>,
     pub arms: Vec<Arm>,

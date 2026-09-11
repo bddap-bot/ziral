@@ -14,6 +14,7 @@ if [ "$got" != "$want" ]; then
 fi
 
 cd "$root"
+export ZIRAL_BUILD_TAG=${GITHUB_SHA:-$(git rev-parse HEAD)}
 cargo build --release --target wasm32-unknown-unknown
 rm -rf "$out"
 wasm-bindgen --target web --no-typescript --remove-name-section \

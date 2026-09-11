@@ -3,6 +3,7 @@ mod look;
 #[cfg(not(target_arch = "wasm32"))]
 mod machines;
 mod particles;
+mod persist;
 mod rig;
 mod sim;
 mod sound;
@@ -317,6 +318,32 @@ struct Refused {
 }
 
 #[derive(Resource)]
+struct Saved {
+    attempted: Sim,
+    refused: bool,
+}
+
+impl Saved {
+    fn store(&mut self, sim: Sim) {
+        self.attempted = sim;
+        match persist::store(&self.attempted) {
+            Ok(()) => self.refused = false,
+            Err(reason) if !self.refused => {
+                persist::refuse(&reason);
+                self.refused = true;
+            }
+            Err(_) => {}
+        }
+    }
+}
+
+#[derive(Clone, Copy, Component)]
+enum SaveAction {
+    Export,
+    Import,
+}
+
+#[derive(Resource)]
 struct World {
     sim: Sim,
     prev: Sim,
@@ -360,7 +387,7 @@ impl World {
 
     fn advance(&mut self, dt: f32) {
         self.since = (self.since + dt).min(self.period);
-        if self.running && self.since >= self.period {
+        if self.running && self.saveable() && self.since >= self.period {
             self.since = 0.0;
             self.step();
         }
@@ -455,6 +482,33 @@ impl World {
 
     fn holding(&self) -> bool {
         matches!(self.focus, Some(Focus::Hold { .. }))
+    }
+
+    fn saveable(&self) -> bool {
+        !matches!(
+            self.focus,
+            Some(Focus::Hold {
+                back: Back::Cell { .. },
+                ..
+            })
+        )
+    }
+
+    fn snapshot(&self) -> Sim {
+        let Some(Focus::Hold {
+            set,
+            back: Back::Cell { cell, turns },
+        }) = &self.focus
+        else {
+            return self.sim.clone();
+        };
+        let mut set = (**set).clone();
+        for _ in 0..*turns {
+            turn(&mut set, Spin::Ccw);
+        }
+        let mut sim = self.sim.clone();
+        sim.place(&set, *cell);
+        sim
     }
 
     fn focus_tape(&mut self, arm: usize) {
@@ -1101,7 +1155,12 @@ impl Viewport {
 
 fn app(world: World) -> App {
     let mut app = App::new();
+    let saved = Saved {
+        attempted: world.sim.clone(),
+        refused: false,
+    };
     app.insert_resource(world)
+        .insert_resource(saved)
         .insert_resource(ClearColor(brass(0.65)))
         .insert_gizmo_config(
             DefaultGizmoConfigGroup,
@@ -1135,6 +1194,7 @@ fn app(world: World) -> App {
                 run_ticks,
                 play_sound,
                 edit,
+                persistence,
                 tapes,
                 tally,
                 refusal,
@@ -1185,7 +1245,7 @@ fn main() {
     let mut app = match shot::parse(&args) {
         Some((world, shot)) => shot::app(world, shot),
         None => {
-            let mut app = app(World::new(sim::start()));
+            let mut app = app(World::new(persist::restore(sim::start())));
             app.add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "ziral".into(),
@@ -1479,7 +1539,7 @@ fn tally(mut commands: Commands, world: Res<World>, mut rows: Query<(Entity, &mu
 }
 
 fn stock(row: &mut ChildSpawnerCommands, filled: u32, upto: u32) {
-    for k in 0..u64::from(filled.max(upto)) {
+    for k in 0..u64::from(filled.max(upto).min(sim::MAX_CAP)) {
         row.spawn(mark(k, MARK_PX, k < u64::from(filled)));
     }
 }
@@ -1669,6 +1729,28 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
     commands
         .spawn(Node {
             position_type: PositionType::Absolute,
+            left: Val::Px(8.0),
+            top: Val::Px(8.0),
+            ..row(6.0)
+        })
+        .with_children(|row| {
+            for (action, up) in [(SaveAction::Export, false), (SaveAction::Import, true)] {
+                row.spawn((
+                    action,
+                    button(Node {
+                        width: Val::Px(34.0),
+                        height: Val::Px(34.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    }),
+                ))
+                .with_children(|button| save_icon(button, up));
+            }
+        });
+    commands
+        .spawn(Node {
+            position_type: PositionType::Absolute,
             left: Val::Px(PALETTE_WIDTH + 16.0),
             right: Val::Px(8.0),
             bottom: Val::Px(8.0),
@@ -1694,6 +1776,55 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                     Visibility::Hidden,
                 ));
             }
+        });
+}
+
+fn save_icon(button: &mut ChildSpawnerCommands, up: bool) {
+    let edge = if up { Val::Px(5.0) } else { Val::Auto };
+    let opposite = if up { Val::Auto } else { Val::Px(5.0) };
+    button
+        .spawn(Node {
+            position_type: PositionType::Relative,
+            width: Val::Px(18.0),
+            height: Val::Px(22.0),
+            ..default()
+        })
+        .with_children(|icon| {
+            icon.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(8.0),
+                    top: edge,
+                    bottom: opposite,
+                    width: Val::Px(2.0),
+                    height: Val::Px(12.0),
+                    ..default()
+                },
+                BackgroundColor(IVORY),
+            ));
+            icon.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(4.0),
+                    top: if up { Val::Px(5.0) } else { Val::Px(15.0) },
+                    width: Val::Px(10.0),
+                    height: Val::Px(2.0),
+                    ..default()
+                },
+                BackgroundColor(IVORY),
+            ));
+            icon.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(2.0),
+                    bottom: Val::Px(1.0),
+                    width: Val::Px(14.0),
+                    height: Val::Px(5.0),
+                    border: UiRect::axes(Val::Px(2.0), Val::Px(2.0)),
+                    ..default()
+                },
+                BorderColor::all(IVORY),
+            ));
         });
 }
 
@@ -1792,6 +1923,7 @@ fn edit(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     ui: Query<(Option<&PaletteRow>, Option<&TapeRow>, &Interaction)>,
+    save: Query<&Interaction, With<SaveAction>>,
 ) {
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
@@ -1801,7 +1933,9 @@ fn edit(
     if let Some(c) = screen {
         world.pointer = Some(viewport.world(c));
     }
-    let over_ui = keys.pressed(KeyCode::Tab) || ui.iter().any(|(_, _, i)| *i != Interaction::None);
+    let over_ui = keys.pressed(KeyCode::Tab)
+        || ui.iter().any(|(_, _, i)| *i != Interaction::None)
+        || save.iter().any(|i| *i != Interaction::None);
     let at = world.pointer.map(hex_at);
 
     if buttons.just_pressed(MouseButton::Left) {
@@ -1831,6 +1965,34 @@ fn edit(
     pressed.sort_unstable();
     for key in pressed {
         world.key(key, shift);
+    }
+}
+
+fn persistence(
+    mut world: ResMut<World>,
+    mut saved: ResMut<Saved>,
+    actions: Query<(&SaveAction, &Interaction), Changed<Interaction>>,
+) {
+    for (action, interaction) in &actions {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        match action {
+            SaveAction::Export if world.saveable() => persist::download(&world.sim),
+            SaveAction::Export => persist::download(&world.snapshot()),
+            SaveAction::Import => persist::choose(),
+        }
+    }
+    if let Some(sim) = persist::take() {
+        *world = World::new(sim);
+    }
+    if world.saveable() && saved.attempted != world.sim {
+        saved.store(world.sim.clone());
+    } else if !world.saveable() {
+        let sim = world.snapshot();
+        if saved.attempted != sim {
+            saved.store(sim);
+        }
     }
 }
 
