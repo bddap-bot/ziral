@@ -460,6 +460,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::{KEYS, SYMBOL_PX};
     use bevy::color::{Hsva, Luminance};
+    use bevy::input::keyboard::KeyCode;
+    use quick_xml::events::Event;
 
     const HUE_APART: f32 = 40.0;
     const CHROMA_FLOOR: f32 = 0.15;
@@ -956,6 +958,65 @@ pub(crate) mod tests {
                     b.symbol
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_symbol_letter_matches_its_binding_and_shift_state() {
+        let source = include_str!("../art/symbols/source.svg");
+        for key in KEYS {
+            let name = key.symbol.name.strip_prefix("symbols/").unwrap();
+            let mut reader = quick_xml::Reader::from_str(source);
+            reader.config_mut().trim_text(true);
+            let mut depth = 0;
+            let mut letters = Vec::new();
+            loop {
+                match reader.read_event().unwrap() {
+                    Event::Start(tag) if tag.name().as_ref() == b"g" => {
+                        if depth > 0 {
+                            depth += 1;
+                        } else if tag.attributes().map(Result::unwrap).any(|attribute| {
+                            attribute.key.as_ref() == b"id"
+                                && attribute.value.as_ref() == name.as_bytes()
+                        }) {
+                            depth = 1;
+                        }
+                    }
+                    Event::End(tag) if depth > 0 && tag.name().as_ref() == b"g" => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    Event::Text(text) if depth > 0 => {
+                        letters.push(text.decode().unwrap().into_owned());
+                    }
+                    Event::Eof => panic!("{name} has no source group"),
+                    _ => {}
+                }
+            }
+            let binding = match key.code {
+                KeyCode::KeyA => 'a',
+                KeyCode::KeyC => 'c',
+                KeyCode::KeyD => 'd',
+                KeyCode::KeyE => 'e',
+                KeyCode::KeyF => 'f',
+                KeyCode::KeyQ => 'q',
+                KeyCode::KeyR => 'r',
+                KeyCode::KeyW => 'w',
+                KeyCode::KeyX => 'x',
+                code => panic!("{code:?} is not a letter binding"),
+            };
+            let expected = if key.shifted() {
+                binding.to_ascii_uppercase()
+            } else {
+                binding
+            };
+            assert_eq!(
+                letters,
+                [expected.to_string()],
+                "{name} disagrees with its binding"
+            );
         }
     }
 

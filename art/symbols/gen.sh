@@ -23,4 +23,4 @@ magick "$scratch/sheet-top.png" "$scratch/sheet-bottom.png" -append "$here/sheet
 mkdir -p "$here/../../proofs"
 magick "${thumbs[@]:0:7}" +append "$scratch/proof-top.png"
 magick "${thumbs[@]:7:6}" +append -background none -gravity west -extent 182x26 "$scratch/proof-bottom.png"
-magick "$scratch/proof-top.png" "$scratch/proof-bottom.png" -append "$here/../../proofs/tape-symbols-57.png"
+magick "$scratch/proof-top.png" "$scratch/proof-bottom.png" -append "$here/../../proofs/tape-case-73.png"

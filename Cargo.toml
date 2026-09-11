@@ -19,5 +19,8 @@ web-sys = { version = "0.3.98", features = ["Clipboard", "Navigator", "Window"] 
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+[dev-dependencies]
+quick-xml = "0.41"
+
 [profile.dev.package."*"]
 opt-level = 3

@@ -18,7 +18,7 @@
     },
     {
       "paths": ["art/symbols/**", "art/overlay/**"],
-      "tests": ["nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && art/overlay/gen.sh -c && git diff --exit-code -- art/symbols/*.png proofs/tape-symbols-57.png art/overlay/manual.png'"],
+      "tests": ["nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && art/overlay/gen.sh -c && cargo test every_symbol_letter_matches_its_binding_and_shift_state && git diff --exit-code -- art/symbols/*.png proofs/tape-case-73.png art/overlay/manual.png'"],
       "why": "one vector source regenerates every symbol and its shipped-size proof; the manual composites those exact symbols over its reusable page"
     },
     {

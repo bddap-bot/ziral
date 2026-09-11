@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="6656" height="512" viewBox="0 0 6656 512">
   <defs>
     <path id="tile" d="M120 24H456Q484 24 484 52V392Q484 488 388 488H52Q24 488 24 460V120Q24 24 120 24Z" fill="#7D5BA6" stroke="#6B4F3A" stroke-width="16"/>
-    <style>.letter{fill:#F4EDE4;stroke:#6B4F3A;stroke-width:8;paint-order:stroke;font-family:DejaVu Sans;font-size:220px;font-weight:700;text-anchor:middle}.mark{fill:none;stroke:#E0A458;stroke-width:36;stroke-linecap:round;stroke-linejoin:round}</style>
+    <style>.letter{fill:#F4EDE4;stroke:#6B4F3A;stroke-width:8;paint-order:stroke;font-family:DejaVu Sans;font-size:220px;font-weight:700;text-anchor:middle}.plain{font-size:260px}.mark{fill:none;stroke:#E0A458;stroke-width:36;stroke-linecap:round;stroke-linejoin:round}</style>
     <g id="right">
       <path d="M320 146H430"/>
       <path d="M394 106L434 146 394 186"/>
@@ -17,7 +17,7 @@
   </defs>
   <g id="f" transform="translate(0 0)">
     <use href="#tile"/>
-    <text class="letter" x="142" y="434">F</text>
+    <text class="letter plain" x="142" y="434">f</text>
     <g class="mark">
       <path d="M318 100L354 145 318 190"/>
       <path d="M442 100L406 145 442 190"/>
@@ -26,7 +26,7 @@
   </g>
   <g id="r" transform="translate(512 0)">
     <use href="#tile"/>
-    <text class="letter" x="146" y="434">R</text>
+    <text class="letter plain" x="146" y="434">r</text>
     <g class="mark">
       <path d="M330 92V130Q380 177 430 130V92"/>
       <path d="M380 178V211"/>
@@ -35,27 +35,27 @@
   </g>
   <g id="a" transform="translate(1024 0)">
     <use href="#tile"/>
-    <text class="letter" x="146" y="434">A</text>
+    <text class="letter plain" x="146" y="434">a</text>
     <g class="mark"><use href="#ccw"/></g>
   </g>
   <g id="d" transform="translate(1536 0)">
     <use href="#tile"/>
-    <text class="letter" x="146" y="434">D</text>
+    <text class="letter plain" x="146" y="434">d</text>
     <g class="mark"><use href="#cw"/></g>
   </g>
   <g id="q" transform="translate(2048 0)">
     <use href="#tile"/>
-    <text class="letter" x="151" y="434">Q</text>
+    <text class="letter plain" x="151" y="434">q</text>
     <g class="mark"><use href="#ccw"/><circle cx="380" cy="145" r="18" fill="#E0A458" stroke="none"/></g>
   </g>
   <g id="e" transform="translate(2560 0)">
     <use href="#tile"/>
-    <text class="letter" x="142" y="434">E</text>
+    <text class="letter plain" x="142" y="434">e</text>
     <g class="mark"><use href="#cw"/><circle cx="380" cy="145" r="18" fill="#E0A458" stroke="none"/></g>
   </g>
   <g id="x" transform="translate(3072 0)">
     <use href="#tile"/>
-    <text class="letter" x="146" y="434">X</text>
+    <text class="letter plain" x="146" y="434">x</text>
     <g class="mark"><path d="M350 92V198M415 92V198"/></g>
   </g>
   <g id="shift-w" transform="translate(3584 0)">

@@ -6162,6 +6162,7 @@ dependencies = [
  "arboard",
  "bevy",
  "image",
+ "quick-xml",
  "serde",
  "serde_json",
  "toml",
