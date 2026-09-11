@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="6656" height="512" viewBox="0 0 6656 512">
+  <defs>
+    <path id="tile" d="M120 24H456Q484 24 484 52V392Q484 488 388 488H52Q24 488 24 460V120Q24 24 120 24Z" fill="#7D5BA6" stroke="#6B4F3A" stroke-width="16"/>
+    <g id="letter" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle"/>
+    <g id="mark" fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+    <g id="right">
+      <path d="M320 146H430"/>
+      <path d="M394 106L434 146 394 186"/>
+    </g>
+    <g id="ccw">
+      <path d="M422 171A70 70 0 1 1 352 77"/>
+      <path d="M318 84L356 72 367 111"/>
+    </g>
+    <g id="cw">
+      <path d="M338 171A70 70 0 1 0 408 77"/>
+      <path d="M442 84L404 72 393 111"/>
+    </g>
+  </defs>
+  <g id="f" transform="translate(0 0)">
+    <use href="#tile"/>
+    <text x="142" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">F</text>
+    <g fill="none" stroke="#E0A458" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M318 100L354 145 318 190"/>
+      <path d="M442 100L406 145 442 190"/>
+      <circle cx="380" cy="145" r="17" fill="#E0A458" stroke="none"/>
+    </g>
+  </g>
+  <g id="r" transform="translate(512 0)">
+    <use href="#tile"/>
+    <text x="146" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">R</text>
+    <g fill="none" stroke="#E0A458" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M330 92V130Q380 177 430 130V92"/>
+      <path d="M380 178V211"/>
+      <circle cx="380" cy="226" r="17" fill="#E0A458" stroke="none"/>
+    </g>
+  </g>
+  <g id="a" transform="translate(1024 0)">
+    <use href="#tile"/>
+    <text x="146" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">A</text>
+    <g fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#ccw"/></g>
+  </g>
+  <g id="d" transform="translate(1536 0)">
+    <use href="#tile"/>
+    <text x="146" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">D</text>
+    <g fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#cw"/></g>
+  </g>
+  <g id="q" transform="translate(2048 0)">
+    <use href="#tile"/>
+    <text x="151" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">Q</text>
+    <g fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#ccw"/><circle cx="380" cy="145" r="18" fill="#E0A458" stroke="none"/></g>
+  </g>
+  <g id="e" transform="translate(2560 0)">
+    <use href="#tile"/>
+    <text x="142" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">E</text>
+    <g fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#cw"/><circle cx="380" cy="145" r="18" fill="#E0A458" stroke="none"/></g>
+  </g>
+  <g id="x" transform="translate(3072 0)">
+    <use href="#tile"/>
+    <text x="146" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">X</text>
+    <g fill="none" stroke="#E0A458" stroke-width="42" stroke-linecap="round"><path d="M350 92V198M415 92V198"/></g>
+  </g>
+  <g id="shift-w" transform="translate(3584 0)">
+    <use href="#tile"/>
+    <text x="155" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="210" font-weight="700" text-anchor="middle">W</text>
+    <g transform="rotate(240 380 146)" fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#right"/></g>
+  </g>
+  <g id="shift-e" transform="translate(4096 0)">
+    <use href="#tile"/>
+    <text x="142" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">E</text>
+    <g transform="rotate(300 380 146)" fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#right"/></g>
+  </g>
+  <g id="shift-f" transform="translate(4608 0)">
+    <use href="#tile"/>
+    <text x="142" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">F</text>
+    <g fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#right"/></g>
+  </g>
+  <g id="shift-c" transform="translate(5120 0)">
+    <use href="#tile"/>
+    <text x="146" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">C</text>
+    <g transform="rotate(60 380 146)" fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#right"/></g>
+  </g>
+  <g id="shift-x" transform="translate(5632 0)">
+    <use href="#tile"/>
+    <text x="146" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">X</text>
+    <g transform="rotate(120 380 146)" fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#right"/></g>
+  </g>
+  <g id="shift-a" transform="translate(6144 0)">
+    <use href="#tile"/>
+    <text x="146" y="434" fill="#F4EDE4" stroke="#6B4F3A" stroke-width="8" paint-order="stroke" font-family="DejaVu Sans" font-size="220" font-weight="700" text-anchor="middle">A</text>
+    <g transform="rotate(180 380 146)" fill="none" stroke="#E0A458" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"><use href="#right"/></g>
+  </g>
+</svg>

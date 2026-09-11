@@ -173,12 +173,6 @@ impl Glaze {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct Token {
-    pub face: Glaze,
-    pub field: Glaze,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Finish {
     Plain,
@@ -464,7 +458,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{KEYS, SYMBOL_PX};
+    use crate::KEYS;
     use bevy::color::{Hsva, Luminance};
 
     const HUE_APART: f32 = 40.0;
@@ -478,7 +472,6 @@ pub(crate) mod tests {
     const RING_STEPS: usize = 6;
     const SHADING: f32 = 2.0 * VALUE_APART;
     const AMBER_MAX_CHROMA_LOSS: f32 = 0.15;
-    const SPLIT_ROUNDS: usize = 8;
 
     fn hue_and_value_differ(a: Color, b: Color) -> [bool; 2] {
         let (ca, cb) = (Hsva::from(a), Hsva::from(b));
@@ -651,44 +644,6 @@ pub(crate) mod tests {
             })
             .collect();
         assert!(strays.is_empty(), "{}", strays.join("\n"));
-    }
-
-    struct Pressed {
-        face: Color,
-        field: Color,
-    }
-
-    fn pressed(skin: Skin) -> Pressed {
-        let side = SYMBOL_PX as usize;
-        let thumb = thumbnail(skin, side);
-        let apart = |i: usize, c: Color| {
-            let c = c.to_srgba();
-            (thumb[i * 3] - c.red).powi(2)
-                + (thumb[i * 3 + 1] - c.green).powi(2)
-                + (thumb[i * 3 + 2] - c.blue).powi(2)
-        };
-        let rim: Vec<usize> = (0..side * side)
-            .filter(|i| {
-                [i % side, i / side]
-                    .iter()
-                    .any(|c| *c == 0 || *c == side - 1)
-            })
-            .collect();
-        let mut field = average(&thumb, &rim);
-        let farthest = (0..side * side)
-            .max_by(|a, b| apart(*a, field).total_cmp(&apart(*b, field)))
-            .expect("a thumbnail has cells");
-        let mut face = average(&thumb, &[farthest]);
-        for _ in 0..SPLIT_ROUNDS {
-            let (letter, ground): (Vec<usize>, Vec<usize>) =
-                (0..side * side).partition(|i| apart(*i, face) < apart(*i, field));
-            if letter.is_empty() || ground.is_empty() {
-                break;
-            }
-            face = average(&thumb, &letter);
-            field = average(&thumb, &ground);
-        }
-        Pressed { face, field }
     }
 
     pub(crate) fn texture_apart<M>(a: &Look<M>, b: &Look<M>, side: usize) -> f32 {
@@ -873,57 +828,72 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn every_symbol_wears_its_token_at_tape_size() {
-        for key in KEYS {
-            let Pressed { face, field } = pressed(key.symbol);
-            wears(format!("{:?} letter", key.symbol), face, key.token.face);
-            wears(format!("{:?} field", key.symbol), field, key.token.field);
-        }
-    }
-
-    #[test]
-    fn every_symbol_keeps_its_letter_edge_at_tape_size() {
-        let dissolved: Vec<String> = KEYS
+    fn near(pixel: &[u8], glaze: Glaze) -> bool {
+        let target = glaze.color().to_srgba();
+        let target = [target.red, target.green, target.blue];
+        pixel[..3]
             .iter()
-            .filter_map(|key| {
-                let Pressed { face, field } = pressed(key.symbol);
-                let [_, apart] = hue_and_value_differ(face, field);
-                let gap = (face.luminance() - field.luminance()).abs();
-                (!apart).then(|| format!("{:?} letter is {gap:.3} from its field", key.symbol))
-            })
-            .collect();
-        assert!(
-            dissolved.is_empty(),
-            "letters under {VALUE_APART} in value at {SYMBOL_PX} px: {dissolved:#?}"
-        );
+            .zip(target)
+            .all(|(actual, expected)| (f32::from(*actual) / 255.0 - expected).abs() < 0.08)
+    }
+
+    fn region_count(
+        data: &[u8],
+        x: RangeInclusive<usize>,
+        y: RangeInclusive<usize>,
+        glaze: Glaze,
+    ) -> usize {
+        y.flat_map(|y| x.clone().map(move |x| (y * 512 + x) * 4))
+            .filter(|i| near(&data[*i..*i + 4], glaze))
+            .count()
     }
 
     #[test]
-    fn every_symbol_is_told_apart_at_tape_size() {
-        let tokens: Vec<Pressed> = KEYS.iter().map(|k| pressed(k.symbol)).collect();
-        let mut alike = Vec::new();
-        for (i, a) in KEYS.iter().enumerate() {
-            for (j, b) in KEYS.iter().enumerate().skip(i + 1) {
-                let letters = hue_and_value_differ(tokens[i].face, tokens[j].face);
-                let fields = hue_and_value_differ(tokens[i].field, tokens[j].field);
-                if !letters.contains(&true) && !fields.contains(&true) {
-                    alike.push(format!(
-                        "{:?} and {:?}: letters {:?} {:?}, fields {:?} {:?}",
-                        a.symbol,
-                        b.symbol,
-                        Hsva::from(tokens[i].face),
-                        Hsva::from(tokens[j].face),
-                        Hsva::from(tokens[i].field),
-                        Hsva::from(tokens[j].field)
-                    ));
-                }
-            }
+    fn every_symbol_uses_the_shared_square_letter_and_mark_geometry() {
+        for key in KEYS {
+            let (_, _, data) = pixels(key.symbol);
+            let alpha = |x: usize, y: usize| data[(y * 512 + x) * 4 + 3];
+            assert!(
+                alpha(40, 40) < 25,
+                "{:?} loses its large top-left radius",
+                key.symbol
+            );
+            assert!(
+                alpha(472, 40) > 230,
+                "{:?} loses its small top-right radius",
+                key.symbol
+            );
+            assert!(
+                alpha(40, 472) > 230,
+                "{:?} loses its small bottom-left radius",
+                key.symbol
+            );
+            assert!(
+                alpha(472, 472) < 25,
+                "{:?} loses its large bottom-right radius",
+                key.symbol
+            );
+            assert!(
+                near(&data[(300 * 512 + 280) * 4..], Glaze::Plum),
+                "{:?} loses its plum field",
+                key.symbol
+            );
+            assert!(
+                near(&data[(256 * 512 + 24) * 4..], Glaze::Brass),
+                "{:?} loses its brass edge",
+                key.symbol
+            );
+            assert!(
+                region_count(&data, 20..=280, 220..=470, Glaze::Ivory) > 1_500,
+                "{:?} has no ivory letter at bottom-left",
+                key.symbol
+            );
+            assert!(
+                region_count(&data, 285..=475, 45..=250, Glaze::Amber) > 1_000,
+                "{:?} has no amber mark at top-right",
+                key.symbol
+            );
         }
-        assert!(
-            alike.is_empty(),
-            "symbols alike in hue and value at {SYMBOL_PX} px: {alike:#?}"
-        );
     }
 
     #[test]

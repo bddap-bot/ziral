@@ -24,7 +24,7 @@ use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
 use form::{Form, recipes};
-use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, Token, px, skin};
+use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, px, skin};
 use sim::{
     Arm, BondKind, DIRS, Fixture, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine, ORIGIN, Short,
     Sim, Spin, Stall, fixture,
@@ -88,16 +88,14 @@ pub struct Key {
     code: KeyCode,
     instr: Instr,
     pub symbol: Skin,
-    pub token: Token,
 }
 
 impl Key {
-    const fn new(code: KeyCode, instr: Instr, symbol: Skin, face: Glaze, field: Glaze) -> Key {
+    const fn new(code: KeyCode, instr: Instr, symbol: Skin) -> Key {
         Key {
             code,
             instr,
             symbol,
-            token: Token { face, field },
         }
     }
 
@@ -109,96 +107,42 @@ impl Key {
 const UPPER_LEFT: usize = 4;
 
 pub const KEYS: [Key; 13] = [
-    Key::new(
-        KeyCode::KeyF,
-        Instr::Grab,
-        skin!("symbols/f"),
-        Glaze::Terracotta,
-        Glaze::Ivory,
-    ),
-    Key::new(
-        KeyCode::KeyR,
-        Instr::Drop,
-        skin!("symbols/r"),
-        Glaze::BlueGreen,
-        Glaze::Ivory,
-    ),
-    Key::new(
-        KeyCode::KeyA,
-        Instr::Rot(Spin::Ccw),
-        skin!("symbols/a"),
-        Glaze::Amber,
-        Glaze::Brass,
-    ),
-    Key::new(
-        KeyCode::KeyD,
-        Instr::Rot(Spin::Cw),
-        skin!("symbols/d"),
-        Glaze::Brass,
-        Glaze::Amber,
-    ),
-    Key::new(
-        KeyCode::KeyQ,
-        Instr::Pivot(Spin::Ccw),
-        skin!("symbols/q"),
-        Glaze::Plum,
-        Glaze::Ivory,
-    ),
-    Key::new(
-        KeyCode::KeyE,
-        Instr::Pivot(Spin::Cw),
-        skin!("symbols/e"),
-        Glaze::Ivory,
-        Glaze::Plum,
-    ),
-    Key::new(
-        KeyCode::KeyX,
-        Instr::Wait,
-        skin!("symbols/x"),
-        Glaze::Ivory,
-        Glaze::Brass,
-    ),
+    Key::new(KeyCode::KeyF, Instr::Grab, skin!("symbols/f")),
+    Key::new(KeyCode::KeyR, Instr::Drop, skin!("symbols/r")),
+    Key::new(KeyCode::KeyA, Instr::Rot(Spin::Ccw), skin!("symbols/a")),
+    Key::new(KeyCode::KeyD, Instr::Rot(Spin::Cw), skin!("symbols/d")),
+    Key::new(KeyCode::KeyQ, Instr::Pivot(Spin::Ccw), skin!("symbols/q")),
+    Key::new(KeyCode::KeyE, Instr::Pivot(Spin::Cw), skin!("symbols/e")),
+    Key::new(KeyCode::KeyX, Instr::Wait, skin!("symbols/x")),
     Key::new(
         KeyCode::KeyW,
         Instr::Move(UPPER_LEFT),
         skin!("symbols/shift-w"),
-        Glaze::Amber,
-        Glaze::Ivory,
     ),
     Key::new(
         KeyCode::KeyE,
         Instr::Move((UPPER_LEFT + 1) % 6),
         skin!("symbols/shift-e"),
-        Glaze::BlueGreen,
-        Glaze::Clay,
     ),
     Key::new(
         KeyCode::KeyF,
         Instr::Move((UPPER_LEFT + 2) % 6),
         skin!("symbols/shift-f"),
-        Glaze::Plum,
-        Glaze::Clay,
     ),
     Key::new(
         KeyCode::KeyC,
         Instr::Move((UPPER_LEFT + 3) % 6),
         skin!("symbols/shift-c"),
-        Glaze::Ivory,
-        Glaze::Amber,
     ),
     Key::new(
         KeyCode::KeyX,
         Instr::Move((UPPER_LEFT + 4) % 6),
         skin!("symbols/shift-x"),
-        Glaze::Clay,
-        Glaze::BlueGreen,
     ),
     Key::new(
         KeyCode::KeyA,
         Instr::Move((UPPER_LEFT + 5) % 6),
         skin!("symbols/shift-a"),
-        Glaze::Clay,
-        Glaze::Plum,
     ),
 ];
 
