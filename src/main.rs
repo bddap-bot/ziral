@@ -43,6 +43,8 @@ const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
 const MARK_PX: f32 = 6.0;
 const STEP_PX: f32 = 2.0 * MARK_PX;
+const STEP_SHIFT: f32 = 4.0;
+const STEP_SPAN: f32 = STEP_PX + 2.0 * STEP_SHIFT;
 const TALLY_PX: f32 = 86.0;
 const PALETTE_WIDTH: f32 = PALETTE_PX + SYMBOL_PX + 2.0 * (TALLY_PX + 24.0) + 8.0;
 const CARD_SCALE: f32 = 1.0;
@@ -74,6 +76,30 @@ fn strip(lit: bool) -> Color {
 }
 
 const IVORY: Color = Glaze::Ivory.color();
+
+#[derive(Clone, Copy, Component, Debug, PartialEq)]
+enum StepFrame {
+    Projected,
+    Current,
+}
+
+impl StepFrame {
+    fn shift(self) -> f32 {
+        match self {
+            StepFrame::Projected => STEP_SHIFT,
+            StepFrame::Current => -STEP_SHIFT,
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            StepFrame::Projected => IVORY.with_alpha(GHOST),
+            StepFrame::Current => IVORY,
+        }
+    }
+}
+
+const STEP_ART: [StepFrame; 2] = [StepFrame::Projected, StepFrame::Current];
 
 #[derive(Clone, Copy, Component)]
 struct PaletteRow(Item);
@@ -1444,9 +1470,23 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
             ));
         }
         Item::Step => {
-            entry
-                .spawn((square, field))
-                .with_child(mark(0, STEP_PX, true));
+            entry.spawn((square, field)).with_children(|picture| {
+                for frame in STEP_ART {
+                    picture.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px((STEP_SPAN - STEP_PX) / 2.0 + frame.shift()),
+                            top: Val::Px((STEP_SPAN - STEP_PX) / 2.0),
+                            width: Val::Px(STEP_PX),
+                            height: Val::Px(STEP_PX),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(frame.color()),
+                        frame,
+                    ));
+                }
+            });
         }
         Item::Token(instr) => {
             let skin = key_of(instr).symbol;
@@ -1459,7 +1499,8 @@ fn picture_square(item: Item) -> (Node, BackgroundColor) {
     let side = match item {
         Item::Machine(_) => PALETTE_PX,
         Item::Atom(_) => PALETTE_PX,
-        Item::Step | Item::Token(_) => SYMBOL_PX,
+        Item::Step => STEP_SPAN,
+        Item::Token(_) => SYMBOL_PX,
     };
     let world = matches!(item, Item::Machine(_) | Item::Atom(_));
     (
@@ -1661,7 +1702,8 @@ fn picture_side(item: Item) -> f32 {
     match item {
         Item::Machine(machine) => look::quad(machine).side,
         Item::Atom(_) => PALETTE_PX,
-        Item::Step | Item::Token(_) => SYMBOL_PX,
+        Item::Step => STEP_SPAN,
+        Item::Token(_) => SYMBOL_PX,
     }
 }
 
@@ -2455,6 +2497,7 @@ struct Kiln {
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
     patina: [Handle<ColorMaterial>; 2],
+    step_ghost: Handle<ColorMaterial>,
     card: [Handle<ColorMaterial>; 2],
     atoms: [Handle<Image>; 3],
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
@@ -2707,6 +2750,7 @@ fn fire_kiln(
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: [0.5, 0.5 * GHOST].map(|a| materials.add(Glaze::Brass.color().with_alpha(a))),
+        step_ghost: materials.add(StepFrame::Projected.color()),
         card: [strip(false), brass(0.5)].map(|c| materials.add(c)),
         atoms,
         skins,
@@ -2863,6 +2907,28 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         let (skin, patina) = (self.skin(look.skin), &kiln.patina[usize::from(self.ghost)]);
         self.stamp(&kiln.circle, skin, at, HEX * 0.4, z);
         self.stamp(&kiln.rim, patina, at, HEX * 0.4, z + layer::RIM);
+    }
+
+    fn step(&mut self, at: Vec2, z: f32) {
+        for (index, frame) in STEP_ART.into_iter().enumerate() {
+            let material = match frame {
+                StepFrame::Projected => &self.kiln.step_ghost,
+                StepFrame::Current => self.kiln.material(Glaze::Ivory),
+            };
+            self.commands.spawn((
+                frame,
+                Fill,
+                self.layers.clone(),
+                Mesh2d(self.kiln.circle.clone()),
+                MeshMaterial2d(material.clone()),
+                Transform {
+                    translation: (at + Vec2::new(frame.shift(), 0.0) + self.shift)
+                        .extend(z + index as f32 * 0.0001),
+                    scale: Vec2::splat(STEP_PX / 2.0).extend(1.0),
+                    ..default()
+                },
+            ));
+        }
     }
 
     fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind, z: f32) {
@@ -3509,14 +3575,7 @@ fn hover_card<G: GizmoConfigGroup>(
             (false, 1.0, sim::ActivationEnergy::default()),
         ),
         Item::Atom(kind) => p.bead(at, look::atom(kind), z(2)),
-        Item::Step => p.fill(
-            &kiln.circle,
-            kiln.material(Glaze::Ivory),
-            at,
-            0.0,
-            Vec2::splat(STEP_PX),
-            z(2),
-        ),
+        Item::Step => p.step(at, z(2)),
         Item::Token(instr) => p.fill(
             &kiln.bar,
             p.skin(key_of(instr).symbol),
@@ -3658,7 +3717,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 42] = [
+    pub const SCENES: [&str; 43] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -3670,6 +3729,7 @@ mod shot {
         "focus",
         "write",
         "spend",
+        "step-art",
         "hand",
         "start",
         "craft",
@@ -3920,6 +3980,10 @@ mod shot {
                 script.push((176, Act::Release(arm)));
                 script.extend(tap(200, KeyF));
                 script.extend(tap(240, Backspace));
+            }
+            "step-art" => {
+                world.hover = Some(Item::Step);
+                world.period = f32::INFINITY;
             }
             "hand" => {
                 let source = Hex::new(-4, 1);
@@ -4809,6 +4873,19 @@ mod tests {
     const SEAM_TONE: f32 = 0.05;
     const SEAM_GRAIN: f32 = 0.015;
     const BLUR_PX: f32 = 1.0;
+
+    type StepPictures<'w, 's> = Query<
+        'w,
+        's,
+        (
+            &'static StepFrame,
+            Option<&'static Node>,
+            Option<&'static BackgroundColor>,
+            Option<&'static Transform>,
+            Option<&'static Mesh2d>,
+            Option<&'static MeshMaterial2d<ColorMaterial>>,
+        ),
+    >;
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
         let _render = RENDER_TEST
@@ -6479,6 +6556,63 @@ mod tests {
                 assert_eq!(node.border_radius, BorderRadius::default());
             }
         }
+    }
+
+    #[test]
+    fn the_step_picture_is_one_solid_frame_projected_right_at_ghost_opacity_in_the_palette_and_card()
+     {
+        assert_eq!(STEP_ART, [StepFrame::Projected, StepFrame::Current]);
+        assert_eq!(StepFrame::Projected.shift(), 4.0);
+        assert_eq!(StepFrame::Current.shift(), -4.0);
+        assert_eq!(STEP_PX, 2.0 * MARK_PX);
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = std::env::temp_dir().join(format!("ziral-step-art-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("step-art", dir.clone(), 1);
+        lit_plugin(&mut app);
+        app.add_systems(Last, |kiln: Res<Kiln>, parts: StepPictures| {
+            let mut seen = [[0; 2]; STEP_ART.len()];
+            for (frame, node, background, transform, mesh, material) in &parts {
+                let index = STEP_ART
+                    .iter()
+                    .position(|expected| expected == frame)
+                    .unwrap();
+                if let (Some(node), Some(background)) = (node, background) {
+                    assert_eq!(node.width, Val::Px(STEP_PX));
+                    assert_eq!(node.height, Val::Px(STEP_PX));
+                    assert_eq!(
+                        node.left,
+                        Val::Px((STEP_SPAN - STEP_PX) / 2.0 + frame.shift())
+                    );
+                    assert_eq!(node.top, Val::Px((STEP_SPAN - STEP_PX) / 2.0));
+                    assert_eq!(node.border_radius, BorderRadius::MAX);
+                    assert_eq!(background.0, frame.color());
+                    seen[index][0] += 1;
+                }
+                if let (Some(transform), Some(mesh), Some(material)) = (transform, mesh, material) {
+                    let expected = card_slot_at(0)
+                        + layout(Item::Step).picture
+                        + Vec2::new(frame.shift(), 0.0);
+                    assert!(transform.translation.truncate().distance(expected) < 1e-3);
+                    assert_eq!(transform.scale.truncate(), Vec2::splat(STEP_PX / 2.0));
+                    assert_eq!(mesh.0, kiln.circle);
+                    assert_eq!(
+                        material.0,
+                        match frame {
+                            StepFrame::Projected => kiln.step_ghost.clone(),
+                            StepFrame::Current => kiln.material(Glaze::Ivory).clone(),
+                        }
+                    );
+                    seen[index][1] += 1;
+                }
+            }
+            assert_eq!(seen, [[1, 1]; STEP_ART.len()]);
+        });
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

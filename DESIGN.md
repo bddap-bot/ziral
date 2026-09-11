@@ -761,6 +761,14 @@ The dumber choice is the field: changing every row to clay would erase the dark 
 
 Test: every machine and atom picture directly under a palette row has one clay circular field, while every instruction picture has no field. Mutation-tested both ways: removing the clay fill and removing its circular edge each fail the test.
 
+### A step shows the next frame
+
+Directive (verbatim): "This \"step\" object. Could use some art to hint at its purpose."
+
+The step picture is one solid ivory circle at twice a tally mark, overlapped by the same circle at ghost opacity to its right. The overlap makes the pair one thing projected forward rather than two inventory units; left-to-right and solid-to-ghost provide direction without writing. The solid circle keeps the existing tally relation.
+
+This is the dumbest design satisfying the directive because it adds one ghost copy to the existing circle and applies the same size and displacement to the palette and card. A painted asset would add generation, storage and scaling to two circles, while a path or arrow would add another part beside a transition that already has direction.
+
 ### Inventory atom previews are beads
 
 Directive (verbatim): "Preview atoms are displayed with thier backrounds in inventory. Those should be circular, like what we see
