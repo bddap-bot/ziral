@@ -458,7 +458,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::KEYS;
+    use crate::{KEYS, SYMBOL_PX};
     use bevy::color::{Hsva, Luminance};
 
     const HUE_APART: f32 = 40.0;
@@ -927,23 +927,31 @@ pub(crate) mod tests {
                 "{:?} is never fired",
                 a.symbol
             );
-            let mine = thumbnail(a.symbol, THUMB);
+            let side = SYMBOL_PX as usize;
+            let mine = thumbnail(a.symbol, side);
             for b in &KEYS[i + 1..] {
                 assert_ne!(
                     a.symbol, b.symbol,
                     "{:?} and {:?} share a symbol",
                     a.instr, b.instr
                 );
-                let theirs = thumbnail(b.symbol, THUMB);
-                let apart = mine
-                    .iter()
-                    .zip(&theirs)
-                    .map(|(x, y)| (x - y).abs())
-                    .sum::<f32>()
-                    / mine.len() as f32;
+                let theirs = thumbnail(b.symbol, side);
+                let region = |x: RangeInclusive<usize>, y: RangeInclusive<usize>| {
+                    let cells: Vec<usize> = y
+                        .flat_map(|y| x.clone().map(move |x| y * side + x))
+                        .collect();
+                    cells
+                        .iter()
+                        .flat_map(|i| (0..3).map(move |c| i * 3 + c))
+                        .map(|i| (mine[i] - theirs[i]).abs())
+                        .sum::<f32>()
+                        / (cells.len() * 3) as f32
+                };
+                let letter = region(0..=14, 11..=25);
+                let mark = region(14..=25, 1..=13);
                 assert!(
-                    apart >= TILES_APART,
-                    "{:?} and {:?} look alike: {apart:.3} apart",
+                    letter >= TILES_APART || mark >= TILES_APART,
+                    "{:?} and {:?} look alike at tape size: letter {letter:.3}, mark {mark:.3}",
                     a.symbol,
                     b.symbol
                 );
