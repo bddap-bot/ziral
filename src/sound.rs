@@ -5,6 +5,42 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
+const contexts = [];
+const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend"];
+for (const key of ["AudioContext", "webkitAudioContext"]) {
+    const Context = globalThis[key];
+    if (Context) {
+        globalThis[key] = new Proxy(Context, {
+            construct(target, args, newTarget) {
+                const context = Reflect.construct(target, args, newTarget);
+                contexts.push(context);
+                return context;
+            }
+        });
+    }
+}
+function resume_audio() {
+    const attempts = contexts.map(context => context.resume());
+    Promise.all(attempts).then(() => {
+        if (contexts.length && contexts.every(context => context.state === "running"))
+            for (const type of inputEvents)
+                globalThis.removeEventListener(type, resume_audio, { capture: true });
+    });
+}
+export function listen_for_audio_unlock() {
+    for (const type of inputEvents)
+        globalThis.addEventListener(type, resume_audio, { capture: true });
+}
+"#)]
+extern "C" {
+    fn listen_for_audio_unlock();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn listen_for_audio_unlock() {}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Voice {
@@ -106,6 +142,7 @@ pub struct Bank {
 }
 
 pub fn load(mut commands: Commands, mut assets: ResMut<Assets<AudioSource>>) {
+    listen_for_audio_unlock();
     let voices = Machine::ALL
         .into_iter()
         .map(|machine| {
