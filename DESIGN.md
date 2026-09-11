@@ -711,3 +711,14 @@ The rule. Every machine and atom picture in an inventory row sits on a circular 
 The dumber choice is the field: changing every row to clay would erase the dark strip shared with the tally and turn the whole inventory into board; repainting each world picture for brass would fork it from the same picture on the board. One field at the one picture draw site supplies the surface the art already expects without another asset or rendering path.
 
 Test: every machine and atom picture directly under a palette row has one clay circular field, while every instruction picture has no field. Mutation-tested both ways: removing the clay fill and removing its circular edge each fail the test.
+
+### Inventory atom previews are beads
+
+Directive (verbatim): "Preview atoms are displayed with thier backrounds in inventory. Those should be circular, like what we see
+in-world."
+
+The rule. An atom picture in the inventory is a transparent render target painted by `Painter::bead`, the same circle mesh, skin and brass rim used on the board and in the hover card. The existing circular clay field remains behind it. Each atom kind has one preview target shared by every inventory and refusal-line picture of that kind.
+
+The dumbest design is to point the existing image node at that rendered bead. Clipping the square texture would add a second circular mask, and reproducing the circle and rim in UI nodes would add a second bead implementation.
+
+Test: every atom picture points at its kind's preview target, and every preview layer contains the circle and rim produced by the bead path. Mutation-tested both ways: restoring the raw skin image makes the target assertion fail; removing the rim makes the bead-fill assertion fail.

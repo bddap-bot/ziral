@@ -48,6 +48,17 @@ const CARD_SCALE: f32 = 1.0;
 const CARD_PAD: f32 = 12.0;
 const CARD: RenderLayers = RenderLayers::layer(1);
 
+fn atom_index(kind: sim::AtomKind) -> usize {
+    sim::AtomKind::ALL
+        .iter()
+        .position(|other| *other == kind)
+        .unwrap()
+}
+
+fn atom_layer(kind: sim::AtomKind) -> RenderLayers {
+    RenderLayers::layer(2 + atom_index(kind))
+}
+
 #[cfg(test)]
 static RENDER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -1283,8 +1294,12 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
             entry.spawn((ImageNode::new(kiln.image(skin)), square, field));
         }
         Item::Atom(kind) => {
-            let look = look::atom(kind);
-            entry.spawn((ImageNode::new(kiln.image(look.skin)), square, field));
+            entry.spawn((
+                AtomPreview(kind),
+                ImageNode::new(kiln.atom(kind)),
+                square,
+                field,
+            ));
         }
         Item::Step => {
             entry
@@ -1929,9 +1944,19 @@ struct Kiln {
     glaze: [Handle<ColorMaterial>; 7],
     patina: [Handle<ColorMaterial>; 2],
     card: [Handle<ColorMaterial>; 2],
+    atoms: [Handle<Image>; 3],
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
     lit: Vec<(Skin, [Handle<Lit>; 4])>,
 }
+
+impl Kiln {
+    fn atom(&self, kind: sim::AtomKind) -> Handle<Image> {
+        self.atoms[atom_index(kind)].clone()
+    }
+}
+
+#[derive(Clone, Copy, Component)]
+struct AtomPreview(sim::AtomKind);
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 struct Lit {
@@ -2133,6 +2158,29 @@ fn fire_kiln(
             (skin, lit)
         })
         .collect();
+    let atoms = sim::AtomKind::ALL.map(|kind| {
+        let image = images.add(Image::new_target_texture(
+            PALETTE_PX as u32,
+            PALETTE_PX as u32,
+            TextureFormat::Rgba8UnormSrgb,
+            None,
+        ));
+        let mut projection = OrthographicProjection::default_2d();
+        projection.scale = CARD_SCALE;
+        commands.spawn((
+            AtomPreview(kind),
+            Camera2d,
+            Camera {
+                order: -1,
+                clear_color: ClearColorConfig::Custom(Color::NONE),
+                ..default()
+            },
+            Projection::Orthographic(projection),
+            RenderTarget::Image(image.clone().into()),
+            atom_layer(kind),
+        ));
+        image
+    });
     commands.insert_resource(Kiln {
         circle: meshes.add(Circle::new(1.0)),
         hexagon: meshes.add(RegularPolygon::new(1.0, 6)),
@@ -2148,6 +2196,7 @@ fn fire_kiln(
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: [0.5, 0.5 * GHOST].map(|a| materials.add(Glaze::Brass.color().with_alpha(a))),
         card: [strip(false), brass(0.5)].map(|c| materials.add(c)),
+        atoms,
         skins,
         lit,
     });
@@ -2662,6 +2711,7 @@ fn draw(
     mut commands: Commands,
     kiln: Res<Kiln>,
     fills: Query<Entity, With<Fill>>,
+    previews: Query<(&AtomPreview, &RenderLayers), With<Camera>>,
 ) {
     for e in &fills {
         commands.entity(e).despawn();
@@ -2745,6 +2795,17 @@ fn draw(
             let centre = Isometry2d::from_translation((from + pointer) / 2.0);
             p.gizmos.rect_2d(centre, (pointer - from).abs(), IVORY);
         }
+    }
+    for (atom, layers) in &previews {
+        let mut preview = Painter {
+            gizmos: &mut gizmos,
+            commands: &mut commands,
+            kiln: &kiln,
+            ghost: false,
+            layers: layers.clone(),
+            shift: Vec2::ZERO,
+        };
+        preview.bead(Vec2::ZERO, look::atom(atom.0), layer::BEAD);
     }
     if let Some(item) = world.hover {
         let mut p = Painter {
@@ -5804,6 +5865,45 @@ mod tests {
                 assert_eq!(node.border_radius, BorderRadius::default());
             }
         }
+    }
+
+    #[test]
+    fn inventory_atoms_use_the_world_bead_circle_and_rim() {
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir =
+            std::env::temp_dir().join(format!("ziral-inventory-atoms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("start", dir.clone(), 1);
+        lit_plugin(&mut app);
+        app.add_systems(
+            Last,
+            |kiln: Res<Kiln>,
+             pictures: Query<(&AtomPreview, &ImageNode), Without<Camera>>,
+             fills: Query<(&RenderLayers, &Mesh2d), With<Fill>>| {
+                for kind in sim::AtomKind::ALL {
+                    let images: Vec<&ImageNode> = pictures
+                        .iter()
+                        .filter(|(preview, _)| preview.0 == kind)
+                        .map(|(_, image)| image)
+                        .collect();
+                    assert_eq!(images.len(), 1);
+                    assert_eq!(images[0].image, kiln.atom(kind));
+                    let meshes: Vec<&Handle<Mesh>> = fills
+                        .iter()
+                        .filter(|(layers, _)| **layers == atom_layer(kind))
+                        .map(|(_, mesh)| &mesh.0)
+                        .collect();
+                    assert_eq!(meshes.len(), 2);
+                    assert!(meshes.contains(&&kiln.circle));
+                    assert!(meshes.contains(&&kiln.rim));
+                }
+            },
+        );
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn spawn(w: &mut World, q: i32, r: i32) -> usize {
