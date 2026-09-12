@@ -28,6 +28,12 @@ const PAD_ALBEDO: f32 = 0.45;
 const SAMPLES: usize = 4;
 const CRITIC_PX: u32 = 512;
 
+fn segment_distance(point: Vec2, start: Vec2, end: Vec2) -> f32 {
+    let line = end - start;
+    let along = (point - start).dot(line) / line.length_squared();
+    point.distance(start + line * along.clamp(0.0, 1.0))
+}
+
 #[derive(Serialize, Deserialize)]
 struct Manifest {
     candidates: u32,
@@ -141,6 +147,7 @@ fn item(name: &str) -> Machine {
 
 #[derive(Debug)]
 struct Scaffold {
+    item: Machine,
     cells: Vec<Cell>,
     quad: Quad,
     canvas: u32,
@@ -162,6 +169,7 @@ const fn band() -> f32 {
 impl Scaffold {
     fn of(item: Machine) -> Scaffold {
         let mut scaffold = Scaffold {
+            item,
             cells: look::footprint(item),
             quad: look::quad(item),
             canvas: canvas(item),
@@ -251,8 +259,28 @@ impl Scaffold {
         }
     }
 
+    fn channel(&self, world: Vec2) -> Option<Glaze> {
+        if self.item != Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
+            return None;
+        }
+        let feed = px(self.cells[0].at);
+        let left = px(self.cells[1].at);
+        let right = px(self.cells[2].at);
+        let middle = (left + right) / 2.0;
+        [
+            segment_distance(world, left, right),
+            segment_distance(world, feed, middle),
+        ]
+        .into_iter()
+        .any(|distance| distance <= 0.1 * HEX)
+        .then_some(Glaze::Brass)
+    }
+
     fn paint(&self, world: Vec2) -> Rgba<u8> {
-        let glaze = self.in_cell(world, HEX).and_then(|c| self.mark(c, world));
+        let glaze = self
+            .in_cell(world, HEX)
+            .and_then(|c| self.mark(c, world))
+            .or_else(|| self.channel(world));
         rgba(glaze.map_or(KEY, Glaze::rgb), 1.0)
     }
 
@@ -1860,6 +1888,33 @@ mod tests {
             footprint.sort_by_key(key);
             assert_eq!(covered, footprint, "{item:?}");
         }
+    }
+
+    #[test]
+    fn second_bond_scaffold_routes_the_feed_through_the_bond_seat_rail() {
+        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SecondBond));
+        let feed = px(scaffold.cells[0].at);
+        let left = px(scaffold.cells[1].at);
+        let right = px(scaffold.cells[2].at);
+        let middle = (left + right) / 2.0;
+        let brass = rgba(Glaze::Brass.rgb(), 1.0);
+        let key = rgba(KEY, 1.0);
+        assert_eq!(scaffold.paint(middle), brass, "the bond seats need a rail");
+        assert_eq!(
+            scaffold.paint(feed.lerp(middle, 0.5)),
+            brass,
+            "the feed needs a stub to the rail midpoint"
+        );
+        assert_eq!(
+            scaffold.paint(feed.lerp(left, 0.5)),
+            key,
+            "the feed must not join the left bond seat"
+        );
+        assert_eq!(
+            scaffold.paint(feed.lerp(right, 0.5)),
+            key,
+            "the feed must not join the right bond seat"
+        );
     }
 
     #[test]

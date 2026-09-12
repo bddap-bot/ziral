@@ -98,7 +98,7 @@ judged = "c2b7b6e8b0868f51"
 instrument = { voice = "wood", note = 52 }
 emitter = { look = "dust", count = 4, lifetime = 2, event = "fired", layer = "behind", energy_scaled = true }
 rig_emitter = { look = "spark", count = 7, lifetime = 3, event = "fired", layer = "on", energy_scaled = true }
-direction = "The machine is a three-cell second-bond applicator: a plum glazed ceramic manifold with two matching empty blue-green bond seats joined by paired brass rails, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, the three seats being the three largest features, each exactly on its mark at a corner of the wide triangle, joined only by slender rails and pipes with no hub, disc or chamber at the middle of the triangle, plus darkened-brass pipes, worn rubber seals and a compact kiln chamber, so the feed is consumed to upgrade the bond between the other two."
+direction = "The machine is a three-cell second-bond applicator drawn as a flat plan: two matching empty blue-green bond seats joined by the scaffold's one straight brass rail, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve joined by one straight stub only to the exact midpoint of that rail. Preserve the scaffold's T exactly: the feed has no edge, pipe or rail to either bond seat, and the rail midpoint is the only junction. The three seats are the three largest features, each exactly on its mark, with a compact plum glazed ceramic manifold, darkened-brass fittings and worn rubber seals, so the feed is consumed to upgrade the bond between the other two."
 kept = 4
 painted = "88ae6ec55d3dab10"
 relit = "9b0c6fc8bb1817be"
