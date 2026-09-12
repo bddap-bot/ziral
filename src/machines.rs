@@ -1475,7 +1475,9 @@ impl Remake<'_> {
         let key_of = |prompt: &str| painted_key(prompt, count, &rendered, item(name).recipe());
         let mut wipe = entry.painted.as_deref() != Some(key_of(&prompt).as_str());
         let kept = loop {
-            if rounds > 0 && let Some(text) = rebrief(&brief, &prompt, &issues, rounds + 1) {
+            if rounds > 0
+                && let Some(text) = rebrief(&brief, &prompt, &issues, rounds + 1)
+            {
                 prompt = self.author(name, &brief, &images, &text)?;
                 changed = true;
             }
@@ -1744,12 +1746,7 @@ impl Remake<'_> {
 }
 
 impl<'a> Remake<'a> {
-    fn new(
-        art: &'a Art,
-        director: Ask<'a>,
-        painter: Painter<'a>,
-        critic: Ask<'a>,
-    ) -> Remake<'a> {
+    fn new(art: &'a Art, director: Ask<'a>, painter: Painter<'a>, critic: Ask<'a>) -> Remake<'a> {
         Remake {
             art,
             manifest: std::sync::Mutex::new(art.read()),
@@ -2840,7 +2837,11 @@ mod tests {
         let briefs = briefs.lock().unwrap();
         let scaffold = art.machine("source").join("scaffold.png");
         assert_eq!(briefs.len(), 3, "{briefs:?}");
-        assert!(briefs.iter().all(|(images, _)| *images == [scaffold.clone()]));
+        assert!(
+            briefs
+                .iter()
+                .all(|(images, _)| *images == [scaffold.clone()])
+        );
         assert_eq!(briefs[0].1, base);
         assert_eq!(
             briefs[1].1,
