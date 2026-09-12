@@ -15,16 +15,29 @@ shift $((OPTIND - 1))
 [ $# -eq 2 ] || { echo "usage: paint.sh [-s SIZE] [-i IMAGE]... OUT.png PROMPT" >&2; exit 2; }
 target=$1
 subject=$2
-lock='Ethos: Fired Workshop treats the board as a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight, wear, and warm raking light make each action tactile while colored glazes keep states unmistakable. Palette and roles: board #D8C3A5 clay; arm #6B4F3A dark brass; closed hand #C8553D terracotta; atom kinds #4F8A8B blue-green and #E0A458 amber; glyph #7D5BA6 plum; product #F4EDE4 ivory.'
-prompt="Generate exactly one square image with the image generation tool, then stop: do not judge, retry, edit, or describe it, and write no files. Prompt: $subject $lock No labels, watermark, menus, clutter, or named-game resemblance."
+prompt="Generate exactly one square image with the image generation tool, every attached image as its reference, and the text between the markers below as the tool's prompt, passed unchanged, character for character, with nothing added before or after it, then stop: do not judge, retry, edit, or describe the image, and write no files.
+<<<PROMPT
+$subject
+PROMPT>>>"
+
+received() {
+  local thread=$1 rollout calls
+  rollout=$(find "$HOME/.codex/sessions" -name "rollout-*-$thread.jsonl" -print -quit)
+  [ -s "$rollout" ] || { echo "thread $thread has no rollout" >&2; return 1; }
+  calls=$(jq -r 'select(.type == "response_item" and .payload.type == "custom_tool_call" and (.payload.input | type) == "string") | .payload.input | select(test("image_gen__imagegen")) | capture("\"?prompt\"?\\s*:\\s*(?<p>\"(?:[^\"\\\\]|\\\\.)*\")") | .p | fromjson | tojson' "$rollout")
+  [ -n "$calls" ] || { echo "thread $thread made no image tool call" >&2; return 1; }
+  printf '%s\n' "$calls"
+}
 
 one() {
-  local events thread srcs w h
+  local events thread srcs w h got
   events=$(codex exec --skip-git-repo-check --json "$prompt" "${attach[@]}" </dev/null)
   thread=$(printf '%s\n' "$events" | jq -r 'select(.type == "thread.started") | .thread_id' | head -1)
   [ -n "$thread" ] || { printf '%s\n' "$events" >&2; return 1; }
   srcs=("$HOME/.codex/generated_images/$thread"/*.png)
   [ "${#srcs[@]}" -eq 1 ] || { echo "thread $thread holds ${#srcs[@]} images, not one" >&2; return 1; }
+  got=$(received "$thread") || return 1
+  printf '%s\n' "$got" | grep -qxF -- "$(jq -Rsr 'rtrimstr("\n") | tojson' <<<"$subject")" || { printf 'thread %s: the image tool received another prompt:\n%s\n' "$thread" "$(printf '%s\n' "$got" | jq -r .)" >&2; return 1; }
   read -r w h < <(identify -format '%w %h\n' "${srcs[0]}")
   [ -n "$h" ] && [ "$w" = "$h" ] || { echo "thread $thread painted ${w}x${h}, not a square" >&2; return 1; }
   magick "${srcs[0]}" -resize "${size}x${size}" -strip png:- | pngquant --quality 70-95 --speed 1 - > "$target.part" || { echo "thread $thread: resize or quantise failed" >&2; return 1; }

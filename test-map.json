@@ -24,10 +24,10 @@
     {
       "paths": ["art/machines/**"],
       "tests": [
-        "nix-shell --run 'shellcheck art/paint.sh art/critic.sh'",
+        "nix-shell --run 'shellcheck art/paint.sh art/ask.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"
       ],
-      "why": "the machine textures are made by ziral --gen through paint.sh and judged through critic.sh; the tests check the shipped scaffolds, kept candidates, maps and keys against the manifest"
+      "why": "the machine textures are painted by ziral --gen through paint.sh, their prompts written and their candidates judged through ask.sh; the tests check the shipped scaffolds, prompts, kept candidates, maps and keys against the manifest"
     },
     {
       "paths": ["art/**/*.sh"],

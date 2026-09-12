@@ -1,8 +1,8 @@
 candidates = 4
 
 [style]
-shared = "Use case: game-texture. Restyle the supplied scaffold while preserving its exact framing and its flat straight-down view: the camera looks straight down, orthographic, exactly as the scaffold is drawn, so the picture is the plan of the machine, never an oblique or three-quarter view, with no perspective, no vanishing point, no foreshortening and no visible side face; every seat, cup and well is a concentric circle seen from directly above, its inner wall hidden all the way round and its far side no more visible than its near side. The scaffold is a flat pure green chroma-key background carrying the seat marks of one machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand, and the small dot at the heart of every ring and horseshoe is the exact centre of that seat, the point the atom will occupy. The machine stays within the tiles it stands on: every part, port, pipe, hinge, valve and chute included, lies within twice the ring's radius of some mark's centre, and nothing rises above or hangs below the seats or bulges out between two seats. Turn those marks into the machine described next as one freestanding object, compact and built tight around the marks, its body reaching and joining every mark, every seat, cup, well, funnel and hand built concentric on its dot, empty and unobstructed. The machine is compact and small against the green, but the marks are never pulled closer together: every seat stays exactly on its dot at the mark's own size, as far apart as the dots are, and the body between seats is slender rather than the seats moving inward; each seat housing hugs its ring closely, no part lies further from the nearest mark's centre than twice that ring's radius, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover stays the untouched flat pure green key: no board, no tile, no plate, no well, no base, no table, no room, no beads, no atoms, no fist, no fingers, no text, numerals, logos or exposed clockwork. Flat base-colour capture with baked ambient occlusion only: photoreal glazed ceramic, darkened brass and worn rubber, no directional light, highlight, specular or cast shadow, so the one sprite is correct turned to any facing."
-recipe = "The image of beads joined by bars is the compound that makes this machine, drawn at the scaffold's scale: take the shape of that structure, its count of beads and the way its bars join them, as the inspiration for the form of the machine, its body echoing the structure in its layout and its joins, and paint no bead and no bar."
+shared = "The picture is a game sprite: one compact kiln-floor machine seen in a flat plan from directly above, orthographic, no perspective, no vanishing point, no foreshortening, no side face, every seat, cup and well a concentric circle with its inner wall hidden all the way round, painted over the attached scaffold at the scaffold's exact framing. The scaffold is a flat pure green chroma-key background carrying the seat marks of the machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand, and the dot at the heart of every ring and horseshoe is the exact centre of that seat, where the atom sits. In the finished picture every seat, cup, well, funnel and hand is built concentric on its dot at the mark's own size, empty and unobstructed, as far apart as the dots are; the body between seats is slender and hugs the marks; no part lies further from the nearest mark's centre than twice that ring's radius, nothing rises above or hangs below the seats or bulges out between two seats, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover is the untouched flat pure green key: no board, tile, plate, well, base, table, room, bead, atom, fist, finger, text, numeral, logo or exposed clockwork. The materials are photoreal glazed ceramic, darkened brass and worn rubber in the workshop palette: clay #D8C3A5, dark brass #6B4F3A, terracotta #C8553D, blue-green #4F8A8B, amber #E0A458, plum #7D5BA6, ivory #F4EDE4; the capture is flat base colour with baked ambient occlusion only, no directional light, highlight, specular or cast shadow, so the one sprite is correct turned to any facing; no labels, watermark, menus, clutter or named-game resemblance."
+recipe = "The second attached image is the compound of beads joined by bars that makes this machine, drawn at the scaffold's scale; the machine's form echoes that structure, its count of beads and the way its bars join them, in its layout and its joins, and the picture holds no bead and no bar."
 critic = """Judge one machine sprite for a game against its art bible. The first image is the machine as the game shows it: the cut sprite over the board's clay tiles at gameplay scale, magnified without smoothing, so the pixel steps are the magnification and not the art. The second image is the scaffold it was painted over: a flat green key carrying one mark per seat, a ring or an open horseshoe with a dot at its exact centre, and a brass disc for a pivot. Judge only what these images show, against these rules quoted from the bible. View: "Every machine is drawn from directly above, the camera straight down and orthographic, so one sprite turns to any facing by rotating about its cell. A visible side face, a cup's far inner wall, a vanishing point are the tells." Footprint: "Every machine stays within the tiles it occupies. A sprite that reaches past its tiles covers a neighbour's tile and overlaps whatever stands there, and its edge then lies about what the machine occupies." Language: "Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. Rotatable art is captured as albedo under even, diffuse, non-directional light: curvature comes from symmetric tonal structure, wear gathers at contact edges only, and there is no cast shadow or directional highlight to swing with a turn." Silhouette: "Stout circular pivots, one-piece links, an open horseshoe for the hand. Every state is readable from the outline alone." Glyphs: "A glyph is a compact kiln-floor machine whose complete sprite spans its footprint. Its circular seats and functional channels remain broad and unobstructed beneath atoms, so the machine story never obscures how it is used." Forbidden: "Exposed clockwork; grime or wear over a state glaze; tiny ornamental hardware; text or numerals on the board; pure black or white (dark brass and ivory instead)." And the sprite is one complete object with every seat built on its mark, empty, and nothing under it: no plate, no tile, no base, no trace of the green key. The score: 10 breaks no rule and reads at a glance at this scale; 8 is the bar, at most a blemish a player would not notice; below 8 a rule is broken, and the more rules or the more plainly, the lower. The issues: what is wrong and where, in the painter's terms, so the next paint can fix it."""
 edges = [
     "right",
@@ -23,6 +23,7 @@ sphere = 25.0
 [machine.arm]
 direction = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-black-rubber horseshoe gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
 kept = 2
+briefed = "caaacf9631662067"
 painted = "4bc50ac26b5149de"
 relit = "584dbfeff8fea117"
 judged = "9796133c38c4cd52"
@@ -69,6 +70,7 @@ event = "rotated"
 [machine.bonder]
 direction = "The machine is a two-cell bonder: two equal empty blue-green ceramic atom seats in terracotta housings, joined by one heavy darkened-brass compression channel with opposed clamp jaws, worn rubber collars, pressure pipes and a squat kiln port, everything lying flat along the line between the two seats and no taller than the seat housings, the port and pipes on the channel itself, nothing rising above or hanging below the channel at its middle, so both atoms survive and leave joined; no third seat."
 kept = 2
+briefed = "f85dddc0470b49b7"
 painted = "26f1eef931eb51fd"
 relit = "2e37efc4ba2d639a"
 judged = "b6b823455442ec5d"
@@ -116,6 +118,7 @@ event = "fired"
 [machine.converter-amber]
 direction = "The machine is a compact three-cell amber converter drawn as a flat plan: three equal empty circular amber seats at the scaffold dots, each only a thin concentric ring with no wall, lip, cavity, plug, highlight or shadow, joined by one broad continuous darkened-brass Y channel flowing toward the origin ring. Every fill is uniform unlit base colour with clean edges and no depth cues. The asymmetric fork lies tight to the three marks, with no bead, atom, plate, text, or exposed clockwork."
 kept = 1
+briefed = "d8fb2ac5e6546cee"
 painted = "2cc8f7191c0ec5c4"
 relit = "187aa8d30b9ba6d3"
 judged = "30f0c6c2bcc64c98"
@@ -155,6 +158,7 @@ event = "fired"
 [machine.converter-plum]
 direction = "The machine is a compact three-cell plum converter drawn as a flat plan: one empty amber circular ring at the origin and two empty plum circular rings at the other scaffold dots, every seat only a thin concentric ring with no wall, lip, cavity, plug, highlight or shadow. A broad uniform plum channel and paired darkened-brass rail make one angular bend through the rings. Every fill is uniform unlit base colour with clean edges and no depth cues; no bead, atom, plate, text, or exposed clockwork."
 kept = 1
+briefed = "e34a58611a178af9"
 painted = "d9e844b5e93e9c52"
 relit = "8e66e81fa45722fc"
 judged = "2cce178b69aab19f"
@@ -194,6 +198,7 @@ event = "fired"
 [machine.output-1]
 direction = "The machine is a seven-cell output station, the first tier: seven equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, one at the centre and six around it, each cup exactly on its mark and as far apart as the marks, joined only by slender paired brass delivery rails running from the centre cup to each outer cup, worn rubber bumpers at the rim of the cluster and one small covered exit chute on the centre cup's housing, everything lying flat and no higher than the cup housings, nothing bulging out beyond the six outer cups, looking receptive rather than transformative."
 kept = 2
+briefed = "cc9341177360618b"
 painted = "1b53d32435cd4fee"
 relit = "5fe90d3d955c6921"
 judged = "a6cecac9e48b1385"
@@ -233,6 +238,7 @@ event = "fired"
 [machine.output-2]
 direction = "The machine is a nineteen-cell output station, the second tier: the seven-cup ivory station of the first tier at its heart, a centre cup with six around it joined by slender paired brass rails, now ringed by twelve more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, each cup exactly on its mark and as far apart as the marks, the outer ring tied to the inner by the same slender brass rails and a thin brass hoop, the rubber bumpers and covered exit chute of the first tier kept, everything lying flat and no higher than the cup housings, nothing beyond the outer ring of cups."
 kept = 4
+briefed = "32f6a0db5934cf0d"
 painted = "a3e42f65b6749ec1"
 relit = "bc3a6dc4b8d68075"
 judged = "715cf28fdd159716"
@@ -272,6 +278,7 @@ event = "fired"
 [machine.output-3]
 direction = "The machine is a thirty-seven-cell output station, the third tier: the nineteen-cup ivory station of the second tier at its heart, its centre cup, inner ring of six and outer ring of twelve joined by slender paired brass rails and a thin brass hoop, now ringed by eighteen more equal empty pale-ivory glazed ceramic receiving cups with darkened-brass rims, thirty-seven cups in a hexagon of rows of four, five, six, seven, six, five and four, each cup small, its rim no wider than the ring mark it sits on and its centre exactly on the mark's dot, the cups as far apart as the marks and no closer, so that the outermost rims sit on the outermost marks and the green margin all around stays empty, the new ring tied on by the same slender rails and a second brass hoop no wider than the cups, the rubber bumpers and covered exit chute of the earlier tiers kept small and inside the outer rims, everything lying flat and no higher than the cup housings, nothing at all beyond the outermost ring of cups."
 kept = 1
+briefed = "c37598e006050627"
 painted = "67da911b67203421"
 relit = "e9d3d0d9998a9f6a"
 judged = "550dabe0cf3de8b6"
@@ -311,6 +318,7 @@ event = "fired"
 [machine.reification]
 direction = "The machine is the reification glyph, a nineteen-cell amber kiln well: one central receiving cup and two complete hexagonal rings of six and twelve equal empty atom seats, every neighbouring pair joined by a broad continuous fired-clay channel, with an inward brass collector around the centre. Every seat is exactly on its mark and remains unobstructed; the compact honeycomb fills only its radius-two footprint and reads as consuming the complete wrap into the central inventory atom."
 kept = 4
+briefed = "daf2a482fe3b0502"
 painted = "bc9d46614c0cfe38"
 relit = "bc3a6dc4b8d68075"
 judged = "c2b7b6e8b0868f51"
@@ -348,11 +356,12 @@ motion = "dilate"
 event = "fired"
 
 [machine.second-bond]
-direction = "The machine is a three-cell second-bond applicator drawn as a flat plan: two matching empty blue-green bond seats joined by the scaffold's one straight brass rail, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve joined by one straight stub only to the exact midpoint of that rail. Preserve the scaffold's T exactly: the feed has no edge, pipe or rail to either bond seat, and the rail midpoint is the only junction. The three seats are the three largest features, each exactly on its mark, with a compact plum glazed ceramic manifold, darkened-brass fittings and worn rubber seals, so the feed is consumed to upgrade the bond between the other two."
+direction = "The machine is a three-cell second-bond applicator: two matching empty blue-green bond seats in a compact plum glazed ceramic manifold, joined to each other by one straight darkened-brass rail, and one visibly different sacrificial feed seat with a terracotta funnel, toothed intake collar and one-way valve, whose only connection is one short straight brass stub from its housing to the exact midpoint of that rail. The three seats are the three largest features, each exactly on its mark; the rail and the stub are real painted brass of one piece with the manifold, worn rubber seals at the joins; between the feed seat and either bond seat there is only green, no edge, pipe, rail or ridge, so the feed is consumed to upgrade the bond between the other two."
 kept = 4
-painted = "5d23bcdb5407890f"
-relit = "de30ea17ee55a395"
-judged = "fea449675cde090f"
+briefed = "6af5eb1229b96076"
+painted = "88ae6ec55d3dab10"
+relit = "9b0c6fc8bb1817be"
+judged = "d0dd74546a7324ae"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -397,6 +406,7 @@ event = "fired"
 [machine.source]
 direction = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."
 kept = 2
+briefed = "81d5dc6036915ae9"
 painted = "38dfd1b060b04971"
 relit = "9b24ad26d7dc2604"
 judged = "fae20dd01bf9ae02"

@@ -27,14 +27,6 @@ const PAD: f32 = 1.6;
 const PAD_ALBEDO: f32 = 0.45;
 const SAMPLES: usize = 4;
 const CRITIC_PX: u32 = 512;
-const SECOND_BOND_BODY: f32 = 0.48;
-const SECOND_BOND_CHANNEL: f32 = 0.1;
-
-fn segment_distance(point: Vec2, start: Vec2, end: Vec2) -> f32 {
-    let line = end - start;
-    let along = (point - start).dot(line) / line.length_squared();
-    point.distance(start + line * along.clamp(0.0, 1.0))
-}
 
 #[derive(Serialize, Deserialize)]
 struct Manifest {
@@ -67,6 +59,7 @@ struct Thresholds {
 struct Entry {
     direction: String,
     kept: Option<u32>,
+    briefed: Option<String>,
     painted: Option<String>,
     relit: Option<String>,
     judged: Option<String>,
@@ -121,8 +114,12 @@ impl Art {
         self.dir.join("../paint.sh")
     }
 
-    fn critic_sh(&self) -> PathBuf {
-        self.dir.join("../critic.sh")
+    fn ask_sh(&self) -> PathBuf {
+        self.dir.join("../ask.sh")
+    }
+
+    fn prompt(&self, name: &str) -> PathBuf {
+        self.machine(name).join("prompt.txt")
     }
 
     fn judged(&self, name: &str, index: u32) -> PathBuf {
@@ -149,7 +146,6 @@ fn item(name: &str) -> Machine {
 
 #[derive(Debug)]
 struct Scaffold {
-    item: Machine,
     cells: Vec<Cell>,
     quad: Quad,
     canvas: u32,
@@ -171,7 +167,6 @@ const fn band() -> f32 {
 impl Scaffold {
     fn of(item: Machine) -> Scaffold {
         let mut scaffold = Scaffold {
-            item,
             cells: look::footprint(item),
             quad: look::quad(item),
             canvas: canvas(item),
@@ -261,73 +256,8 @@ impl Scaffold {
         }
     }
 
-    fn channel(&self, world: Vec2) -> Option<Glaze> {
-        if self.item != Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
-            return None;
-        }
-        let feed = px(self.cells[0].at);
-        let left = px(self.cells[1].at);
-        let right = px(self.cells[2].at);
-        let middle = (left + right) / 2.0;
-        [
-            segment_distance(world, left, right),
-            segment_distance(world, feed, middle),
-        ]
-        .into_iter()
-        .any(|distance| distance <= SECOND_BOND_CHANNEL * HEX)
-        .then_some(Glaze::Brass)
-    }
-
-    fn compose(&self, candidate: RgbaImage) -> RgbaImage {
-        if self.item != Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
-            return candidate;
-        }
-        RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
-            let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-            let seat = self
-                .cells
-                .iter()
-                .any(|cell| world.distance(px(cell.at)) <= SECOND_BOND_BODY * HEX);
-            if seat {
-                *candidate.get_pixel(x, y)
-            } else {
-                rgba(self.channel(world).map_or(KEY, Glaze::rgb), 1.0)
-            }
-        })
-    }
-
-    fn prepared(&self, path: &Path) -> Result<RgbaImage, String> {
-        let candidate = image::open(path)
-            .map_err(|error| format!("{}: {error}", path.display()))?
-            .into_rgba8();
-        if (candidate.width(), candidate.height()) != (self.canvas, self.canvas) {
-            return Err(format!(
-                "{} is {}x{}, expected {}x{}",
-                path.display(),
-                candidate.width(),
-                candidate.height(),
-                self.canvas,
-                self.canvas
-            ));
-        }
-        Ok(self.register(&candidate).image)
-    }
-
-    fn cache_bytes(&self, path: &Path) -> Vec<u8> {
-        if self.item == Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
-            self.prepared(path)
-                .unwrap_or_else(|error| panic!("{error}"))
-                .into_raw()
-        } else {
-            read(path)
-        }
-    }
-
     fn paint(&self, world: Vec2) -> Rgba<u8> {
-        let glaze = self
-            .in_cell(world, HEX)
-            .and_then(|c| self.mark(c, world))
-            .or_else(|| self.channel(world));
+        let glaze = self.in_cell(world, HEX).and_then(|c| self.mark(c, world));
         rgba(glaze.map_or(KEY, Glaze::rgb), 1.0)
     }
 
@@ -413,7 +343,6 @@ impl Scaffold {
             let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
             bilinear(candidate, self.pixel(onto(world)))
         });
-        let image = self.compose(image);
         let off_centre = self
             .cells
             .iter()
@@ -1096,43 +1025,79 @@ fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, recipe: Option<&F
     ])
 }
 
-fn prompt(style: &Style, item: Machine, direction: &str) -> String {
+fn brief(style: &Style, item: Machine, direction: &str) -> String {
     match item.recipe() {
         Some(_) => format!("{} {} {}", style.shared, style.recipe, direction),
         None => format!("{} {}", style.shared, direction),
     }
 }
 
-fn relit_key(art: &Art, name: &str, kept: u32, style: &Style, scaffold: &Scaffold) -> String {
-    let edges = style.edges.join("\n");
-    let kept = scaffold.cache_bytes(&art.candidate(name, kept));
-    key(&[&kept, style.relight.as_bytes(), edges.as_bytes()])
+fn stored(path: &Path) -> Result<Option<String>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text.trim().to_string()).filter(|text| !text.is_empty())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }
 
-fn judged_key(art: &Art, name: &str, count: u32, style: &Style, scaffold: &Scaffold) -> String {
+fn store(path: &Path, prompt: &str) -> Result<String, String> {
+    let prompt = prompt.trim();
+    if prompt.is_empty() {
+        return Err(format!("{}: an empty prompt was written", path.display()));
+    }
+    std::fs::write(path, format!("{prompt}\n")).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(prompt.to_string())
+}
+
+const DIRECTOR: &str = "You are the art director for one game sprite and you write the prompt an image generation model will receive. The brief below states the facts the finished picture must have; the wording of its direction is a starting point you may change or drop as you see fit, and within those facts the art direction is yours: be creative. Write the prompt as a declarative caption describing the finished picture, its subject, layout, materials, light and what is absent, never as instructions to the model. Answer with exactly one JSON object and nothing else, {\"prompt\": the caption as one string}; do not generate an image, run commands, edit anything or write files. Brief:";
+const CAPTION_SCHEMA: &str = r#"{"type":"object","properties":{"prompt":{"type":"string","minLength":1}},"required":["prompt"],"additionalProperties":false}"#;
+const JUDGE: &str = "Answer with exactly one JSON object and nothing else, {\"score\": an integer from 0 to 10, \"issues\": a list of at most five strings, most important first, each one sentence naming what is wrong and where}; do not run commands, edit anything or write files.";
+const CRITIC_SCHEMA: &str = r#"{"type":"object","properties":{"score":{"type":"integer","minimum":0,"maximum":10},"issues":{"type":"array","maxItems":5,"items":{"type":"string"}}},"required":["score","issues"],"additionalProperties":false}"#;
+
+#[derive(Deserialize)]
+struct Caption {
+    prompt: String,
+}
+
+fn caption(text: &str) -> Result<String, String> {
+    let object = text
+        .find('{')
+        .and_then(|a| text.get(a..=text.rfind('}')?))
+        .ok_or_else(|| format!("no caption: {}", text.trim()))?;
+    serde_json::from_str::<Caption>(object)
+        .map(|c| c.prompt)
+        .map_err(|e| format!("no caption: {e}"))
+}
+
+fn relit_key(kept: &[u8], style: &Style) -> String {
+    let edges = style.edges.join("\n");
+    key(&[kept, style.relight.as_bytes(), edges.as_bytes()])
+}
+
+fn judged_key(art: &Art, name: &str, count: u32, style: &Style) -> String {
     let candidates: Vec<Vec<u8>> = (1..=count)
         .map(|i| art.candidate(name, i))
         .filter(|p| p.exists())
-        .map(|p| scaffold.cache_bytes(&p))
+        .map(|p| read(&p))
         .collect();
     let mut parts: Vec<&[u8]> = vec![style.critic.as_bytes()];
     parts.extend(candidates.iter().map(Vec::as_slice));
     key(&parts)
 }
 
-fn revised(prompt: &str, issues: &[String], round: usize) -> String {
+fn rebrief(brief: &str, prompt: &str, issues: &[String], round: usize) -> Option<String> {
     if round == ROUNDS {
-        return format!(
-            "{prompt} Start again from the machine description. Secure the whole object's straight-down gameplay read and its seat layout first; simplify or remove any detail that competes with them."
-        );
+        return Some(format!(
+            "{brief} Write a new prompt from this brief alone: the whole object's straight-down gameplay read and its seat layout come first, and any detail that competes with them is simplified or left out."
+        ));
     }
     if issues.is_empty() {
-        return prompt.to_string();
+        return None;
     }
-    format!(
-        "{prompt} Revise, most important first: {}",
+    Some(format!(
+        "{brief} The current prompt: \"{prompt}\" A critic found these issues with the best picture it produced, most important first: {} Rewrite the prompt so the next picture fixes them.",
         issues.join(" ")
-    )
+    ))
 }
 
 fn best(scored: &[(u32, Score)], keep: impl Fn(&Score) -> bool) -> Option<(u32, &Score)> {
@@ -1146,18 +1111,19 @@ fn best(scored: &[(u32, Score)], keep: impl Fn(&Score) -> bool) -> Option<(u32, 
         .map(|(i, s)| (*i, s))
 }
 
-type CriticCommand<'a> = &'a (dyn Fn(&[PathBuf], &str) -> Result<String, String> + Sync);
+type Ask<'a> = &'a (dyn Fn(&[PathBuf], &str) -> Result<String, String> + Sync);
 
-fn critic_sh(art: &Art, images: &[PathBuf], prompt: &str) -> Result<String, String> {
-    let mut command = std::process::Command::new(art.critic_sh());
+fn ask(art: &Art, schema: &str, images: &[PathBuf], prompt: &str) -> Result<String, String> {
+    let mut command = std::process::Command::new(art.ask_sh());
     for image in images {
         command.arg("-i").arg(image);
     }
     let output = command
+        .arg(schema)
         .arg(prompt)
         .stdin(std::process::Stdio::null())
         .output()
-        .map_err(|e| format!("{}: {e}", art.critic_sh().display()))?;
+        .map_err(|e| format!("{}: {e}", art.ask_sh().display()))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
         eprintln!("{line}");
@@ -1169,7 +1135,7 @@ fn critic_sh(art: &Art, images: &[PathBuf], prompt: &str) -> Result<String, Stri
         .lines()
         .rev()
         .find(|l| !l.trim().is_empty())
-        .unwrap_or("critic.sh failed without a word")
+        .unwrap_or("ask.sh failed without a word")
         .to_string())
 }
 
@@ -1254,18 +1220,19 @@ struct Prepared {
     thresholds: Thresholds,
     count: u32,
     entry: Entry,
-    prompt: String,
-    painted: String,
+    brief: String,
+    prompt: Option<String>,
+    rendered: RgbaImage,
     images: Vec<PathBuf>,
-    wipe: bool,
     changed: bool,
 }
 
 struct Remake<'a> {
     art: &'a Art,
     manifest: std::sync::Mutex<Manifest>,
+    director: Ask<'a>,
     painter: Painter<'a>,
-    critic: CriticCommand<'a>,
+    critic: Ask<'a>,
     cap: Cap,
     redraw: std::sync::atomic::AtomicBool,
 }
@@ -1338,7 +1305,7 @@ impl Remake<'_> {
         scored: Vec<(u32, Score)>,
     ) -> Result<Vec<(u32, Score)>, String> {
         let dir = self.art.machine(name);
-        let judged = judged_key(self.art, name, count, style, scaffold);
+        let judged = judged_key(self.art, name, count, style);
         let trusted = self.entry(name)?.3.judged.as_deref() == Some(judged.as_str());
         let previous: BTreeMap<u32, Score> = std::fs::read_to_string(dir.join("scores.tsv"))
             .unwrap_or_default()
@@ -1432,9 +1399,14 @@ impl Remake<'_> {
             save(&rendered, &scaffold_png);
             changed = true;
         }
-        let prompt = prompt(&style, item(name), &entry.direction);
-        let painted = painted_key(&prompt, count, &rendered, item(name).recipe());
-        let wipe = entry.painted.as_deref() != Some(painted.as_str());
+        let brief = brief(&style, item(name), &entry.direction);
+        let briefed = key(&[brief.as_bytes()]);
+        let prompt = stored(&self.art.prompt(name))?
+            .filter(|_| entry.briefed.as_deref() == Some(briefed.as_str()));
+        let wipe = prompt.as_deref().is_none_or(|prompt| {
+            let painted = painted_key(prompt, count, &rendered, item(name).recipe());
+            entry.painted.as_deref() != Some(painted.as_str())
+        });
         let mut images = vec![scaffold_png];
         if item(name).recipe().is_some() {
             let recipe_png = dir.join("recipe.png");
@@ -1450,12 +1422,28 @@ impl Remake<'_> {
             thresholds,
             count,
             entry,
+            brief,
             prompt,
-            painted,
+            rendered,
             images,
-            wipe,
             changed,
         })
+    }
+
+    fn author(
+        &self,
+        name: &str,
+        brief: &str,
+        images: &[PathBuf],
+        text: &str,
+    ) -> Result<String, String> {
+        let written = {
+            let _permit = self.cap.take();
+            (self.director)(images, text)?
+        };
+        let prompt = store(&self.art.prompt(name), &written)?;
+        self.record(name, |e| e.briefed = Some(key(&[brief.as_bytes()])));
+        Ok(prompt)
     }
 
     fn machine(&self, name: &str, prepared: Prepared) -> Result<bool, String> {
@@ -1466,10 +1454,10 @@ impl Remake<'_> {
             thresholds,
             count,
             entry,
+            brief,
             prompt,
-            painted,
+            rendered,
             images,
-            mut wipe,
             mut changed,
         } = prepared;
         let dir = self.art.machine(name);
@@ -1477,7 +1465,21 @@ impl Remake<'_> {
         let mut kept = entry.kept.filter(|k| self.art.candidate(name, *k).exists());
         let mut rounds = 0;
         let mut issues: Vec<String> = Vec::new();
+        let mut prompt = match prompt {
+            Some(prompt) => prompt,
+            None => {
+                changed = true;
+                self.author(name, &brief, &images, &brief)?
+            }
+        };
+        let key_of = |prompt: &str| painted_key(prompt, count, &rendered, item(name).recipe());
+        let mut wipe = entry.painted.as_deref() != Some(key_of(&prompt).as_str());
         let kept = loop {
+            if rounds > 0 && let Some(text) = rebrief(&brief, &prompt, &issues, rounds + 1) {
+                prompt = self.author(name, &brief, &images, &text)?;
+                changed = true;
+            }
+            let painted = key_of(&prompt);
             if wipe {
                 let _ = std::fs::remove_dir_all(&candidates);
                 let _ = std::fs::remove_file(dir.join("scores.tsv"));
@@ -1492,7 +1494,7 @@ impl Remake<'_> {
                         Paint {
                             images: images.clone(),
                             output: self.art.candidate(name, i),
-                            prompt: revised(&prompt, &issues, rounds + 1),
+                            prompt: prompt.clone(),
                             size: scaffold.canvas,
                         },
                     )
@@ -1564,7 +1566,7 @@ impl Remake<'_> {
             }
             wipe = true;
         };
-        let relit = relit_key(self.art, name, kept, &style, &scaffold);
+        let relit = relit_key(&read(&self.art.candidate(name, kept)), &style);
         let current = entry.relit.as_deref() == Some(relit.as_str())
             && dir.join("albedo.png").exists()
             && dir.join("normal.png").exists();
@@ -1574,7 +1576,6 @@ impl Remake<'_> {
         }
         self.record(name, |e| {
             e.kept = Some(kept);
-            e.painted = Some(painted.clone());
             e.relit = Some(relit.clone());
         });
         println!(
@@ -1666,9 +1667,6 @@ impl Remake<'_> {
     fn sheet(&self) -> Result<(), String> {
         let m = self.manifest.lock().expect("the manifest is unpoisoned");
         let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
-        let scratch = self.art.dir.join("sheet-parts");
-        let _ = std::fs::remove_dir_all(&scratch);
-        std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
         for item in Machine::ALL {
             let name = name(item);
             let scores = self.art.machine(name).join("scores.tsv");
@@ -1708,21 +1706,10 @@ impl Remake<'_> {
                     )
                     .into(),
                 );
-                let source = if item == Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
-                    let path = scratch.join(format!("{candidate}.png"));
-                    Scaffold::of(item)
-                        .prepared(&self.art.candidate(name, index))?
-                        .save(&path)
-                        .map_err(|error| format!("{}: {error}", path.display()))?;
-                    path
-                } else {
-                    self.art.candidate(name, index)
-                };
-                args.push(source.into());
+                args.push(self.art.candidate(name, index).into());
             }
         }
         if args.len() == 1 {
-            let _ = std::fs::remove_dir_all(&scratch);
             return Ok(());
         }
         let part = self.art.dir.join("sheet.png.part");
@@ -1744,9 +1731,10 @@ impl Remake<'_> {
             .map(Into::into),
         );
         args.push(part.clone().into());
-        let status = std::process::Command::new("magick").args(&args).status();
-        let _ = std::fs::remove_dir_all(&scratch);
-        let status = status.map_err(|e| format!("magick: {e}"))?;
+        let status = std::process::Command::new("magick")
+            .args(&args)
+            .status()
+            .map_err(|e| format!("magick: {e}"))?;
         if !status.success() {
             return Err(format!("magick montage {status}"));
         }
@@ -1756,10 +1744,16 @@ impl Remake<'_> {
 }
 
 impl<'a> Remake<'a> {
-    fn new(art: &'a Art, painter: Painter<'a>, critic: CriticCommand<'a>) -> Remake<'a> {
+    fn new(
+        art: &'a Art,
+        director: Ask<'a>,
+        painter: Painter<'a>,
+        critic: Ask<'a>,
+    ) -> Remake<'a> {
         Remake {
             art,
             manifest: std::sync::Mutex::new(art.read()),
+            director,
             painter,
             critic,
             cap: Cap::new(PAINTERS),
@@ -1771,10 +1765,11 @@ impl<'a> Remake<'a> {
 fn remake(
     art: &Art,
     names: &[String],
+    director: Ask,
     painter: Painter,
-    critic: CriticCommand,
+    critic: Ask,
 ) -> Vec<(String, Result<bool, String>)> {
-    let remake = Remake::new(art, painter, critic);
+    let remake = Remake::new(art, director, painter, critic);
     let mut names: Vec<&String> = names.iter().collect();
     names.sort();
     names.dedup();
@@ -1843,8 +1838,13 @@ pub fn configure(args: &[String]) -> Option<i32> {
     }
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
     let known = |n: &str| Machine::ALL.into_iter().map(name).any(|k| k == n);
+    let director = |images: &[PathBuf], brief: &str| {
+        ask(&art, CAPTION_SCHEMA, images, &format!("{DIRECTOR} {brief}")).and_then(|t| caption(&t))
+    };
     let painter = |job: &Paint| paint_sh(&art, job);
-    let critic = |images: &[PathBuf], prompt: &str| critic_sh(&art, images, prompt);
+    let critic = |images: &[PathBuf], rubric: &str| {
+        ask(&art, CRITIC_SCHEMA, images, &format!("{rubric} {JUDGE}"))
+    };
     let names: Vec<String> = match rest.as_slice() {
         ["--all"] => Machine::ALL
             .into_iter()
@@ -1860,7 +1860,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
         println!("nothing to do");
         return Some(0);
     }
-    let generated = landed(&remake(&art, &names, &painter, &critic));
+    let generated = landed(&remake(&art, &names, &director, &painter, &critic));
     let split = std::process::Command::new(art.dir.join("rig.sh"))
         .status()
         .is_ok_and(|status| status.success());
@@ -1952,93 +1952,6 @@ mod tests {
     }
 
     #[test]
-    fn second_bond_scaffold_routes_the_feed_through_the_bond_seat_rail() {
-        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SecondBond));
-        let feed = px(scaffold.cells[0].at);
-        let left = px(scaffold.cells[1].at);
-        let right = px(scaffold.cells[2].at);
-        let middle = (left + right) / 2.0;
-        let brass = rgba(Glaze::Brass.rgb(), 1.0);
-        let key = rgba(KEY, 1.0);
-        assert_eq!(scaffold.paint(middle), brass, "the bond seats need a rail");
-        assert_eq!(
-            scaffold.paint(feed.lerp(middle, 0.5)),
-            brass,
-            "the feed needs a stub to the rail midpoint"
-        );
-        assert_eq!(
-            scaffold.paint(feed.lerp(left, 0.5)),
-            key,
-            "the feed must not join the left bond seat"
-        );
-        assert_eq!(
-            scaffold.paint(feed.lerp(right, 0.5)),
-            key,
-            "the feed must not join the right bond seat"
-        );
-        let art = Art::shipped();
-        let dir = art.machine("second-bond");
-        let kept = art.read().machine["second-bond"]
-            .kept
-            .expect("a kept paint");
-        let composed = scaffold.cut(
-            &scaffold
-                .register(&open(
-                    dir.join(format!("candidates/second-bond-{kept}.png")),
-                ))
-                .image,
-        );
-        let shipped = open(dir.join("albedo.png"));
-        let (origin, _) = scaffold.crop();
-        for (label, image) in [("composed", composed), ("shipped", shipped)] {
-            let opacity_at = |world| {
-                let at = scaffold.pixel(world) - Vec2::splat(origin as f32);
-                f32::from(image.get_pixel(at.x as u32, at.y as u32)[3]) / 255.0
-            };
-            assert_eq!(opacity_at(middle), 1.0, "{label} bond seats need a rail");
-            assert_eq!(
-                opacity_at(feed.lerp(middle, 0.5)),
-                1.0,
-                "{label} feed needs a stub to the rail midpoint"
-            );
-            assert_eq!(
-                opacity_at(feed.lerp(left, 0.5)),
-                0.0,
-                "{label} feed must not join the left bond seat"
-            );
-            assert_eq!(
-                opacity_at(feed.lerp(right, 0.5)),
-                0.0,
-                "{label} feed must not join the right bond seat"
-            );
-            for (start, end) in [(left, right), (feed, middle)] {
-                for step in 0..=100 {
-                    assert_eq!(
-                        opacity_at(start.lerp(end, step as f32 / 100.0)),
-                        1.0,
-                        "{label} T must be continuous"
-                    );
-                }
-            }
-            for (x, y, pixel) in image.enumerate_pixels() {
-                if pixel[3] == 0 {
-                    continue;
-                }
-                let full = Vec2::new(x as f32 + 0.5, y as f32 + 0.5) + Vec2::splat(origin as f32);
-                let world = scaffold.world(full);
-                let in_body = scaffold
-                    .cells
-                    .iter()
-                    .any(|cell| world.distance(px(cell.at)) <= SECOND_BOND_BODY * HEX);
-                assert!(
-                    in_body || scaffold.channel(world).is_some(),
-                    "{label} feed must have no connection outside the T"
-                );
-            }
-        }
-    }
-
-    #[test]
     fn every_machine_has_a_manifest_entry_a_scaffold_a_kept_candidate_that_passes_and_relief() {
         let manifest = Art::shipped().read();
         let names: Vec<&str> = Machine::ALL.into_iter().map(name).collect();
@@ -2086,14 +1999,8 @@ mod tests {
             assert_eq!(
                 machine.judged.as_deref(),
                 Some(
-                    judged_key(
-                        &Art::shipped(),
-                        name,
-                        manifest.candidates,
-                        &manifest.style,
-                        &scaffold,
-                    )
-                    .as_str()
+                    judged_key(&Art::shipped(), name, manifest.candidates, &manifest.style)
+                        .as_str()
                 ),
                 "{name}: the judgement is stale against the candidates or the critic prompt: run ziral --gen {name}"
             );
@@ -2142,15 +2049,23 @@ mod tests {
                 tilted as f32 > normal.pixels().len() as f32 * 0.01,
                 "{name}/normal.png is flat"
             );
-            let prompt = prompt(&manifest.style, item, &machine.direction);
+            let prompt = stored(&Art::shipped().prompt(name))
+                .expect("prompt.txt is readable")
+                .unwrap_or_else(|| panic!("{name} has no prompt.txt: run ziral --gen {name}"));
+            assert_eq!(
+                machine.briefed.as_deref(),
+                Some(key(&[brief(&manifest.style, item, &machine.direction).as_bytes()]).as_str()),
+                "{name}: the prompt was written from another brief: run ziral --gen {name}"
+            );
             assert_eq!(
                 machine.painted.as_deref(),
                 Some(painted_key(&prompt, manifest.candidates, &want, item.recipe()).as_str()),
-                "{name}: the candidates are stale against the manifest: run ziral --gen {name}"
+                "{name}: the candidates are stale against the prompt: run ziral --gen {name}"
             );
+            let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));
             assert_eq!(
                 machine.relit.as_deref(),
-                Some(relit_key(&Art::shipped(), name, kept, &manifest.style, &scaffold,).as_str()),
+                Some(relit_key(&kept_png, &manifest.style).as_str()),
                 "{name}: the maps are stale against the kept candidate: run ziral --gen {name}"
             );
         }
@@ -2349,6 +2264,7 @@ mod tests {
                         Entry {
                             direction: format!("a {name}"),
                             kept: None,
+                            briefed: None,
                             painted: None,
                             relit: None,
                             judged: None,
@@ -2403,6 +2319,10 @@ mod tests {
         Ok(())
     }
 
+    fn author(_: &[PathBuf], brief: &str) -> Result<String, String> {
+        Ok(brief.to_string())
+    }
+
     fn judge(_: &[PathBuf], _: &str) -> Result<String, String> {
         Ok(r#"{"score": 10, "issues": []}"#.to_string())
     }
@@ -2425,7 +2345,7 @@ mod tests {
         let names = ["source".to_string()];
         let run = |calls: &std::sync::atomic::AtomicUsize| {
             calls.store(0, std::sync::atomic::Ordering::SeqCst);
-            let results = remake(&art, &names, &painter, &judge);
+            let results = remake(&art, &names, &author, &painter, &judge);
             assert_eq!(results.len(), 1, "{results:?}");
             let changed = results[0].1.clone().expect("source lands");
             (changed, calls.load(std::sync::atomic::Ordering::SeqCst))
@@ -2468,6 +2388,17 @@ mod tests {
         m.machine.get_mut("source").expect("source").direction = "another source".into();
         art.write(&m);
         assert_eq!(run(&calls), (true, 2));
+        assert_eq!(
+            stored(&art.prompt("source")).expect("readable").as_deref(),
+            Some(format!("{} another source", art.read().style.shared).as_str())
+        );
+        store(&art.prompt("source"), "a hand-written caption").expect("writable");
+        assert_eq!(run(&calls), (true, 2));
+        assert_eq!(
+            stored(&art.prompt("source")).expect("readable").as_deref(),
+            Some("a hand-written caption")
+        );
+        assert_eq!(run(&calls), (false, 0));
         let mut m = art.read();
         m.machine.get_mut("source").expect("source").kept = Some(3 - kept);
         art.write(&m);
@@ -2500,7 +2431,7 @@ mod tests {
             fake(job)
         };
         let names = ["bonder".to_string(), "source".to_string()];
-        assert!(landed(&remake(&art, &names, &painter, &judge)));
+        assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
         let recorded = jobs.lock().unwrap();
         let style = art.read().style;
         for (name, item) in [
@@ -2571,7 +2502,7 @@ mod tests {
         );
         let jobs_before = recorded.len();
         drop(recorded);
-        assert!(landed(&remake(&art, &names, &painter, &judge)));
+        assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
         assert_eq!(
             jobs.lock().unwrap().len(),
             jobs_before,
@@ -2595,7 +2526,7 @@ mod tests {
             }
         };
         let names = ["bonder".to_string(), "source".to_string()];
-        let results = remake(&art, &names, &painter, &judge);
+        let results = remake(&art, &names, &author, &painter, &judge);
         assert!(!landed(&results));
         let by_name = |results: &[(String, Result<bool, String>)], name: &str| {
             results
@@ -2614,12 +2545,12 @@ mod tests {
         );
         assert_eq!(art.read().machine["bonder"].kept, None);
         assert!(art.read().machine["source"].kept.is_some());
-        let results = remake(&art, &names, &fake, &judge);
+        let results = remake(&art, &names, &author, &fake, &judge);
         assert!(landed(&results), "{results:?}");
         assert_eq!(by_name(&results, "source"), Ok(false));
         assert_eq!(by_name(&results, "bonder"), Ok(true));
         assert!(art.read().machine["bonder"].kept.is_some());
-        assert!(landed(&remake(&art, &names[1..], &fake, &judge)));
+        assert!(landed(&remake(&art, &names[1..], &author, &fake, &judge)));
         assert!(landed(&[]));
     }
 
@@ -2636,7 +2567,10 @@ mod tests {
              n=$((n + 1))\n\
              printf %s \"$n\" > \"$HOME/attempts\"\n\
              [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
-             mkdir -p \"$HOME/.codex/generated_images/t$n\"\n\
+             mkdir -p \"$HOME/.codex/generated_images/t$n\" \"$HOME/.codex/sessions\"\n\
+             p=$(printf %s \"$4\" | sed -n '/^<<<PROMPT$/,/^PROMPT>>>$/p' | sed '1d;$d')\n\
+             [ -z \"$REWRITE\" ] || p=\"Image 1 is the reference. $p\"\n\
+             jq -nc --arg p \"$p\" '{type:\"response_item\",payload:{type:\"custom_tool_call\",name:\"exec\",input:(\"tools.image_gen__imagegen({prompt:\" + ($p|@json) + \"})\")}}' > \"$HOME/.codex/sessions/rollout-x-t$n.jsonl\"\n\
              magick -size 64x64 xc:'#00ff00' \"$HOME/.codex/generated_images/t$n/a.png\"\n\
              echo \"{\\\"type\\\":\\\"thread.started\\\",\\\"thread_id\\\":\\\"t$n\\\"}\"\n",
         )
@@ -2648,17 +2582,18 @@ mod tests {
             root.join("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        let paint = |pass_on: u32| {
+        let paint = |pass_on: u32, rewrite: bool| {
             let _ = std::fs::remove_file(root.join("attempts"));
             let _ = std::fs::remove_file(root.join("out.png"));
             let started = std::time::Instant::now();
             let out = std::process::Command::new(Art::shipped().paint_sh())
                 .args(["-s", "64"])
                 .arg(root.join("out.png"))
-                .arg("a prompt")
+                .arg("a prompt\nwith a second line")
                 .env("PATH", &path)
                 .env("HOME", &root)
                 .env("PASS_ON", pass_on.to_string())
+                .env("REWRITE", if rewrite { "1" } else { "" })
                 .output()
                 .expect("paint.sh runs");
             let attempts: u32 = std::fs::read_to_string(root.join("attempts"))
@@ -2672,7 +2607,7 @@ mod tests {
                 started.elapsed().as_secs_f32(),
             )
         };
-        let (ok, attempts, stderr, took) = paint(3);
+        let (ok, attempts, stderr, took) = paint(3, false);
         assert!(ok, "{stderr}");
         assert!(root.join("out.png").exists());
         assert_eq!(attempts, 3);
@@ -2686,7 +2621,7 @@ mod tests {
         }
         assert!(!stderr.contains("attempt 3 of 4"), "{stderr}");
         assert!(took >= 3.0, "{took}s: no backoff");
-        let (ok, attempts, stderr, took) = paint(99);
+        let (ok, attempts, stderr, took) = paint(99, false);
         assert!(!ok);
         assert!(!root.join("out.png").exists());
         assert_eq!(attempts, 4);
@@ -2696,6 +2631,14 @@ mod tests {
         );
         assert!(stderr.contains("gave up after 4 attempts"), "{stderr}");
         assert!(took >= 7.0, "{took}s: no backoff");
+        let (ok, attempts, stderr, _) = paint(1, true);
+        assert!(!ok);
+        assert!(!root.join("out.png").exists());
+        assert_eq!(attempts, 4);
+        assert!(
+            stderr.contains("the image tool received another prompt:\nImage 1 is the reference. a prompt\nwith a second line"),
+            "{stderr}"
+        );
     }
 
     fn rows(art: &Art, name: &str) -> BTreeMap<String, (String, Score)> {
@@ -2748,6 +2691,16 @@ mod tests {
     }
 
     #[test]
+    fn the_caption_is_the_prompt_of_one_json_object_or_an_error() {
+        assert_eq!(
+            caption("```json\n{\"prompt\": \"A flat plan.\"}\n```").as_deref(),
+            Ok("A flat plan.")
+        );
+        assert!(caption(r#"{"caption": "A flat plan."}"#).is_err());
+        assert!(caption("A flat plan.").is_err());
+    }
+
+    #[test]
     fn the_critic_sees_the_board_and_the_scaffold_and_a_malformed_reply_fails_only_that_candidate()
     {
         let art = studio("critic", &["right", "top", "left", "bottom"], &["source"]);
@@ -2762,7 +2715,7 @@ mod tests {
             })
         };
         let names = ["source".to_string()];
-        let results = remake(&art, &names, &fake, &critic);
+        let results = remake(&art, &names, &author, &fake, &critic);
         assert!(landed(&results), "{results:?}");
         assert_eq!(art.read().machine["source"].kept, Some(1));
         let rows = rows(&art, "source");
@@ -2817,7 +2770,7 @@ mod tests {
             .to_string())
         };
         let names = ["source".to_string()];
-        assert!(landed(&remake(&art, &names, &fake, &critic)));
+        assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
         assert_eq!(art.read().machine["source"].kept, Some(2));
         let rows = rows(&art, "source");
         assert_eq!(rows["source-1"].0, "pass");
@@ -2839,17 +2792,25 @@ mod tests {
             }
             .to_string())
         };
-        assert!(landed(&remake(&art, &names, &fake, &critic)));
+        assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
         assert_eq!(art.read().machine["source"].kept, Some(lower));
     }
 
     #[test]
-    fn the_best_candidates_issues_revise_then_the_last_round_starts_again() {
+    fn the_best_candidates_issues_rebrief_the_author_then_the_last_round_starts_again() {
         let art = studio("revise", &["right", "top", "left", "bottom"], &["source"]);
         let direction = "  art direction with a tab\t, a line\nbreak and trailing spaces   ";
         let mut m = art.read();
         m.machine.get_mut("source").expect("source").direction = direction.to_string();
         art.write(&m);
+        let briefs: std::sync::Mutex<Vec<(Vec<PathBuf>, String)>> = std::sync::Mutex::new(vec![]);
+        let author = |images: &[PathBuf], text: &str| {
+            briefs
+                .lock()
+                .unwrap()
+                .push((images.to_vec(), text.to_string()));
+            Ok(format!("a caption from: {}", text.trim()))
+        };
         let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
         let painter = |job: &Paint| {
             if job.images[0].ends_with("scaffold.png") {
@@ -2871,21 +2832,39 @@ mod tests {
             .to_string())
         };
         let names = ["source".to_string()];
-        let results = remake(&art, &names, &painter, &critic);
+        let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
         let style = art.read().style;
         let base = format!("{} {direction}", style.shared);
+        let first = format!("a caption from: {}", base.trim());
+        let briefs = briefs.lock().unwrap();
+        let scaffold = art.machine("source").join("scaffold.png");
+        assert_eq!(briefs.len(), 3, "{briefs:?}");
+        assert!(briefs.iter().all(|(images, _)| *images == [scaffold.clone()]));
+        assert_eq!(briefs[0].1, base);
+        assert_eq!(
+            briefs[1].1,
+            format!(
+                "{base} The current prompt: \"{first}\" A critic found these issues with the best picture it produced, most important first: Tipped: the hopper shows its back wall. A plate under it. Text on the gate. Rewrite the prompt so the next picture fixes them."
+            )
+        );
+        assert_eq!(
+            briefs[2].1,
+            format!(
+                "{base} Write a new prompt from this brief alone: the whole object's straight-down gameplay read and its seat layout come first, and any detail that competes with them is simplified or left out."
+            )
+        );
         let prompts = prompts.lock().unwrap();
         assert_eq!(prompts.len(), 6, "{prompts:?}");
-        assert_eq!(&prompts[..2], &[base.clone(), base.clone()]);
-        let revised = format!(
-            "{base} Revise, most important first: Tipped: the hopper shows its back wall. A plate under it. Text on the gate."
+        assert_eq!(&prompts[..2], &[first.clone(), first]);
+        let second = format!("a caption from: {}", briefs[1].1.trim());
+        assert_eq!(&prompts[2..4], &[second.clone(), second]);
+        let third = format!("a caption from: {}", briefs[2].1.trim());
+        assert_eq!(&prompts[4..], &[third.clone(), third.clone()]);
+        assert_eq!(
+            stored(&art.prompt("source")).expect("readable").as_deref(),
+            Some(third.as_str())
         );
-        assert_eq!(&prompts[2..4], &[revised.clone(), revised]);
-        let reset = format!(
-            "{base} Start again from the machine description. Secure the whole object's straight-down gameplay read and its seat layout first; simplify or remove any detail that competes with them."
-        );
-        assert_eq!(&prompts[4..], &[reset.clone(), reset]);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].direction, direction);
         assert!(art.read().machine["source"].kept.is_some());
@@ -2911,7 +2890,7 @@ mod tests {
             })
         };
         let names = ["source".to_string()];
-        let results = remake(&art, &names, &painter, &critic);
+        let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
         assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
@@ -2925,7 +2904,7 @@ mod tests {
             rows["source-2"].1.issues(),
             ["Round 3 best.", "Still a plate."]
         );
-        let results = remake(&art, &names, &painter, &critic);
+        let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
         assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
@@ -2942,7 +2921,7 @@ mod tests {
         let names = ["source".to_string()];
         let run = || {
             calls.store(0, std::sync::atomic::Ordering::SeqCst);
-            assert!(landed(&remake(&art, &names, &fake, &critic)));
+            assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
             calls.load(std::sync::atomic::Ordering::SeqCst)
         };
         assert_eq!(run(), 2);
@@ -2965,7 +2944,7 @@ mod tests {
     }
 
     #[test]
-    fn critic_sh_returns_the_message_and_retries_a_failed_call_with_backoff() {
+    fn ask_sh_returns_the_message_and_retries_a_failed_call_with_backoff() {
         let root = std::env::temp_dir().join(format!("ziral-critic-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("bin")).expect("a fake bin");
@@ -2977,6 +2956,7 @@ mod tests {
              n=$((n + 1))\n\
              printf %s \"$n\" > \"$HOME/attempts\"\n\
              printf '%s\\n' \"$@\" > \"$HOME/args-$n\"\n\
+             cp \"$6\" \"$HOME/schema-$n\"\n\
              [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
              echo '{\"type\":\"thread.started\",\"thread_id\":\"t1\"}'\n\
              echo '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"{\\\"score\\\":6,\\\"issues\\\":[\\\"A far wall.\\\"]}\"}}'\n",
@@ -2991,15 +2971,16 @@ mod tests {
         );
         let image = root.join("board.png");
         std::fs::write(&image, b"png").expect("an image");
-        let out = std::process::Command::new(Art::shipped().critic_sh())
+        let out = std::process::Command::new(Art::shipped().ask_sh())
             .arg("-i")
             .arg(&image)
+            .arg(CRITIC_SCHEMA)
             .arg("Judge this.")
             .env("PATH", &path)
             .env("HOME", &root)
             .env("PASS_ON", "2")
             .output()
-            .expect("critic.sh runs");
+            .expect("ask.sh runs");
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "{stderr}");
         assert_eq!(
@@ -3017,19 +2998,20 @@ mod tests {
             args.contains(&format!("--image\n{}", image.display())),
             "{args}"
         );
-        let prompt = args
-            .lines()
-            .find(|l| l.starts_with("Judge this."))
-            .expect("the prompt");
-        assert!(prompt.contains("exactly one JSON object"), "{prompt}");
+        assert!(args.lines().any(|l| l == "Judge this."), "{args}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("schema-2")).expect("the call's schema"),
+            format!("{CRITIC_SCHEMA}\n")
+        );
         let _ = std::fs::remove_file(root.join("attempts"));
-        let out = std::process::Command::new(Art::shipped().critic_sh())
+        let out = std::process::Command::new(Art::shipped().ask_sh())
+            .arg(CRITIC_SCHEMA)
             .arg("Judge this.")
             .env("PATH", &path)
             .env("HOME", &root)
             .env("PASS_ON", "99")
             .output()
-            .expect("critic.sh runs");
+            .expect("ask.sh runs");
         assert!(!out.status.success());
         assert!(
             String::from_utf8_lossy(&out.stderr).contains("gave up after 4 attempts"),
@@ -3041,7 +3023,7 @@ mod tests {
     fn a_critic_that_reads_no_candidate_repaints_nothing_and_keeps_the_keep() {
         let art = studio("outage", &["right", "top", "left", "bottom"], &["source"]);
         let names = ["source".to_string()];
-        assert!(landed(&remake(&art, &names, &fake, &judge)));
+        assert!(landed(&remake(&art, &names, &author, &fake, &judge)));
         let kept = art.read().machine["source"].kept;
         let mut m = art.read();
         m.style.critic += " Be harsher.";
@@ -3049,7 +3031,7 @@ mod tests {
         let paints = std::sync::atomic::AtomicUsize::new(0);
         let painter = counted(&paints, &fake);
         let down = |_: &[PathBuf], _: &str| Err("codex: boom".to_string());
-        let results = remake(&art, &names, &painter, &down);
+        let results = remake(&art, &names, &author, &painter, &down);
         assert!(!landed(&results));
         let reason = results[0].1.clone().expect_err("source does not land");
         assert_eq!(reason, "the critic read no candidate; nothing repainted");
@@ -3058,7 +3040,7 @@ mod tests {
         assert!(art.candidate("source", 1).exists() && art.candidate("source", 2).exists());
         let rows = rows(&art, "source");
         assert_eq!(rows["source-1"].0, "pass");
-        assert!(landed(&remake(&art, &names, &painter, &judge)));
+        assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
         assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }
