@@ -828,3 +828,15 @@ The rule. An atom picture in the inventory is a transparent render target painte
 The dumbest design is to point the existing image node at that rendered bead. Clipping the square texture would add a second circular mask, and reproducing the circle and rim in UI nodes would add a second bead implementation.
 
 Test: every atom picture points at its kind's preview target, and every preview layer contains the circle and rim produced by the bead path. Mutation-tested both ways: restoring the raw skin image makes the target assertion fail; removing the rim makes the bead-fill assertion fail.
+
+### The sacrificial seat joins the bond-seat rail
+
+Directive (verbatim): "Double-bonder machine would be visually explained a little more intuitively if the sacrificial atom receptical
+was connected to the connector between the two other recepticals. This instead of connecting it to the other
+recipricals directly."
+
+The second-bond scaffold fixes one brass rail between the two bond seats and one brass stub from the rail's midpoint to the sacrificial seat. The stub meets the rail and no line joins the sacrificial seat to either bond seat. The generated sprite still supplies the ceramic housings, funnel, valve and material detail, but it paints over topology owned by the scaffold, so a new paint cannot turn the three seats back into a triangle.
+
+This is the dumbest design satisfying the directive because the existing sprite pipeline already makes the scaffold the generator's geometry input. A runtime connector would split one machine between a painted sprite and a new mesh path, while leaving the painter free to add contradictory rails; prose in the prompt alone is the failed approach, since three unconnected seat marks admit a triangle. One T in the scaffold is deterministic, visible to the painter and testable at exact sample points.
+
+Test: the second-bond scaffold has brass along the bond-seat segment and the midpoint stub, while the two diagonal segments from the sacrificial seat remain green. Mutation-tested both ways: restoring either diagonal or removing the midpoint join fails the topology assertion.

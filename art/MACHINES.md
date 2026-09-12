@@ -38,7 +38,7 @@ Two adjacent cells as equal seats joined by a heavy compression bridge. Opposed 
 
 ## Second bond
 
-A triangular plum manifold with two matching bond seats and one different sacrificial feed. Paired rails connect the bond seats while the feed uses a funnel, one-way valve, and more severe collar, making the fixed roles legible before an atom arrives.
+A plum manifold with two matching bond seats joined by one rail and one different sacrificial feed joined only to that rail's midpoint. The resulting T, the funnel, one-way valve, and more severe collar make the fixed roles legible before an atom arrives.
 
 ## Output, first tier
 
