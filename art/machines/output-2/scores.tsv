@@ -1,4 +1,4 @@
-output-2-1	0.000	0.704	0.276	0.057	-	fail critic unreadable	[]
-output-2-2	0.000	0.765	0.288	0.028	-	fail critic unreadable	[]
+output-2-1	0.000	0.704	0.276	0.057	-	pass	[]
+output-2-2	0.000	0.765	0.288	0.028	-	pass	[]
 output-2-3	0.000	0.547	0.287	0.305	-	fail off_centre 0.305 > 0.1	[]
-output-2-4	0.000	0.823	0.275	0.045	5	fail critic 5 < 8	["All nineteen seats read as deep cups with dark upper inner walls and bright lower lips, breaking the straight-down view.","The seats carry directional shading and pale highlights; paint their curvature with concentric tones under even light so the lighting does not rotate with the machine.","The connecting channels are thin, dark, uneven cords between oversized rims; broaden them into clear, one-piece rubbed-brass links that remain readable beneath atoms."]
+output-2-4	0.000	0.823	0.275	0.045	6	pass	["The machine reads as a delicate arrangement of pale buttons rather than a weighty kiln-floor object, with little distinctive character in its painted surfaces.","The brown metal looks uniformly muddy rather than rubbed brass, and the cream seats lack convincing glaze and contact-edge wear.","Across the circular seats, dark upper crescents and bright lower rims create directional lighting that would swing when the sprite rotates.","The pale, domed-looking seat centres read as filled caps rather than clearly empty receiving seats."]

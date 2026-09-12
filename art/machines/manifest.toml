@@ -3,7 +3,7 @@ candidates = 4
 [style]
 shared = "The picture is a game sprite: one compact kiln-floor machine seen in a flat plan from directly above, orthographic, no perspective, no vanishing point, no foreshortening, no side face, every seat, cup and well a concentric circle with its inner wall hidden all the way round, painted over the attached scaffold at the scaffold's exact framing. The scaffold is a flat pure green chroma-key background carrying the seat marks of the machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand, and the dot at the heart of every ring and horseshoe is the exact centre of that seat, where the atom sits. In the finished picture every seat, cup, well, funnel and hand is built concentric on its dot at the mark's own size, empty and unobstructed, as far apart as the dots are; the body between seats is slender and hugs the marks; no part lies further from the nearest mark's centre than twice that ring's radius, nothing rises above or hangs below the seats or bulges out between two seats, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover is the untouched flat pure green key: no board, tile, plate, well, base, table, room, bead, atom, fist, finger, text, numeral, logo or exposed clockwork. The materials are photoreal glazed ceramic, darkened brass and worn rubber in the workshop palette: clay #D8C3A5, dark brass #6B4F3A, terracotta #C8553D, blue-green #4F8A8B, amber #E0A458, plum #7D5BA6, ivory #F4EDE4; the capture is flat base colour with baked ambient occlusion only, no directional light, highlight, specular or cast shadow, so the one sprite is correct turned to any facing; no labels, watermark, menus, clutter or named-game resemblance."
 recipe = "The second attached image is the compound of beads joined by bars that makes this machine, drawn at the scaffold's scale; the machine's form echoes that structure, its count of beads and the way its bars join them, in its layout and its joins, and the picture holds no bead and no bar."
-critic = """Judge one machine sprite for a game against its art bible. The first image is the machine as the game shows it: the cut sprite over the board's clay tiles at gameplay scale, magnified without smoothing, so the pixel steps are the magnification and not the art. The second image is the scaffold it was painted over: a flat green key carrying one mark per seat, a ring or an open horseshoe with a dot at its exact centre, and a brass disc for a pivot. Judge only what these images show, against these rules quoted from the bible. View: "Every machine is drawn from directly above, the camera straight down and orthographic, so one sprite turns to any facing by rotating about its cell. A visible side face, a cup's far inner wall, a vanishing point are the tells." Footprint: "Every machine stays within the tiles it occupies. A sprite that reaches past its tiles covers a neighbour's tile and overlaps whatever stands there, and its edge then lies about what the machine occupies." Language: "Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. Rotatable art is captured as albedo under even, diffuse, non-directional light: curvature comes from symmetric tonal structure, wear gathers at contact edges only, and there is no cast shadow or directional highlight to swing with a turn." Silhouette: "Stout circular pivots, one-piece links, an open horseshoe for the hand. Every state is readable from the outline alone." Glyphs: "A glyph is a compact kiln-floor machine whose complete sprite spans its footprint. Its circular seats and functional channels remain broad and unobstructed beneath atoms, so the machine story never obscures how it is used." Forbidden: "Exposed clockwork; grime or wear over a state glaze; tiny ornamental hardware; text or numerals on the board; pure black or white (dark brass and ivory instead)." And the sprite is one complete object with every seat built on its mark, empty, and nothing under it: no plate, no tile, no base, no trace of the green key. The score: 10 breaks no rule and reads at a glance at this scale; 8 is the bar, at most a blemish a player would not notice; below 8 a rule is broken, and the more rules or the more plainly, the lower. The issues: what is wrong and where, in the painter's terms, so the next paint can fix it."""
+critic = """Judge one machine sprite for a game against its art bible. The first image is the machine as the game shows it: the cut sprite over the board's clay tiles at gameplay scale, magnified without smoothing, so the pixel steps are the magnification and not the art. The second image is the scaffold it was painted over: a flat green key carrying one mark per seat, a ring or an open horseshoe with a dot at its exact centre, and a brass disc for a pivot; it is there for reference only, not a checklist, and no difference between the picture and the marks is a fault. The code has already measured that every seat sits on its mark and that the sprite stays within its tiles, so neither is yours to judge; and how the body joins its seats, which seat connects to which and by what, is the painter's call and never counts against the picture. Judge, in this order. Presence: the sprite reads at a glance at this scale as one solid, weighty kiln-floor object. Material richness: glazed ceramic, darkened brass and worn rubber read as those materials, wear gathered at contact edges, detail that rewards a close look. Artist moxie: the painting is confident and characterful, a machine somebody made, not a timid diagram of the marks. Then these rules quoted from the bible, as blemishes a strong picture carries lightly. View: "Every machine is drawn from directly above, the camera straight down and orthographic, so one sprite turns to any facing by rotating about its cell. A visible side face, a cup's far inner wall, a vanishing point are the tells." Language: "Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. Rotatable art is captured as albedo under even, diffuse, non-directional light: curvature comes from symmetric tonal structure, wear gathers at contact edges only, and there is no cast shadow or directional highlight to swing with a turn." Silhouette: "Stout circular pivots, an open horseshoe for the hand. Every state is readable from the outline alone." Glyphs: "Its circular seats remain broad and unobstructed beneath atoms, so the machine story never obscures how it is used." Forbidden: "Exposed clockwork; grime or wear over a state glaze; tiny ornamental hardware; text or numerals on the board; pure black or white (dark brass and ivory instead)." And the sprite is one complete object with every seat empty and nothing under it: no plate, no tile, no base, no trace of the green key. The score: 10 has presence, rich material and moxie and breaks no rule; 8 is the bar, presence, rich material and moxie with at most a blemish a player would not notice; below 8 the picture is dull, thin in material or timid, or breaks a rule plainly, and the more it lacks or the more plainly, the lower; a picture with moxie that carries a light blemish scores above a dull picture that breaks no rule. The issues: what is wrong and where, in the painter's terms, so the next paint can fix it; name only what you judged, never seat position, footprint, or how the parts connect."""
 edges = [
     "right",
     "top",
@@ -26,7 +26,7 @@ kept = 2
 briefed = "caaacf9631662067"
 painted = "4bc50ac26b5149de"
 relit = "584dbfeff8fea117"
-judged = "9796133c38c4cd52"
+judged = "b5ba1ebcc2dcdc21"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -73,7 +73,7 @@ kept = 2
 briefed = "f85dddc0470b49b7"
 painted = "26f1eef931eb51fd"
 relit = "2e37efc4ba2d639a"
-judged = "b6b823455442ec5d"
+judged = "429c2117cc8ae8b8"
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -121,7 +121,7 @@ kept = 1
 briefed = "d8fb2ac5e6546cee"
 painted = "2cc8f7191c0ec5c4"
 relit = "187aa8d30b9ba6d3"
-judged = "30f0c6c2bcc64c98"
+judged = "4b91b01222377279"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -161,7 +161,7 @@ kept = 1
 briefed = "e34a58611a178af9"
 painted = "d9e844b5e93e9c52"
 relit = "8e66e81fa45722fc"
-judged = "2cce178b69aab19f"
+judged = "27401aebeb19a894"
 
 [machine.converter-plum.instrument]
 voice = "ceramic"
@@ -201,7 +201,7 @@ kept = 2
 briefed = "cc9341177360618b"
 painted = "1b53d32435cd4fee"
 relit = "5fe90d3d955c6921"
-judged = "a6cecac9e48b1385"
+judged = "0770e9e385a354f4"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -241,7 +241,7 @@ kept = 4
 briefed = "32f6a0db5934cf0d"
 painted = "a3e42f65b6749ec1"
 relit = "bc3a6dc4b8d68075"
-judged = "715cf28fdd159716"
+judged = "c80faad25d4fe91f"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -281,7 +281,7 @@ kept = 1
 briefed = "c37598e006050627"
 painted = "67da911b67203421"
 relit = "e9d3d0d9998a9f6a"
-judged = "550dabe0cf3de8b6"
+judged = "5e59a8c8a21f8649"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -321,7 +321,7 @@ kept = 4
 briefed = "daf2a482fe3b0502"
 painted = "bc9d46614c0cfe38"
 relit = "bc3a6dc4b8d68075"
-judged = "c2b7b6e8b0868f51"
+judged = "14be5e44f90ad58e"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -361,7 +361,7 @@ kept = 4
 briefed = "6af5eb1229b96076"
 painted = "88ae6ec55d3dab10"
 relit = "9b0c6fc8bb1817be"
-judged = "d0dd74546a7324ae"
+judged = "2137a3a3b9c27e93"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -409,7 +409,7 @@ kept = 2
 briefed = "81d5dc6036915ae9"
 painted = "38dfd1b060b04971"
 relit = "9b24ad26d7dc2604"
-judged = "fae20dd01bf9ae02"
+judged = "aaeec213d3571af5"
 
 [machine.source.instrument]
 voice = "ceramic"
