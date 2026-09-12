@@ -100,9 +100,15 @@ don't know what the elegant \"pin-card\" affordance is."
 
 Directive (verbatim): "I figured out how we can intuitively pin inventory cards by the way. Right click and drag from inventory to create a new pinned card. It is more intuitive than requiring the user to press p."
 
-Right-dragging an inventory row onto the board creates and focuses its card; releasing it over the panels cancels the drag. Several cards may remain at once. A pinned card drags by its plate, resizes proportionally from its lower-right corner, and Z removes it through the same focus grammar as every other focused thing. Its pictures remain wordless and keep their aspect ratio at every size. There is no key binding for pinning.
+Directive (verbatim): "Nice. Two tweaks.
+- Card has the dark brown background, hard for humans eyes to parse the machines on that background.
+- resize should be scroll wheel to match the other zoom controls in the game"
+
+Right-dragging an inventory row onto the board creates and focuses its card; releasing it over the panels cancels the drag. Several cards may remain at once. A pinned card drags by its plate, resizes proportionally with the wheel over it in the same direction and step as board zoom, and Z removes it through the same focus grammar as every other focused thing. Its pictures remain wordless and keep their aspect ratio at every size. There is no key binding for pinning and no resize handle.
 
 One card camera draws every inventory item's card into one fixed region of one offscreen surface, and ordinary UI image nodes show those regions. Pins of the same item share its region and playback; each pin owns only identity, placement, and size. This is the dumbest design satisfying the directive because the existing card drawing stays singular while UI already owns pointer interaction, placement, and size. A camera or rendered region per pin was rejected because either would multiply projection, render target, playback, ordering, or cleanup state for identical pictures.
+
+The inner plate of that one card painter is clay, the same palette surface beneath a machine in the inventory and on the board; hover and pinned cards therefore cannot diverge. One wheel decision at the pointer either scales the top pinned card or scales the board, never both, using the existing exponential step and bounds. This is the dumbest design satisfying the directive because it changes one shared material, reuses one zoom law, and deletes the corner child and resize drag state. A separate card wheel system was rejected because two systems reading the same wheel would make routing an accidental ordering rule and leave both views able to move.
 
 ## Parking lot
 
