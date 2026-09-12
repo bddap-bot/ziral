@@ -1335,29 +1335,22 @@ fn spawn_card_camera(commands: &mut Commands, images: &mut Assets<Image>) -> Han
         TextureFormat::Rgba8UnormSrgb,
         None,
     ));
+    let mut projection = OrthographicProjection::default_2d();
+    projection.scale = CARD_SCALE;
     commands.spawn((
         CardCamera,
-        card_view(RenderTarget::Image(image.clone().into()), CARD_SCALE, true),
-    ));
-    commands.insert_resource(CardSurface(image.clone()));
-    image
-}
-
-fn card_view(target: RenderTarget, scale: f32, active: bool) -> impl Bundle {
-    let mut projection = OrthographicProjection::default_2d();
-    projection.scale = scale;
-    (
         Camera2d,
         Camera {
             order: 1,
-            is_active: active,
             clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         },
-        target,
+        RenderTarget::Image(image.clone().into()),
         Projection::Orthographic(projection),
         CARD,
-    )
+    ));
+    commands.insert_resource(CardSurface(image.clone()));
+    image
 }
 
 fn main() {
@@ -3643,7 +3636,7 @@ mod shot {
     use bevy::time::TimeUpdateStrategy;
 
     use sim::{Atom, AtomKind, Bond};
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::time::Duration;
 
     const WIDE_SCALE: f32 = 1.5;
@@ -3786,20 +3779,12 @@ mod shot {
         script
     }
 
+    const SHOT_PX: UVec2 = UVec2::new(1280, 720);
+
     #[derive(Clone, Copy)]
     pub enum Frame {
         Micro,
         Wide,
-        Recipe(Machine),
-    }
-
-    impl Frame {
-        fn size(self) -> UVec2 {
-            match self {
-                Frame::Micro | Frame::Wide => UVec2::new(1280, 720),
-                Frame::Recipe(_) => UVec2::splat(machines::canvas(RECIPE_BOUND)),
-            }
-        }
     }
 
     #[derive(Resource)]
@@ -4153,12 +4138,6 @@ mod shot {
                 world.motion = 0.0;
                 world.hover = Some(Item::Machine(machine));
                 world.play = Some(Play::at(machine, ticks));
-            }
-            name if name.starts_with("recipe:") => {
-                let item = machine(&name[7..]);
-                assert!(item.recipe().is_some(), "{name} has no recipe");
-                world.sim = Sim::empty();
-                frame = Frame::Recipe(item);
             }
             "walk" | "ghost" => {
                 let mut sim = Sim::empty();
@@ -4576,27 +4555,6 @@ mod shot {
         (world, frame, script, warm)
     }
 
-    pub fn recipe(item: Machine, path: &Path) {
-        #[cfg(test)]
-        let _render = crate::RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let (world, frame, script, warm) = scene(&format!("recipe:{}", machines::name(item)), 0);
-        let shot = Shot {
-            path: path.to_path_buf(),
-            clip: None,
-            frame,
-            script,
-            warm,
-            frames: 0,
-            target: None,
-            moving_view: false,
-        };
-        let mut app = app(world, shot);
-        lit_plugin(&mut app);
-        assert_eq!(app.run(), AppExit::Success, "{}", path.display());
-    }
-
     pub fn parse(args: &[String]) -> Option<(World, Shot)> {
         const USAGE: &str = "usage: ziral --shot <png> <scene> <ticks> | ziral --shot <dir> <scene> <ticks> <play> <tick_ms> <motion>";
         let num = |s: &String| s.parse::<f32>().expect(USAGE);
@@ -4696,27 +4654,8 @@ mod shot {
             .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
             .add_systems(Startup, spawn_offscreen_camera)
             .add_systems(Update, move_sound_view.before(view))
-            .add_systems(Update, capture.after(run_ticks).before(draw))
-            .add_systems(Update, recipe_frame.after(draw));
+            .add_systems(Update, capture.after(run_ticks).before(draw));
         app
-    }
-
-    fn recipe_frame(shot: Res<Shot>, mut gizmos: Gizmos, mut commands: Commands, kiln: Res<Kiln>) {
-        let Frame::Recipe(item) = shot.frame else {
-            return;
-        };
-        let mut p = Painter {
-            gizmos: &mut gizmos,
-            commands: &mut commands,
-            kiln: &kiln,
-            ghost: false,
-            layers: CARD,
-            shift: Vec2::ZERO,
-        };
-        let recipe = item
-            .recipe()
-            .expect("a recipe frame draws a machine that has one");
-        compound(&mut p, Vec2::ZERO, recipe);
     }
 
     fn spawn_offscreen_camera(
@@ -4724,9 +4663,8 @@ mod shot {
         mut images: ResMut<Assets<Image>>,
         mut shot: ResMut<Shot>,
     ) {
-        let size = shot.frame.size();
         let mut image =
-            Image::new_target_texture(size.x, size.y, TextureFormat::Rgba8UnormSrgb, None);
+            Image::new_target_texture(SHOT_PX.x, SHOT_PX.y, TextureFormat::Rgba8UnormSrgb, None);
         image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
         let handle = images.add(image);
         let mut projection = OrthographicProjection::default_2d();
@@ -4736,25 +4674,14 @@ mod shot {
                 let pivots: Vec<Vec2> = sim::PLACEMENTS.iter().map(|h| px(*h)).collect();
                 pivots.iter().sum::<Vec2>() / pivots.len() as f32
             }
-            Frame::Micro | Frame::Recipe(_) => {
+            Frame::Micro => {
                 projection.scale = MICRO_SCALE;
                 px(FOCUS)
             }
         };
-        let recipe = matches!(shot.frame, Frame::Recipe(_));
-        if recipe {
-            commands.spawn(card_view(
-                RenderTarget::Image(handle.clone().into()),
-                1.0 / machines::scale(),
-                true,
-            ));
-        }
         commands.spawn((
             Camera2d,
-            Camera {
-                is_active: !recipe,
-                ..default()
-            },
+            Camera::default(),
             Projection::Orthographic(projection),
             Transform::from_translation(center.extend(0.0)),
             RenderTarget::Image(handle.clone().into()),

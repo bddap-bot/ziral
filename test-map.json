@@ -22,12 +22,22 @@
       "why": "one vector source regenerates every symbol and its shipped-size proof; the manual composites those exact symbols over its reusable page"
     },
     {
+      "paths": ["art/direct.sh"],
+      "tests": ["nix-shell --run 'shellcheck art/direct.sh && cargo test direct_sh -- --test-threads=2'"],
+      "why": "direct.sh writes every painted prompt; the stub-codex test runs the script"
+    },
+    {
+      "paths": ["art/textures/*.prompt.txt", "art/overlay/*.prompt.txt"],
+      "tests": ["nix-shell --run 'cargo test every_painted_texture_has_the_prompt -- --test-threads=2'"],
+      "why": "every shipped texture must keep the prompt that painted it beside it"
+    },
+    {
       "paths": ["art/machines/**"],
       "tests": [
-        "nix-shell --run 'shellcheck art/paint.sh art/ask.sh'",
+        "nix-shell --run 'shellcheck art/paint.sh art/ask.sh art/direct.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"
       ],
-      "why": "the machine textures are painted by ziral --gen through paint.sh, their prompts written and their candidates judged through ask.sh; the tests check the shipped scaffolds, prompts, kept candidates, maps and keys against the manifest"
+      "why": "the machine textures are painted by ziral --gen through paint.sh, their prompts written through direct.sh and their candidates judged through ask.sh; the tests check the shipped scaffolds, prompts, kept candidates, maps and keys against the manifest"
     },
     {
       "paths": ["art/**/*.sh"],

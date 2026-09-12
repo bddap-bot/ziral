@@ -5,27 +5,23 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 out=$here
 count=1
 paint=()
+usage() { echo "usage: gen.sh [-o DIR] [-n COUNT] [-s SIZE] [-i IMAGE] NAME" >&2; exit 2; }
 while getopts 'o:n:s:i:' opt; do
   case $opt in
   o) out=$OPTARG ;;
   n) count=$OPTARG ;;
   s | i) paint+=("-$opt" "$OPTARG") ;;
-  *) echo "usage: gen.sh [-o DIR] [-n COUNT] [-s SIZE] [-i IMAGE] NAME SUBJECT" >&2; exit 2 ;;
+  *) usage ;;
   esac
 done
 shift $((OPTIND - 1))
+[ $# -eq 1 ] || usage
 name=$1
-subject=$2
-
-dir=$out
-kept="candidate 1"
-if [ "$count" -gt 1 ]; then
-  dir=$out/candidates
-  kept="candidates 1 to $count"
+subject=$(cat "$here/$name.prompt.txt")
+if [ "$count" -eq 1 ]; then
+  "$here/../paint.sh" "${paint[@]}" "$out/$name.png" "$subject"
+else
+  for i in $(seq 0 $((count - 1))); do
+    "$here/../paint.sh" "${paint[@]}" "$(printf '%s/%s-%02d.png' "$out" "$name" "$i")" "$subject"
+  done
 fi
-for i in $(seq 1 "$count"); do
-  target=$dir/$name.png
-  [ "$count" -eq 1 ] || target=$dir/$name-$i.png
-  "$here/../paint.sh" "${paint[@]}" "$target" "$subject"
-done
-printf '%s — %s\n%s\n\n' "$name.png" "$kept" "$subject" >> "$out/prompts.txt"

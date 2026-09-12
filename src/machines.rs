@@ -1,4 +1,3 @@
-use crate::form::Form;
 use crate::look::{self, AMBIENT, Cell, Glaze, HEX, Quad, Role, px};
 use crate::sim::Machine;
 use crate::sim::Slot;
@@ -39,7 +38,6 @@ struct Manifest {
 #[derive(Serialize, Deserialize, Clone)]
 struct Style {
     shared: String,
-    recipe: String,
     critic: String,
     edges: Vec<String>,
     relight: String,
@@ -118,6 +116,10 @@ impl Art {
         self.dir.join("../ask.sh")
     }
 
+    fn direct_sh(&self) -> PathBuf {
+        self.dir.join("../direct.sh")
+    }
+
     fn prompt(&self, name: &str) -> PathBuf {
         self.machine(name).join("prompt.txt")
     }
@@ -152,11 +154,11 @@ struct Scaffold {
     mask: Vec<f32>,
 }
 
-pub(crate) const fn scale() -> f32 {
+const fn scale() -> f32 {
     PX_PER_HEX / HEX
 }
 
-pub(crate) fn canvas(item: Machine) -> u32 {
+fn canvas(item: Machine) -> u32 {
     (look::quad(item).side * scale() + 2.0 * band()).round() as u32
 }
 
@@ -924,7 +926,7 @@ const RELIGHTS: u32 = 3;
 const ROUNDS: usize = 3;
 
 struct Paint {
-    images: Vec<PathBuf>,
+    image: PathBuf,
     output: PathBuf,
     prompt: String,
     size: u32,
@@ -940,9 +942,7 @@ fn paint_sh(art: &Art, job: &Paint) -> Result<(), String> {
         .unwrap_or_default();
     let mut command = std::process::Command::new(art.paint_sh());
     command.arg("-s").arg(job.size.to_string());
-    for image in &job.images {
-        command.arg("-i").arg(image);
-    }
+    command.arg("-i").arg(&job.image);
     let output = command
         .arg(&job.output)
         .arg(&job.prompt)
@@ -1014,22 +1014,17 @@ fn key(parts: &[&[u8]]) -> String {
     format!("{h:016x}")
 }
 
-fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, recipe: Option<&Form>) -> String {
-    let recipe = recipe.map(ToString::to_string).unwrap_or_default();
+fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage) -> String {
     key(&[
         prompt.as_bytes(),
         &count.to_le_bytes(),
         &scaffold.width().to_le_bytes(),
         scaffold.as_raw(),
-        recipe.as_bytes(),
     ])
 }
 
-fn brief(style: &Style, item: Machine, direction: &str) -> String {
-    match item.recipe() {
-        Some(_) => format!("{} {} {}", style.shared, style.recipe, direction),
-        None => format!("{} {}", style.shared, direction),
-    }
+fn brief(style: &Style, direction: &str) -> String {
+    format!("{} {}", style.shared, direction)
 }
 
 fn stored(path: &Path) -> Result<Option<String>, String> {
@@ -1049,25 +1044,8 @@ fn store(path: &Path, prompt: &str) -> Result<String, String> {
     Ok(prompt.to_string())
 }
 
-const DIRECTOR: &str = "You are the art director for one game sprite and you write the prompt an image generation model will receive. The brief below states the facts the finished picture must have; the wording of its direction is a starting point you may change or drop as you see fit, and within those facts the art direction is yours: be creative. Write the prompt as a declarative caption describing the finished picture, its subject, layout, materials, light and what is absent, never as instructions to the model. Answer with exactly one JSON object and nothing else, {\"prompt\": the caption as one string}; do not generate an image, run commands, edit anything or write files. Brief:";
-const CAPTION_SCHEMA: &str = r#"{"type":"object","properties":{"prompt":{"type":"string","minLength":1}},"required":["prompt"],"additionalProperties":false}"#;
 const JUDGE: &str = "Answer with exactly one JSON object and nothing else, {\"score\": an integer from 0 to 10, \"issues\": a list of at most five strings, most important first, each one sentence naming what is wrong and where}; do not run commands, edit anything or write files.";
 const CRITIC_SCHEMA: &str = r#"{"type":"object","properties":{"score":{"type":"integer","minimum":0,"maximum":10},"issues":{"type":"array","maxItems":5,"items":{"type":"string"}}},"required":["score","issues"],"additionalProperties":false}"#;
-
-#[derive(Deserialize)]
-struct Caption {
-    prompt: String,
-}
-
-fn caption(text: &str) -> Result<String, String> {
-    let object = text
-        .find('{')
-        .and_then(|a| text.get(a..=text.rfind('}')?))
-        .ok_or_else(|| format!("no caption: {}", text.trim()))?;
-    serde_json::from_str::<Caption>(object)
-        .map(|c| c.prompt)
-        .map_err(|e| format!("no caption: {e}"))
-}
 
 fn relit_key(kept: &[u8], style: &Style) -> String {
     let edges = style.edges.join("\n");
@@ -1113,17 +1091,16 @@ fn best(scored: &[(u32, Score)], keep: impl Fn(&Score) -> bool) -> Option<(u32, 
 
 type Ask<'a> = &'a (dyn Fn(&[PathBuf], &str) -> Result<String, String> + Sync);
 
-fn ask(art: &Art, schema: &str, images: &[PathBuf], prompt: &str) -> Result<String, String> {
-    let mut command = std::process::Command::new(art.ask_sh());
+fn run(script: &Path, images: &[PathBuf], args: &[&str]) -> Result<String, String> {
+    let mut command = std::process::Command::new(script);
     for image in images {
         command.arg("-i").arg(image);
     }
     let output = command
-        .arg(schema)
-        .arg(prompt)
+        .args(args)
         .stdin(std::process::Stdio::null())
         .output()
-        .map_err(|e| format!("{}: {e}", art.ask_sh().display()))?;
+        .map_err(|e| format!("{}: {e}", script.display()))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
         eprintln!("{line}");
@@ -1135,8 +1112,8 @@ fn ask(art: &Art, schema: &str, images: &[PathBuf], prompt: &str) -> Result<Stri
         .lines()
         .rev()
         .find(|l| !l.trim().is_empty())
-        .unwrap_or("ask.sh failed without a word")
-        .to_string())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{} failed without a word", script.display())))
 }
 
 fn read(path: &Path) -> Vec<u8> {
@@ -1223,7 +1200,7 @@ struct Prepared {
     brief: String,
     prompt: Option<String>,
     rendered: RgbaImage,
-    images: Vec<PathBuf>,
+    scaffold_png: PathBuf,
     changed: bool,
 }
 
@@ -1399,23 +1376,10 @@ impl Remake<'_> {
             save(&rendered, &scaffold_png);
             changed = true;
         }
-        let brief = brief(&style, item(name), &entry.direction);
+        let brief = brief(&style, &entry.direction);
         let briefed = key(&[brief.as_bytes()]);
         let prompt = stored(&self.art.prompt(name))?
             .filter(|_| entry.briefed.as_deref() == Some(briefed.as_str()));
-        let wipe = prompt.as_deref().is_none_or(|prompt| {
-            let painted = painted_key(prompt, count, &rendered, item(name).recipe());
-            entry.painted.as_deref() != Some(painted.as_str())
-        });
-        let mut images = vec![scaffold_png];
-        if item(name).recipe().is_some() {
-            let recipe_png = dir.join("recipe.png");
-            if wipe || !recipe_png.exists() {
-                crate::shot::recipe(item(name), &recipe_png);
-                changed = true;
-            }
-            images.push(recipe_png);
-        }
         Ok(Prepared {
             scaffold,
             style,
@@ -1425,7 +1389,7 @@ impl Remake<'_> {
             brief,
             prompt,
             rendered,
-            images,
+            scaffold_png,
             changed,
         })
     }
@@ -1457,7 +1421,7 @@ impl Remake<'_> {
             brief,
             prompt,
             rendered,
-            images,
+            scaffold_png,
             mut changed,
         } = prepared;
         let dir = self.art.machine(name);
@@ -1469,16 +1433,16 @@ impl Remake<'_> {
             Some(prompt) => prompt,
             None => {
                 changed = true;
-                self.author(name, &brief, &images, &brief)?
+                self.author(name, &brief, std::slice::from_ref(&scaffold_png), &brief)?
             }
         };
-        let key_of = |prompt: &str| painted_key(prompt, count, &rendered, item(name).recipe());
+        let key_of = |prompt: &str| painted_key(prompt, count, &rendered);
         let mut wipe = entry.painted.as_deref() != Some(key_of(&prompt).as_str());
         let kept = loop {
             if rounds > 0
                 && let Some(text) = rebrief(&brief, &prompt, &issues, rounds + 1)
             {
-                prompt = self.author(name, &brief, &images, &text)?;
+                prompt = self.author(name, &brief, std::slice::from_ref(&scaffold_png), &text)?;
                 changed = true;
             }
             let painted = key_of(&prompt);
@@ -1494,7 +1458,7 @@ impl Remake<'_> {
                     (
                         format!("{name}-{i}"),
                         Paint {
-                            images: images.clone(),
+                            image: scaffold_png.clone(),
                             output: self.art.candidate(name, i),
                             prompt: prompt.clone(),
                             size: scaffold.canvas,
@@ -1612,7 +1576,7 @@ impl Remake<'_> {
                     (
                         format!("{name}-{edge}"),
                         Paint {
-                            images: vec![relit.join("master.png")],
+                            image: relit.join("master.png"),
                             output: relit.join(format!("{edge}.png")),
                             prompt: style.relight.replace("{edge}", edge),
                             size: scaffold.canvas,
@@ -1799,19 +1763,6 @@ fn remake(
     results
 }
 
-fn plan() -> String {
-    let mut out = String::new();
-    for item in Machine::ALL {
-        let name = name(item);
-        let recipe = match item.recipe() {
-            Some(_) => "recipe",
-            None => "no recipe",
-        };
-        out += &format!("{name}\t{recipe}\n");
-    }
-    out
-}
-
 fn landed(results: &[(String, Result<bool, String>)]) -> bool {
     let mut landed = true;
     for (name, result) in results {
@@ -1824,23 +1775,21 @@ fn landed(results: &[(String, Result<bool, String>)]) -> bool {
 }
 
 pub fn configure(args: &[String]) -> Option<i32> {
-    const USAGE: &str = "usage: ziral --plan | ziral --gen NAME... | ziral --gen --all";
+    const USAGE: &str = "usage: ziral --gen NAME... | ziral --gen --all";
     let art = Art::shipped();
-    if args.get(1).map(String::as_str) == Some("--plan") {
-        print!("{}", plan());
-        return Some(0);
-    }
     if args.get(1).map(String::as_str) != Some("--gen") {
         return None;
     }
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
     let known = |n: &str| Machine::ALL.into_iter().map(name).any(|k| k == n);
-    let director = |images: &[PathBuf], brief: &str| {
-        ask(&art, CAPTION_SCHEMA, images, &format!("{DIRECTOR} {brief}")).and_then(|t| caption(&t))
-    };
+    let director = |images: &[PathBuf], brief: &str| run(&art.direct_sh(), images, &[brief]);
     let painter = |job: &Paint| paint_sh(&art, job);
     let critic = |images: &[PathBuf], rubric: &str| {
-        ask(&art, CRITIC_SCHEMA, images, &format!("{rubric} {JUDGE}"))
+        run(
+            &art.ask_sh(),
+            images,
+            &[CRITIC_SCHEMA, &format!("{rubric} {JUDGE}")],
+        )
     };
     let names: Vec<String> = match rest.as_slice() {
         ["--all"] => Machine::ALL
@@ -2051,12 +2000,12 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} has no prompt.txt: run ziral --gen {name}"));
             assert_eq!(
                 machine.briefed.as_deref(),
-                Some(key(&[brief(&manifest.style, item, &machine.direction).as_bytes()]).as_str()),
+                Some(key(&[brief(&manifest.style, &machine.direction).as_bytes()]).as_str()),
                 "{name}: the prompt was written from another brief: run ziral --gen {name}"
             );
             assert_eq!(
                 machine.painted.as_deref(),
-                Some(painted_key(&prompt, manifest.candidates, &want, item.recipe()).as_str()),
+                Some(painted_key(&prompt, manifest.candidates, &want).as_str()),
                 "{name}: the candidates are stale against the prompt: run ziral --gen {name}"
             );
             let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));
@@ -2283,7 +2232,7 @@ mod tests {
             .file_stem()
             .and_then(|s| s.to_str())
             .expect("an output stem");
-        let input = &job.images[0];
+        let input = &job.image;
         if input.ends_with("scaffold.png") {
             let (name, index) = stem.rsplit_once('-').expect("name-index");
             let scaffold = Scaffold::of(item(name));
@@ -2406,15 +2355,13 @@ mod tests {
     }
 
     #[test]
-    fn a_machine_with_a_recipe_paints_over_its_recipe_render_and_one_without_over_the_scaffold_alone()
-     {
+    fn every_candidate_is_painted_over_the_scaffold_alone_and_every_relight_over_one_master() {
         let art = studio(
-            "recipe",
+            "scaffold",
             &["right", "top", "left", "bottom"],
             &["bonder", "source"],
         );
-        let jobs: std::sync::Mutex<Vec<(String, Vec<PathBuf>, String)>> =
-            std::sync::Mutex::new(Vec::new());
+        let jobs: std::sync::Mutex<Vec<(String, PathBuf)>> = std::sync::Mutex::new(Vec::new());
         let painter = |job: &Paint| {
             let stem = job
                 .output
@@ -2422,90 +2369,34 @@ mod tests {
                 .unwrap()
                 .to_string_lossy()
                 .into_owned();
-            jobs.lock()
-                .unwrap()
-                .push((stem, job.images.clone(), job.prompt.clone()));
+            jobs.lock().unwrap().push((stem, job.image.clone()));
             fake(job)
         };
         let names = ["bonder".to_string(), "source".to_string()];
         assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
         let recorded = jobs.lock().unwrap();
         let style = art.read().style;
-        for (name, item) in [
-            ("bonder", Machine::Glyph(crate::sim::GlyphKind::Bonder)),
-            ("source", Machine::Glyph(crate::sim::GlyphKind::Source)),
-        ] {
+        for name in ["bonder", "source"] {
             let dir = art.machine(name);
             let candidates: Vec<_> = recorded
                 .iter()
-                .filter(|(stem, _, _)| {
+                .filter(|(stem, _)| {
                     stem.starts_with(&format!("{name}-"))
                         && stem[name.len() + 1..].parse::<u32>().is_ok()
                 })
                 .collect();
             assert_eq!(candidates.len(), 2, "{name}");
-            let mut want = vec![dir.join("scaffold.png")];
-            if item.recipe().is_some() {
-                want.push(dir.join("recipe.png"));
-            }
-            for (_, images, prompt) in &candidates {
-                assert_eq!(*images, want, "{name}");
-                assert_eq!(
-                    prompt.contains(&style.recipe),
-                    item.recipe().is_some(),
-                    "{name}"
-                );
+            for (_, image) in &candidates {
+                assert_eq!(*image, dir.join("scaffold.png"), "{name}");
             }
             let relights: Vec<_> = recorded
                 .iter()
-                .filter(|(stem, images, _)| {
-                    style.edges.contains(stem) && images[0].starts_with(&dir)
+                .filter(|(stem, image)| {
+                    style.edges.contains(stem) && *image == dir.join("relit/master.png")
                 })
                 .collect();
             assert_eq!(relights.len(), style.edges.len(), "{name}");
-            assert!(relights.iter().all(|(_, images, _)| images.len() == 1));
-            assert_eq!(
-                dir.join("recipe.png").exists(),
-                item.recipe().is_some(),
-                "{name}"
-            );
         }
-        let recipe_png = art.machine("bonder").join("recipe.png");
-        let before = read(&recipe_png);
-        let recipe = open(&recipe_png);
-        let canvas = canvas(Machine::Glyph(crate::sim::GlyphKind::Output(
-            crate::sim::Tier::One,
-        )));
-        assert_eq!((recipe.width(), recipe.height()), (canvas, canvas));
-        let corner = *recipe.get_pixel(0, 0);
-        let drawn: Vec<(u32, u32)> = recipe
-            .enumerate_pixels()
-            .filter(|(_, _, p)| **p != corner)
-            .map(|(x, y, _)| (x, y))
-            .collect();
-        let share = drawn.len() as f32 / recipe.pixels().len() as f32;
-        assert!(
-            share > 0.02,
-            "the render is blank: {share:.3} differs from the corner"
-        );
-        let (lo, hi) = drawn.iter().fold(
-            ((u32::MAX, u32::MAX), (0, 0)),
-            |((x0, y0), (x1, y1)), (x, y)| ((x0.min(*x), y0.min(*y)), (x1.max(*x), y1.max(*y))),
-        );
-        let inset = band() as u32;
-        assert!(
-            lo.0 >= inset && lo.1 >= inset && hi.0 < canvas - inset && hi.1 < canvas - inset,
-            "the compound reaches the frame: {lo:?}..{hi:?} on {canvas}"
-        );
-        let jobs_before = recorded.len();
-        drop(recorded);
-        assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
-        assert_eq!(
-            jobs.lock().unwrap().len(),
-            jobs_before,
-            "a second run paints nothing"
-        );
-        assert_eq!(read(&recipe_png), before, "a second run leaves the render");
     }
 
     #[test]
@@ -2688,16 +2579,6 @@ mod tests {
     }
 
     #[test]
-    fn the_caption_is_the_prompt_of_one_json_object_or_an_error() {
-        assert_eq!(
-            caption("```json\n{\"prompt\": \"A flat plan.\"}\n```").as_deref(),
-            Ok("A flat plan.")
-        );
-        assert!(caption(r#"{"caption": "A flat plan."}"#).is_err());
-        assert!(caption("A flat plan.").is_err());
-    }
-
-    #[test]
     fn the_critic_sees_the_board_and_the_scaffold_and_a_malformed_reply_fails_only_that_candidate()
     {
         let art = studio("critic", &["right", "top", "left", "bottom"], &["source"]);
@@ -2810,7 +2691,7 @@ mod tests {
         };
         let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
         let painter = |job: &Paint| {
-            if job.images[0].ends_with("scaffold.png") {
+            if job.image.ends_with("scaffold.png") {
                 prompts.lock().unwrap().push(job.prompt.clone());
             }
             fake(job)
@@ -3043,5 +2924,97 @@ mod tests {
         assert_eq!(rows["source-1"].0, "pass");
         assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
         assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn direct_sh_prints_the_caption_the_director_writes_even_fenced_and_fails_on_no_caption() {
+        let root = std::env::temp_dir().join(format!("ziral-direct-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("bin")).expect("a fake bin");
+        let codex = root.join("bin/codex");
+        std::fs::write(
+            &codex,
+            "#!/bin/sh\n\
+             printf '%s\\n' \"$@\" > \"$HOME/args\"\n\
+             echo '{\"type\":\"thread.started\",\"thread_id\":\"t1\"}'\n\
+             printf '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%s}}\\n' \"$REPLY\"\n",
+        )
+        .expect("a fake codex");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let path = format!(
+            "{}:{}",
+            root.join("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let image = root.join("scaffold.png");
+        std::fs::write(&image, b"png").expect("an image");
+        let direct = |reply: &str| {
+            std::process::Command::new(Art::shipped().direct_sh())
+                .arg("-i")
+                .arg(&image)
+                .arg("A source.")
+                .env("PATH", &path)
+                .env("HOME", &root)
+                .env("REPLY", reply)
+                .output()
+                .expect("direct.sh runs")
+        };
+        let out = direct(r#""```json\n{\"prompt\": \"A flat plan.\"}\n```""#);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "A flat plan.\n");
+        let args = std::fs::read_to_string(root.join("args")).expect("the call's args");
+        assert!(args.contains("--output-schema"), "{args}");
+        assert!(
+            args.contains(&format!("--image\n{}", image.display())),
+            "{args}"
+        );
+        assert!(
+            args.lines()
+                .any(|l| l.starts_with("You are the art director")
+                    && l.ends_with("Brief: A source.")),
+            "{args}"
+        );
+        for reply in [r#""{\"caption\": \"A flat plan.\"}""#, r#""A flat plan.""#] {
+            let out = direct(reply);
+            assert!(!out.status.success(), "{reply}");
+            assert_eq!(String::from_utf8_lossy(&out.stdout), "", "{reply}");
+        }
+    }
+
+    #[test]
+    fn every_painted_texture_has_the_prompt_that_painted_it_beside_it() {
+        let art = Path::new(env!("CARGO_MANIFEST_DIR")).join("art");
+        let mut painted = vec![
+            ("overlay/page", "overlay/page"),
+            (look::GROUT.name, look::GROUT.name),
+        ];
+        painted.extend(
+            crate::sim::AtomKind::ALL
+                .map(|k| look::atom(k).skin.name)
+                .map(|n| (n, n)),
+        );
+        painted.extend(
+            crate::sim::BondKind::ALL
+                .map(|k| look::bond(k).skin.name)
+                .map(|n| (n, n)),
+        );
+        painted.extend(look::TILES.iter().map(|t| {
+            let (family, index) = t.name.rsplit_once('-').expect("tile-NN");
+            assert!(index.parse::<u32>().is_ok(), "{}", t.name);
+            (t.name, family)
+        }));
+        for (png, name) in painted {
+            let prompt = art.join(format!("{name}.prompt.txt"));
+            assert!(art.join(format!("{png}.png")).exists(), "{png}.png");
+            assert!(
+                stored(&prompt).expect("readable").is_some(),
+                "{}: no prompt beside the texture",
+                prompt.display()
+            );
+        }
     }
 }
