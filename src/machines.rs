@@ -27,6 +27,8 @@ const PAD: f32 = 1.6;
 const PAD_ALBEDO: f32 = 0.45;
 const SAMPLES: usize = 4;
 const CRITIC_PX: u32 = 512;
+const SECOND_BOND_BODY: f32 = 0.48;
+const SECOND_BOND_CHANNEL: f32 = 0.1;
 
 fn segment_distance(point: Vec2, start: Vec2, end: Vec2) -> f32 {
     let line = end - start;
@@ -272,8 +274,53 @@ impl Scaffold {
             segment_distance(world, feed, middle),
         ]
         .into_iter()
-        .any(|distance| distance <= 0.1 * HEX)
+        .any(|distance| distance <= SECOND_BOND_CHANNEL * HEX)
         .then_some(Glaze::Brass)
+    }
+
+    fn compose(&self, candidate: RgbaImage) -> RgbaImage {
+        if self.item != Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
+            return candidate;
+        }
+        RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
+            let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+            let seat = self
+                .cells
+                .iter()
+                .any(|cell| world.distance(px(cell.at)) <= SECOND_BOND_BODY * HEX);
+            if seat {
+                *candidate.get_pixel(x, y)
+            } else {
+                rgba(self.channel(world).map_or(KEY, Glaze::rgb), 1.0)
+            }
+        })
+    }
+
+    fn prepared(&self, path: &Path) -> Result<RgbaImage, String> {
+        let candidate = image::open(path)
+            .map_err(|error| format!("{}: {error}", path.display()))?
+            .into_rgba8();
+        if (candidate.width(), candidate.height()) != (self.canvas, self.canvas) {
+            return Err(format!(
+                "{} is {}x{}, expected {}x{}",
+                path.display(),
+                candidate.width(),
+                candidate.height(),
+                self.canvas,
+                self.canvas
+            ));
+        }
+        Ok(self.register(&candidate).image)
+    }
+
+    fn cache_bytes(&self, path: &Path) -> Vec<u8> {
+        if self.item == Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
+            self.prepared(path)
+                .unwrap_or_else(|error| panic!("{error}"))
+                .into_raw()
+        } else {
+            read(path)
+        }
     }
 
     fn paint(&self, world: Vec2) -> Rgba<u8> {
@@ -366,6 +413,7 @@ impl Scaffold {
             let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
             bilinear(candidate, self.pixel(onto(world)))
         });
+        let image = self.compose(image);
         let off_centre = self
             .cells
             .iter()
@@ -1055,16 +1103,17 @@ fn prompt(style: &Style, item: Machine, direction: &str) -> String {
     }
 }
 
-fn relit_key(kept: &[u8], style: &Style) -> String {
+fn relit_key(art: &Art, name: &str, kept: u32, style: &Style, scaffold: &Scaffold) -> String {
     let edges = style.edges.join("\n");
-    key(&[kept, style.relight.as_bytes(), edges.as_bytes()])
+    let kept = scaffold.cache_bytes(&art.candidate(name, kept));
+    key(&[&kept, style.relight.as_bytes(), edges.as_bytes()])
 }
 
-fn judged_key(art: &Art, name: &str, count: u32, style: &Style) -> String {
+fn judged_key(art: &Art, name: &str, count: u32, style: &Style, scaffold: &Scaffold) -> String {
     let candidates: Vec<Vec<u8>> = (1..=count)
         .map(|i| art.candidate(name, i))
         .filter(|p| p.exists())
-        .map(|p| read(&p))
+        .map(|p| scaffold.cache_bytes(&p))
         .collect();
     let mut parts: Vec<&[u8]> = vec![style.critic.as_bytes()];
     parts.extend(candidates.iter().map(Vec::as_slice));
@@ -1289,7 +1338,7 @@ impl Remake<'_> {
         scored: Vec<(u32, Score)>,
     ) -> Result<Vec<(u32, Score)>, String> {
         let dir = self.art.machine(name);
-        let judged = judged_key(self.art, name, count, style);
+        let judged = judged_key(self.art, name, count, style, scaffold);
         let trusted = self.entry(name)?.3.judged.as_deref() == Some(judged.as_str());
         let previous: BTreeMap<u32, Score> = std::fs::read_to_string(dir.join("scores.tsv"))
             .unwrap_or_default()
@@ -1475,12 +1524,12 @@ impl Remake<'_> {
             };
             let assess = |scored| self.assess(name, &scaffold, &style, thresholds, count, scored);
             scored = assess(scored)?;
-            let reaching = |scored: &[(u32, Score)], i: u32| {
+            let keeping = |scored: &[(u32, Score)], i: u32| {
                 scored
                     .iter()
-                    .any(|(k, s)| *k == i && s.reaches(&thresholds))
+                    .any(|(k, s)| *k == i && s.passes(&thresholds) && s.critic.is_some())
             };
-            if let Some(k) = kept.filter(|k| reaching(&scored, *k)) {
+            if let Some(k) = kept.filter(|k| keeping(&scored, *k)) {
                 break k;
             }
             if only_kept.is_some() {
@@ -1515,8 +1564,7 @@ impl Remake<'_> {
             }
             wipe = true;
         };
-        let kept_png = read(&self.art.candidate(name, kept));
-        let relit = relit_key(&kept_png, &style);
+        let relit = relit_key(self.art, name, kept, &style, &scaffold);
         let current = entry.relit.as_deref() == Some(relit.as_str())
             && dir.join("albedo.png").exists()
             && dir.join("normal.png").exists();
@@ -1618,6 +1666,9 @@ impl Remake<'_> {
     fn sheet(&self) -> Result<(), String> {
         let m = self.manifest.lock().expect("the manifest is unpoisoned");
         let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
+        let scratch = self.art.dir.join("sheet-parts");
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
         for item in Machine::ALL {
             let name = name(item);
             let scores = self.art.machine(name).join("scores.tsv");
@@ -1657,10 +1708,21 @@ impl Remake<'_> {
                     )
                     .into(),
                 );
-                args.push(self.art.candidate(name, index).into());
+                let source = if item == Machine::Glyph(crate::sim::GlyphKind::SecondBond) {
+                    let path = scratch.join(format!("{candidate}.png"));
+                    Scaffold::of(item)
+                        .prepared(&self.art.candidate(name, index))?
+                        .save(&path)
+                        .map_err(|error| format!("{}: {error}", path.display()))?;
+                    path
+                } else {
+                    self.art.candidate(name, index)
+                };
+                args.push(source.into());
             }
         }
         if args.len() == 1 {
+            let _ = std::fs::remove_dir_all(&scratch);
             return Ok(());
         }
         let part = self.art.dir.join("sheet.png.part");
@@ -1682,10 +1744,9 @@ impl Remake<'_> {
             .map(Into::into),
         );
         args.push(part.clone().into());
-        let status = std::process::Command::new("magick")
-            .args(&args)
-            .status()
-            .map_err(|e| format!("magick: {e}"))?;
+        let status = std::process::Command::new("magick").args(&args).status();
+        let _ = std::fs::remove_dir_all(&scratch);
+        let status = status.map_err(|e| format!("magick: {e}"))?;
         if !status.success() {
             return Err(format!("magick montage {status}"));
         }
@@ -1915,6 +1976,66 @@ mod tests {
             key,
             "the feed must not join the right bond seat"
         );
+        let art = Art::shipped();
+        let dir = art.machine("second-bond");
+        let kept = art.read().machine["second-bond"]
+            .kept
+            .expect("a kept paint");
+        let composed = scaffold.cut(
+            &scaffold
+                .register(&open(
+                    dir.join(format!("candidates/second-bond-{kept}.png")),
+                ))
+                .image,
+        );
+        let shipped = open(dir.join("albedo.png"));
+        let (origin, _) = scaffold.crop();
+        for (label, image) in [("composed", composed), ("shipped", shipped)] {
+            let opacity_at = |world| {
+                let at = scaffold.pixel(world) - Vec2::splat(origin as f32);
+                f32::from(image.get_pixel(at.x as u32, at.y as u32)[3]) / 255.0
+            };
+            assert_eq!(opacity_at(middle), 1.0, "{label} bond seats need a rail");
+            assert_eq!(
+                opacity_at(feed.lerp(middle, 0.5)),
+                1.0,
+                "{label} feed needs a stub to the rail midpoint"
+            );
+            assert_eq!(
+                opacity_at(feed.lerp(left, 0.5)),
+                0.0,
+                "{label} feed must not join the left bond seat"
+            );
+            assert_eq!(
+                opacity_at(feed.lerp(right, 0.5)),
+                0.0,
+                "{label} feed must not join the right bond seat"
+            );
+            for (start, end) in [(left, right), (feed, middle)] {
+                for step in 0..=100 {
+                    assert_eq!(
+                        opacity_at(start.lerp(end, step as f32 / 100.0)),
+                        1.0,
+                        "{label} T must be continuous"
+                    );
+                }
+            }
+            for (x, y, pixel) in image.enumerate_pixels() {
+                if pixel[3] == 0 {
+                    continue;
+                }
+                let full = Vec2::new(x as f32 + 0.5, y as f32 + 0.5) + Vec2::splat(origin as f32);
+                let world = scaffold.world(full);
+                let in_body = scaffold
+                    .cells
+                    .iter()
+                    .any(|cell| world.distance(px(cell.at)) <= SECOND_BOND_BODY * HEX);
+                assert!(
+                    in_body || scaffold.channel(world).is_some(),
+                    "{label} feed must have no connection outside the T"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1965,8 +2086,14 @@ mod tests {
             assert_eq!(
                 machine.judged.as_deref(),
                 Some(
-                    judged_key(&Art::shipped(), name, manifest.candidates, &manifest.style)
-                        .as_str()
+                    judged_key(
+                        &Art::shipped(),
+                        name,
+                        manifest.candidates,
+                        &manifest.style,
+                        &scaffold,
+                    )
+                    .as_str()
                 ),
                 "{name}: the judgement is stale against the candidates or the critic prompt: run ziral --gen {name}"
             );
@@ -2021,10 +2148,9 @@ mod tests {
                 Some(painted_key(&prompt, manifest.candidates, &want, item.recipe()).as_str()),
                 "{name}: the candidates are stale against the manifest: run ziral --gen {name}"
             );
-            let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));
             assert_eq!(
                 machine.relit.as_deref(),
-                Some(relit_key(&kept_png, &manifest.style).as_str()),
+                Some(relit_key(&Art::shipped(), name, kept, &manifest.style, &scaffold,).as_str()),
                 "{name}: the maps are stale against the kept candidate: run ziral --gen {name}"
             );
         }
@@ -2065,7 +2191,9 @@ mod tests {
 
     #[test]
     fn a_capture_whose_seats_sit_off_their_cell_centres_is_rejected() {
-        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SecondBond));
+        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::Converter(
+            crate::sim::AtomKind::Amber,
+        )));
         let thresholds = Art::shipped().read().thresholds;
         let drift = |a: &RgbaImage, b: &RgbaImage| {
             let mut mean = Mean::default();
@@ -2797,6 +2925,10 @@ mod tests {
             rows["source-2"].1.issues(),
             ["Round 3 best.", "Still a plate."]
         );
+        let results = remake(&art, &names, &painter, &critic);
+        assert!(landed(&results), "{results:?}");
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
     }
 
     #[test]
