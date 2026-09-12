@@ -1,4 +1,4 @@
-reification-1	0.833	0.144	0.072	0.502	-	fail outside 0.833 > 0.05	[]
-reification-2	0.678	0.198	0.033	0.500	-	fail outside 0.678 > 0.05	[]
-reification-3	0.566	0.145	0.067	0.506	-	fail outside 0.566 > 0.05	[]
-reification-4	0.000	0.823	0.275	0.045	6	pass	["The repeated pale seats and narrow brown struts read as a bead diagram rather than a solid, weighty kiln-floor machine with a distinctive character.","The struts look uniformly muddy brown, lacking the rubbed metallic depth and contact-edge wear that would make them read as brass.","Across the seats, dark upper crescents and bright lower rims suggest lit bowl interiors rather than flat, empty seats with rotationally symmetric glaze shading."]
+reification-1	0.833	0.144	0.072	0.502	-	fail outside 0.833 > 0.05	[]	-
+reification-2	0.678	0.198	0.033	0.500	-	fail outside 0.678 > 0.05	[]	-
+reification-3	0.566	0.145	0.067	0.506	-	fail outside 0.566 > 0.05	[]	-
+reification-4	0.000	0.823	0.275	0.045	6	pass	["The repeated pale seats and narrow brown struts read as a bead diagram rather than a solid, weighty kiln-floor machine with a distinctive character.","The struts look uniformly muddy brown, lacking the rubbed metallic depth and contact-edge wear that would make them read as brass.","Across the seats, dark upper crescents and bright lower rims suggest lit bowl interiors rather than flat, empty seats with rotationally symmetric glaze shading."]	02d8eb0c0fbb4f5d

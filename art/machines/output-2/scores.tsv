@@ -1,4 +1,4 @@
-output-2-1	0.000	0.704	0.276	0.057	-	pass	[]
-output-2-2	0.000	0.765	0.288	0.028	-	pass	[]
-output-2-3	0.000	0.547	0.287	0.305	-	fail off_centre 0.305 > 0.1	[]
-output-2-4	0.000	0.823	0.275	0.045	6	pass	["The machine reads as a delicate arrangement of pale buttons rather than a weighty kiln-floor object, with little distinctive character in its painted surfaces.","The brown metal looks uniformly muddy rather than rubbed brass, and the cream seats lack convincing glaze and contact-edge wear.","Across the circular seats, dark upper crescents and bright lower rims create directional lighting that would swing when the sprite rotates.","The pale, domed-looking seat centres read as filled caps rather than clearly empty receiving seats."]
+output-2-1	0.000	0.704	0.276	0.057	-	pass	[]	-
+output-2-2	0.000	0.765	0.288	0.028	-	pass	[]	-
+output-2-3	0.000	0.547	0.287	0.305	-	fail off_centre 0.305 > 0.1	[]	-
+output-2-4	0.000	0.823	0.275	0.045	6	pass	["The machine reads as a delicate arrangement of pale buttons rather than a weighty kiln-floor object, with little distinctive character in its painted surfaces.","The brown metal looks uniformly muddy rather than rubbed brass, and the cream seats lack convincing glaze and contact-edge wear.","Across the circular seats, dark upper crescents and bright lower rims create directional lighting that would swing when the sprite rotates.","The pale, domed-looking seat centres read as filled caps rather than clearly empty receiving seats."]	02d8eb0c0fbb4f5d

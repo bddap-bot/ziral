@@ -25,7 +25,6 @@ kept = 2
 briefed = "664306b5af1a7ce0"
 painted = "85fabaa5ad6b1434"
 relit = "584dbfeff8fea117"
-judged = "b5ba1ebcc2dcdc21"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -72,7 +71,6 @@ kept = 2
 briefed = "4735ac71651604dc"
 painted = "154999dc5186f881"
 relit = "2e37efc4ba2d639a"
-judged = "429c2117cc8ae8b8"
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -120,7 +118,6 @@ kept = 1
 briefed = "52e163b5fbb6297d"
 painted = "cbfa2376ee581a6f"
 relit = "187aa8d30b9ba6d3"
-judged = "4b91b01222377279"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -160,7 +157,6 @@ kept = 1
 briefed = "645994f2ca1854e0"
 painted = "3d06f7d0e768154c"
 relit = "8e66e81fa45722fc"
-judged = "27401aebeb19a894"
 
 [machine.converter-plum.instrument]
 voice = "ceramic"
@@ -200,7 +196,6 @@ kept = 2
 briefed = "0703f016c81441b4"
 painted = "2f465129c87f03df"
 relit = "5fe90d3d955c6921"
-judged = "0770e9e385a354f4"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -240,7 +235,6 @@ kept = 4
 briefed = "9f187a3ebef5833c"
 painted = "7637dcc5729e7cd3"
 relit = "bc3a6dc4b8d68075"
-judged = "c80faad25d4fe91f"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -280,7 +274,6 @@ kept = 1
 briefed = "4eeb14aa93b7d048"
 painted = "fe645dd9b6446395"
 relit = "e9d3d0d9998a9f6a"
-judged = "5e59a8c8a21f8649"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -320,7 +313,6 @@ kept = 4
 briefed = "800a601c57667c5b"
 painted = "559dfb3aa2a2f843"
 relit = "bc3a6dc4b8d68075"
-judged = "14be5e44f90ad58e"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -360,7 +352,6 @@ kept = 4
 briefed = "9ca8ec90a90e95fc"
 painted = "18c0b60724fb2963"
 relit = "9b0c6fc8bb1817be"
-judged = "2137a3a3b9c27e93"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -408,7 +399,6 @@ kept = 2
 briefed = "81d5dc6036915ae9"
 painted = "e2d206d746813551"
 relit = "9b24ad26d7dc2604"
-judged = "aaeec213d3571af5"
 
 [machine.source.instrument]
 voice = "ceramic"

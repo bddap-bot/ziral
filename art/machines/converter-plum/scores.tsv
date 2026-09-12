@@ -1,4 +1,4 @@
-converter-plum-1	0.000	0.639	0.096	0.028	5	pass	["The narrow rings and flat straps read as a lightweight outline rather than a solid, weighty kiln-floor machine.","Across the plum surfaces and brass rims, the soft color bands barely distinguish glazed ceramic, rubbed metal or matte rubber, and lack convincing contact-edge wear.","The repeated plain collars and nearly featureless straps feel diagrammatic, with little character or crafted detail to reward a closer look."]
-converter-plum-2	1.627	0.001	0.134	inf	-	fail outside 1.627 > 0.05	[]
-converter-plum-3	1.967	0.002	0.082	inf	-	fail outside 1.967 > 0.05	[]
-converter-plum-4	1.852	0.000	0.142	inf	-	fail outside 1.852 > 0.05	[]
+converter-plum-1	0.000	0.639	0.096	0.028	5	pass	["The narrow rings and flat straps read as a lightweight outline rather than a solid, weighty kiln-floor machine.","Across the plum surfaces and brass rims, the soft color bands barely distinguish glazed ceramic, rubbed metal or matte rubber, and lack convincing contact-edge wear.","The repeated plain collars and nearly featureless straps feel diagrammatic, with little character or crafted detail to reward a closer look."]	7d0724c5139ead20
+converter-plum-2	1.627	0.001	0.134	inf	-	fail outside 1.627 > 0.05	[]	-
+converter-plum-3	1.967	0.002	0.082	inf	-	fail outside 1.967 > 0.05	[]	-
+converter-plum-4	1.852	0.000	0.142	inf	-	fail outside 1.852 > 0.05	[]	-
