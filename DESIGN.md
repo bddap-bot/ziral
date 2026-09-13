@@ -110,6 +110,16 @@ One card camera draws every inventory item's card into one fixed region of one o
 
 The inner plate of that one card painter is clay, the same palette surface beneath a machine in the inventory and on the board; hover and pinned cards therefore cannot diverge. One wheel decision at the pointer either scales the top pinned card or scales the board, never both, using the existing exponential step and bounds. This is the dumbest design satisfying the directive because it changes one shared material, reuses one zoom law, and deletes the corner child and resize drag state. A separate card wheel system was rejected because two systems reading the same wheel would make routing an accidental ordering rule and leave both views able to move.
 
+Report (verbatim): "tested the card pinning. works well, couple rough edges:
+- zoom does not increase card resolution, pixels visible when card is large.
+- unable to re-grab card using right click after it has been pulled out of inventory, right click moves camera instead"
+
+Every card is a camera. The card painter still draws each item's card once, at one fixed place on the card layer; the hover card and every pin have a camera of their own that frames that place and draws it onto the window through a viewport the size of the card on screen, so a card is drawn at the window's resolution at any size and on any display density. Lines keep their pixel weight as they do when the board zooms. A pin's node is only its border, ringing the viewport, and the rect a pointer tests against includes that ring. One camera painting every pin at its own scale was not possible because the card's lines are gizmos, which have no transform to scale. A shared offscreen texture holding every item's card at its largest pin's scale was rejected because a card as large as the window would exceed the texture size limit.
+
+A press over a pinned card, by either button, grabs that card; the board camera pans on a right drag only when the press was on neither a card nor the inventory, and a drag ends on the release of the button that began it. One function, `card_at`, names the card under the pointer for the wheel, both presses and the question of whether a card covers an inventory row, so no two of them can disagree.
+
+Tests: a card's camera viewport is the card's rect in the target's own pixels at a scale factor of two and stays inside the target when the card is flush with its edge; a pin's viewport follows its scale through the wheel; a right drag begun on a pinned card moves the card and leaves the board camera where it was. Each test goes red under the fault it guards against: a viewport that ignores the scale factor, a viewport frozen at the card's base size, a right press routed to the pan. `proofs/pinned-card-sharp-77.gif` (`art/gif.sh proofs/pinned-card-sharp-77.gif card-regrab 5 1280:720:0:0`) is a card pinned, grown by the wheel, then re-grabbed by a right drag and moved, at the shipped size.
+
 ## Parking lot
 
 ### Machine coverage proposals
