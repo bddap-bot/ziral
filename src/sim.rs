@@ -553,6 +553,10 @@ impl Inventory {
         }
     }
 
+    pub fn fill(&mut self) {
+        self.count = self.cap;
+    }
+
     #[must_use]
     pub fn spend(&mut self, item: Item) -> bool {
         self.spend_all(&[item]).is_ok()

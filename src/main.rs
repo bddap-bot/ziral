@@ -52,6 +52,7 @@ const CARD: RenderLayers = RenderLayers::layer(1);
 const CARD_PITCH: f32 = 1024.0;
 const CARD_BORDER_PX: f32 = 2.0;
 const HOVER_SLOT: usize = 0;
+const INVENTORY_TOKEN: &str = "5J7bZuSjtiUSsQg-OdG3iiu3";
 
 fn atom_index(kind: sim::AtomKind) -> usize {
     sim::AtomKind::ALL
@@ -1222,6 +1223,54 @@ fn clipboard_paste(mut world: ResMut<World>) {
 #[cfg(not(target_arch = "wasm32"))]
 fn clipboard_paste() {}
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
+const inventoryFragments = [];
+export function listen_inventory_fragment() {
+    addEventListener("hashchange", event => {
+        inventoryFragments.push(new URL(event.newURL).hash.slice(1));
+    });
+    inventoryFragments.push(location.hash.slice(1));
+}
+export function take_inventory_fragment() {
+    return inventoryFragments.shift();
+}
+export function clear_inventory_fragment(fragment) {
+    if (location.hash.slice(1) === fragment)
+        history.replaceState(null, "", location.pathname + location.search);
+}
+"#)]
+extern "C" {
+    fn listen_inventory_fragment();
+    fn take_inventory_fragment() -> Option<String>;
+    fn clear_inventory_fragment(fragment: &str);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn listen_inventory_fragment() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn take_inventory_fragment() -> Option<String> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn clear_inventory_fragment(_: &str) {}
+
+fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnOnce(&str)) {
+    if fragment != INVENTORY_TOKEN {
+        return;
+    }
+    world.sim.inventory.fill();
+    clear(fragment);
+}
+
+fn refill_inventory(mut world: ResMut<World>) {
+    while let Some(fragment) = take_inventory_fragment() {
+        consume_inventory_fragment(&mut world, &fragment, clear_inventory_fragment);
+    }
+}
+
 fn hex_at(p: Vec2) -> Hex {
     let r = p.y / (HEX * 1.5);
     let q = p.x / (HEX * 3f32.sqrt()) - r / 2.0;
@@ -1318,11 +1367,15 @@ fn app(world: World) -> App {
                 ..default()
             },
         )
-        .add_systems(Startup, (fire_kiln, spawn_ui).chain())
+        .add_systems(
+            Startup,
+            (listen_inventory_fragment, fire_kiln, spawn_ui).chain(),
+        )
         .add_systems(
             Update,
             (
                 clipboard_paste,
+                refill_inventory,
                 hover,
                 sound::unlock,
                 view,
@@ -6561,6 +6614,41 @@ mod tests {
         w.step();
         assert_eq!(atoms(&w), vec![]);
         assert_eq!(count(&w, bonder), 1);
+    }
+
+    #[test]
+    fn the_exact_inventory_fragment_fills_every_entry_clears_itself_and_changes_nothing_else() {
+        let mut sim = sim::preloaded();
+        for (i, item) in palette().enumerate() {
+            sim.inventory.set_cap(item, i as i32 % 5);
+            let cap = sim.inventory.cap(item).unwrap();
+            for _ in 1..cap {
+                sim.inventory.add(item);
+            }
+        }
+        let before = sim.clone();
+        let mut world = World::new(sim);
+        let mut location = INVENTORY_TOKEN.to_owned();
+        let fragment = location.clone();
+
+        consume_inventory_fragment(&mut world, &fragment, |_| location.clear());
+        assert!(location.is_empty());
+        let mut without_inventory = world.sim.clone();
+        without_inventory.inventory = before.inventory;
+        assert_eq!(without_inventory, before);
+        for item in palette() {
+            assert_eq!(
+                world.sim.inventory.count(item),
+                world.sim.inventory.cap(item)
+            );
+        }
+
+        let mut world = World::new(before.clone());
+        let mut location = format!("{INVENTORY_TOKEN}x");
+        let fragment = location.clone();
+        consume_inventory_fragment(&mut world, &fragment, |_| location.clear());
+        assert_eq!(location, format!("{INVENTORY_TOKEN}x"));
+        assert_eq!(world.sim, before);
     }
 
     #[test]
