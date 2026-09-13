@@ -142,6 +142,9 @@ A press over a pinned card, by either button, grabs that card; the board camera 
 
 Tests: a card's camera viewport is the card's rect in the target's own pixels at a scale factor of two and stays inside the target when the card is flush with its edge; a pin's viewport follows its scale through the wheel; a right drag begun on a pinned card moves the card and leaves the board camera where it was. Each test goes red under the fault it guards against: a viewport that ignores the scale factor, a viewport frozen at the card's base size, a right press routed to the pan. `proofs/pinned-card-sharp-77.gif` (`art/gif.sh proofs/pinned-card-sharp-77.gif card-regrab 5 1280:720:0:0`) is a card pinned, grown by the wheel, then re-grabbed by a right drag and moved, at the shipped size.
 
+Directive (verbatim): "dragging an item from inventory using left mouse button should drag the card instead of the item if that slot is empty"
+At press time, a zero-count palette row begins the existing card drag while a nonzero row follows the existing item lift; this single branch is the dumbest design satisfying the directive because both drops retain their established behavior, while a second card-drag path would duplicate gesture state and release rules.
+
 ## Parking lot
 
 ### Machine coverage proposals
