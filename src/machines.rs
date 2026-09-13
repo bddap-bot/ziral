@@ -41,7 +41,7 @@ struct Manifest {
 struct Style {
     shared: String,
     critic: String,
-    facings: Vec<Facing>,
+    facings: [Facing; 6],
     relight: String,
     elevation: f32,
 }
@@ -55,10 +55,6 @@ enum Facing {
     Left,
     LowerLeft,
     LowerRight,
-    #[cfg(test)]
-    Top,
-    #[cfg(test)]
-    Bottom,
 }
 
 impl Facing {
@@ -79,10 +75,6 @@ impl Facing {
             Facing::Left => "left",
             Facing::LowerLeft => "lower-left",
             Facing::LowerRight => "lower-right",
-            #[cfg(test)]
-            Facing::Top => "top",
-            #[cfg(test)]
-            Facing::Bottom => "bottom",
         }
     }
 
@@ -90,13 +82,9 @@ impl Facing {
         match self {
             Facing::Right => 0.0,
             Facing::UpperRight => 60.0,
-            #[cfg(test)]
-            Facing::Top => 90.0,
             Facing::UpperLeft => 120.0,
             Facing::Left => 180.0,
             Facing::LowerLeft => 240.0,
-            #[cfg(test)]
-            Facing::Bottom => 270.0,
             Facing::LowerRight => 300.0,
         }
     }
@@ -113,14 +101,7 @@ impl Facing {
 
 impl Style {
     fn valid_facings(&self) -> bool {
-        if self.facings == Facing::ALL {
-            return true;
-        }
-        #[cfg(test)]
-        if self.facings == [Facing::Right, Facing::Top, Facing::Left, Facing::Bottom] {
-            return true;
-        }
-        false
+        self.facings == Facing::ALL
     }
 }
 
@@ -2683,7 +2664,7 @@ mod tests {
         assert!(at(0.0, 1.0).y < -TILT, "{:?}", at(0.0, 1.0));
     }
 
-    fn studio(tag: &str, edges: &[&str], machines: &[&str]) -> Art {
+    fn studio(tag: &str, machines: &[&str]) -> Art {
         let shipped = Art::shipped();
         let root = std::env::temp_dir().join(format!("ziral-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -2692,22 +2673,9 @@ mod tests {
         };
         std::fs::create_dir_all(&art.dir).expect("a studio is creatable");
         std::fs::copy(shipped.paint_sh(), art.paint_sh()).expect("paint.sh copies");
-        let style = shipped.read().style;
         art.write(&Manifest {
             candidates: 2,
-            style: Style {
-                facings: edges
-                    .iter()
-                    .map(|edge| match *edge {
-                        "right" => Facing::Right,
-                        "top" => Facing::Top,
-                        "left" => Facing::Left,
-                        "bottom" => Facing::Bottom,
-                        _ => panic!("unknown test facing {edge}"),
-                    })
-                    .collect(),
-                ..style
-            },
+            style: shipped.read().style,
             thresholds: shipped.read().thresholds,
             machine: machines
                 .iter()
@@ -2763,14 +2731,11 @@ mod tests {
                 .and_then(|s| s.to_str())
                 .expect("relit/master.png under the machine dir");
             let scaffold = Scaffold::of(item(name));
-            let light = match stem {
-                "right" => Vec3::new(1.0, 0.0, 1.0),
-                "top" => Vec3::new(0.0, 1.0, 1.0),
-                "left" => Vec3::new(-1.0, 0.0, 1.0),
-                "bottom" => Vec3::new(0.0, -1.0, 1.0),
-                edge => panic!("no light for {edge}"),
-            }
-            .normalize();
+            let light = Facing::ALL
+                .into_iter()
+                .find(|facing| facing.name() == stem)
+                .unwrap_or_else(|| panic!("no light for {stem}"))
+                .light(45.0);
             let mut edit = open(input);
             for (x, y, p) in edit.enumerate_pixels_mut() {
                 if let Some(n) = scaffold.sphere_normal(x, y) {
@@ -2802,7 +2767,7 @@ mod tests {
 
     #[test]
     fn unchanged_inputs_are_skipped_and_a_changed_prompt_or_kept_is_remade() {
-        let art = studio("key", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("key", &["source"]);
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let painter = counted(&calls, &fake);
         let names = ["source".to_string()];
@@ -2813,7 +2778,7 @@ mod tests {
             let changed = results[0].1.clone().expect("source lands");
             (changed, calls.load(std::sync::atomic::Ordering::SeqCst))
         };
-        assert_eq!(run(&calls), (true, 6));
+        assert_eq!(run(&calls), (true, 8));
         let dir = art.machine("source");
         for made in [
             "scaffold.png",
@@ -2865,7 +2830,7 @@ mod tests {
         let mut m = art.read();
         m.machine.get_mut("source").expect("source").kept = Some(3 - kept);
         art.write(&m);
-        assert_eq!(run(&calls), (true, 4));
+        assert_eq!(run(&calls), (true, 6));
         assert_eq!(art.read().machine["source"].kept, Some(3 - kept));
         assert_ne!(read(&dir.join("albedo.png")), albedo);
         assert_eq!(run(&calls), (false, 0));
@@ -2873,11 +2838,7 @@ mod tests {
 
     #[test]
     fn every_candidate_is_painted_over_the_scaffold_alone_and_every_relight_over_one_master() {
-        let art = studio(
-            "scaffold",
-            &["right", "top", "left", "bottom"],
-            &["bonder", "source"],
-        );
+        let art = studio("scaffold", &["bonder", "source"]);
         let jobs: std::sync::Mutex<Vec<(String, PathBuf)>> = std::sync::Mutex::new(Vec::new());
         let painter = |job: &Paint| {
             let stem = job
@@ -2919,11 +2880,7 @@ mod tests {
 
     #[test]
     fn a_machine_whose_candidates_all_fail_to_paint_does_not_land_and_the_others_still_do() {
-        let art = studio(
-            "exit",
-            &["right", "top", "left", "bottom"],
-            &["bonder", "source"],
-        );
+        let art = studio("exit", &["bonder", "source"]);
         let painter = |job: &Paint| {
             if job.output.to_string_lossy().contains("bonder") {
                 Err("boom".to_string())
@@ -3099,7 +3056,7 @@ mod tests {
     #[test]
     fn the_critic_sees_the_board_and_the_scaffold_and_a_malformed_reply_fails_only_that_candidate()
     {
-        let art = studio("critic", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("critic", &["source"]);
         let seen: std::sync::Mutex<Vec<(Vec<PathBuf>, String)>> = std::sync::Mutex::new(vec![]);
         let critic = |images: &[PathBuf], prompt: &str| {
             seen.lock()
@@ -3160,7 +3117,7 @@ mod tests {
 
     #[test]
     fn a_candidate_at_the_target_ends_the_rounds_and_the_best_scored_one_is_kept() {
-        let art = studio("bar", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("bar", &["source"]);
         let critic = |images: &[PathBuf], _: &str| {
             Ok(match index(images) {
                 1 => r#"{"score": 7, "issues": ["The hopper shows its back wall."]}"#,
@@ -3174,7 +3131,7 @@ mod tests {
         let rows = rows(&art, "source");
         assert_eq!(rows["source-1"].0, "pass");
         assert_eq!(rows["source-2"].0, "pass");
-        let art = studio("rank", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("rank", &["source"]);
         let scaffold = Scaffold::of(item("source"));
         let measured = |shift: f32| {
             scaffold
@@ -3197,7 +3154,7 @@ mod tests {
 
     #[test]
     fn the_best_candidates_issues_rebrief_the_author_then_the_last_round_starts_again() {
-        let art = studio("revise", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("revise", &["source"]);
         let direction = "  art direction with a tab\t, a line\nbreak and trailing spaces   ";
         let mut m = art.read();
         m.machine.get_mut("source").expect("source").direction = direction.to_string();
@@ -3282,7 +3239,7 @@ mod tests {
 
     #[test]
     fn three_rounds_then_keep_the_best_of_every_round_with_its_score_and_issues() {
-        let art = studio("rounds", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("rounds", &["source"]);
         let paints = std::sync::atomic::AtomicUsize::new(0);
         let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
         let painter = |job: &Paint| {
@@ -3305,7 +3262,7 @@ mod tests {
         let names = ["source".to_string()];
         let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 12);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(2));
         assert!(art.machine("source").join("albedo.png").exists());
@@ -3338,7 +3295,7 @@ mod tests {
         assert_eq!(round(3).as_deref(), Some(third.as_str()));
         let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 12);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(2));
         let mut m = art.read();
@@ -3346,7 +3303,7 @@ mod tests {
         art.write(&m);
         let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 14);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 18);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(5));
         assert_eq!(round(1).as_deref(), Some(first.as_str()));
@@ -3357,7 +3314,7 @@ mod tests {
         let again = |_: &[PathBuf], brief: &str| Ok(format!("{brief} again"));
         let results = remake(&art, &names, &again, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 18);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 24);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(2));
         assert_eq!(round(1).as_deref(), Some(first.as_str()));
@@ -3366,7 +3323,7 @@ mod tests {
             stored(&art.prompt("source")).expect("readable").as_deref(),
             Some(first.as_str())
         );
-        let art = studio("ties", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("ties", &["source"]);
         let critic = |_: &[PathBuf], _: &str| Ok(r#"{"score": 6, "issues": []}"#.to_string());
         assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
         assert!(art.read().machine["source"].kept.expect("kept") <= 2);
@@ -3375,7 +3332,7 @@ mod tests {
 
     #[test]
     fn an_unchanged_candidate_is_never_judged_again_and_a_changed_critic_prompt_is_judged_anew() {
-        let art = studio("judged", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("judged", &["source"]);
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let critic = |images: &[PathBuf], prompt: &str| {
             calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -3506,7 +3463,7 @@ mod tests {
     }
     #[test]
     fn a_critic_that_reads_no_candidate_repaints_nothing_and_keeps_the_keep() {
-        let art = studio("outage", &["right", "top", "left", "bottom"], &["source"]);
+        let art = studio("outage", &["source"]);
         let names = ["source".to_string()];
         assert!(landed(&remake(&art, &names, &author, &fake, &judge)));
         let kept = art.read().machine["source"].kept;
