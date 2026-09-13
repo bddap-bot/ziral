@@ -32,7 +32,7 @@
       "why": "every shipped texture must keep the prompt that painted it beside it"
     },
     {
-      "paths": ["art/machines/**"],
+      "paths": ["art/machines/**", "art/textures/relit/**"],
       "tests": [
         "nix-shell --run 'shellcheck art/paint.sh art/ask.sh art/direct.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"

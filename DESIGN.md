@@ -25,6 +25,28 @@ Each primitive machine is itself built as a compound and dropped on an output pa
 
 Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included. Mouse and keyboard only.
 
+### Rotatable light
+
+Directive (verbatim): "Did we ever find a way to get shading and specular highlights in those textures and still have them rotatable?"
+
+Directive (verbatim): "Couple ideas that don't require us to implement fancy raytraced lighting for a heckin realistic effect:
+- direct the artist to put the light source at the camera. Directly above the machine should keep rotations from messing things up. I don't know, might kind of ugly though.
+- six equivalent light sources one from each side
+
+I honestly don't know if either of those approaches are good"
+
+Directive (verbatim): "To be clear I meant the artist would get those light source directions as part of its prompt, or they would be communicated visually as part of the template. I think you picked up on that though.
+
+The photorealism we can potentially get out of a diffusion model is attractive to me. The game doesn't *need* photorealism but after seeing it I like it.
+
+Yeah flash would probably be gross. A shallower angle than 60° perhaps?"
+
+Every rotatable texture has six painter relights of one kept picture under the same world light, one for each rest facing at 60° intervals and 45° elevation. The existing sphere-composited relight and normal-recovery step makes the set, checks the recovered direction, and keys the result from the kept pixels, authored prompts, facings, and elevation. At runtime one material samples the two neighbouring relights and blends them by the fractional facing. The mesh tangent supplies the facing, so rest frames select one layer and an arm swing crosses continuously to its neighbour. The material samples the recovered normal only for its activation ripple and flare. Ghosts keep drawing the unlit picture.
+
+This is the dumbest design satisfying the directive because it extends the one measured painter-relight path and the one material already beside `lit.wgsl`: six layers, one facing coordinate, one blend. A light at the camera was rejected because diffuse `n·z` loses the side cue that distinguishes a bump from a dent. Six equal lights in one painting were rejected because their sideways diffuse terms cancel to the same headlight while six sparkles stay baked to the turning picture. A runtime lobe over flat albedo was rejected because it is a synthetic Phong highlight rather than the painter's glaze. Separate atom, bond, or texture-generator lighting was rejected because it would duplicate the relight implementation and let the classes drift.
+
+The first bounded paint run produced several sphere-shaped sets, but none also kept every recovered light within the unchanged 25° tolerance of its named azimuth and 45° elevation; the nine complete sphere-shaped attempts missed a requested direction by 32.3° to 45.6°. `proofs/relight-attempts-72.md` records every failed class and identifies what the two proof images demonstrate. The reusable pipeline, authored-prompt provenance, and visual evidence land, while runtime selection remains unconnected until every rotatable class has an accepted set; mixing painter relights with the old runtime-lit path would create the parallel implementation this design removes.
+
 ### Tick events and material response
 
 Each 400 ms simulation tick produces one ordered `TickEvents` value. Its typed events carry the arm or glyph and the atoms, bond, motion, position or stall reason involved in firing, writing a bond, consuming, spawning, grabbing, dropping, moving and stalling. Event order is simulation order, so equal starting state and input produce equal state and equal events. Replay and card playback retain this output while stepping; neither infers action by comparing states or keeps another action log.

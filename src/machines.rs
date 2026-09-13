@@ -33,14 +33,101 @@ struct Manifest {
     style: Style,
     thresholds: Thresholds,
     machine: BTreeMap<String, Entry>,
+    #[serde(default)]
+    texture: BTreeMap<String, TextureEntry>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Style {
     shared: String,
     critic: String,
-    edges: Vec<String>,
+    facings: Vec<Facing>,
     relight: String,
+    elevation: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum Facing {
+    Right,
+    UpperRight,
+    UpperLeft,
+    Left,
+    LowerLeft,
+    LowerRight,
+    #[cfg(test)]
+    Top,
+    #[cfg(test)]
+    Bottom,
+}
+
+impl Facing {
+    const ALL: [Facing; 6] = [
+        Facing::UpperLeft,
+        Facing::UpperRight,
+        Facing::Right,
+        Facing::LowerRight,
+        Facing::LowerLeft,
+        Facing::Left,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            Facing::Right => "right",
+            Facing::UpperRight => "upper-right",
+            Facing::UpperLeft => "upper-left",
+            Facing::Left => "left",
+            Facing::LowerLeft => "lower-left",
+            Facing::LowerRight => "lower-right",
+            #[cfg(test)]
+            Facing::Top => "top",
+            #[cfg(test)]
+            Facing::Bottom => "bottom",
+        }
+    }
+
+    fn azimuth(self) -> f32 {
+        match self {
+            Facing::Right => 0.0,
+            Facing::UpperRight => 60.0,
+            #[cfg(test)]
+            Facing::Top => 90.0,
+            Facing::UpperLeft => 120.0,
+            Facing::Left => 180.0,
+            Facing::LowerLeft => 240.0,
+            #[cfg(test)]
+            Facing::Bottom => 270.0,
+            Facing::LowerRight => 300.0,
+        }
+    }
+
+    fn light(self, elevation: f32) -> Vec3 {
+        let (azimuth, elevation) = (self.azimuth().to_radians(), elevation.to_radians());
+        Vec3::new(
+            azimuth.cos() * elevation.cos(),
+            azimuth.sin() * elevation.cos(),
+            elevation.sin(),
+        )
+    }
+}
+
+impl Style {
+    fn valid_facings(&self) -> bool {
+        if self.facings == Facing::ALL {
+            return true;
+        }
+        #[cfg(test)]
+        if self.facings == [Facing::Right, Facing::Top, Facing::Left, Facing::Bottom] {
+            return true;
+        }
+        false
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+struct TextureEntry {
+    source: String,
+    relit: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -100,6 +187,10 @@ impl Art {
 
     fn machine(&self, name: &str) -> PathBuf {
         self.dir.join(name)
+    }
+
+    fn texture(&self, name: &str) -> PathBuf {
+        self.dir.join("../textures/relit").join(name)
     }
 
     fn candidate(&self, name: &str, index: u32) -> PathBuf {
@@ -203,6 +294,44 @@ impl Scaffold {
         };
         scaffold.mask = scaffold.mask();
         scaffold
+    }
+
+    fn texture(side: u32) -> Scaffold {
+        let mut scaffold = Scaffold {
+            cells: Vec::new(),
+            quad: Quad {
+                centre: Vec2::ZERO,
+                side: side as f32 / scale(),
+            },
+            canvas: side + 2 * band() as u32,
+            mask: Vec::new(),
+        };
+        let (origin, side) = scaffold.crop();
+        let n = scaffold.canvas as usize;
+        scaffold.mask = vec![0.0; n * n];
+        for y in origin..origin + side {
+            for x in origin..origin + side {
+                scaffold.mask[y as usize * n + x as usize] = 1.0;
+            }
+        }
+        scaffold
+    }
+
+    fn mount(&self, image: &RgbaImage) -> RgbaImage {
+        let (origin, side) = self.crop();
+        assert_eq!((image.width(), image.height()), (side, side));
+        RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
+            if (origin..origin + side).contains(&x) && (origin..origin + side).contains(&y) {
+                *image.get_pixel(x - origin, y - origin)
+            } else {
+                grey(PAD_ALBEDO)
+            }
+        })
+    }
+
+    fn cropped(&self, image: &RgbaImage) -> RgbaImage {
+        let (origin, side) = self.crop();
+        RgbaImage::from_fn(side, side, |x, y| *image.get_pixel(x + origin, y + origin))
     }
 
     fn pixel(&self, world: Vec2) -> Vec2 {
@@ -631,7 +760,7 @@ struct Light {
 impl Light {
     fn row(&self) -> [f32; 3] {
         let d = self.direction * (1.0 - self.ambient);
-        [d.x, d.y, self.ambient]
+        [d.x, d.y, self.ambient + d.z]
     }
 }
 
@@ -954,6 +1083,20 @@ fn save(image: &RgbaImage, path: &Path) {
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
 }
 
+fn stack(images: &[RgbaImage]) -> RgbaImage {
+    let first = images.first().expect("a relight set is not empty");
+    assert!(
+        images
+            .iter()
+            .all(|image| image.dimensions() == first.dimensions())
+    );
+    RgbaImage::from_fn(
+        first.width(),
+        first.height() * images.len() as u32,
+        |x, y| *images[(y / first.height()) as usize].get_pixel(x, y % first.height()),
+    )
+}
+
 const PAINTERS: usize = 6;
 const RELIGHTS: u32 = 3;
 const ROUNDS: usize = 3;
@@ -1080,9 +1223,33 @@ fn store(path: &Path, prompt: &str) -> Result<String, String> {
 const JUDGE: &str = "Answer with exactly one JSON object and nothing else, {\"score\": an integer from 0 to 10, \"issues\": a list of at most five strings, most important first, each one sentence naming what is wrong and where}; do not run commands, edit anything or write files.";
 const CRITIC_SCHEMA: &str = r#"{"type":"object","properties":{"score":{"type":"integer","minimum":0,"maximum":10},"issues":{"type":"array","maxItems":5,"items":{"type":"string"}}},"required":["score","issues"],"additionalProperties":false}"#;
 
-fn relit_key(kept: &[u8], style: &Style) -> String {
-    let edges = style.edges.join("\n");
-    key(&[kept, style.relight.as_bytes(), edges.as_bytes()])
+fn relit_key(kept: &[u8], style: &Style, prompts: &[String]) -> String {
+    let facings: Vec<&str> = style.facings.iter().map(|facing| facing.name()).collect();
+    let facings = facings.join("\n");
+    let prompts = prompts.join("\n");
+    key(&[
+        kept,
+        style.relight.as_bytes(),
+        facings.as_bytes(),
+        &style.elevation.to_le_bytes(),
+        prompts.as_bytes(),
+    ])
+}
+
+fn direction_error(style: &Style, lights: &[Light]) -> f32 {
+    style
+        .facings
+        .iter()
+        .zip(lights)
+        .map(|(facing, light)| {
+            light
+                .direction
+                .dot(facing.light(style.elevation))
+                .clamp(-1.0, 1.0)
+                .acos()
+                .to_degrees()
+        })
+        .fold(0.0, f32::max)
 }
 
 fn judged_key(critic: &str, candidate: &[u8]) -> String {
@@ -1248,6 +1415,22 @@ struct Remake<'a> {
     redraw: std::sync::atomic::AtomicBool,
 }
 
+struct Relight<'a> {
+    dir: &'a Path,
+    scaffold: &'a Scaffold,
+    candidate: &'a RgbaImage,
+    style: &'a Style,
+    prompts: &'a [String],
+    threshold: f32,
+    source: RelightSource,
+}
+
+#[derive(Clone, Copy)]
+enum RelightSource {
+    Machine,
+    Texture,
+}
+
 impl Remake<'_> {
     fn paint(&self, jobs: Vec<(String, Paint)>) -> Vec<(String, Result<(), String>)> {
         std::thread::scope(|s| {
@@ -1294,6 +1477,70 @@ impl Remake<'_> {
         if *entry != before {
             self.art.write(&m);
         }
+    }
+
+    fn record_texture(&self, name: &str, relit: String) {
+        let mut m = self.manifest.lock().expect("the manifest is unpoisoned");
+        let entry = m
+            .texture
+            .get_mut(name)
+            .expect("the texture entry read above");
+        if entry.relit.as_deref() != Some(&relit) {
+            entry.relit = Some(relit);
+            self.art.write(&m);
+        }
+    }
+
+    fn relight_prompts(
+        &self,
+        dir: &Path,
+        master: &Path,
+        style: &Style,
+    ) -> Result<Vec<String>, String> {
+        if !style.valid_facings() {
+            return Err("relight facings are not the canonical set".to_string());
+        }
+        style
+            .facings
+            .iter()
+            .map(|facing| {
+                let edge = facing.name();
+                let path = dir.join(format!("prompt-{edge}.txt"));
+                let key_path = dir.join(format!("prompt-{edge}.key"));
+                let text = style
+                    .relight
+                    .replace("{edge}", edge)
+                    .replace("{elevation}", &style.elevation.to_string());
+                let expected = key(&[&read(master), text.as_bytes()]);
+                if let Some(prompt) = stored(&path)?
+                    && stored(&key_path)?.is_some_and(|found| found == expected)
+                {
+                    return Ok(prompt);
+                }
+                let prompt = self.author(&[master.to_path_buf()], &text)?;
+                let prompt = store(&path, &prompt)?;
+                store(&key_path, &expected)?;
+                Ok(prompt)
+            })
+            .collect()
+    }
+
+    fn prepare_relief(
+        &self,
+        dir: &Path,
+        scaffold: &Scaffold,
+        candidate: &RgbaImage,
+        keyed: &[u8],
+        style: &Style,
+    ) -> Result<(Vec<String>, String), String> {
+        let relit = dir.join("relit");
+        std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
+        let master = scaffold.master(candidate, Some(Vec3::Z));
+        let master_path = relit.join("master.png");
+        save(&master, &master_path);
+        let prompts = self.relight_prompts(&relit, &master_path, style)?;
+        let key = relit_key(keyed, style, &prompts);
+        Ok((prompts, key))
     }
 
     fn score(&self, name: &str, scaffold: &Scaffold) -> Vec<(u32, Score)> {
@@ -1559,12 +1806,33 @@ impl Remake<'_> {
                 "no candidate passes the measured rules in {ROUNDS} rounds"
             ));
         };
-        let relit = relit_key(&read(&self.art.candidate(name, kept)), &style);
+        let capture = scaffold.register(&open(self.art.candidate(name, kept)));
+        let (prompts, relit) = self.prepare_relief(
+            &dir,
+            &scaffold,
+            &capture.image,
+            &read(&self.art.candidate(name, kept)),
+            &style,
+        )?;
+        let relit_dir = dir.join("relit");
         let current = entry.relit.as_deref() == Some(relit.as_str())
             && dir.join("albedo.png").exists()
-            && dir.join("normal.png").exists();
+            && dir.join("normal.png").exists()
+            && relit_dir.join("albedo.png").exists()
+            && relit_dir.join("normal.png").exists();
         if !current {
-            self.relief(name, &scaffold, kept, &style, thresholds)?;
+            self.relief(
+                name,
+                &Relight {
+                    dir: &dir,
+                    scaffold: &scaffold,
+                    candidate: &capture.image,
+                    style: &style,
+                    prompts: &prompts,
+                    threshold: thresholds.sphere,
+                    source: RelightSource::Machine,
+                },
+            )?;
             changed = true;
         }
         self.record(name, |e| {
@@ -1579,82 +1847,164 @@ impl Remake<'_> {
         Ok(changed)
     }
 
-    fn relief(
-        &self,
-        name: &str,
-        scaffold: &Scaffold,
-        kept: u32,
-        style: &Style,
-        thresholds: Thresholds,
-    ) -> Result<(), String> {
-        let dir = self.art.machine(name);
-        let capture = scaffold.register(&open(self.art.candidate(name, kept)));
-        let relit = dir.join("relit");
-        let _ = std::fs::remove_dir_all(&relit);
+    fn relief(&self, name: &str, request: &Relight<'_>) -> Result<(), String> {
+        if request.prompts.len() != request.style.facings.len() {
+            return Err("each relight facing needs one authored prompt".to_string());
+        }
+        let relit = request.dir.join("relit");
         std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
-        let master = scaffold.master(&capture.image, Some(Vec3::Z));
-        save(&master, &relit.join("master.png"));
+        let edits = |relit: &Path| {
+            request
+                .style
+                .facings
+                .iter()
+                .filter(|facing| relit.join(format!("{}.png", facing.name())).exists())
+                .map(|facing| {
+                    let edge = facing.name();
+                    (edge, open(relit.join(format!("{edge}.png"))))
+                })
+                .collect::<Vec<_>>()
+        };
         let mut why = String::new();
         for _ in 0..RELIGHTS {
-            let jobs = style
-                .edges
+            for edge in request.style.facings.iter().map(|facing| facing.name()) {
+                let _ = std::fs::remove_file(relit.join(format!("{edge}.png")));
+            }
+            let jobs = request
+                .style
+                .facings
                 .iter()
-                .map(|edge| {
+                .zip(request.prompts)
+                .map(|(facing, prompt)| {
+                    let edge = facing.name();
                     (
                         format!("{name}-{edge}"),
                         Paint {
                             image: relit.join("master.png"),
                             output: relit.join(format!("{edge}.png")),
-                            prompt: style.relight.replace("{edge}", edge),
-                            size: scaffold.canvas,
+                            prompt: prompt.clone(),
+                            size: request.scaffold.canvas,
                         },
                     )
                 })
                 .collect();
-            let painted = self.paint(jobs);
-            let edits: Vec<(&str, RgbaImage)> = painted
-                .iter()
-                .zip(&style.edges)
-                .filter(|((_, r), _)| r.is_ok())
-                .map(|(_, edge)| (edge.as_str(), open(relit.join(format!("{edge}.png")))))
-                .collect();
-            if edits.len() < style.edges.len() {
+            self.paint(jobs);
+            let edits = edits(&relit);
+            if edits.len() < request.style.facings.len() {
                 why = format!(
                     "{} of {} relights failed",
-                    painted.len() - edits.len(),
-                    painted.len()
+                    request.style.facings.len() - edits.len(),
+                    request.style.facings.len()
                 );
                 continue;
             }
-            let images: Vec<RgbaImage> = edits.iter().map(|(_, e)| e.clone()).collect();
-            let relief = scaffold.normals(&master, &images);
-            let mut lights: Vec<String> = edits
-                .iter()
-                .zip(&relief.lights)
-                .map(|((edge, _), l)| {
-                    let d = l.direction;
-                    format!(
-                        "{edge}\tlight=({:+.2},{:+.2},{:+.2})\tambient={:.2}",
-                        d.x, d.y, d.z, l.ambient
-                    )
-                })
-                .collect();
-            lights.push(format!("sphere error {:.1} degrees", relief.sphere));
-            println!("{name}\t{}", lights.last().expect("the sphere line"));
-            std::fs::write(relit.join("lights.txt"), lights.join("\n") + "\n")
-                .map_err(|e| e.to_string())?;
-            if relief.sphere <= thresholds.sphere {
-                save(&scaffold.cut(&capture.image), &dir.join("albedo.png"));
-                save(&relief.normal, &dir.join("normal.png"));
-                quantise(&dir.join("albedo.png"))?;
+            let error = self.accept_relief(request, &edits)?;
+            println!("{name}\trelight error {error:.1} degrees");
+            if error <= request.threshold {
+                for edge in ["top", "bottom"] {
+                    let _ = std::fs::remove_file(relit.join(format!("{edge}.png")));
+                }
                 return Ok(());
             }
             why = format!(
-                "the calibration sphere came back {:.1} degrees off, over {}",
-                relief.sphere, thresholds.sphere
+                "the calibration sphere or requested direction came back {:.1} degrees off, over {}",
+                error, request.threshold
             );
         }
         Err(format!("{why}, {RELIGHTS} relights over"))
+    }
+
+    fn accept_relief(
+        &self,
+        request: &Relight<'_>,
+        edits: &[(&str, RgbaImage)],
+    ) -> Result<f32, String> {
+        let images: Vec<RgbaImage> = edits.iter().map(|(_, image)| image.clone()).collect();
+        let relief = request.scaffold.normals(request.candidate, &images);
+        let mut lights: Vec<String> = edits
+            .iter()
+            .zip(&relief.lights)
+            .map(|((edge, _), light)| {
+                let d = light.direction;
+                format!(
+                    "{edge}\tlight=({:+.2},{:+.2},{:+.2})\tambient={:.2}",
+                    d.x, d.y, d.z, light.ambient
+                )
+            })
+            .collect();
+        let direction = direction_error(request.style, &relief.lights);
+        let error = relief.sphere.max(direction);
+        lights.push(format!("sphere error {:.1} degrees", relief.sphere));
+        lights.push(format!("direction error {direction:.1} degrees"));
+        let relit = request.dir.join("relit");
+        std::fs::write(relit.join("lights.txt"), lights.join("\n") + "\n")
+            .map_err(|e| e.to_string())?;
+        if error > request.threshold {
+            return Ok(error);
+        }
+        save(&relief.normal, &relit.join("normal.png"));
+        if matches!(request.source, RelightSource::Machine) {
+            save(
+                &request.scaffold.cut(request.candidate),
+                &request.dir.join("albedo.png"),
+            );
+            save(&relief.normal, &request.dir.join("normal.png"));
+            quantise(&request.dir.join("albedo.png"))?;
+        }
+        let extract = |image: &RgbaImage| match request.source {
+            RelightSource::Machine => request.scaffold.cut(image),
+            RelightSource::Texture => request.scaffold.cropped(image),
+        };
+        save(
+            &stack(&images.iter().map(extract).collect::<Vec<_>>()),
+            &relit.join("albedo.png"),
+        );
+        quantise(&relit.join("albedo.png"))?;
+        Ok(error)
+    }
+
+    fn texture(&self, name: &str) -> Result<bool, String> {
+        let (style, thresholds, entry) = {
+            let m = self.manifest.lock().expect("the manifest is unpoisoned");
+            let entry = m
+                .texture
+                .get(name)
+                .ok_or_else(|| format!("manifest has no [texture.{name}]"))?;
+            (m.style.clone(), m.thresholds, entry.clone())
+        };
+        let source = self.art.dir.join("..").join(&entry.source);
+        let image = open(&source);
+        if image.width() != image.height() {
+            return Err(format!("{} is not square", source.display()));
+        }
+        let scaffold = Scaffold::texture(image.width());
+        let candidate = scaffold.mount(&image);
+        let dir = self.art.texture(name);
+        let (prompts, key) =
+            self.prepare_relief(&dir, &scaffold, &candidate, image.as_raw(), &style)?;
+        let relit = dir.join("relit");
+        let current = entry.relit.as_deref() == Some(&key)
+            && relit.join("albedo.png").exists()
+            && relit.join("normal.png").exists();
+        if current {
+            println!("{name}\tup to date");
+            return Ok(false);
+        }
+        self.relief(
+            name,
+            &Relight {
+                dir: &dir,
+                scaffold: &scaffold,
+                candidate: &candidate,
+                style: &style,
+                prompts: &prompts,
+                threshold: thresholds.sphere,
+                source: RelightSource::Texture,
+            },
+        )?;
+        self.record_texture(name, key);
+        println!("{name}\tlanded");
+        Ok(true)
     }
 
     fn sheet(&self) -> Result<(), String> {
@@ -1761,18 +2111,24 @@ fn remake(
     let mut names: Vec<&String> = names.iter().collect();
     names.sort();
     names.dedup();
-    let prepared: Vec<(String, Result<Prepared, String>)> = names
-        .iter()
-        .map(|name| (name.to_string(), remake.prepare(name)))
-        .collect();
     let remake = &remake;
     let results: Vec<(String, Result<bool, String>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = prepared
+        let handles: Vec<_> = names
             .into_iter()
-            .map(|(name, prepared)| {
+            .map(|name| {
                 s.spawn(move || {
-                    let result = prepared.and_then(|p| remake.machine(&name, p));
-                    (name, result)
+                    let machine = remake
+                        .manifest
+                        .lock()
+                        .expect("the manifest is unpoisoned")
+                        .machine
+                        .contains_key(name);
+                    let result = if machine {
+                        remake.prepare(name).and_then(|p| remake.machine(name, p))
+                    } else {
+                        remake.texture(name)
+                    };
+                    (name.to_string(), result)
                 })
             })
             .collect();
@@ -1808,7 +2164,8 @@ pub fn configure(args: &[String]) -> Option<i32> {
         return None;
     }
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
-    let known = |n: &str| Machine::ALL.into_iter().map(name).any(|k| k == n);
+    let manifest = art.read();
+    let known = |n: &str| manifest.machine.contains_key(n) || manifest.texture.contains_key(n);
     let director = |images: &[PathBuf], brief: &str| run(&art.direct_sh(), images, &[brief]);
     let painter = |job: &Paint| paint_sh(&art, job);
     let critic = |images: &[PathBuf], rubric: &str| {
@@ -1819,9 +2176,11 @@ pub fn configure(args: &[String]) -> Option<i32> {
         )
     };
     let names: Vec<String> = match rest.as_slice() {
-        ["--all"] => Machine::ALL
-            .into_iter()
-            .map(|i| name(i).to_string())
+        ["--all"] => manifest
+            .machine
+            .keys()
+            .chain(manifest.texture.keys())
+            .cloned()
             .collect(),
         [_, ..] if rest.iter().all(|n| known(n)) => rest.iter().map(|n| n.to_string()).collect(),
         _ => {
@@ -2041,12 +2400,111 @@ mod tests {
                 "{name}: the candidates are stale against the prompt: run ziral --gen {name}"
             );
             let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));
-            assert_eq!(
-                machine.relit.as_deref(),
-                Some(relit_key(&kept_png, &manifest.style).as_str()),
-                "{name}: the maps are stale against the kept candidate: run ziral --gen {name}"
-            );
+            let relight_prompts: Option<Vec<String>> = manifest
+                .style
+                .facings
+                .iter()
+                .map(|facing| {
+                    let edge = facing.name();
+                    stored(&dir.join(format!("relit/prompt-{edge}.txt")))
+                        .expect("a relight prompt is readable")
+                        .ok_or(())
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .ok();
+            if let Some(relit) = &machine.relit {
+                let prompts = relight_prompts
+                    .unwrap_or_else(|| panic!("{name} has no complete relight prompt set"));
+                assert_eq!(
+                    relit,
+                    &relit_key(&kept_png, &manifest.style, &prompts),
+                    "{name}: the maps are stale against the kept candidate: run ziral --gen {name}"
+                );
+                assert!(dir.join("relit/albedo.png").exists(), "{name}");
+            }
         }
+    }
+
+    #[test]
+    fn the_manifest_keys_six_facing_reliefs_for_every_rotatable_texture() {
+        let art = Art::shipped();
+        let manifest = art.read();
+        assert_eq!(manifest.style.facings, Facing::ALL);
+        assert_eq!(manifest.style.elevation, 45.0);
+        let names: Vec<&str> = manifest.texture.keys().map(String::as_str).collect();
+        assert_eq!(
+            names,
+            [
+                "atom-amber",
+                "atom-base",
+                "atom-plum",
+                "bond-double",
+                "bond-single"
+            ]
+        );
+        for (name, entry) in &manifest.texture {
+            let source = art.dir.join("..").join(&entry.source);
+            assert!(source.exists(), "{name}");
+            if let Some(relit) = &entry.relit {
+                let dir = art.texture(name).join("relit");
+                let prompts: Vec<String> = manifest
+                    .style
+                    .facings
+                    .iter()
+                    .map(|facing| {
+                        let edge = facing.name();
+                        stored(&dir.join(format!("prompt-{edge}.txt")))
+                            .expect("a prompt is readable")
+                            .unwrap_or_else(|| panic!("{name} has no prompt for {edge}"))
+                    })
+                    .collect();
+                assert_eq!(
+                    relit,
+                    &relit_key(open(&source).as_raw(), &manifest.style, &prompts),
+                    "{name}"
+                );
+                assert!(dir.join("albedo.png").exists(), "{name}");
+                assert!(dir.join("normal.png").exists(), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn relight_keys_change_with_the_elevation_facings_and_authored_prompts() {
+        let mut style = Art::shipped().read().style;
+        let source = b"pixels";
+        let prompts: Vec<String> = style
+            .facings
+            .iter()
+            .map(|facing| facing.name().to_string())
+            .collect();
+        let original = relit_key(source, &style, &prompts);
+        style.elevation += 1.0;
+        assert_ne!(relit_key(source, &style, &prompts), original);
+        style.elevation -= 1.0;
+        style.facings.swap(0, 1);
+        assert_ne!(relit_key(source, &style, &prompts), original);
+        style.facings.swap(0, 1);
+        let mut revised = prompts.clone();
+        revised[0].push('!');
+        assert_ne!(relit_key(source, &style, &revised), original);
+    }
+
+    #[test]
+    fn a_relight_set_must_match_every_requested_direction() {
+        let style = Art::shipped().read().style;
+        let lights: Vec<Light> = style
+            .facings
+            .iter()
+            .map(|facing| Light {
+                direction: facing.light(style.elevation),
+                ambient: AMBIENT,
+            })
+            .collect();
+        assert!(direction_error(&style, &lights) < 0.1);
+        let mut swapped = lights;
+        swapped.swap(0, 1);
+        assert!(direction_error(&style, &swapped) > 25.0);
     }
 
     #[test]
@@ -2206,6 +2664,14 @@ mod tests {
         }
         let thresholds = Art::shipped().read().thresholds;
         assert!(relief.sphere <= thresholds.sphere, "{}", relief.sphere);
+        let light = Light {
+            direction: Vec3::new(0.2, 0.3, 0.9).normalize(),
+            ambient: AMBIENT,
+        };
+        assert!(
+            (light.row()[2] - (light.ambient + (1.0 - light.ambient) * light.direction.z)).abs()
+                < f32::EPSILON
+        );
         let (origin, _) = scaffold.crop();
         let at = |dx: f32, dy: f32| {
             let p = bump + Vec2::new(dx, dy) * radius / 2.0 - Vec2::splat(origin as f32);
@@ -2230,7 +2696,16 @@ mod tests {
         art.write(&Manifest {
             candidates: 2,
             style: Style {
-                edges: edges.iter().map(|e| e.to_string()).collect(),
+                facings: edges
+                    .iter()
+                    .map(|edge| match *edge {
+                        "right" => Facing::Right,
+                        "top" => Facing::Top,
+                        "left" => Facing::Left,
+                        "bottom" => Facing::Bottom,
+                        _ => panic!("unknown test facing {edge}"),
+                    })
+                    .collect(),
                 ..style
             },
             thresholds: shipped.read().thresholds,
@@ -2253,6 +2728,7 @@ mod tests {
                     )
                 })
                 .collect(),
+            texture: BTreeMap::new(),
         });
         art
     }
@@ -2288,10 +2764,10 @@ mod tests {
                 .expect("relit/master.png under the machine dir");
             let scaffold = Scaffold::of(item(name));
             let light = match stem {
-                "right" => Vec3::new(1.0, 0.0, 0.2),
-                "top" => Vec3::new(0.0, 1.0, 0.2),
-                "left" => Vec3::new(-1.0, 0.0, 0.2),
-                "bottom" => Vec3::new(0.0, -1.0, 0.2),
+                "right" => Vec3::new(1.0, 0.0, 1.0),
+                "top" => Vec3::new(0.0, 1.0, 1.0),
+                "left" => Vec3::new(-1.0, 0.0, 1.0),
+                "bottom" => Vec3::new(0.0, -1.0, 1.0),
                 edge => panic!("no light for {edge}"),
             }
             .normalize();
@@ -2433,10 +2909,11 @@ mod tests {
             let relights: Vec<_> = recorded
                 .iter()
                 .filter(|(stem, image)| {
-                    style.edges.contains(stem) && *image == dir.join("relit/master.png")
+                    style.facings.iter().any(|facing| facing.name() == stem)
+                        && *image == dir.join("relit/master.png")
                 })
                 .collect();
-            assert_eq!(relights.len(), style.edges.len(), "{name}");
+            assert_eq!(relights.len(), style.facings.len(), "{name}");
         }
     }
 
@@ -2761,12 +3238,11 @@ mod tests {
         let first = format!("a caption from: {}", base.trim());
         let briefs = briefs.lock().unwrap();
         let scaffold = art.machine("source").join("scaffold.png");
+        let briefs: Vec<_> = briefs
+            .iter()
+            .filter(|(images, _)| *images == [scaffold.clone()])
+            .collect();
         assert_eq!(briefs.len(), 3, "{briefs:?}");
-        assert!(
-            briefs
-                .iter()
-                .all(|(images, _)| *images == [scaffold.clone()])
-        );
         assert_eq!(briefs[0].1, base);
         assert_eq!(
             briefs[1].1,

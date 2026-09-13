@@ -3,13 +3,16 @@ candidates = 4
 [style]
 shared = "The picture is a game sprite: one compact kiln-floor machine seen in a flat plan from directly above, orthographic, no perspective, no vanishing point, no foreshortening, no side face, every seat, cup and well a concentric circle with its inner wall hidden all the way round, painted over the attached scaffold at the scaffold's exact framing. The scaffold is a flat pure green chroma-key background carrying the seat marks of the machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand, and the dot at the heart of every ring and horseshoe is the exact centre of that seat, where the atom sits. In the finished picture every seat, cup, well, funnel and hand is built concentric on its dot at the mark's own size, empty and unobstructed, as far apart as the dots are; the body between seats is slender and hugs the marks; no part lies further from the nearest mark's centre than twice that ring's radius, nothing rises above or hangs below the seats or bulges out between two seats, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover is the untouched flat pure green key: no board, tile, plate, well, base, table, room, bead, atom, fist, finger, text, numeral, logo or exposed clockwork. The materials are photoreal glazed ceramic, darkened brass and worn rubber in the workshop palette: clay #D8C3A5, dark brass #6B4F3A, terracotta #C8553D, blue-green #4F8A8B, amber #E0A458, plum #7D5BA6, ivory #F4EDE4; the capture is flat base colour with baked ambient occlusion only, no directional light, highlight, specular or cast shadow, so the one sprite is correct turned to any facing; no labels, watermark, menus, clutter or named-game resemblance."
 critic = """Judge one machine sprite for a game against its art bible. The first image is the machine as the game shows it: the cut sprite over the board's clay tiles at gameplay scale, magnified without smoothing, so the pixel steps are the magnification and not the art. The second image is the scaffold it was painted over: a flat green key carrying one mark per seat, a ring or an open horseshoe with a dot at its exact centre, and a brass disc for a pivot; it is there for reference only, not a checklist, and no difference between the picture and the marks is a fault. The code has already measured that every seat sits on its mark and that the sprite stays within its tiles, so neither is yours to judge; and how the body joins its seats, which seat connects to which and by what, is the painter's call and never counts against the picture. Judge, in this order. Presence: the sprite reads at a glance at this scale as one solid, weighty kiln-floor object. Material richness: glazed ceramic, darkened brass and worn rubber read as those materials, wear gathered at contact edges, detail that rewards a close look. Artist moxie: the painting is confident and characterful, a machine somebody made, not a timid diagram of the marks. Then these rules quoted from the bible, as blemishes a strong picture carries lightly. View: "Every machine is drawn from directly above, the camera straight down and orthographic, so one sprite turns to any facing by rotating about its cell. A visible side face, a cup's far inner wall, a vanishing point are the tells." Language: "Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. Rotatable art is captured as albedo under even, diffuse, non-directional light: curvature comes from symmetric tonal structure, wear gathers at contact edges only, and there is no cast shadow or directional highlight to swing with a turn." Silhouette: "Stout circular pivots, an open horseshoe for the hand. Every state is readable from the outline alone." Glyphs: "Its circular seats remain broad and unobstructed beneath atoms, so the machine story never obscures how it is used." Forbidden: "Exposed clockwork; grime or wear over a state glaze; tiny ornamental hardware; text or numerals on the board; pure black or white (dark brass and ivory instead)." And the sprite is one complete object with every seat empty and nothing under it: no plate, no tile, no base, no trace of the green key. The score: 10 has presence, rich material and moxie and breaks no rule; 8 is the bar, presence, rich material and moxie with at most a blemish a player would not notice; below 8 the picture is dull, thin in material or timid, or breaks a rule plainly, and the more it lacks or the more plainly, the lower; a picture with moxie that carries a light blemish scores above a dull picture that breaks no rule. The issues: what is wrong and where, in the painter's terms, so the next paint can fix it; name only what you judged, never seat position, footprint, or how the parts connect."""
-edges = [
+facings = [
+    "upper-left",
+    "upper-right",
     "right",
-    "top",
+    "lower-right",
+    "lower-left",
     "left",
-    "bottom",
 ]
-relight = "Use case: precise-object-edit. Edit target: the attached image. Keep the same image with identical geometry, materials, colours, texture detail and framing, and the matte grey sphere on its grey pad in the lower-right corner kept exactly where they are; only the lighting changes: it is now lit by one warm raking light coming from the {edge}, the light source sitting low at the {edge} edge of the picture and shining across the surface, so the {edge} half of the sphere is bright and its opposite half dark, and every ridge, seam and rim is lit on its {edge} side."
+relight = "The finished picture is a precise relight of the attached picture with identical geometry, materials, colours, surface detail and framing. One warm world light at {elevation} degrees elevation comes from the {edge}; the {edge} half of the matte grey sphere is bright and its opposite half is dark, and every ridge, seam and rim follows that same light. The sphere and grey pad remain exactly in place. No object, edge, mark, texture detail or proportion changes. The art director composes the image prompt, may change the direction wording, and has creative freedom over art direction within those facts."
+elevation = 45.0
 
 [thresholds]
 outside = 0.05
@@ -24,7 +27,6 @@ direction = "The machine is a stout radial workshop arm lying flat across the tw
 kept = 2
 briefed = "664306b5af1a7ce0"
 painted = "85fabaa5ad6b1434"
-relit = "584dbfeff8fea117"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -70,7 +72,6 @@ direction = "The machine is a two-cell bonder: two equal empty blue-green cerami
 kept = 2
 briefed = "4735ac71651604dc"
 painted = "154999dc5186f881"
-relit = "2e37efc4ba2d639a"
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -117,7 +118,6 @@ direction = "The machine is a compact three-cell amber converter drawn as a flat
 kept = 1
 briefed = "52e163b5fbb6297d"
 painted = "cbfa2376ee581a6f"
-relit = "187aa8d30b9ba6d3"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -156,7 +156,6 @@ direction = "The machine is a compact three-cell plum converter drawn as a flat 
 kept = 1
 briefed = "645994f2ca1854e0"
 painted = "3d06f7d0e768154c"
-relit = "8e66e81fa45722fc"
 
 [machine.converter-plum.instrument]
 voice = "ceramic"
@@ -195,7 +194,6 @@ direction = "The machine is a seven-cell output station, the first tier: seven e
 kept = 2
 briefed = "0703f016c81441b4"
 painted = "2f465129c87f03df"
-relit = "5fe90d3d955c6921"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -234,7 +232,6 @@ direction = "The machine is a nineteen-cell output station, the second tier: the
 kept = 4
 briefed = "9f187a3ebef5833c"
 painted = "7637dcc5729e7cd3"
-relit = "bc3a6dc4b8d68075"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -273,7 +270,6 @@ direction = "The machine is a thirty-seven-cell output station, the third tier: 
 kept = 1
 briefed = "4eeb14aa93b7d048"
 painted = "fe645dd9b6446395"
-relit = "e9d3d0d9998a9f6a"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -312,7 +308,6 @@ direction = "The machine is the reification glyph, a nineteen-cell amber kiln we
 kept = 4
 briefed = "800a601c57667c5b"
 painted = "559dfb3aa2a2f843"
-relit = "bc3a6dc4b8d68075"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -351,7 +346,6 @@ direction = "The machine is a three-cell second-bond applicator: a plum glazed c
 kept = 4
 briefed = "9ca8ec90a90e95fc"
 painted = "18c0b60724fb2963"
-relit = "9b0c6fc8bb1817be"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -398,7 +392,6 @@ direction = "The machine is a one-cell source: a blue-green glazed ceramic feed 
 kept = 2
 briefed = "81d5dc6036915ae9"
 painted = "e2d206d746813551"
-relit = "9b24ad26d7dc2604"
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -431,3 +424,18 @@ pivot = [
 score = 8
 motion = "dilate"
 event = "fired"
+
+[texture.atom-amber]
+source = "textures/atom-amber.png"
+
+[texture.atom-base]
+source = "textures/atom-base.png"
+
+[texture.atom-plum]
+source = "textures/atom-plum.png"
+
+[texture.bond-double]
+source = "textures/bond-double.png"
+
+[texture.bond-single]
+source = "textures/bond-single.png"
