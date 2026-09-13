@@ -17,3 +17,5 @@ The unchanged limit is 25°. Nine sets passed the sphere-shape check but failed 
 | bond-double | 45.6° |
 
 The remaining six sets failed the sphere-shape check first: output-1 at 27.8°, output-3 at 31.0°, reification at 25.1°, atom-base at 29.8°, atom-plum at 27.8°, and bond-single at 25.8°.
+
+The arm, bonder, converter-plum, output-2, second-bond, and source attempts reused their earlier left and right prompt text, which describes a low light rather than the manifest's 45° elevation. Those twelve prompt files and cache keys are excluded from the retained provenance and remain invalid for a later run. The retained prompt files are the exact declarative outputs for the other four facings of those machines and all six facings of converter-amber, atom-amber, and bond-double.
