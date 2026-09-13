@@ -313,14 +313,14 @@ enum CardDrag {
     New {
         id: u64,
         grab: Vec2,
+        button: MouseButton,
     },
 }
 
 impl CardDrag {
     fn button(self) -> MouseButton {
         match self {
-            CardDrag::New { .. } => MouseButton::Right,
-            CardDrag::Move { button, .. } => button,
+            CardDrag::New { button, .. } | CardDrag::Move { button, .. } => button,
         }
     }
 }
@@ -439,13 +439,21 @@ impl World {
         id
     }
 
-    fn begin_pin(&mut self, item: Item, pointer: Vec2) {
+    fn begin_pin(&mut self, item: Item, pointer: Vec2, button: MouseButton) {
         if self.holding() || self.down.is_some() {
             return;
         }
         let grab = card_size(item) / 2.0;
         let id = self.pin(item, pointer - grab);
-        self.card_drag = Some(CardDrag::New { id, grab });
+        self.card_drag = Some(CardDrag::New { id, grab, button });
+    }
+
+    fn press_inventory(&mut self, item: Item, pointer: Vec2) {
+        if self.sim.inventory.count(item) == Some(0) {
+            self.begin_pin(item, pointer, MouseButton::Left);
+        } else {
+            self.lift_inventory(item);
+        }
     }
 
     fn card_press(&mut self, id: u64, pointer: Vec2, button: MouseButton) {
@@ -2402,7 +2410,7 @@ fn edit(
         && let Some(pointer) = screen
     {
         if let Some(item) = inventory_at {
-            world.begin_pin(item, pointer);
+            world.begin_pin(item, pointer, MouseButton::Right);
         } else if let Some(id) = world.card_at(pointer) {
             world.card_press(id, pointer, MouseButton::Right);
         }
@@ -2414,7 +2422,9 @@ fn edit(
         if let Some(id) = screen.and_then(|pointer| world.card_at(pointer)) {
             world.card_press(id, screen.unwrap(), MouseButton::Left);
         } else if let Some((Some(entry), _, _)) = pressed {
-            world.lift_inventory(entry.0);
+            if let Some(pointer) = screen {
+                world.press_inventory(entry.0, pointer);
+            }
         } else if let Some((_, Some(row), _)) = pressed {
             if let Some(arm) = row.arm().filter(|a| *a < world.shown().arms.len()) {
                 world.focus_tape(arm);
@@ -3756,6 +3766,8 @@ mod shot {
         WheelCard(usize, f32),
         FocusCard(usize),
         CursorOnCard(usize, Vec2),
+        PressInventory(Item),
+        EndCard,
         Nudge(Vec2),
         Mouse(MouseButton, ButtonState),
     }
@@ -3763,7 +3775,7 @@ mod shot {
     impl Act {
         pub(super) fn card(self, world: &mut World) -> bool {
             match self {
-                Act::BeginPin(item, pointer) => world.begin_pin(item, pointer),
+                Act::BeginPin(item, pointer) => world.begin_pin(item, pointer, MouseButton::Right),
                 Act::MoveCard(index, delta) => {
                     if let Some(card) = world.pinned.get(index) {
                         let id = card.id;
@@ -3815,7 +3827,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 45] = [
+    pub const SCENES: [&str; 46] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -3861,6 +3873,7 @@ mod shot {
         "cards",
         "card-wheel",
         "card-regrab",
+        "inventory-drags",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -3977,6 +3990,22 @@ mod shot {
                     script.push((74 + step * 2, Act::Nudge(REGRAB_STEP)));
                 }
                 script.push((96, Act::Mouse(MouseButton::Right, ButtonState::Released)));
+            }
+            "inventory-drags" => {
+                let empty = Item::from(Machine::Glyph(GlyphKind::Bonder));
+                let one = Item::from(Machine::Glyph(GlyphKind::SecondBond));
+                world.sim = Sim::empty();
+                world.sim.inventory.add(one);
+                script.push((26, Act::PressInventory(empty)));
+                for step in 1..=10 {
+                    script.push((26 + step * 2, Act::Nudge(Vec2::new(45.0, -28.0))));
+                }
+                script.push((50, Act::EndCard));
+                script.push((70, Act::PressInventory(one)));
+                for step in 1..=10 {
+                    script.push((70 + step * 2, Act::Nudge(Vec2::new(80.0, 25.0))));
+                }
+                script.push((94, Act::EndCard));
             }
             "cards" | "card-wheel" => {
                 world.hover = None;
@@ -4820,10 +4849,20 @@ mod shot {
         }
     }
 
-    type Input<'w> = (
+    type Input<'w, 's> = (
         MessageWriter<'w, KeyboardInput>,
         MessageWriter<'w, MouseButtonInput>,
         MessageWriter<'w, MouseMotion>,
+        Query<
+            'w,
+            's,
+            (
+                &'static PaletteRow,
+                &'static UiGlobalTransform,
+                &'static mut Interaction,
+            ),
+        >,
+        ResMut<'w, ButtonInput<MouseButton>>,
     );
 
     fn capture(
@@ -4835,7 +4874,7 @@ mod shot {
         input: Input,
         mut exit: MessageWriter<AppExit>,
     ) {
-        let (mut keyboard, mut mouse, mut motion) = input;
+        let (mut keyboard, mut mouse, mut motion, mut inventory, mut buttons) = input;
         let hover = cards
             .iter()
             .find(|(kind, _)| **kind == CardCamera::Hover)
@@ -4882,7 +4921,23 @@ mod shot {
                     let card = &world.pinned[index];
                     primary.set_cursor_position(Some(card.at + offset));
                 }
+                Act::PressInventory(item) => {
+                    let mut pointer = None;
+                    for (row, transform, mut interaction) in &mut inventory {
+                        *interaction = if row.0 == item {
+                            pointer = Some(transform.translation / primary.scale_factor());
+                            Interaction::Pressed
+                        } else {
+                            Interaction::None
+                        };
+                    }
+                    primary.set_cursor_position(pointer);
+                    buttons.press(MouseButton::Left);
+                }
                 Act::Nudge(delta) => {
+                    for (_, _, mut interaction) in &mut inventory {
+                        *interaction = Interaction::None;
+                    }
                     let from = primary.cursor_position().unwrap_or_default();
                     primary.set_cursor_position(Some(from + delta));
                     motion.write(MouseMotion { delta });
@@ -4893,6 +4948,9 @@ mod shot {
                         state,
                         window,
                     });
+                }
+                Act::EndCard => {
+                    buttons.release(MouseButton::Left);
                 }
                 Act::BeginPin(_, _)
                 | Act::MoveCard(_, _)
@@ -7046,7 +7104,7 @@ mod tests {
             (Machine::Glyph(GlyphKind::Bonder).into(), Vec2::splat(20.0)),
             (Machine::Arm.into(), Vec2::splat(60.0)),
         ] {
-            world.begin_pin(item, pointer);
+            world.begin_pin(item, pointer, MouseButton::Right);
             assert!(matches!(world.card_drag, Some(CardDrag::New { .. })));
             world.card_drag = None;
         }
@@ -7063,6 +7121,47 @@ mod tests {
             [kept]
         );
         assert_eq!(world.focus, None);
+    }
+
+    #[test]
+    fn a_left_drag_from_a_zero_count_palette_row_keeps_the_sim_and_pins_its_card_at_the_drop() {
+        let item = Item::from(Machine::Glyph(GlyphKind::Bonder));
+        let mut world = World::new(Sim::empty());
+        let before = world.sim.clone();
+        let drop = Vec2::new(640.0, 240.0);
+        world.press_inventory(item, Vec2::new(90.0, 610.0));
+        assert_eq!(world.sim, before);
+        assert!(matches!(
+            world.card_drag,
+            Some(CardDrag::New {
+                button: MouseButton::Left,
+                ..
+            })
+        ));
+        world.card_drag(drop, Vec2::new(1280.0, 720.0));
+        world.card_drag = None;
+        assert_eq!(world.sim, before);
+        assert_eq!(world.pinned.len(), 1);
+        assert_eq!(world.pinned[0].item, item);
+        assert_eq!(world.pinned[0].at, drop - card_size(item) / 2.0);
+    }
+
+    #[test]
+    fn a_left_drag_from_a_one_count_palette_row_lifts_the_item_and_pins_nothing() {
+        let item = Item::from(Machine::Glyph(GlyphKind::Bonder));
+        let mut world = World::new(Sim::empty());
+        world.sim.inventory.add(item);
+        let before = world.sim.clone();
+        let drop = Hex::new(-2, 3);
+        world.press_inventory(item, Vec2::new(90.0, 610.0));
+        assert_eq!(world.sim, before);
+        assert!(matches!(world.focus, Some(Focus::Hold { .. })));
+        assert!(world.pinned.is_empty());
+        world.pointer = Some(px(drop));
+        world.release(Some(drop));
+        assert_eq!(world.sim.inventory.count(item), Some(0));
+        assert_eq!(world.sim.glyphs[0].unwrap().at, drop);
+        assert!(world.pinned.is_empty());
     }
 
     #[test]
@@ -7467,7 +7566,9 @@ mod tests {
                     shot::Act::BeginPin(_, _)
                     | shot::Act::MoveCard(_, _)
                     | shot::Act::WheelCard(_, _)
-                    | shot::Act::FocusCard(_) => unreachable!(),
+                    | shot::Act::FocusCard(_)
+                    | shot::Act::PressInventory(_)
+                    | shot::Act::EndCard => unreachable!(),
                 }
             }
             if frame == warm {
