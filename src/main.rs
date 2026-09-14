@@ -762,7 +762,7 @@ impl World {
 
     fn hit(&self, point: Vec2, frame: &Frame) -> Option<Id> {
         let cell = hex_at(point);
-        let changing = !std::ptr::eq(frame.sim, self.shown());
+        let changing = frame.sim != self.shown();
         let machine = self
             .hand_ids()
             .filter(|id| self.cells(*id).contains(&cell))
@@ -6093,6 +6093,16 @@ mod tests {
         assert_eq!(hit(&w, px(ORIGIN)), Some(Id::Glyph(0)));
         w.since = w.period;
         assert_eq!(hit(&w, px(ORIGIN)), Some(Id::Atom(0)));
+
+        let mut replay =
+            World::new(fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim);
+        replay.running = false;
+        stocked(&mut replay, Item::Step, 3);
+        replay.key(KeyCode::KeyG, false);
+        replay.key(KeyCode::KeyG, false);
+        replay.key(KeyCode::KeyS, false);
+        assert_eq!(replay.prev, *replay.shown());
+        assert_eq!(hit(&replay, px(ORIGIN)), Some(Id::Atom(0)));
     }
 
     #[test]
