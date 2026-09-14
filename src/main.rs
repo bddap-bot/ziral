@@ -380,20 +380,27 @@ struct Refused {
 struct Pinned {
     id: u64,
     item: Item,
-    at: Vec2,
+    anchor: Vec2,
     scale: f32,
+}
+
+impl Pinned {
+    fn screen_rect(&self, viewport: &Viewport) -> (Vec2, Vec2) {
+        let size = card_size(self.item) * self.scale;
+        (viewport.screen(self.anchor) - size / 2.0, size)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum CardDrag {
     Move {
         id: u64,
-        grab: Vec2,
+        start: Vec2,
+        moved: bool,
         button: MouseButton,
     },
     New {
         id: u64,
-        grab: Vec2,
         button: MouseButton,
     },
 }
@@ -507,7 +514,7 @@ impl World {
         }
     }
 
-    fn pin(&mut self, item: Item, at: Vec2) -> u64 {
+    fn pin_world(&mut self, item: Item, anchor: Vec2) -> u64 {
         let item = card_item(item);
         let id = self.next_card;
         self.next_card += 1;
@@ -519,26 +526,24 @@ impl World {
         self.pinned.push(Pinned {
             id,
             item,
-            at,
+            anchor,
             scale: 1.0,
         });
         self.focus = Some(Focus::Card(id));
         id
     }
 
-    fn begin_pin(&mut self, item: Item, pointer: Vec2, button: MouseButton) {
+    fn begin_pin(&mut self, item: Item, pointer: Vec2, viewport: &Viewport, button: MouseButton) {
         if self.holding() || self.down.is_some() {
             return;
         }
-        let item = card_item(item);
-        let grab = card_size(item) / 2.0;
-        let id = self.pin(item, pointer - grab);
-        self.card_drag = Some(CardDrag::New { id, grab, button });
+        let id = self.pin_world(item, viewport.world(pointer));
+        self.card_drag = Some(CardDrag::New { id, button });
     }
 
-    fn press_inventory(&mut self, item: Item, pointer: Vec2) {
+    fn press_inventory(&mut self, item: Item, pointer: Vec2, viewport: &Viewport) {
         if self.sim.inventory.count(item) == Some(0) {
-            self.begin_pin(item, pointer, MouseButton::Left);
+            self.begin_pin(item, pointer, viewport, MouseButton::Left);
         } else {
             self.lift_inventory(item);
         }
@@ -548,40 +553,51 @@ impl World {
         if self.holding() || self.down.is_some() || self.card_drag.is_some() {
             return;
         }
-        let Some(card) = self.pinned.iter().find(|card| card.id == id) else {
+        if self.pinned.iter().all(|card| card.id != id) {
             return;
-        };
+        }
         self.focus = Some(Focus::Card(id));
         self.card_drag = Some(CardDrag::Move {
             id,
-            grab: pointer - card.at,
+            start: pointer,
+            moved: false,
             button,
         });
     }
 
-    fn card_drag(&mut self, pointer: Vec2, window: Vec2) {
+    fn card_drag(&mut self, pointer: Vec2, viewport: &Viewport) {
         let Some(drag) = self.card_drag else { return };
-        let id = match drag {
-            CardDrag::Move { id, .. } | CardDrag::New { id, .. } => id,
+        let (id, moving) = match drag {
+            CardDrag::Move {
+                id, start, moved, ..
+            } => (id, moved || pointer != start),
+            CardDrag::New { id, .. } => (id, true),
         };
+        if !moving {
+            return;
+        }
         let Some(card) = self.pinned.iter_mut().find(|card| card.id == id) else {
             self.card_drag = None;
             return;
         };
-        let base = card_size(card.item);
-        match drag {
-            CardDrag::Move { grab, .. } | CardDrag::New { grab, .. } => {
-                card.at = (pointer - grab)
-                    .clamp(Vec2::ZERO, (window - base * card.scale).max(Vec2::ZERO));
-            }
+        card.anchor = viewport.world(pointer);
+        if let Some(CardDrag::Move { moved, .. }) = &mut self.card_drag {
+            *moved = true;
         }
     }
 
-    fn card_at(&self, pointer: Vec2) -> Option<u64> {
+    fn end_card_drag(&mut self, pointer: Option<Vec2>, viewport: &Viewport) -> Option<CardDrag> {
+        if let Some(pointer) = pointer {
+            self.card_drag(pointer, viewport);
+        }
+        self.card_drag.take()
+    }
+
+    fn card_at(&self, pointer: Vec2, viewport: &Viewport) -> Option<u64> {
         let covers = |card: &Pinned| {
-            let size = card_size(card.item) * card.scale;
+            let (at, size) = card.screen_rect(viewport);
             let rim = Vec2::splat(CARD_BORDER_PX);
-            pointer.cmpge(card.at - rim).all() && pointer.cmple(card.at + size + rim).all()
+            pointer.cmpge(at - rim).all() && pointer.cmple(at + size + rim).all()
         };
         let focused = match self.focus {
             Some(Focus::Card(id)) => Some(id),
@@ -602,24 +618,15 @@ impl World {
             })
     }
 
-    fn resize_card(&mut self, pointer: Vec2, notches: f32, window: Vec2) -> bool {
-        let Some(id) = self.card_at(pointer) else {
+    fn resize_card(&mut self, pointer: Vec2, notches: f32, viewport: &Viewport) -> bool {
+        let Some(id) = self.card_at(pointer, viewport) else {
             return false;
         };
         let card = self.pinned.iter_mut().find(|card| card.id == id).unwrap();
         let base = card_size(card.item);
-        let room = ((window - card.at) / base).min_element().max(0.05);
-        card.scale = zoomed(card.scale, notches).clamp(0.05, room);
+        let limit = (viewport.size / base).min_element().max(0.05);
+        card.scale = zoomed(card.scale, notches).clamp(0.05, limit);
         true
-    }
-
-    fn fit_cards(&mut self, window: Vec2) {
-        for card in &mut self.pinned {
-            let base = card_size(card.item);
-            card.scale = card.scale.min((window / base).min_element().max(0.05));
-            let size = base * card.scale;
-            card.at = card.at.clamp(Vec2::ZERO, (window - size).max(Vec2::ZERO));
-        }
     }
 
     fn unpin(&mut self, id: u64) {
@@ -1681,12 +1688,16 @@ struct Viewport {
 
 impl Viewport {
     fn of(window: &Window, transform: &Transform, projection: &Projection) -> Option<Viewport> {
+        Self::from_size(window.size(), transform, projection)
+    }
+
+    fn from_size(size: Vec2, transform: &Transform, projection: &Projection) -> Option<Viewport> {
         let Projection::Orthographic(ortho) = &projection else {
             return None;
         };
         Some(Viewport {
             cam: transform.translation.truncate(),
-            size: window.size(),
+            size,
             scale: ortho.scale,
         })
     }
@@ -1703,6 +1714,12 @@ impl Viewport {
     fn screen(&self, p: Vec2) -> Vec2 {
         let d = (p - self.cam) / self.scale;
         Vec2::new(self.size.x / 2.0 + d.x, self.size.y / 2.0 - d.y)
+    }
+
+    fn zoom_about(&mut self, screen: Vec2, scale: f32) {
+        let before = self.world(screen);
+        self.scale = scale;
+        self.cam += before - self.world(screen);
     }
 
     fn shows(&self, p: Vec2) -> bool {
@@ -1799,21 +1816,28 @@ impl Placement {
         (camera, projection, transform): (&mut Camera, &mut Projection, &mut Transform),
     ) {
         let size = card_size(self.item);
-        let min = (self.at * factor).round();
-        let max = ((self.at + size * self.scale) * factor)
-            .round()
-            .min(target.as_vec2());
+        let window = target.as_vec2() / factor;
+        let min = self.at.max(Vec2::ZERO);
+        let max = (self.at + size * self.scale).min(window);
+        let physical_min = (min * factor).round();
+        let physical_max = (max * factor).round().min(target.as_vec2());
+        if physical_min.cmpge(physical_max).any() {
+            camera.is_active = false;
+            camera.viewport = None;
+            return;
+        }
         camera.viewport = Some(bevy::camera::Viewport {
-            physical_position: min.as_uvec2(),
-            physical_size: (max - min).max(Vec2::ONE).as_uvec2(),
+            physical_position: physical_min.as_uvec2(),
+            physical_size: (physical_max - physical_min).as_uvec2(),
             ..default()
         });
         camera.order = self.order;
         camera.is_active = true;
+        let visible = (max - min) / self.scale;
         *projection = Projection::Orthographic(OrthographicProjection {
             scaling_mode: ScalingMode::Fixed {
-                width: size.x,
-                height: size.y,
+                width: visible.x,
+                height: visible.y,
             },
             ..OrthographicProjection::default_2d()
         });
@@ -1821,7 +1845,13 @@ impl Placement {
             CardCamera::Hover => HOVER_SLOT,
             CardCamera::Pin(_) => card_slot(self.item),
         };
-        transform.translation = card_slot_at(slot).extend(0.0);
+        let from = (min - self.at) / self.scale;
+        let to = (max - self.at) / self.scale;
+        let offset = Vec2::new(
+            (from.x + to.x - size.x) / 2.0,
+            (size.y - from.y - to.y) / 2.0,
+        );
+        transform.translation = (card_slot_at(slot) + offset).extend(0.0);
     }
 }
 
@@ -2298,7 +2328,12 @@ type CardCameras<'w, 's> = Query<
 type BoardCamera<'w, 's> = Single<
     'w,
     's,
-    (&'static Camera, &'static RenderTarget),
+    (
+        &'static Camera,
+        &'static RenderTarget,
+        &'static Transform,
+        &'static Projection,
+    ),
     (With<IsDefaultUiCamera>, Without<CardCamera>),
 >;
 
@@ -2316,13 +2351,13 @@ type PinnedNodes<'w, 's> = Query<
 
 fn card(
     mut commands: Commands,
-    mut world: ResMut<World>,
+    world: Res<World>,
     board: BoardCamera,
     column: Single<(&ComputedNode, &UiGlobalTransform), With<Palette>>,
     mut cameras: CardCameras,
     mut nodes: PinnedNodes,
 ) {
-    let (board, target) = board.into_inner();
+    let (board, target, transform, projection) = board.into_inner();
     let (Some(physical), Some(factor)) = (
         board
             .physical_target_size()
@@ -2332,7 +2367,9 @@ fn card(
         return;
     };
     let window = physical.as_vec2() / factor;
-    world.fit_cards(window);
+    let Some(viewport) = Viewport::from_size(window, transform, projection) else {
+        return;
+    };
     let hover = world.hover.map(|item| {
         let (column, transform) = column.into_inner();
         let size = card_size(item);
@@ -2355,10 +2392,11 @@ fn card(
         .map(|(index, card)| {
             let focused = world.focus == Some(Focus::Card(card.id));
             let rank = if focused { world.pinned.len() } else { index };
+            let (at, _) = card.screen_rect(&viewport);
             let placed = Placement {
                 kind: CardCamera::Pin(card.id),
                 item: card.item,
-                at: card.at,
+                at,
                 scale: card.scale,
                 order: 2 + rank as isize,
             };
@@ -2696,8 +2734,14 @@ type ViewInput<'w> = (
     Res<'w, AccumulatedMouseMotion>,
 );
 
-fn wheel(world: &mut World, pointer: Vec2, notches: f32, window: Vec2, board: &mut f32) -> bool {
-    if world.resize_card(pointer, notches, window) {
+fn wheel(
+    world: &mut World,
+    pointer: Vec2,
+    notches: f32,
+    viewport: &Viewport,
+    board: &mut f32,
+) -> bool {
+    if world.resize_card(pointer, notches, viewport) {
         true
     } else {
         *board = zoomed(*board, -notches).clamp(0.05, 40.0);
@@ -2725,21 +2769,14 @@ fn view(
         && world.palette_hover.is_none()
         && let Some(c) = window.cursor_position()
     {
-        let before = viewport.world(c);
         let notches = match scroll.unit {
             MouseScrollUnit::Line => scroll.delta.y,
             MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
         };
-        let card = wheel(
-            &mut world,
-            c,
-            notches,
-            Vec2::new(window.width(), window.height()),
-            &mut ortho.scale,
-        );
+        let card = wheel(&mut world, c, notches, &viewport, &mut ortho.scale);
         if !card {
-            viewport.scale = ortho.scale;
-            transform.translation += (before - viewport.world(c)).extend(0.0);
+            viewport.zoom_about(c, ortho.scale);
+            transform.translation = viewport.cam.extend(transform.translation.z);
         }
     }
     if buttons.just_pressed(MouseButton::Right) {
@@ -2749,15 +2786,21 @@ fn view(
                 .all(|interaction| *interaction == Interaction::None)
             && window
                 .cursor_position()
-                .is_none_or(|c| world.card_at(c).is_none());
+                .is_none_or(|c| world.card_at(c, &viewport).is_none());
     }
     if buttons.just_released(MouseButton::Right) {
         *right_pan = false;
     }
-    if buttons.pressed(MouseButton::Middle) || buttons.pressed(MouseButton::Right) && *right_pan {
+    if board_pan_active(&buttons, *right_pan) {
         let pan = Vec2::new(-motion.delta.x, motion.delta.y);
         transform.translation += (pan * ortho.scale).extend(0.0);
     }
+}
+
+fn board_pan_active(buttons: &ButtonInput<MouseButton>, right_pan: bool) -> bool {
+    !buttons.just_pressed(MouseButton::Right)
+        && (buttons.pressed(MouseButton::Middle)
+            || buttons.pressed(MouseButton::Right) && right_pan)
 }
 
 type EditUi<'w, 's> = (
@@ -2809,7 +2852,7 @@ fn edit(
     if let Some(c) = screen {
         world.pointer = Some(viewport.world(c));
     }
-    let covered = screen.is_some_and(|point| world.card_at(point).is_some());
+    let covered = screen.is_some_and(|point| world.card_at(point, &viewport).is_some());
     let physical = screen.map(|point| point * window.scale_factor());
     let inventory_at = physical
         .filter(|_| !covered && !keys.pressed(KeyCode::Tab))
@@ -2836,8 +2879,8 @@ fn edit(
         && let Some(pointer) = screen
     {
         if let Some(item) = inventory_at {
-            world.begin_pin(item, pointer, MouseButton::Right);
-        } else if let Some(id) = world.card_at(pointer) {
+            world.begin_pin(item, pointer, &viewport, MouseButton::Right);
+        } else if let Some(id) = world.card_at(pointer, &viewport) {
             world.card_press(id, pointer, MouseButton::Right);
         }
     }
@@ -2845,11 +2888,11 @@ fn edit(
         && !matches!(world.card_drag, Some(CardDrag::New { .. }))
     {
         let pressed = ui.iter().find(|(_, _, i)| **i == Interaction::Pressed);
-        if let Some(id) = screen.and_then(|pointer| world.card_at(pointer)) {
+        if let Some(id) = screen.and_then(|pointer| world.card_at(pointer, &viewport)) {
             world.card_press(id, screen.unwrap(), MouseButton::Left);
         } else if let Some((Some(entry), _, _)) = pressed {
             if let Some(pointer) = screen {
-                world.press_inventory(entry.0, pointer);
+                world.press_inventory(entry.0, pointer, &viewport);
             }
         } else if let Some((_, Some(row), _)) = pressed {
             if let Some(arm) = row.arm().filter(|a| *a < world.shown().arms.len()) {
@@ -2863,16 +2906,16 @@ fn edit(
         && let Some(c) = screen
     {
         if world.card_drag.is_some() {
-            world.card_drag(c, Vec2::new(window.width(), window.height()));
+            world.card_drag(c, &viewport);
         } else {
             world.drag(c);
         }
     }
-    if let Some(drag) = world
+    if world
         .card_drag
-        .filter(|drag| buttons.just_released(drag.button()))
+        .is_some_and(|drag| buttons.just_released(drag.button()))
     {
-        world.card_drag = None;
+        let drag = world.end_card_drag(screen, &viewport).unwrap();
         if let (CardDrag::New { id, .. }, true) = (drag, over_panel) {
             world.unpin(id);
         }
@@ -4273,32 +4316,29 @@ mod shot {
         EndCard,
         Nudge(Vec2),
         Mouse(MouseButton, ButtonState),
+        PanBoard(Vec2),
+        ZoomBoard(f32),
     }
 
     impl Act {
-        pub(super) fn card(self, world: &mut World) -> bool {
+        pub(super) fn card(self, world: &mut World, viewport: &Viewport) -> bool {
             match self {
-                Act::BeginPin(item, pointer) => world.begin_pin(item, pointer, MouseButton::Right),
+                Act::BeginPin(item, pointer) => {
+                    world.begin_pin(item, pointer, viewport, MouseButton::Right)
+                }
                 Act::MoveCard(index, delta) => {
                     if let Some(card) = world.pinned.get(index) {
                         let id = card.id;
-                        let pointer = card.at + Vec2::splat(10.0);
+                        let pointer = viewport.screen(card.anchor);
                         world.card_press(id, pointer, MouseButton::Left);
-                        world.card_drag(pointer + delta, Vec2::new(1280.0, 720.0));
-                        world.card_drag = None;
+                        world.end_card_drag(Some(pointer + delta), viewport);
                     }
                 }
                 Act::WheelCard(index, notches) => {
                     if let Some(card) = world.pinned.get(index) {
-                        let pointer = card.at + card_size(card.item) * card.scale / 2.0;
+                        let pointer = viewport.screen(card.anchor);
                         let mut board = 1.0;
-                        wheel(
-                            world,
-                            pointer,
-                            notches,
-                            Vec2::new(1280.0, 720.0),
-                            &mut board,
-                        );
+                        wheel(world, pointer, notches, viewport, &mut board);
                     }
                 }
                 Act::FocusCard(index) => {
@@ -4330,7 +4370,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 53] = [
+    pub const SCENES: [&str; 54] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4384,6 +4424,7 @@ mod shot {
         "atom-machine-pick-92",
         "atom-card-94",
         "machine-turn-89",
+        "pinned-world-93",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -4484,6 +4525,21 @@ mod shot {
         };
         match name {
             "micro" => world.focus_tape(0),
+            "pinned-world-93" => {
+                world.hover = None;
+                world.pin_world(
+                    Machine::Glyph(GlyphKind::Bonder).into(),
+                    px(Hex::new(-3, 1)),
+                );
+                world.pin_world(Machine::Arm.into(), px(Hex::new(4, -2)));
+                for step in 0..20 {
+                    script.push((28 + step * 2, Act::PanBoard(Vec2::new(2.0, -1.0))));
+                }
+                for step in 0..12 {
+                    script.push((72 + step * 2, Act::ZoomBoard(0.5)));
+                    script.push((102 + step * 2, Act::ZoomBoard(-0.5)));
+                }
+            }
             "instruction-sites" | "instruction-sites-manual" => {
                 world.sim = Sim::empty();
                 world.sim.arms.push(Arm::new(
@@ -4493,7 +4549,14 @@ mod shot {
                 ));
                 world.focus_tape(0);
                 world.set_hover(Some(Item::Token(Instr::Grab)));
-                world.pin(Item::Token(Instr::Rot(Spin::Cw)), Vec2::new(760.0, 120.0));
+                let viewport = Viewport {
+                    cam: px(FOCUS),
+                    size: SHOT_PX.as_vec2(),
+                    scale: MICRO_SCALE,
+                };
+                let item = Item::Token(Instr::Rot(Spin::Cw));
+                let center = Vec2::new(760.0, 120.0) + card_size(item) / 2.0;
+                world.pin_world(item, viewport.world(center));
                 world.refused = Some(Refused {
                     at: Hex::new(8, -3),
                     short: vec![Short {
@@ -5487,6 +5550,13 @@ mod shot {
         }
     }
 
+    type Board<'w, 's> = Single<
+        'w,
+        's,
+        (&'static mut Transform, &'static mut Projection),
+        (With<IsDefaultUiCamera>, Without<CardCamera>),
+    >;
+
     type Input<'w, 's> = (
         MessageWriter<'w, KeyboardInput>,
         MessageWriter<'w, MouseButtonInput>,
@@ -5501,6 +5571,7 @@ mod shot {
             ),
         >,
         ResMut<'w, ButtonInput<MouseButton>>,
+        Board<'w, 's>,
     );
 
     fn capture(
@@ -5508,11 +5579,11 @@ mod shot {
         mut shot: ResMut<Shot>,
         mut world: ResMut<World>,
         window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
-        cards: Query<(&CardCamera, &Camera)>,
+        cards: Query<(&CardCamera, &Camera), With<CardCamera>>,
         input: Input,
         mut exit: MessageWriter<AppExit>,
     ) {
-        let (mut keyboard, mut mouse, mut motion, mut inventory, mut buttons) = input;
+        let (mut keyboard, mut mouse, mut motion, mut inventory, mut buttons, board) = input;
         let hover = cards
             .iter()
             .find(|(kind, _)| **kind == CardCamera::Hover)
@@ -5524,12 +5595,14 @@ mod shot {
             );
         }
         let (window, mut primary) = window.into_inner();
+        let (mut board_transform, mut board_projection) = board.into_inner();
         shot.frames += 1;
         for (frame, act) in shot.script.clone() {
             if frame != shot.frames {
                 continue;
             }
-            if act.card(&mut world) {
+            let viewport = Viewport::of(&primary, &board_transform, &board_projection).unwrap();
+            if act.card(&mut world, &viewport) {
                 continue;
             }
             match act {
@@ -5565,7 +5638,7 @@ mod shot {
                 }
                 Act::CursorOnCard(index, offset) => {
                     let card = &world.pinned[index];
-                    primary.set_cursor_position(Some(card.at + offset));
+                    primary.set_cursor_position(Some(viewport.screen(card.anchor) + offset));
                 }
                 Act::PressInventory(item) => {
                     let mut pointer = None;
@@ -5597,6 +5670,15 @@ mod shot {
                 }
                 Act::EndCard => {
                     buttons.release(MouseButton::Left);
+                }
+                Act::PanBoard(delta) => {
+                    board_transform.translation += delta.extend(0.0);
+                }
+                Act::ZoomBoard(notches) => {
+                    let Projection::Orthographic(ortho) = &mut *board_projection else {
+                        unreachable!()
+                    };
+                    ortho.scale = zoomed(ortho.scale, -notches).clamp(0.05, 40.0);
                 }
                 Act::BeginPin(_, _)
                 | Act::MoveCard(_, _)
@@ -8341,7 +8423,7 @@ mod tests {
                 world.play.as_ref().map(|play| (play.machine, play.at)),
                 Some((machine, 1))
             );
-            let id = world.pin(Item::Atom(kind), Vec2::splat(20.0));
+            let id = world.pin_world(Item::Atom(kind), Vec2::splat(20.0));
             let pinned = world.pinned.iter().find(|card| card.id == id).unwrap();
             assert_eq!(pinned.item, Item::Machine(machine), "{kind:?} pin");
             assert!(
@@ -8354,13 +8436,18 @@ mod tests {
     #[test]
     fn right_drags_pin_several_inventory_cards_and_z_removes_only_the_focused_card() {
         let mut world = World::new(Sim::empty());
+        let viewport = Viewport {
+            cam: Vec2::ZERO,
+            size: Vec2::new(1280.0, 720.0),
+            scale: 1.0,
+        };
         for (item, pointer) in [
             (Machine::Glyph(GlyphKind::Bonder).into(), Vec2::splat(20.0)),
             (Machine::Arm.into(), Vec2::splat(60.0)),
         ] {
-            world.begin_pin(item, pointer, MouseButton::Right);
+            world.begin_pin(item, pointer, &viewport, MouseButton::Right);
             assert!(matches!(world.card_drag, Some(CardDrag::New { .. })));
-            world.card_drag = None;
+            world.end_card_drag(None, &viewport);
         }
         assert_eq!(world.pinned.len(), 2);
         assert_ne!(
@@ -8383,7 +8470,12 @@ mod tests {
         let mut world = World::new(Sim::empty());
         let before = world.sim.clone();
         let drop = Vec2::new(640.0, 240.0);
-        world.press_inventory(item, Vec2::new(90.0, 610.0));
+        let viewport = Viewport {
+            cam: Vec2::new(80.0, -30.0),
+            size: Vec2::new(1280.0, 720.0),
+            scale: 1.5,
+        };
+        world.press_inventory(item, Vec2::new(90.0, 610.0), &viewport);
         assert_eq!(world.sim, before);
         assert!(matches!(
             world.card_drag,
@@ -8392,12 +8484,11 @@ mod tests {
                 ..
             })
         ));
-        world.card_drag(drop, Vec2::new(1280.0, 720.0));
-        world.card_drag = None;
+        world.end_card_drag(Some(drop), &viewport);
         assert_eq!(world.sim, before);
         assert_eq!(world.pinned.len(), 1);
         assert_eq!(world.pinned[0].item, item);
-        assert_eq!(world.pinned[0].at, drop - card_size(item) / 2.0);
+        assert_eq!(world.pinned[0].anchor, viewport.world(drop));
     }
 
     #[test]
@@ -8407,7 +8498,12 @@ mod tests {
         world.sim.inventory.add(item);
         let before = world.sim.clone();
         let drop = Hex::new(-2, 3);
-        world.press_inventory(item, Vec2::new(90.0, 610.0));
+        let viewport = Viewport {
+            cam: Vec2::ZERO,
+            size: Vec2::new(1280.0, 720.0),
+            scale: 1.0,
+        };
+        world.press_inventory(item, Vec2::new(90.0, 610.0), &viewport);
         assert_eq!(world.sim, before);
         assert!(matches!(world.focus, Some(Focus::Hold { .. })));
         assert!(world.pinned.is_empty());
@@ -8419,17 +8515,28 @@ mod tests {
     }
 
     #[test]
-    fn a_card_drags_by_its_plate_and_the_wheel_resizes_it_without_zooming_the_board_or_stretching()
-    {
+    fn a_dragged_cards_anchor_is_the_world_point_under_the_drop_and_the_wheel_changes_only_its_pixel_size()
+     {
         let item = Machine::Glyph(GlyphKind::Bonder).into();
         let mut world = World::new(Sim::empty());
-        world.pin(item, Vec2::splat(20.0));
+        world.pin_world(item, Vec2::splat(20.0));
+        let viewport = Viewport {
+            cam: Vec2::new(80.0, -30.0),
+            size: Vec2::new(1280.0, 720.0),
+            scale: 1.5,
+        };
         let id = world.pinned[0].id;
-        world.card_press(id, Vec2::splat(30.0), MouseButton::Left);
-        world.card_drag(Vec2::new(310.0, 170.0), Vec2::new(1280.0, 720.0));
-        assert_eq!(world.pinned[0].at, Vec2::new(300.0, 160.0));
-        world.card_drag = None;
-        let at = world.pinned[0].at;
+        let press = viewport.screen(world.pinned[0].anchor) + Vec2::splat(10.0);
+        let anchor = world.pinned[0].anchor;
+        world.card_press(id, press, MouseButton::Left);
+        world.end_card_drag(Some(press), &viewport);
+        assert_eq!(world.pinned[0].anchor, anchor);
+        world.card_press(id, press, MouseButton::Left);
+        let drop = Vec2::new(310.0, 170.0);
+        world.card_drag(drop - Vec2::splat(20.0), &viewport);
+        world.end_card_drag(Some(drop), &viewport);
+        assert_eq!(world.pinned[0].anchor, viewport.world(drop));
+        let anchor = world.pinned[0].anchor;
         let base = card_size(item);
         let mut board = 1.25;
         world.focus = Some(Focus::Hold {
@@ -8438,9 +8545,9 @@ mod tests {
         });
         let card = wheel(
             &mut world,
-            at + base / 2.0,
+            viewport.screen(anchor),
             2.0,
-            Vec2::new(1280.0, 720.0),
+            &viewport,
             &mut board,
         );
         assert!(card);
@@ -8449,12 +8556,12 @@ mod tests {
         let grown = zoomed(1.0, 2.0);
         assert!((world.pinned[0].scale - grown).abs() < 1e-5);
         assert_eq!(card_size(item) * world.pinned[0].scale, base * grown);
-        assert_eq!(world.pinned[0].at, at);
+        assert_eq!(world.pinned[0].anchor, anchor);
         let card = wheel(
             &mut world,
-            at + base / 2.0,
+            viewport.screen(anchor),
             -2.0,
-            Vec2::new(1280.0, 720.0),
+            &viewport,
             &mut board,
         );
         assert!(card);
@@ -8464,15 +8571,12 @@ mod tests {
             &mut world,
             Vec2::new(1200.0, 40.0),
             2.0,
-            Vec2::new(1280.0, 720.0),
+            &viewport,
             &mut board,
         );
         assert!(!card);
         assert!((board - zoomed(1.25, -2.0)).abs() < 1e-5);
         assert!((world.pinned[0].scale - 1.0).abs() < 1e-5);
-        world.fit_cards(base * 0.4);
-        assert!((world.pinned[0].scale - 0.4).abs() < 1e-5);
-        assert_eq!(world.pinned[0].at, Vec2::ZERO);
     }
 
     #[derive(Clone)]
@@ -8530,18 +8634,91 @@ mod tests {
     fn a_pinned_card_camera_frames_the_card_at_its_size_on_screen_through_the_wheel() {
         let size = card_size(Machine::Glyph(GlyphKind::Bonder).into());
         let mut largest = 1.0f32;
-        for (card, viewport) in regrab_frames()
-            .iter()
-            .filter_map(|shown| shown.card.as_ref())
-        {
-            assert_eq!(viewport.physical_position, card.at.round().as_uvec2());
+        for (frame, shown) in regrab_frames().iter().enumerate() {
+            let Some((card, camera)) = shown.card.as_ref() else {
+                continue;
+            };
+            let board = Viewport {
+                cam: shown.board.truncate(),
+                size: Vec2::new(1280.0, 720.0),
+                scale: MICRO_SCALE,
+            };
+            let (at, _) = card.screen_rect(&board);
             assert_eq!(
-                viewport.physical_size,
-                ((card.at + size * card.scale).round() - card.at.round()).as_uvec2()
+                camera.physical_position,
+                at.round().as_uvec2(),
+                "frame {frame}: {card:?} {:?}",
+                shown.board
             );
+            let min = at.max(Vec2::ZERO).round();
+            let max = (at + size * card.scale)
+                .min(Vec2::new(1280.0, 720.0))
+                .round();
+            assert_eq!(camera.physical_size, (max - min).max(Vec2::ONE).as_uvec2());
             largest = largest.max(card.scale);
         }
         assert!(largest > 2.0, "{largest}");
+    }
+
+    #[test]
+    fn two_pinned_cards_stay_over_their_world_points_through_a_pan_and_a_zoom_in_and_out_without_changing_pixel_size()
+     {
+        let cards = [
+            Pinned {
+                id: 0,
+                item: Machine::Glyph(GlyphKind::Bonder).into(),
+                anchor: Vec2::new(-120.0, 40.0),
+                scale: 1.0,
+            },
+            Pinned {
+                id: 1,
+                item: Machine::Arm.into(),
+                anchor: Vec2::new(180.0, -90.0),
+                scale: 0.8,
+            },
+        ];
+        let viewports = [
+            Viewport {
+                cam: Vec2::ZERO,
+                size: Vec2::new(1280.0, 720.0),
+                scale: 1.0,
+            },
+            Viewport {
+                cam: Vec2::new(70.0, -25.0),
+                size: Vec2::new(1280.0, 720.0),
+                scale: 1.0,
+            },
+            Viewport {
+                cam: Vec2::new(70.0, -25.0),
+                size: Vec2::new(1280.0, 720.0),
+                scale: 0.5,
+            },
+            Viewport {
+                cam: Vec2::new(70.0, -25.0),
+                size: Vec2::new(1280.0, 720.0),
+                scale: 1.0,
+            },
+        ];
+        for card in &cards {
+            let size = card_size(card.item) * card.scale;
+            for viewport in &viewports {
+                let (at, shown_size) = card.screen_rect(viewport);
+                assert_eq!(at + shown_size / 2.0, viewport.screen(card.anchor));
+                assert_eq!(shown_size, size);
+            }
+            assert_ne!(
+                card.screen_rect(&viewports[0]).0,
+                card.screen_rect(&viewports[1]).0
+            );
+            assert_ne!(
+                card.screen_rect(&viewports[1]).0,
+                card.screen_rect(&viewports[2]).0
+            );
+            assert_eq!(
+                card.screen_rect(&viewports[1]),
+                card.screen_rect(&viewports[3])
+            );
+        }
     }
 
     #[test]
@@ -8555,7 +8732,7 @@ mod tests {
             kind: CardCamera::Pin(7),
             item,
             at: Vec2::new(100.5, 40.0),
-            scale: 1.5,
+            scale: 0.5,
             order: 2,
         };
         placed.aim(
@@ -8566,7 +8743,7 @@ mod tests {
         assert_eq!(viewport.physical_position, UVec2::new(201, 80));
         assert_eq!(
             viewport.physical_size,
-            ((Vec2::new(100.5, 40.0) + size * 1.5) * 2.0)
+            ((Vec2::new(100.5, 40.0) + size * 0.5) * 2.0)
                 .round()
                 .as_uvec2()
                 - UVec2::new(201, 80)
@@ -8580,41 +8757,95 @@ mod tests {
         };
         assert!(matches!(
             ortho.scaling_mode,
-            ScalingMode::Fixed { width, height } if width == size.x && height == size.y
+            ScalingMode::Fixed { width, height }
+                if (width - size.x).abs() < 1e-5 && (height - size.y).abs() < 1e-5
         ));
         let flush = Placement {
-            at: Vec2::new(1280.0, 720.0) - size * 1.5,
+            at: Vec2::new(1280.0, 720.0) - size * 0.5,
             ..placed
         };
         flush.aim(
             (UVec2::new(1280, 720), 1.0),
             (&mut camera, &mut projection, &mut transform),
         );
-        let viewport = camera.viewport.unwrap();
+        let viewport = camera.viewport.clone().unwrap();
         assert!(
             (viewport.physical_position + viewport.physical_size)
                 .cmple(UVec2::new(1280, 720))
                 .all()
         );
         assert!(camera.is_active);
+        let partial = Placement {
+            at: Vec2::new(-size.x * 0.25, 40.0),
+            ..flush
+        };
+        partial.aim(
+            (UVec2::new(1280, 720), 1.0),
+            (&mut camera, &mut projection, &mut transform),
+        );
+        let viewport = camera.viewport.clone().unwrap();
+        assert_eq!(viewport.physical_position.x, 0);
+        assert_eq!(viewport.physical_size.x, (size.x * 0.25).round() as u32);
+        let Projection::Orthographic(ortho) = &projection else {
+            panic!()
+        };
+        assert!(matches!(
+            ortho.scaling_mode,
+            ScalingMode::Fixed { width, .. } if (width - size.x / 2.0).abs() < 1e-5
+        ));
+        let shifted = transform.translation.truncate() - card_slot_at(card_slot(item));
+        assert!((shifted.x - size.x / 4.0).abs() < 1e-3, "{shifted}");
+        let outside = Placement {
+            at: Vec2::new(-size.x, 40.0),
+            ..partial
+        };
+        outside.aim(
+            (UVec2::new(1280, 720), 1.0),
+            (&mut camera, &mut projection, &mut transform),
+        );
+        assert!(!camera.is_active);
+        assert!(camera.viewport.is_none());
+        let rounded_outside = Placement {
+            at: Vec2::new(1279.75, 40.0),
+            ..outside
+        };
+        rounded_outside.aim(
+            (UVec2::new(1280, 720), 1.0),
+            (&mut camera, &mut projection, &mut transform),
+        );
+        assert!(!camera.is_active);
+        assert!(camera.viewport.is_none());
     }
 
     #[test]
     fn a_right_drag_begun_on_a_pinned_card_moves_the_card_and_leaves_the_board_camera() {
         let frames = regrab_frames();
         let board = frames[0].board;
-        assert!(frames.iter().all(|shown| shown.board == board));
+        assert!(
+            frames.iter().all(|shown| shown.board == board),
+            "{:?}",
+            frames.iter().map(|shown| shown.board).collect::<Vec<_>>()
+        );
         let cards: Vec<&Pinned> = frames
             .iter()
             .filter_map(|shown| shown.card.as_ref().map(|(card, _)| card))
             .collect();
         let last = cards[cards.len() - 1];
         let grown = cards.iter().find(|card| card.scale == last.scale).unwrap();
-        let moved = last.at - grown.at;
-        assert!(
-            (moved - shot::REGRAB_STEP * 10.0).abs().max_element() < 1e-3,
-            "{moved}"
-        );
+        let moved = last.anchor - grown.anchor;
+        let screen = Vec2::splat(20.0) + shot::REGRAB_STEP * 10.0;
+        let expected = Vec2::new(screen.x, -screen.y) * MICRO_SCALE;
+        assert!((moved - expected).abs().max_element() < 1e-3, "{moved}");
+    }
+
+    #[test]
+    fn a_right_press_waits_for_targeting_before_board_pan_motion_starts() {
+        let mut buttons = ButtonInput::default();
+        buttons.press(MouseButton::Right);
+        buttons.press(MouseButton::Middle);
+        assert!(!board_pan_active(&buttons, true));
+        buttons.clear_just_pressed(MouseButton::Right);
+        assert!(board_pan_active(&buttons, true));
     }
 
     #[test]
@@ -8785,6 +9016,11 @@ mod tests {
 
     fn played(name: &str, frames: u32) -> World {
         let (mut w, _, script, warm) = shot::scene(name, 0);
+        let mut viewport = Viewport {
+            cam: px(FOCUS),
+            size: Vec2::new(1280.0, 720.0),
+            scale: MICRO_SCALE,
+        };
         for frame in 1..=frames {
             w.since = (w.since + 1.0 / 60.0).min(w.period);
             if w.running && w.since >= w.period {
@@ -8795,7 +9031,7 @@ mod tests {
                 if *at != frame {
                     continue;
                 }
-                if act.card(&mut w) {
+                if act.card(&mut w, &viewport) {
                     continue;
                 }
                 match *act {
@@ -8828,6 +9064,10 @@ mod tests {
                     shot::Act::CursorOnCard(_, _)
                     | shot::Act::Nudge(_)
                     | shot::Act::Mouse(_, _) => {}
+                    shot::Act::PanBoard(delta) => viewport.cam += delta,
+                    shot::Act::ZoomBoard(notches) => {
+                        viewport.scale = zoomed(viewport.scale, -notches).clamp(0.05, 40.0)
+                    }
                     shot::Act::BeginPin(_, _)
                     | shot::Act::MoveCard(_, _)
                     | shot::Act::WheelCard(_, _)
@@ -9332,6 +9572,23 @@ mod tests {
             assert_eq!(v.screen(v.world(p)), p);
         }
         assert_eq!(v.screen(v.cam), Vec2::new(640.0, 360.0));
+    }
+
+    #[test]
+    fn zoom_about_a_pointer_keeps_card_hit_testing_on_the_updated_camera() {
+        let mut viewport = Viewport {
+            cam: Vec2::new(30.0, -70.0),
+            size: Vec2::new(1280.0, 720.0),
+            scale: 1.0,
+        };
+        let pointer = Vec2::new(180.0, 140.0);
+        let fixed = viewport.world(pointer);
+        let mut world = World::new(Sim::empty());
+        let anchor = viewport.world(Vec2::new(900.0, 460.0));
+        let id = world.pin_world(Machine::Arm.into(), anchor);
+        viewport.zoom_about(pointer, 0.5);
+        assert_eq!(viewport.world(pointer), fixed);
+        assert_eq!(world.card_at(viewport.screen(anchor), &viewport), Some(id));
     }
 
     #[test]
