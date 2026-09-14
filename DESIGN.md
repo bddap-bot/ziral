@@ -154,6 +154,12 @@ A pin owns its item, one world anchor, and its display scale. Drawing projects t
 
 This is the dumbest design satisfying the directive because the existing board transform already converts both ways and one projected placement serves every screen-space consumer. Retaining a cached screen coordinate, storing both coordinate systems, or adjusting every card whenever the camera moves would create a second truth and the synchronization failure this change removes.
 
+Directive (verbatim): "right now, we can't over over an atom and see how it's made, let us make it so hovering over an atom, or pinning its card shows the machine that makes the atom"
+
+Every early-game atom has one row in the route table: the base atom resolves to the source and each later atom resolves to its converter. Point-aware board hover resolves an atom through that row, then gives the existing machine card painter and playback the resulting machine. Pinning an atom resolves through the same row before the existing pin is created, so hover and pin hold the same machine card and use the same anchor.
+
+This is the dumbest design satisfying the directive because it adds one atom-to-machine lookup at the two existing card entrances and leaves the machine card unchanged. An atom card painter, atom playback, or card variant was rejected because each would duplicate the machine's fixture and permit two pictures of the same route. Tests cover every route through hover and pin and cover an atom over a machine at both sides of the point-aware boundary.
+
 ### Pointer picking
 
 Directive (verbatim): "it looks like when an atom lies atop a machine, grabbing and dragging picks a target nondeterministically, this is confusing.
