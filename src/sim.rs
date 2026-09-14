@@ -362,7 +362,7 @@ impl Item {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Slot {
     pub at: Hex,
-    pub kind: AtomKind,
+    pub kind: Option<AtomKind>,
     pub consumed: bool,
     pub lone: bool,
 }
@@ -377,9 +377,16 @@ pub struct Rule {
 const fn base(at: Hex) -> Slot {
     Slot {
         at,
-        kind: AtomKind::Base,
+        kind: Some(AtomKind::Base),
         consumed: false,
         lone: false,
+    }
+}
+
+const fn any(at: Hex) -> Slot {
+    Slot {
+        kind: None,
+        ..base(at)
     }
 }
 
@@ -398,12 +405,12 @@ const SECOND_BOND: [Slot; 3] = [
     base(DIRS[0]),
     base(DIRS[1]),
 ];
-const BONDER: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
+const BONDER: [Slot; 2] = [any(ORIGIN), any(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
 const AMBER_CONVERTER: [Slot; 3] = [consumed(ORIGIN), consumed(DIRS[0]), consumed(DIRS[1])];
 const PLUM_CONVERTER: [Slot; 3] = [
     Slot {
-        kind: AtomKind::Amber,
+        kind: Some(AtomKind::Amber),
         ..consumed(ORIGIN)
     },
     consumed(DIRS[0]),
@@ -430,10 +437,22 @@ const fn hexagon<const N: usize>(radius: i32) -> [Slot; N] {
     cells
 }
 
+const fn reification() -> [Slot; 19] {
+    let mut slots = hexagon(Tier::Two.radius());
+    let mut i = 0;
+    while i < slots.len() {
+        if slots[i].at.q == 0 && slots[i].at.r == 0 {
+            slots[i].kind = None;
+        }
+        i += 1;
+    }
+    slots
+}
+
 const OUTPUT_1: [Slot; 7] = hexagon(Tier::One.radius());
 const OUTPUT_2: [Slot; 19] = hexagon(Tier::Two.radius());
 const OUTPUT_3: [Slot; 37] = hexagon(Tier::Three.radius());
-const REIFICATION: [Slot; 19] = hexagon(Tier::Two.radius());
+const REIFICATION: [Slot; 19] = reification();
 
 const fn plain(slots: &'static [Slot]) -> Rule {
     Rule {
@@ -881,8 +900,8 @@ impl Sim {
             .map(|(at, slot)| {
                 self.atom_at(at)
                     .filter(|id| {
-                        g.kind == GlyphKind::Reification && slot.at == ORIGIN
-                            || self.atoms[*id].unwrap().kind == slot.kind
+                        slot.kind
+                            .is_none_or(|kind| self.atoms[*id].unwrap().kind == kind)
                     })
                     .filter(|id| !slot.lone || self.bonds.iter().all(|x| x.a != *id && x.b != *id))
             })
@@ -1635,13 +1654,63 @@ mod tests {
     }
 
     #[test]
-    fn a_bond_that_would_pass_the_compound_cap_is_refused_and_one_that_meets_it_fires() {
+    fn amber_bonds_to_each_base_of_the_reported_chain() {
+        const REPORT: &str =
+            "bug found, this A does not bond to the B\nA0,0\nB0,0 B0,1 B0,2 0,0-0,1 0,1=0,2";
+        let forms: Vec<Form> = REPORT
+            .lines()
+            .skip(1)
+            .map(|text| text.parse().unwrap())
+            .collect();
+        assert_eq!(forms.len(), 2);
+        let amber = forms[0].sim();
+        let chain = forms[1].sim();
+        let targets: Vec<Hex> = chain.atoms.iter().flatten().map(|atom| atom.pos).collect();
+
+        for target in targets {
+            for amber_first in [false, true] {
+                let mut sim = chain.clone();
+                let (dir, at) = DIRS
+                    .iter()
+                    .enumerate()
+                    .map(|(dir, step)| (dir, target.add(*step)))
+                    .find(|(_, at)| sim.atom_at(*at).is_none())
+                    .unwrap();
+                sim.place(&amber, at);
+                let base = sim.atom_at(target).unwrap();
+                let amber = sim.atom_at(at).unwrap();
+                let (bonder_at, bonder_dir) = if amber_first {
+                    (at, (dir + 3) % 6)
+                } else {
+                    (target, dir)
+                };
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Bonder, bonder_at, bonder_dir)));
+
+                sim.step();
+
+                let written = sim.bond_between(base, amber).unwrap();
+                assert_eq!(
+                    sim.bonds[written].kind,
+                    BondKind::Single,
+                    "{target:?} {amber_first}"
+                );
+                assert_eq!(sim.component(base).len(), 4, "{target:?} {amber_first}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_bond_that_would_pass_the_compound_cap_is_refused_byte_for_byte_and_one_that_meets_it_fires()
+     {
         let left = MAX_COMPOUND_ATOMS as i32 - 2;
         let mut sim = bonder_joining_chains(left, 3);
         let before = sim.clone();
-        sim.step();
-        assert_eq!(sim.atoms, before.atoms);
-        assert_eq!(sim.bonds, before.bonds);
+        let glyph = sim.glyphs[0].unwrap();
+        let mut events = Vec::new();
+        sim.fire(0, glyph, &mut events);
+        assert!(events.is_empty());
+        assert_eq!(sim, before);
 
         let mut sim = bonder_joining_chains(left, 2);
         sim.step();

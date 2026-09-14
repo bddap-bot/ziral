@@ -4096,7 +4096,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 51] = [
+    pub const SCENES: [&str; 52] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4119,6 +4119,7 @@ mod shot {
         "select",
         "output",
         "bonding",
+        "amber-chain-97",
         "chorus",
         "rotation",
         "delete",
@@ -4754,6 +4755,35 @@ mod shot {
                     .push(Arm::new(Hex::new(1, 0), 1, vec![Instr::Grab, Instr::Wait]));
                 world.sim = sim;
                 world.focus_tape(0);
+            }
+            "amber-chain-97" => {
+                let forms = ["A0,0", "B0,0 B0,1 B0,2 0,0-0,1 0,1=0,2"]
+                    .map(|text| text.parse::<Form>().unwrap());
+                let amber = forms[0].sim();
+                let mut sim = forms[1].sim();
+                let base = sim
+                    .atoms
+                    .iter()
+                    .enumerate()
+                    .find(|(id, _)| {
+                        sim.bonds
+                            .iter()
+                            .filter(|bond| bond.a == *id || bond.b == *id)
+                            .count()
+                            == 1
+                    })
+                    .map(|(_, atom)| atom.unwrap().pos)
+                    .unwrap();
+                let (dir, amber_at) = DIRS
+                    .iter()
+                    .enumerate()
+                    .map(|(dir, step)| (dir, base.add(*step)))
+                    .find(|(_, at)| sim.atom_at(*at).is_none())
+                    .unwrap();
+                sim.place(&amber, amber_at);
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Bonder, base, dir)));
+                world.sim = sim;
             }
             "chorus" => {
                 let mut sim = Sim::empty();
