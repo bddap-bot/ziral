@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="6656" height="512" viewBox="0 0 6656 512">
   <defs>
-    <path id="tile" d="M120 24H456Q484 24 484 52V392Q484 488 388 488H52Q24 488 24 460V120Q24 24 120 24Z" fill="#7D5BA6" stroke="#6B4F3A" stroke-width="16"/>
-    <style>.letter{fill:#F4EDE4;stroke:#6B4F3A;stroke-width:8;paint-order:stroke;font-family:DejaVu Sans;font-size:220px;font-weight:700;text-anchor:middle}.plain{font-size:260px}.mark{fill:none;stroke:#E0A458;stroke-width:36;stroke-linecap:round;stroke-linejoin:round}</style>
+    <path id="tile" d="M120 24H456Q484 24 484 52V392Q484 488 388 488H52Q24 488 24 460V120Q24 24 120 24Z" fill="#6B4F3A" stroke="#7D5BA6" stroke-width="16"/>
+    <style>.letter{fill:#F4EDE4;stroke:#6B4F3A;stroke-width:8;paint-order:stroke;font-family:DejaVu Sans;font-size:220px;font-weight:700;text-anchor:middle}.plain{font-size:260px}.mark{color:#F4EDE4;fill:none;stroke:currentColor;stroke-width:36;stroke-linecap:round;stroke-linejoin:round}</style>
     <g id="right">
       <path d="M320 146H430"/>
       <path d="M394 106L434 146 394 186"/>
@@ -21,7 +21,7 @@
     <g class="mark">
       <path d="M318 100L354 145 318 190"/>
       <path d="M442 100L406 145 442 190"/>
-      <circle cx="380" cy="145" r="17" fill="#E0A458" stroke="none"/>
+      <circle cx="380" cy="145" r="17" fill="currentColor" stroke="none"/>
     </g>
   </g>
   <g id="r" transform="translate(512 0)">
@@ -30,7 +30,7 @@
     <g class="mark">
       <path d="M330 92V130Q380 177 430 130V92"/>
       <path d="M380 178V211"/>
-      <circle cx="380" cy="226" r="17" fill="#E0A458" stroke="none"/>
+      <circle cx="380" cy="226" r="17" fill="currentColor" stroke="none"/>
     </g>
   </g>
   <g id="a" transform="translate(1024 0)">
@@ -46,12 +46,12 @@
   <g id="q" transform="translate(2048 0)">
     <use href="#tile"/>
     <text class="letter plain" x="151" y="434">q</text>
-    <g class="mark"><use href="#ccw"/><circle cx="380" cy="145" r="18" fill="#E0A458" stroke="none"/></g>
+    <g class="mark"><use href="#ccw"/><circle cx="380" cy="145" r="18" fill="currentColor" stroke="none"/></g>
   </g>
   <g id="e" transform="translate(2560 0)">
     <use href="#tile"/>
     <text class="letter plain" x="142" y="434">e</text>
-    <g class="mark"><use href="#cw"/><circle cx="380" cy="145" r="18" fill="#E0A458" stroke="none"/></g>
+    <g class="mark"><use href="#cw"/><circle cx="380" cy="145" r="18" fill="currentColor" stroke="none"/></g>
   </g>
   <g id="x" transform="translate(3072 0)">
     <use href="#tile"/>

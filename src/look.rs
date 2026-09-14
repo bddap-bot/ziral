@@ -474,6 +474,7 @@ pub(crate) mod tests {
     const RING_STEPS: usize = 6;
     const SHADING: f32 = 2.0 * VALUE_APART;
     const AMBER_MAX_CHROMA_LOSS: f32 = 0.15;
+    const SYMBOL_CONTRAST: f32 = 4.5;
 
     fn hue_and_value_differ(a: Color, b: Color) -> [bool; 2] {
         let (ca, cb) = (Hsva::from(a), Hsva::from(b));
@@ -534,6 +535,68 @@ pub(crate) mod tests {
         let channel =
             |c: usize| cells.iter().map(|i| thumb[i * 3 + c]).sum::<f32>() / cells.len() as f32;
         Color::srgb(channel(0), channel(1), channel(2))
+    }
+
+    fn rendered(skin: Skin, side: usize) -> Vec<[f32; 3]> {
+        let image = crate::fire(skin.decode(), skin);
+        let (width, height) = (image.width() as usize, image.height() as usize);
+        let data = image.data.unwrap();
+        let lod = (width as f32 / side as f32).log2();
+        let lower = lod.floor() as usize;
+        let upper = lod.ceil() as usize;
+        let between = lod.fract();
+        let offset = |level: usize| {
+            (0..level)
+                .map(|level| (width >> level) * (height >> level) * 4)
+                .sum::<usize>()
+        };
+        let sample = |level: usize, out_x: usize, out_y: usize, channel: usize| {
+            let (width, height) = (width >> level, height >> level);
+            let source = |out: usize, extent: usize| {
+                ((out as f32 + 0.5) * extent as f32 / side as f32 - 0.5)
+                    .clamp(0.0, extent as f32 - 1.0)
+            };
+            let (x, y) = (source(out_x, width), source(out_y, height));
+            let (left, top) = (x.floor() as usize, y.floor() as usize);
+            let (right, bottom) = ((left + 1).min(width - 1), (top + 1).min(height - 1));
+            let (across, down) = (x.fract(), y.fract());
+            let at = |x: usize, y: usize| {
+                crate::to_linear(data[offset(level) + (y * width + x) * 4 + channel])
+            };
+            let top = at(left, top) * (1.0 - across) + at(right, top) * across;
+            let bottom = at(left, bottom) * (1.0 - across) + at(right, bottom) * across;
+            top * (1.0 - down) + bottom * down
+        };
+        (0..side)
+            .flat_map(|y| (0..side).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                [0, 1, 2].map(|channel| {
+                    let linear = sample(lower, x, y, channel) * (1.0 - between)
+                        + sample(upper, x, y, channel) * between;
+                    f32::from(crate::to_srgb(linear)) / 255.0
+                })
+            })
+            .collect()
+    }
+
+    fn closest(rendered: &[[f32; 3]], cells: &[usize], glaze: Glaze) -> ([f32; 3], f32) {
+        let target = glaze.rgb();
+        let cell = *cells
+            .iter()
+            .min_by(|a, b| {
+                let distance = |cell: usize| {
+                    (0..3)
+                        .map(|channel| (rendered[cell][channel] - target[channel]).powi(2))
+                        .sum::<f32>()
+                };
+                distance(**a).total_cmp(&distance(**b))
+            })
+            .unwrap();
+        let pixel = rendered[cell];
+        let distance = (0..3)
+            .map(|channel| (pixel[channel] - target[channel]).powi(2))
+            .sum();
+        (pixel, distance)
     }
 
     fn mean(skin: Skin) -> Color {
@@ -876,13 +939,13 @@ pub(crate) mod tests {
                 binding.symbol
             );
             assert!(
-                near(&data[(300 * 512 + 280) * 4..], Glaze::Plum),
-                "{:?} loses its plum field",
+                near(&data[(300 * 512 + 280) * 4..], Glaze::Brass),
+                "{:?} loses its dark-brass field",
                 binding.symbol
             );
             assert!(
-                near(&data[(256 * 512 + 24) * 4..], Glaze::Brass),
-                "{:?} loses its brass edge",
+                near(&data[(256 * 512 + 24) * 4..], Glaze::Plum),
+                "{:?} loses its plum edge",
                 binding.symbol
             );
             assert!(
@@ -891,8 +954,46 @@ pub(crate) mod tests {
                 binding.symbol
             );
             assert!(
-                region_count(&data, 285..=475, 45..=250, Glaze::Amber) > 1_000,
-                "{:?} has no amber mark at top-right",
+                region_count(&data, 285..=475, 45..=250, Glaze::Ivory) > 1_000,
+                "{:?} has no ivory mark at top-right",
+                binding.symbol
+            );
+        }
+    }
+
+    #[test]
+    fn every_symbol_mark_clears_the_contrast_floor_at_shipped_size() {
+        let side = SYMBOL_PX as usize;
+        let ground_cells = (0..side * side).collect::<Vec<_>>();
+        let mark_cells = (3..=12)
+            .flat_map(|y| (14..=23).map(move |x| y * side + x))
+            .collect::<Vec<_>>();
+        for (_, _, binding) in bindings() {
+            let (_, _, source) = pixels(binding.symbol);
+            let present = [
+                Glaze::Terracotta,
+                Glaze::BlueGreen,
+                Glaze::Amber,
+                Glaze::Ivory,
+            ]
+            .into_iter()
+            .filter(|glaze| region_count(&source, 285..=475, 45..=250, *glaze) > 100)
+            .collect::<Vec<_>>();
+            assert_eq!(
+                present,
+                [Glaze::Ivory],
+                "{:?} does not use one ivory mark: {present:?}",
+                binding.symbol
+            );
+            let pixels = rendered(binding.symbol, side);
+            let mark = closest(&pixels, &mark_cells, Glaze::Ivory).0;
+            let ground = closest(&pixels, &ground_cells, Glaze::Brass).0;
+            let mark = Color::srgb(mark[0], mark[1], mark[2]).luminance();
+            let ground = Color::srgb(ground[0], ground[1], ground[2]).luminance();
+            let ratio = (mark.max(ground) + 0.05) / (mark.min(ground) + 0.05);
+            assert!(
+                ratio >= SYMBOL_CONTRAST,
+                "{:?} mark is {ratio:.2}:1 against its ground at {side} px, below {SYMBOL_CONTRAST}:1",
                 binding.symbol
             );
         }

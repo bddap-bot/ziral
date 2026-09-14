@@ -4259,14 +4259,13 @@ mod shot {
             "board" => world.sim = Sim::empty(),
             "bonders" => world.sim = phased(&[(Hex::new(-3, 0), 16), (Hex::new(3, 0), 18)]),
             "focus" => {
-                world
-                    .sim
-                    .arms
-                    .push(Arm::new(Hex::new(3, -3), 0, Vec::new()));
+                world.sim = Sim::empty();
+                world.sim.arms.push(Arm::new(
+                    Hex::new(3, -3),
+                    0,
+                    bindings().map(|(_, _, binding)| binding.instr).collect(),
+                ));
                 world.focus_tape(world.sim.arms.len() - 1);
-                keys = bindings()
-                    .map(|(key, shifted, _)| (key.code, shifted))
-                    .collect();
             }
             "write" => {
                 let arm = Hex::new(-2, 0);
