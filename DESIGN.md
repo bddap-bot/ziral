@@ -396,6 +396,14 @@ Directive (verbatim): "From the gif, it looks like it does fix the issue, but it
 
 The frame still owns the arm's only rotation about its simulation pivot, with no turn on a painted part. Its former cell-specific creep, release, run, decay, half-bounces, and spread return unchanged; the final phase is evaluated as the end of that curve, where its whole half-bounces meet exact rest, instead of replacing the curve value at the boundary. This is the dumbest design satisfying the directive because it restores the one removed implementation and changes only how its endpoint is reached. A second part turn or a parallel endpoint animation was rejected because either would restore the double transform or add another path to the same pose.
 
+### Toy 1 turns a machine through its facing
+
+Directive (verbatim): "rotations should be an animation, easier to comprehend that way"
+
+A turn changes the machine's simulation facing at the key press, then the drawing sweeps from its current visible facing to the new rest facing during the moving part of the 400 ms tick. The same frame tween and the same cell-specific `Swing` curve used by simulation motion draw the turn, whether the machine rests on the board or is held at the pointer. A key pressed during the sweep samples that drawn facing and retargets from there, so a run of presses is one continuous run of turns. At rest the drawing reads the simulation facing directly, making six equal turns exactly the starting facing.
+
+This is the dumbest design satisfying the directive because facing becomes one more pose carried by the existing tween, with one transient source pose and no second interpolator or clock. Queueing six independent sweeps was rejected because the drawing would lag behind simulation state, while snapping an interrupted sweep to its prior target would break the visible continuity the animation exists to provide.
+
 ### Toy 1 wears the Fired Workshop look
 
 The Fired Workshop direction (issue #9) carries two rules: every atom is visually distinct from every other atom, and the same for every glyph, machine, and bond type. `art/BIBLE.md` is the design ethos, palette, and the checkable form of the rules: two members of one class differ in at least two of hue, value, shape, marking, never by hue alone. The sim and the tick period are untouched; only the drawing changed.
