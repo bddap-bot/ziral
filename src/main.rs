@@ -753,6 +753,7 @@ impl World {
 
     fn hit(&self, point: Vec2) -> Option<Id> {
         let cell = hex_at(point);
+        let frame = Frame::between(&self.prev, self.shown(), self.phase());
         let machine = self
             .hand_ids()
             .filter(|id| self.cells(*id).contains(&cell))
@@ -771,17 +772,31 @@ impl World {
                 };
                 (anchor != cell, anchor.r, anchor.q, kind, self.dir(*id))
             });
-        let atom = self.shown().atom_at(cell).map(Id::Atom);
-        match (atom, machine) {
-            (Some(atom), Some(machine)) => {
-                if point.distance(px(cell)) <= ATOM_RADIUS {
-                    Some(atom)
-                } else {
-                    Some(machine)
-                }
+        let mut cell_atom: Option<((i32, i32, sim::AtomKind), Id)> = None;
+        let mut body_atom: Option<((i32, i32, sim::AtomKind), Id)> = None;
+        for (i, atom) in self.shown().atoms.iter().enumerate() {
+            let Some(atom) = atom else { continue };
+            let key = (atom.pos.r, atom.pos.q, atom.kind);
+            if atom.pos == cell && cell_atom.is_none_or(|(other, _)| key < other) {
+                cell_atom = Some((key, Id::Atom(i)));
             }
-            (Some(atom), None) => Some(atom),
-            (None, machine) => machine,
+            if frame
+                .atoms
+                .get(i)
+                .copied()
+                .flatten()
+                .is_some_and(|at| point.distance(at) <= ATOM_RADIUS)
+                && body_atom.is_none_or(|(other, _)| key < other)
+            {
+                body_atom = Some((key, Id::Atom(i)));
+            }
+        }
+        let cell_atom = cell_atom.map(|(_, id)| id);
+        let body_atom = body_atom.map(|(_, id)| id);
+        match (machine, body_atom) {
+            (Some(_), Some(atom)) => Some(atom),
+            (Some(machine), None) => Some(machine),
+            (None, body_atom) => cell_atom.or(body_atom),
         }
     }
 
@@ -993,7 +1008,11 @@ impl World {
             None => {}
         }
         self.down = Some(match target {
-            Some(Id::Atom(id)) => Press::Atom { screen, cell, id },
+            Some(Id::Atom(id)) => Press::Atom {
+                screen,
+                cell: self.shown().atoms[id].unwrap().pos,
+                id,
+            },
             Some(Id::Arm(_) | Id::Glyph(_)) => Press::Cell { screen, cell },
             None => Press::Ground {
                 screen,
@@ -3606,7 +3625,7 @@ fn draw(
     {
         match target {
             Id::Atom(i) => {
-                if let Some(at) = f.atoms[i] {
+                if let Some(at) = f.atoms.get(i).copied().flatten() {
                     p.ring(at, ATOM_RADIUS + LINE_PX);
                 }
             }
@@ -5994,6 +6013,33 @@ mod tests {
             lone(vec![bonder(ORIGIN, 0)], vec![]).hit(point),
             Some(Id::Glyph(0))
         );
+    }
+
+    #[test]
+    fn a_moving_atoms_drawn_body_wins_over_the_machine_beneath_it() {
+        let mut prev = Sim::empty();
+        prev.glyphs.push(Some(bonder(ORIGIN, 0)));
+        let mut arm = Arm::new(DIRS[3], 0, vec![]);
+        arm.holding = true;
+        prev.arms.push(arm);
+        prev.atoms.push(Some(Atom {
+            kind: AtomKind::Base,
+            pos: ORIGIN,
+        }));
+        let mut sim = prev.clone();
+        sim.arms[0].pivot = ORIGIN;
+        sim.atoms[0].as_mut().unwrap().pos = DIRS[0];
+        let mut w = World::new(sim);
+        w.prev = prev;
+        w.since = w.period * 0.1;
+        let drawn = Frame::between(&w.prev, w.shown(), w.phase()).atoms[0].unwrap();
+        assert_eq!(w.hit(drawn), Some(Id::Atom(0)));
+        assert!(matches!(
+            w.hit(px(DIRS[0])),
+            Some(Id::Arm(_) | Id::Glyph(_))
+        ));
+        w.press(drawn, drawn);
+        assert!(matches!(w.down, Some(Press::Atom { cell, .. }) if cell == DIRS[0]));
     }
 
     #[test]
