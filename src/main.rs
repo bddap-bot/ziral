@@ -762,13 +762,13 @@ impl World {
                 let anchor = self.anchor(*id);
                 (anchor != cell, anchor.r, anchor.q)
             });
-        let mut cell_atom: Option<((i32, i32, sim::AtomKind), Id)> = None;
-        let mut body_atom: Option<((i32, i32, sim::AtomKind), Id)> = None;
+        let mut cell_atom = None;
+        let mut body_atom: Option<((i32, i32), Id)> = None;
         for (i, atom) in self.shown().atoms.iter().enumerate() {
             let Some(atom) = atom else { continue };
-            let key = (atom.pos.r, atom.pos.q, atom.kind);
-            if atom.pos == cell && cell_atom.is_none_or(|(other, _)| key < other) {
-                cell_atom = Some((key, Id::Atom(i)));
+            let key = (atom.pos.r, atom.pos.q);
+            if atom.pos == cell {
+                cell_atom = Some(Id::Atom(i));
             }
             if frame
                 .atoms
@@ -781,7 +781,6 @@ impl World {
                 body_atom = Some((key, Id::Atom(i)));
             }
         }
-        let cell_atom = cell_atom.map(|(_, id)| id);
         let body_atom = body_atom.map(|(_, id)| id);
         match (machine, body_atom) {
             (Some(_), Some(atom)) => Some(atom),
