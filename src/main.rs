@@ -4293,7 +4293,9 @@ mod shot {
                     kind: AtomKind::Amber,
                     pos: ORIGIN,
                 });
-                world.pointer = Some(px(ORIGIN));
+                let centre = SHOT_PX.as_vec2() / 2.0;
+                let cursor = centre + (px(ORIGIN) - px(FOCUS)) * Vec2::new(1.0, -1.0) / MICRO_SCALE;
+                script.push((1, Act::Nudge(cursor)));
                 script.push((96, Act::PressInventory(Item::Atom(AtomKind::Amber))));
                 for step in 1..=10 {
                     script.push((96 + step * 2, Act::Nudge(Vec2::new(44.0, -26.0))));
