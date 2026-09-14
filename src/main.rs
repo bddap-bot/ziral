@@ -23,7 +23,7 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
-use form::{Form, recipes};
+use form::{Form, atom_route, recipes};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, px, skin};
 use sim::{
     Arm, BondKind, DIRS, Fixture, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine, ORIGIN, Short,
@@ -399,6 +399,7 @@ struct World {
     pointer: Option<Vec2>,
     over_ui: bool,
     hover: Option<Item>,
+    palette_hover: Option<Item>,
     play: Option<Play>,
     pinned: Vec<Pinned>,
     pinned_play: Vec<Play>,
@@ -425,6 +426,7 @@ impl World {
             pointer: None,
             over_ui: false,
             hover: None,
+            palette_hover: None,
             play: None,
             pinned: Vec::new(),
             pinned_play: Vec::new(),
@@ -459,6 +461,7 @@ impl World {
     }
 
     fn pin(&mut self, item: Item, at: Vec2) -> u64 {
+        let item = card_item(item);
         let id = self.next_card;
         self.next_card += 1;
         if let Item::Machine(machine) = item
@@ -480,6 +483,7 @@ impl World {
         if self.holding() || self.down.is_some() {
             return;
         }
+        let item = card_item(item);
         let grab = card_size(item) / 2.0;
         let id = self.pin(item, pointer - grab);
         self.card_drag = Some(CardDrag::New { id, grab, button });
@@ -797,6 +801,14 @@ impl World {
         }
         let body_atom = body_atom.map(|(_, id)| id);
         body_atom.or(machine).or(cell_atom)
+    }
+
+    fn target_card(&self, point: Vec2, frame: &Frame) -> Option<Item> {
+        self.hit(point, frame).map(|id| match id {
+            Id::Arm(_) => Item::Machine(Machine::Arm),
+            Id::Glyph(i) => Item::Machine(Machine::Glyph(self.glyph(i).kind)),
+            Id::Atom(i) => card_item(Item::Atom(self.shown().atoms[i].unwrap().kind)),
+        })
     }
 
     fn marquee(&self, a: Vec2, b: Vec2) -> Vec<Id> {
@@ -1941,7 +1953,7 @@ fn tally(mut commands: Commands, world: Res<World>, mut rows: Query<(Entity, &mu
         let Some(count) = inventory.count(tally.item) else {
             continue;
         };
-        let cap = if world.hover == Some(tally.item) {
+        let cap = if world.palette_hover == Some(tally.item) {
             inventory.cap(tally.item).unwrap_or(0)
         } else {
             0
@@ -1972,19 +1984,21 @@ fn hover(
 ) {
     if left.read().next().is_some() {
         world.hover = None;
+        world.palette_hover = None;
         world.pointer = None;
     }
     if window.cursor_position().is_some() {
-        world.hover = rows
+        world.palette_hover = rows
             .iter()
             .find(|(_, i)| **i != Interaction::None)
             .map(|(row, _)| row.0);
+        world.hover = world.palette_hover.map(card_item);
     }
     let notches = match scroll.unit {
         MouseScrollUnit::Line => scroll.delta.y,
         MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
     };
-    if let (Some(item), true) = (world.hover, notches.round() != 0.0) {
+    if let (Some(item), true) = (world.palette_hover, notches.round() != 0.0) {
         world.set_cap(item, notches.round() as i32);
     }
 }
@@ -2036,8 +2050,20 @@ fn card_size(item: Item) -> Vec2 {
     layout(item).size
 }
 
+fn card_item(item: Item) -> Item {
+    match item {
+        Item::Atom(kind) => Item::Machine(atom_route(kind)),
+        item => item,
+    }
+}
+
 fn card_slot(item: Item) -> usize {
-    HOVER_SLOT + 1 + palette().position(|entry| entry == item).unwrap()
+    HOVER_SLOT
+        + 1
+        + palette()
+            .map(card_item)
+            .position(|entry| entry == item)
+            .unwrap()
 }
 
 fn card_slot_at(slot: usize) -> Vec2 {
@@ -2486,7 +2512,7 @@ fn view(
         return;
     };
     if scroll.delta.y != 0.0
-        && world.hover.is_none()
+        && world.palette_hover.is_none()
         && let Some(c) = window.cursor_position()
     {
         let before = viewport.world(c);
@@ -2650,6 +2676,16 @@ fn edit(
     pressed.sort_unstable();
     for key in pressed {
         world.key(key, shift);
+    }
+    if !over_ui {
+        let frame = Frame::between(&world.prev, world.shown(), world.phase());
+        world.hover = if world.down.is_none() && !world.holding() {
+            world
+                .pointer
+                .and_then(|point| world.target_card(point, &frame))
+        } else {
+            None
+        };
     }
 }
 
@@ -4046,7 +4082,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 50] = [
+    pub const SCENES: [&str; 51] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4097,6 +4133,7 @@ mod shot {
         "instruction-sites-manual",
         "machine-drag-88",
         "atom-machine-pick-92",
+        "atom-card-94",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -4235,6 +4272,19 @@ mod shot {
                     script.push((74 + step * 2, Act::Nudge(REGRAB_STEP)));
                 }
                 script.push((96, Act::Mouse(MouseButton::Right, ButtonState::Released)));
+            }
+            "atom-card-94" => {
+                world.sim = Sim::empty();
+                world.sim.spawn(Atom {
+                    kind: AtomKind::Amber,
+                    pos: ORIGIN,
+                });
+                world.pointer = Some(px(ORIGIN));
+                script.push((96, Act::PressInventory(Item::Atom(AtomKind::Amber))));
+                for step in 1..=10 {
+                    script.push((96 + step * 2, Act::Nudge(Vec2::new(44.0, -26.0))));
+                }
+                script.push((120, Act::EndCard));
             }
             "inventory-drags" => {
                 let empty = Item::from(Machine::Glyph(GlyphKind::Bonder));
@@ -6018,6 +6068,26 @@ mod tests {
                     })
                 ));
                 assert_eq!(w.sim.atoms.iter().flatten().count(), 2);
+            }
+        }
+    }
+
+    #[test]
+    fn an_atom_over_a_machine_raises_the_card_selected_by_the_point_aware_target() {
+        let centre = px(ORIGIN);
+        let corner = centre + Vec2::new(ATOM_RADIUS + 4.0, 0.0);
+        for reverse_atoms in [false, true] {
+            for reverse_glyphs in [false, true] {
+                let w = atom_over_machine(reverse_atoms, reverse_glyphs);
+                let frame = Frame::between(&w.prev, w.shown(), w.phase());
+                assert_eq!(
+                    w.target_card(centre, &frame),
+                    Some(Item::Machine(Machine::Glyph(GlyphKind::Source)))
+                );
+                assert_eq!(
+                    w.target_card(corner, &frame),
+                    Some(Item::Machine(Machine::Glyph(GlyphKind::Bonder)))
+                );
             }
         }
     }
@@ -7864,6 +7934,38 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, sim::TickEvent::Fired { glyph: 0, .. }))
         }));
+    }
+
+    #[test]
+    fn hovering_and_pinning_each_atom_uses_the_machine_on_its_route() {
+        let routes = [
+            (AtomKind::Base, Machine::Glyph(GlyphKind::Source)),
+            (
+                AtomKind::Amber,
+                Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)),
+            ),
+            (
+                AtomKind::Plum,
+                Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)),
+            ),
+        ];
+        for (kind, machine) in routes {
+            let mut sim = Sim::empty();
+            sim.spawn(Atom { kind, pos: ORIGIN });
+            let mut world = World::new(sim);
+            let frame = Frame::between(&world.prev, world.shown(), world.phase());
+            world.hover = world.target_card(px(ORIGIN), &frame);
+            world.advance(0.0);
+            assert_eq!(world.hover, Some(Item::Machine(machine)), "{kind:?} hover");
+            assert_eq!(world.play.as_ref().map(|play| play.machine), Some(machine));
+            let id = world.pin(Item::Atom(kind), Vec2::splat(20.0));
+            let pinned = world.pinned.iter().find(|card| card.id == id).unwrap();
+            assert_eq!(pinned.item, Item::Machine(machine), "{kind:?} pin");
+            assert!(
+                world.pinned_play.iter().any(|play| play.machine == machine),
+                "{kind:?} playback"
+            );
+        }
     }
 
     #[test]

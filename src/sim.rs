@@ -1,4 +1,4 @@
-use crate::form::{CONVERTER_INPUTS, Form, RECIPES, recipes};
+use crate::form::{ATOM_ROUTES, Form, RECIPES, recipes};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -907,11 +907,12 @@ impl Sim {
             }
         }
         if let GlyphKind::Converter(kind) = g.kind {
-            let text = CONVERTER_INPUTS
+            let text = ATOM_ROUTES
                 .iter()
-                .find(|(made, _)| *made == kind)
+                .find(|(made, _, _)| *made == kind)
                 .expect("a converter input")
-                .1;
+                .2
+                .expect("a converter input");
             let expected: Form = text.parse().expect("a converter input");
             let compound = self.component(ids[0]);
             if compound.len() != ids.len()
@@ -1868,9 +1869,9 @@ mod tests {
     fn converter_inputs_and_every_recipe_are_distinct_under_every_turn() {
         let mut forms: Vec<Form> = recipes().iter().map(|(_, form)| form.clone()).collect();
         forms.extend(
-            CONVERTER_INPUTS
+            ATOM_ROUTES
                 .iter()
-                .map(|(_, text)| text.parse().unwrap()),
+                .filter_map(|(_, _, text)| text.map(|text| text.parse().unwrap())),
         );
         for a in 0..forms.len() {
             for b in 0..a {

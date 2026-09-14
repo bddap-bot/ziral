@@ -86,10 +86,27 @@ pub const RECIPES: [(Item, &str); 23] = [
     ),
 ];
 
-pub const CONVERTER_INPUTS: [(AtomKind, &str); 2] = [
-    (AtomKind::Amber, "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0"),
-    (AtomKind::Plum, "A0,0 B0,1 B1,1 0,0-0,1 0,1=1,1"),
+pub const ATOM_ROUTES: [(AtomKind, Machine, Option<&str>); 3] = [
+    (AtomKind::Base, Machine::Glyph(GlyphKind::Source), None),
+    (
+        AtomKind::Amber,
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)),
+        Some("B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0"),
+    ),
+    (
+        AtomKind::Plum,
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)),
+        Some("A0,0 B0,1 B1,1 0,0-0,1 0,1=1,1"),
+    ),
 ];
+
+pub fn atom_route(kind: AtomKind) -> Machine {
+    ATOM_ROUTES
+        .iter()
+        .find(|(made, _, _)| *made == kind)
+        .map(|(_, machine, _)| *machine)
+        .expect("an atom route")
+}
 
 const fn glyph(kind: GlyphKind) -> Item {
     Item::Machine(Machine::Glyph(kind))
