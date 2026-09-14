@@ -18,8 +18,8 @@
     },
     {
       "paths": ["art/symbols/**", "art/overlay/**"],
-      "tests": ["nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && art/overlay/gen.sh -c && cargo test every_symbol_letter_matches_its_binding_and_shift_state && git diff --exit-code -- art/symbols/*.png proofs/tape-case-73.png art/overlay/manual.png'"],
-      "why": "one vector source regenerates every symbol and its shipped-size proof; the manual composites those exact symbols over its reusable page"
+      "tests": ["nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && cargo test every_symbol_letter_matches_its_binding_and_shift_state && cargo test every_instruction_symbol_is_transparent_at_all_four_shipped_size_corners && cargo test every_display_site_uses_one_renderer_and_exposes_all_four_instruction_symbol_corners && git diff --exit-code -- art/symbols/*.png proofs/tape-case-73.png'"],
+      "why": "one vector source regenerates every symbol and its shipped-size proof; runtime displays place those same alpha-blended textures"
     },
     {
       "paths": ["art/direct.sh"],

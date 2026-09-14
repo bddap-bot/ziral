@@ -39,6 +39,8 @@ const STRIP_ROWS: usize = 8;
 const DRAG_PX: f32 = 6.0;
 const LINE_PX: f32 = 3.0;
 const SYMBOL_PX: f32 = 26.0;
+const MANUAL_PX: f32 = 1024.0;
+const MANUAL_SYMBOL_PX: f32 = 128.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
 const MARK_PX: f32 = 6.0;
@@ -124,7 +126,8 @@ pub struct Key {
 }
 
 impl Key {
-    const fn new(code: KeyCode, instr: Instr, symbol: Skin) -> Key {
+    const fn new(code: KeyCode, instr: Instr, mut symbol: Skin) -> Key {
+        symbol.finish = Finish::Sprite;
         Key {
             code,
             instr,
@@ -179,11 +182,27 @@ pub const KEYS: [Key; 13] = [
     ),
 ];
 
-fn key_of(instr: Instr) -> Key {
-    *KEYS
-        .iter()
+const MANUAL_SLOTS: [(Instr, f32, f32); 13] = [
+    (Instr::Grab, 96.0, 64.0),
+    (Instr::Drop, 544.0, 64.0),
+    (Instr::Rot(Spin::Ccw), 96.0, 200.0),
+    (Instr::Rot(Spin::Cw), 544.0, 200.0),
+    (Instr::Pivot(Spin::Ccw), 96.0, 336.0),
+    (Instr::Pivot(Spin::Cw), 544.0, 336.0),
+    (Instr::Wait, 96.0, 472.0),
+    (Instr::Move(UPPER_LEFT), 96.0, 608.0),
+    (Instr::Move((UPPER_LEFT + 1) % 6), 544.0, 608.0),
+    (Instr::Move((UPPER_LEFT + 2) % 6), 96.0, 744.0),
+    (Instr::Move((UPPER_LEFT + 3) % 6), 544.0, 744.0),
+    (Instr::Move((UPPER_LEFT + 4) % 6), 96.0, 880.0),
+    (Instr::Move((UPPER_LEFT + 5) % 6), 544.0, 880.0),
+];
+
+fn instruction_symbol(instr: Instr) -> Skin {
+    KEYS.iter()
         .find(|k| k.instr == instr)
-        .unwrap_or_else(|| panic!("no key writes {instr:?}"))
+        .map(|key| key.symbol)
+        .unwrap_or_else(|| panic!("no symbol draws {instr:?}"))
 }
 
 fn instr_of(key: KeyCode, shift: bool) -> Option<Instr> {
@@ -1398,6 +1417,7 @@ fn app(world: World) -> App {
                 draw,
                 card,
                 manual,
+                render_instruction_symbols,
             )
                 .chain(),
         );
@@ -1613,8 +1633,7 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
             });
         }
         Item::Token(instr) => {
-            let skin = key_of(instr).symbol;
-            entry.spawn((ImageNode::new(kiln.image(skin)), square, field));
+            entry.spawn((InstructionSymbol::Ui(instr), square, field));
         }
     }
 }
@@ -1690,20 +1709,41 @@ fn refusal(
         });
 }
 
-fn symbol(kiln: &Kiln, skin: Skin, lit: bool) -> impl Bundle {
-    (
-        ImageNode::new(kiln.image(skin)),
-        Node {
-            width: Val::Px(SYMBOL_PX),
-            height: Val::Px(SYMBOL_PX),
-            ..default()
-        },
-        Outline {
-            width: Val::Px(CURSOR_PX),
-            offset: Val::ZERO,
-            color: if lit { IVORY } else { Color::NONE },
-        },
-    )
+#[derive(Clone, Copy, Component)]
+enum InstructionSymbol {
+    Ui(Instr),
+    Card(Instr),
+}
+
+impl InstructionSymbol {
+    fn instr(self) -> Instr {
+        match self {
+            InstructionSymbol::Ui(instr) | InstructionSymbol::Card(instr) => instr,
+        }
+    }
+}
+
+fn render_instruction_symbols(
+    mut commands: Commands,
+    kiln: Res<Kiln>,
+    symbols: Query<(Entity, &InstructionSymbol), Added<InstructionSymbol>>,
+) {
+    for (entity, symbol) in &symbols {
+        let skin = instruction_symbol(symbol.instr());
+        match symbol {
+            InstructionSymbol::Ui(_) => {
+                commands
+                    .entity(entity)
+                    .insert(ImageNode::new(kiln.image(skin)));
+            }
+            InstructionSymbol::Card(_) => {
+                commands.entity(entity).insert((
+                    Mesh2d(kiln.bar.clone()),
+                    MeshMaterial2d(kiln.skin(skin, false).clone()),
+                ));
+            }
+        }
+    }
 }
 
 #[derive(Component)]
@@ -2038,11 +2078,27 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             page.spawn((
                 ImageNode::new(kiln.image(MANUAL)),
                 Node {
+                    position_type: PositionType::Relative,
                     width: Val::VMin(92.0),
                     height: Val::VMin(92.0),
                     ..default()
                 },
-            ));
+            ))
+            .with_children(|manual| {
+                for (instr, left, top) in MANUAL_SLOTS {
+                    manual.spawn((
+                        InstructionSymbol::Ui(instr),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(100.0 * left / MANUAL_PX),
+                            top: Val::Percent(100.0 * top / MANUAL_PX),
+                            width: Val::Percent(100.0 * MANUAL_SYMBOL_PX / MANUAL_PX),
+                            height: Val::Percent(100.0 * MANUAL_SYMBOL_PX / MANUAL_PX),
+                            ..default()
+                        },
+                    ));
+                }
+            });
         });
     let (machines, consumables): (Vec<Item>, Vec<Item>) =
         palette().partition(|item| matches!(item, Item::Machine(_)));
@@ -2512,7 +2568,6 @@ fn tape_line(world: &World, i: usize) -> TapeLine {
 
 fn tapes(
     mut commands: Commands,
-    kiln: Res<Kiln>,
     world: Res<World>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
@@ -2566,7 +2621,19 @@ fn tapes(
                     if line.cursor == Some(k) {
                         strip.spawn(cursor());
                     }
-                    strip.spawn(symbol(&kiln, key_of(*instr).symbol, k == line.pc));
+                    strip.spawn((
+                        InstructionSymbol::Ui(*instr),
+                        Node {
+                            width: Val::Px(SYMBOL_PX),
+                            height: Val::Px(SYMBOL_PX),
+                            ..default()
+                        },
+                        Outline {
+                            width: Val::Px(CURSOR_PX),
+                            offset: Val::ZERO,
+                            color: if k == line.pc { IVORY } else { Color::NONE },
+                        },
+                    ));
                 }
                 if line.cursor.is_some_and(|c| c >= line.tape.len()) {
                     strip.spawn(cursor());
@@ -2973,6 +3040,19 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
                 translation: (at + self.shift).extend(z),
                 rotation: Quat::from_rotation_z(angle),
                 scale: scale.extend(1.0),
+            },
+        ));
+    }
+
+    fn instruction(&mut self, instr: Instr, at: Vec2, side: f32, z: f32) {
+        self.commands.spawn((
+            InstructionSymbol::Card(instr),
+            Fill,
+            self.layers.clone(),
+            Transform {
+                translation: (at + self.shift).extend(z),
+                scale: Vec3::splat(side),
+                ..default()
             },
         ));
     }
@@ -3676,14 +3756,7 @@ fn hover_card<G: GizmoConfigGroup>(
         ),
         Item::Atom(kind) => p.bead(at, look::atom(kind), z(2)),
         Item::Step => p.step(at, z(2)),
-        Item::Token(instr) => p.fill(
-            &kiln.bar,
-            p.skin(key_of(instr).symbol),
-            at,
-            0.0,
-            Vec2::splat(picture_side(item)),
-            z(2),
-        ),
+        Item::Token(instr) => p.instruction(instr, at, picture_side(item), z(2)),
     }
     if let Some(recipe) = item.recipe() {
         compound(p, card.recipe, recipe);
@@ -3827,7 +3900,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 46] = [
+    pub const SCENES: [&str; 48] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -3874,6 +3947,8 @@ mod shot {
         "card-wheel",
         "card-regrab",
         "inventory-drags",
+        "instruction-sites",
+        "instruction-sites-manual",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -3974,6 +4049,28 @@ mod shot {
         };
         match name {
             "micro" => world.focus_tape(0),
+            "instruction-sites" | "instruction-sites-manual" => {
+                world.sim = Sim::empty();
+                world.sim.arms.push(Arm::new(
+                    Hex::new(3, -3),
+                    0,
+                    KEYS.map(|key| key.instr).to_vec(),
+                ));
+                world.focus_tape(0);
+                world.hover = Some(Item::Token(Instr::Grab));
+                world.pin(Item::Token(Instr::Rot(Spin::Cw)), Vec2::new(760.0, 120.0));
+                world.refused = Some(Refused {
+                    at: Hex::new(8, -3),
+                    short: vec![Short {
+                        item: Item::Token(Instr::Wait),
+                        have: 0,
+                        need: 1,
+                    }],
+                });
+                if name == "instruction-sites-manual" {
+                    script.push((2, Act::Down(Tab)));
+                }
+            }
             "card-regrab" => {
                 world.hover = None;
                 let bonder: Item = Machine::Glyph(GlyphKind::Bonder).into();
@@ -5033,6 +5130,16 @@ mod tests {
         ),
     >;
 
+    type InstructionSymbols<'w, 's> = Query<
+        'w,
+        's,
+        (
+            &'static InstructionSymbol,
+            Option<&'static ImageNode>,
+            Option<&'static MeshMaterial2d<ColorMaterial>>,
+        ),
+    >;
+
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
         let _render = RENDER_TEST
             .lock()
@@ -5052,6 +5159,41 @@ mod tests {
             .into_iter()
             .map(|png| image::load_from_memory(&png.unwrap()).unwrap().into_rgba8())
             .collect()
+    }
+
+    fn assert_surface_at_corners(
+        frame: &image::RgbaImage,
+        site: &str,
+        corners: [(u32, u32); 4],
+        surface: [[u8; 3]; 4],
+    ) {
+        for (corner, expected) in corners.into_iter().zip(surface) {
+            let actual = &frame[corner].0[..3];
+            let distance = actual
+                .iter()
+                .zip(expected)
+                .map(|(actual, expected)| actual.abs_diff(expected))
+                .max()
+                .unwrap();
+            assert!(
+                distance <= 24,
+                "{site} corner {corner:?} is {actual:?}, {distance} from its exposed surface {expected:?}"
+            );
+        }
+        let plum = Glaze::Plum
+            .rgb()
+            .map(|channel| (255.0 * channel).round() as u8);
+        let [(left, top), (right, _), (_, bottom), _] = corners;
+        let visible = (top..=bottom)
+            .flat_map(|y| (left..=right).map(move |x| (x, y)))
+            .filter(|point| {
+                frame[*point].0[..3]
+                    .iter()
+                    .zip(plum)
+                    .all(|(actual, expected)| actual.abs_diff(expected) <= 50)
+            })
+            .count();
+        assert!(visible >= 4, "{site} has only {visible} plum symbol pixels");
     }
 
     #[test]
@@ -6737,6 +6879,124 @@ mod tests {
                 assert_eq!(node.border_radius, BorderRadius::default());
             }
         }
+    }
+
+    #[test]
+    fn every_display_site_uses_one_renderer_and_exposes_all_four_instruction_symbol_corners() {
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir =
+            std::env::temp_dir().join(format!("ziral-instruction-sites-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("instruction-sites-manual", dir.clone(), 1);
+        lit_plugin(&mut app);
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(false));
+        let probe = seen.clone();
+        app.add_systems(
+            Last,
+            move |symbols: InstructionSymbols,
+                  kiln: Res<Kiln>,
+                  materials: Res<Assets<ColorMaterial>>,
+                  manual: Single<&Node, With<Manual>>| {
+                let mut ui = Vec::new();
+                let mut cards = Vec::new();
+                for (symbol, image, material) in &symbols {
+                    let skin = instruction_symbol(symbol.instr());
+                    match (symbol, image, material) {
+                        (InstructionSymbol::Ui(instr), Some(image), None) => {
+                            assert_eq!(kiln.image(skin), image.image);
+                            ui.push(*instr);
+                        }
+                        (InstructionSymbol::Card(instr), None, Some(material)) => {
+                            assert_eq!(kiln.skin(skin, false), &material.0);
+                            assert_eq!(
+                                materials.get(&material.0).unwrap().alpha_mode,
+                                AlphaMode2d::Blend
+                            );
+                            cards.push(*instr);
+                        }
+                        _ => panic!("an instruction symbol has zero or two draw surfaces"),
+                    }
+                }
+                let count =
+                    |shown: &[Instr], instr| shown.iter().filter(|shown| **shown == instr).count();
+                if ui.len() == 40 && cards.len() == 2 && manual.display == Display::Flex {
+                    for key in KEYS {
+                        assert_eq!(
+                            count(&ui, key.instr),
+                            3 + usize::from(key.instr == Instr::Wait)
+                        );
+                    }
+                    assert_eq!(count(&cards, Instr::Grab), 1);
+                    assert_eq!(count(&cards, Instr::Rot(Spin::Cw)), 1);
+                    *probe.lock().unwrap() = true;
+                }
+            },
+        );
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        let manual = image::load_from_memory(&std::fs::read(dir.join("00000.png")).unwrap())
+            .unwrap()
+            .into_rgba8();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(*seen.lock().unwrap());
+
+        let dir =
+            std::env::temp_dir().join(format!("ziral-instruction-corners-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("instruction-sites", dir.clone(), 1);
+        lit_plugin(&mut app);
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        let frame = image::load_from_memory(&std::fs::read(dir.join("00000.png")).unwrap())
+            .unwrap()
+            .into_rgba8();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let strip = [[107, 79, 58]; 4];
+        let clay = [[216, 195, 165]; 4];
+        assert_surface_at_corners(
+            &frame,
+            "palette",
+            [(183, 78), (208, 78), (183, 103), (208, 103)],
+            strip,
+        );
+        assert_surface_at_corners(
+            &frame,
+            "tape",
+            [(395, 643), (420, 643), (395, 668), (420, 668)],
+            strip,
+        );
+        assert_surface_at_corners(
+            &frame,
+            "shortage",
+            [(1174, 523), (1199, 523), (1174, 548), (1199, 548)],
+            strip,
+        );
+        assert_surface_at_corners(
+            &frame,
+            "hover card",
+            [(20, 55), (45, 55), (20, 80), (45, 80)],
+            clay,
+        );
+        assert_surface_at_corners(
+            &frame,
+            "pinned card",
+            [(773, 175), (798, 175), (773, 200), (798, 200)],
+            clay,
+        );
+        assert_surface_at_corners(
+            &manual,
+            "manual",
+            [(371, 70), (453, 70), (371, 152), (453, 152)],
+            [
+                [196, 170, 133],
+                [218, 185, 128],
+                [225, 207, 169],
+                [100, 67, 23],
+            ],
+        );
     }
 
     #[test]

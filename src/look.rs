@@ -232,7 +232,7 @@ pub const TILES: [Skin; 24] = tiles![
     "16", "17", "18", "19", "20", "21", "22", "23"
 ];
 
-pub const MANUAL: Skin = skin!("overlay/manual");
+pub const MANUAL: Skin = skin!("overlay/page");
 
 pub const GROUT: Skin = skin!("textures/grout");
 
@@ -537,7 +537,7 @@ pub(crate) mod tests {
         Color::srgb(channel(0), channel(1), channel(2))
     }
 
-    fn rendered(skin: Skin, side: usize) -> Vec<[f32; 3]> {
+    fn sampled(skin: Skin, side: usize) -> Vec<[f32; 4]> {
         let image = crate::fire(skin.decode(), skin);
         let (width, height) = (image.width() as usize, image.height() as usize);
         let data = image.data.unwrap();
@@ -561,7 +561,12 @@ pub(crate) mod tests {
             let (right, bottom) = ((left + 1).min(width - 1), (top + 1).min(height - 1));
             let (across, down) = (x.fract(), y.fract());
             let at = |x: usize, y: usize| {
-                crate::to_linear(data[offset(level) + (y * width + x) * 4 + channel])
+                let value = data[offset(level) + (y * width + x) * 4 + channel];
+                if channel == 3 {
+                    f32::from(value) / 255.0
+                } else {
+                    crate::to_linear(value)
+                }
             };
             let top = at(left, top) * (1.0 - across) + at(right, top) * across;
             let bottom = at(left, bottom) * (1.0 - across) + at(right, bottom) * across;
@@ -570,12 +575,23 @@ pub(crate) mod tests {
         (0..side)
             .flat_map(|y| (0..side).map(move |x| (x, y)))
             .map(|(x, y)| {
-                [0, 1, 2].map(|channel| {
+                [0, 1, 2, 3].map(|channel| {
                     let linear = sample(lower, x, y, channel) * (1.0 - between)
                         + sample(upper, x, y, channel) * between;
-                    f32::from(crate::to_srgb(linear)) / 255.0
+                    if channel == 3 {
+                        linear
+                    } else {
+                        f32::from(crate::to_srgb(linear)) / 255.0
+                    }
                 })
             })
+            .collect()
+    }
+
+    fn rendered(skin: Skin, side: usize) -> Vec<[f32; 3]> {
+        sampled(skin, side)
+            .into_iter()
+            .map(|pixel| [pixel[0], pixel[1], pixel[2]])
             .collect()
     }
 
@@ -958,6 +974,29 @@ pub(crate) mod tests {
                 "{:?} has no ivory mark at top-right",
                 key.symbol
             );
+        }
+    }
+
+    #[test]
+    fn every_instruction_symbol_is_transparent_at_all_four_shipped_size_corners() {
+        let side = SYMBOL_PX as usize;
+        let corners = [0, side - 1, side * (side - 1), side * side - 1];
+        for key in KEYS {
+            assert_eq!(
+                key.symbol.finish,
+                Finish::Sprite,
+                "{:?} is fired without alpha blending",
+                key.symbol
+            );
+            let pixels = sampled(key.symbol, side);
+            for corner in corners {
+                assert!(
+                    pixels[corner][3] < 0.05,
+                    "{:?} corner {corner} has alpha {:.3} at {side} px",
+                    key.symbol,
+                    pixels[corner][3]
+                );
+            }
         }
     }
 

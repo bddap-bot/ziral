@@ -101,6 +101,9 @@ Every instruction uses one generated plum square with an ivory key letter at bot
 
 One vector source generates every square, letter, mark, tape asset, and proof without stretching. This is the dumbest design satisfying the directive because the shared parts have one geometry and one palette while only the key and semantic mark vary. Repainting thirteen complete tokens was rejected because it would preserve the fused compositions and per-token variation that the modular system removes.
 
+Directive (verbatim): "whenever displayed, those instruction symbols should have their square texture trimmed down to so the rounded corners are the edges. we've observed this type of mistake previously on this project, where a texure didn't get trimmed down everywhere it was displayed."
+Every display resolves an instruction through one symbol path whose fired texture preserves the vector silhouette's alpha, so its rounded corners expose the surface beneath at tape size. This is the dumbest design satisfying the directive because the existing source already owns the silhouette; per-site masks or blits were rejected because they duplicate that shape and can drift.
+
 ### Amber atom
 
 Directive (verbatim): "This gold-colored atom is visually washed out and looks similar to B0."

@@ -1,6 +1,8 @@
 # Tape symbols
 
-Each instruction is one modular square generated from `art/symbols/source.svg`. `art/symbols/gen.sh` renders the thirteen 512 px assets without changing aspect, rebuilds `art/symbols/sheet.png`, and writes the shipped-size proof. The tape displays each asset at 26 px. The manual page held on Tab composites those exact assets over one reusable painted page.
+Each instruction is one modular square generated from `art/symbols/source.svg`. `art/symbols/gen.sh` renders the thirteen 512 px assets without changing aspect, rebuilds `art/symbols/sheet.png`, and writes the shipped-size proof. The tape displays each asset at 26 px. The manual page held on Tab places those same runtime symbols over one reusable painted page.
+
+Every display resolves the instruction through the same alpha-blended fired symbol texture, preserving the vector tile's transparent surround so its rounded corners are its visible edges at the shipped size. The tape, palette, shortage notice, hover card, pinned card, and manual add placement only.
 
 The square is dark brass with a plum edge. Its bottom-left and top-right corners use a 28-unit radius; its top-left and bottom-right corners use a 96-unit radius. Every ivory key letter occupies the bottom-left and every ivory semantic mark occupies the top-right. Ivory on dark brass has a 6.44:1 WCAG-style luminance ratio from the palette's exact sRGB values, above the 4.5:1 floor, and every generated symbol is measured again through the runtime's mipmaps at the shipped 26 px. A lowercase letter means the key is pressed alone; an uppercase letter means Shift is held. Case is the only carrier of the shift state. These colors and positions do not vary by instruction.
 
@@ -23,3 +25,5 @@ The thirteen semantic marks are:
 The six straight arrows are the instruction's board directions without a second metaphor. The generated letter keeps shortcuts readable while the mark makes repeated letters semantically distinct. The gates sample the actual 26 px render: every tile must retain the common palette, the two prescribed corner radii, visible letter and mark regions, and pairwise distinction.
 
 `../proofs/instruction-contrast-86.png` places the full symbol set on a focused tape and in the palette at the shipped size, amber on plum before at left and ivory on dark brass after at right, without scaling either frame.
+
+`../proofs/instruction-corners-87.png` places the tape, palette, shortage notice, hover card, pinned card, and runtime-composed manual in two unscaled shipped-size frames, with the surface beneath visible at every rounded corner.
