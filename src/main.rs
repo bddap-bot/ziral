@@ -641,7 +641,6 @@ impl World {
     }
 
     fn resim(&mut self, n: u64) {
-        self.down = None;
         if n > 0 || self.ghost.is_some() {
             self.unpick_atoms();
         }
@@ -1176,6 +1175,7 @@ impl World {
             Space => {
                 self.running = !self.running;
                 if self.running {
+                    self.down = None;
                     self.resim(0);
                 }
                 return;
@@ -1198,6 +1198,7 @@ impl World {
                 if let (false, Some(n)) = (self.running, self.ghosts().checked_sub(1))
                     && self.sim.inventory.spend(Item::Step)
                 {
+                    self.down = None;
                     self.resim(n);
                 }
                 return;
@@ -6697,7 +6698,12 @@ mod tests {
         let ghost4 = w.shown().clone();
         let pivot = ghost4.arms[0].pivot;
         assert_ne!(pivot, ghost0.arms[0].pivot);
-        drag(&mut w, pivot, pivot.add(Hex::new(3, 0)));
+        let beside = px(pivot) + Vec2::new(ATOM_RADIUS + 4.0, 0.0);
+        w.press(beside, beside);
+        w.drag(beside + Vec2::new(DRAG_PX * 2.0, 0.0));
+        let to = pivot.add(Hex::new(3, 0));
+        w.pointer = Some(px(to));
+        w.release(Some(to));
         assert_eq!(w.focus, picked(&[Id::Arm(0)]));
         w.key(KeyCode::KeyD, false);
         w.key(KeyCode::KeyC, false);
@@ -6716,8 +6722,9 @@ mod tests {
     fn z_on_an_arm_held_at_a_ghost_frame_keeps_it_out_of_the_world_and_in_the_hand() {
         let mut w = paused(4);
         let pivot = w.shown().arms[0].pivot;
-        w.press(px(pivot), px(pivot));
-        let pointer = px(pivot) + Vec2::new(DRAG_PX * 2.0, 0.0);
+        let start = px(pivot) + Vec2::new(ATOM_RADIUS + 4.0, 0.0);
+        w.press(start, start);
+        let pointer = start + Vec2::new(DRAG_PX * 2.0, 0.0);
         w.pointer = Some(pointer);
         w.drag(pointer);
         let before = w.focus.clone();
@@ -6904,9 +6911,10 @@ mod tests {
         assert_eq!(w.down, None);
         w.release(None);
         assert_eq!(w.focus, None);
-        w.press(px(DIRS[0]), px(DIRS[0]));
+        let beside = px(DIRS[0]) + Vec2::new(ATOM_RADIUS + 4.0, 0.0);
+        w.press(beside, beside);
         assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
-        lift_at(&mut w, DIRS[0]);
+        w.drag(beside + Vec2::new(DRAG_PX * 2.0, 0.0));
         assert!(matches!(held(&w).2, Back::Pick { ids, .. } if ids == [Id::Glyph(0)]));
         assert_eq!(atoms(&w).len(), 3);
         w.release(None);
@@ -8211,6 +8219,7 @@ mod tests {
             .find(|c| ghost0.atom_at(*c).is_none())
             .unwrap();
         w.focus = None;
+        w.since = w.period;
         lift_at(&mut w, carried);
         assert_eq!(held(&w).2, Back::Ghost);
         assert_eq!(w.sim, ghost0);
