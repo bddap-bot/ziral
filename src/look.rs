@@ -452,13 +452,13 @@ pub fn skins() -> impl Iterator<Item = Skin> {
             })
         }))
         .chain(TILES)
-        .chain(crate::KEYS.iter().map(|k| k.symbol))
+        .chain(crate::bindings().map(|(_, _, binding)| binding.symbol))
         .chain([MANUAL])
 }
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{KEYS, SYMBOL_PX};
+    use crate::{SYMBOL_PX, bindings};
     use bevy::color::{Hsva, Luminance};
     use bevy::input::keyboard::KeyCode;
     use quick_xml::events::Event;
@@ -852,48 +852,48 @@ pub(crate) mod tests {
 
     #[test]
     fn every_symbol_uses_the_shared_square_letter_and_mark_geometry() {
-        for key in KEYS {
-            let (_, _, data) = pixels(key.symbol);
+        for (_, _, binding) in bindings() {
+            let (_, _, data) = pixels(binding.symbol);
             let alpha = |x: usize, y: usize| data[(y * 512 + x) * 4 + 3];
             assert!(
                 alpha(40, 40) < 25,
                 "{:?} loses its large top-left radius",
-                key.symbol
+                binding.symbol
             );
             assert!(
                 alpha(472, 40) > 230,
                 "{:?} loses its small top-right radius",
-                key.symbol
+                binding.symbol
             );
             assert!(
                 alpha(40, 472) > 230,
                 "{:?} loses its small bottom-left radius",
-                key.symbol
+                binding.symbol
             );
             assert!(
                 alpha(472, 472) < 25,
                 "{:?} loses its large bottom-right radius",
-                key.symbol
+                binding.symbol
             );
             assert!(
                 near(&data[(300 * 512 + 280) * 4..], Glaze::Plum),
                 "{:?} loses its plum field",
-                key.symbol
+                binding.symbol
             );
             assert!(
                 near(&data[(256 * 512 + 24) * 4..], Glaze::Brass),
                 "{:?} loses its brass edge",
-                key.symbol
+                binding.symbol
             );
             assert!(
                 region_count(&data, 20..=280, 220..=470, Glaze::Ivory) > 1_500,
                 "{:?} has no ivory letter at bottom-left",
-                key.symbol
+                binding.symbol
             );
             assert!(
                 region_count(&data, 285..=475, 45..=250, Glaze::Amber) > 1_000,
                 "{:?} has no amber mark at top-right",
-                key.symbol
+                binding.symbol
             );
         }
     }
@@ -914,14 +914,15 @@ pub(crate) mod tests {
                     .map(|machine| crate::rig::parts(machine).len())
                     .sum::<usize>()
                 + TILES.len()
-                + KEYS.len()
+                + bindings().count()
                 + 1
         );
     }
 
     #[test]
     fn every_instruction_has_its_own_symbol() {
-        for (i, a) in KEYS.iter().enumerate() {
+        let bindings = bindings().collect::<Vec<_>>();
+        for (i, (_, _, a)) in bindings.iter().enumerate() {
             let (w, h, _) = pixels(a.symbol);
             assert_eq!((w, h), (512, 512), "{:?} is not 512 square", a.symbol);
             assert!(
@@ -931,7 +932,7 @@ pub(crate) mod tests {
             );
             let side = SYMBOL_PX as usize;
             let mine = thumbnail(a.symbol, side);
-            for b in &KEYS[i + 1..] {
+            for (_, _, b) in &bindings[i + 1..] {
                 assert_ne!(
                     a.symbol, b.symbol,
                     "{:?} and {:?} share a symbol",
@@ -964,8 +965,8 @@ pub(crate) mod tests {
     #[test]
     fn every_symbol_letter_matches_its_binding_and_shift_state() {
         let source = include_str!("../art/symbols/source.svg");
-        for key in KEYS {
-            let name = key.symbol.name.strip_prefix("symbols/").unwrap();
+        for (key, shifted, binding) in bindings() {
+            let name = binding.symbol.name.strip_prefix("symbols/").unwrap();
             let mut reader = quick_xml::Reader::from_str(source);
             reader.config_mut().trim_text(true);
             let mut depth = 0;
@@ -995,7 +996,7 @@ pub(crate) mod tests {
                     _ => {}
                 }
             }
-            let binding = match key.code {
+            let letter = match key.code {
                 KeyCode::KeyA => 'a',
                 KeyCode::KeyC => 'c',
                 KeyCode::KeyD => 'd',
@@ -1007,10 +1008,10 @@ pub(crate) mod tests {
                 KeyCode::KeyX => 'x',
                 code => panic!("{code:?} is not a letter binding"),
             };
-            let expected = if key.shifted() {
-                binding.to_ascii_uppercase()
+            let expected = if shifted {
+                letter.to_ascii_uppercase()
             } else {
-                binding
+                letter
             };
             assert_eq!(
                 letters,
