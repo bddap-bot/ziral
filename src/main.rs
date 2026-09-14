@@ -397,6 +397,7 @@ struct World {
     down: Option<Press>,
     clipboard: Option<Sim>,
     pointer: Option<Vec2>,
+    over_ui: bool,
     hover: Option<Item>,
     play: Option<Play>,
     pinned: Vec<Pinned>,
@@ -422,6 +423,7 @@ impl World {
             down: None,
             clipboard: None,
             pointer: None,
+            over_ui: false,
             hover: None,
             play: None,
             pinned: Vec::new(),
@@ -1958,6 +1960,7 @@ fn hover(
 ) {
     if left.read().next().is_some() {
         world.hover = None;
+        world.pointer = None;
     }
     if window.cursor_position().is_some() {
         world.hover = rows
@@ -2577,6 +2580,7 @@ fn edit(
         || ui.iter().any(|(_, _, i)| *i != Interaction::None)
         || save.iter().any(|i| *i != Interaction::None);
     let over_ui = over_panel || covered || inventory_at.is_some();
+    world.over_ui = over_ui;
     let at = world.pointer.map(hex_at);
 
     if buttons.just_pressed(MouseButton::Right)
@@ -3609,6 +3613,7 @@ fn draw(
     scene(&mut p, &f, 0.0, events, world.phase(), true);
     if world.down.is_none()
         && !world.holding()
+        && !world.over_ui
         && let Some(target) = world.pointer.and_then(|point| world.hit(point, &f))
     {
         match target {
@@ -8199,7 +8204,7 @@ mod tests {
     }
 
     #[test]
-    fn an_arm_covered_by_an_atom_gives_the_atom_to_a_drag_and_itself_once_its_tape_is_focused() {
+    fn an_arm_covered_by_an_atom_gives_its_body_to_the_atom_and_the_rest_of_its_cell_to_the_arm() {
         let mut w = lone(vec![], vec![Arm::new(Hex::new(-1, 0), 0, vec![])]);
         w.running = false;
         pair(&mut w, ORIGIN, BondKind::Single);
@@ -8207,10 +8212,12 @@ mod tests {
         assert_eq!(held(&w).2, taken(ORIGIN));
         w.release(None);
         assert_eq!(w.focus, None);
-        w.press(px(ORIGIN), px(ORIGIN));
+        let beside = px(ORIGIN) + Vec2::new(ATOM_RADIUS + 4.0, 0.0);
+        w.press(beside, beside);
         w.release(Some(ORIGIN));
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 0 }));
-        lift_at(&mut w, ORIGIN);
+        w.press(beside, beside);
+        w.drag(beside + Vec2::new(DRAG_PX * 2.0, 0.0));
         assert!(matches!(held(&w).2, Back::Pick { ids, .. } if ids == [Id::Arm(0)]));
         assert_eq!(atoms(&w).len(), 2);
     }
