@@ -446,14 +446,8 @@ impl World {
             self.since = 0.0;
             self.step();
         }
-        if let Some(Item::Machine(machine)) = self.hover {
-            let play = match &mut self.play {
-                Some(play) if play.machine == machine => play,
-                _ => self.play.insert(Play::at(machine, 0)),
-            };
+        if let Some(play) = &mut self.play {
             play.advance(dt, self.period);
-        } else {
-            self.play = None;
         }
         for play in &mut self.pinned_play {
             play.advance(dt, self.period);
@@ -811,10 +805,22 @@ impl World {
         })
     }
 
+    fn set_hover(&mut self, item: Option<Item>) {
+        if self.hover == item {
+            return;
+        }
+        self.hover = item;
+        self.play = match item {
+            Some(Item::Machine(machine)) => Some(Play::at(machine, 0)),
+            Some(Item::Step | Item::Token(_)) | None => None,
+            Some(Item::Atom(_)) => unreachable!("an atom resolves to its route before hover"),
+        };
+    }
+
     fn hover_palette(&mut self, item: Option<Item>) {
         self.palette_hover = item;
         if let Some(item) = item {
-            self.hover = Some(card_item(item));
+            self.set_hover(Some(card_item(item)));
         }
     }
 
@@ -1990,7 +1996,7 @@ fn hover(
     mut left: MessageReader<CursorLeft>,
 ) {
     if left.read().next().is_some() {
-        world.hover = None;
+        world.set_hover(None);
         world.palette_hover = None;
         world.pointer = None;
     }
@@ -2687,15 +2693,16 @@ fn edit(
     }
     if !over_ui {
         let frame = Frame::between(&world.prev, world.shown(), world.phase());
-        world.hover = if world.down.is_none() && !world.holding() {
+        let item = if world.down.is_none() && !world.holding() {
             world
                 .pointer
                 .and_then(|point| world.target_card(point, &frame))
         } else {
             None
         };
+        world.set_hover(item);
     } else if inventory_at.is_none() {
-        world.hover = None;
+        world.set_hover(None);
     }
 }
 
@@ -4252,7 +4259,7 @@ mod shot {
                     KEYS.map(|key| key.instr).to_vec(),
                 ));
                 world.focus_tape(0);
-                world.hover = Some(Item::Token(Instr::Grab));
+                world.set_hover(Some(Item::Token(Instr::Grab)));
                 world.pin(Item::Token(Instr::Rot(Spin::Cw)), Vec2::new(760.0, 120.0));
                 world.refused = Some(Refused {
                     at: Hex::new(8, -3),
@@ -4267,7 +4274,7 @@ mod shot {
                 }
             }
             "card-regrab" => {
-                world.hover = None;
+                world.set_hover(None);
                 let bonder: Item = Machine::Glyph(GlyphKind::Bonder).into();
                 script.push((4, Act::BeginPin(bonder, Vec2::new(90.0, 610.0))));
                 for step in 0..10 {
@@ -4313,7 +4320,7 @@ mod shot {
                 script.push((94, Act::EndCard));
             }
             "cards" | "card-wheel" => {
-                world.hover = None;
+                world.set_hover(None);
                 script.push((
                     4,
                     Act::BeginPin(
@@ -4435,7 +4442,7 @@ mod shot {
                 script.extend(tap(240, Backspace));
             }
             "step-art" => {
-                world.hover = Some(Item::Step);
+                world.set_hover(Some(Item::Step));
                 world.period = f32::INFINITY;
             }
             "hand" => {
@@ -4590,7 +4597,7 @@ mod shot {
                 world.sim = Sim::empty();
                 world.period = f32::INFINITY;
                 world.motion = 0.0;
-                world.hover = Some(Item::Machine(machine));
+                world.set_hover(Some(Item::Machine(machine)));
                 world.play = Some(Play::at(machine, ticks));
             }
             "walk" | "ghost" => {
@@ -7907,8 +7914,7 @@ mod tests {
         let bonder = Machine::Glyph(GlyphKind::Bonder);
         let f = fixture(bonder);
         let mut w = World::new(Sim::empty());
-        w.hover = Some(bonder.into());
-        w.advance(0.0);
+        w.set_hover(Some(bonder.into()));
         for t in 0..=f.ticks + HOLD + 1 {
             let (sim, prev) = match t {
                 0 => (0, 0),
@@ -7922,11 +7928,9 @@ mod tests {
             assert_eq!(before, f.sim.replay(prev), "tick {t} prev");
             w.advance(w.period);
         }
-        w.hover = Some(Machine::Arm.into());
-        w.advance(0.0);
+        w.set_hover(Some(Machine::Arm.into()));
         assert_eq!(w.play.as_ref().unwrap().sims().1, fixture(Machine::Arm).sim);
-        w.hover = None;
-        w.advance(0.0);
+        w.set_hover(None);
         assert!(w.play.is_none());
         let past = Play::at(bonder, f.ticks + 99);
         assert_eq!((past.at, past.sims().1), (f.ticks, f.sim.replay(f.ticks)));
@@ -7964,7 +7968,12 @@ mod tests {
             sim.spawn(Atom { kind, pos: ORIGIN });
             let mut world = World::new(sim);
             let frame = Frame::between(&world.prev, world.shown(), world.phase());
-            world.hover = world.target_card(px(ORIGIN), &frame);
+            let hover = world.target_card(px(ORIGIN), &frame);
+            world.set_hover(hover);
+            assert_eq!(
+                world.play.as_ref().map(|play| (play.machine, play.at)),
+                Some((machine, 0))
+            );
             world.hover_palette(None);
             world.advance(world.period);
             assert_eq!(world.hover, Some(Item::Machine(machine)), "{kind:?} hover");
