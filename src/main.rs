@@ -32,6 +32,7 @@ use sim::{
 
 const TICK_MS: f32 = 400.0;
 const MOTION: f32 = 1.0;
+const TURN_MOTION: f32 = 0.6;
 const MICRO_SCALE: f32 = 0.5;
 const FOCUS: Hex = Hex::new(0, -1);
 const MAX_GRID_CELLS: f32 = 6000.0;
@@ -245,6 +246,53 @@ fn held_machine_poses(set: &Sim, pointer: Vec2) -> Vec<(Machine, Vec2, usize)> {
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MachinePose {
+    item: Machine,
+    at: Vec2,
+    angle: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TurnTarget {
+    Board(Id),
+    Held,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct FacingTween {
+    target: TurnTarget,
+    centre: Vec2,
+    cell: Hex,
+    from: Vec<MachinePose>,
+    angle: f32,
+    resume: Option<f32>,
+}
+
+impl FacingTween {
+    fn progress(&self, t: f32) -> f32 {
+        Swing::from_cell(self.cell).at(t)
+    }
+
+    fn poses(&self, t: f32, centre: Vec2) -> Vec<MachinePose> {
+        let progress = self.progress(t);
+        let angle = self.angle * progress;
+        self.from
+            .iter()
+            .map(|pose| MachinePose {
+                item: pose.item,
+                at: match self.target {
+                    TurnTarget::Board(_) => pose.at.lerp(centre, progress),
+                    TurnTarget::Held => {
+                        sweep(self.centre, angle, 1.0)(pose.at) + centre - self.centre
+                    }
+                },
+                angle: pose.angle + angle,
+            })
+            .collect()
+    }
+}
+
 fn runs(set: &Sim) -> bool {
     !set.arms.is_empty() || set.atoms.iter().any(Option::is_some)
 }
@@ -408,6 +456,7 @@ struct World {
     events: Vec<sim::TickEvents>,
     score: Option<sim::TickEvents>,
     refused: Option<Refused>,
+    turn: Option<FacingTween>,
 }
 
 impl World {
@@ -435,12 +484,16 @@ impl World {
             events: Vec::new(),
             score: None,
             refused: None,
+            turn: None,
         }
     }
 
     fn advance(&mut self, dt: f32) {
-        if !self.has_machine_rollback() {
+        if !self.has_machine_rollback() || self.turn.is_some() {
             self.since = (self.since + dt).min(self.period);
+        }
+        if self.turn.is_some() && self.turn_phase() >= 1.0 {
+            self.end_turn();
         }
         if self.running && self.saveable() && self.since >= self.period {
             self.since = 0.0;
@@ -654,6 +707,130 @@ impl World {
 
     fn phase(&self) -> f32 {
         phase(self.since, self.period, self.motion)
+    }
+
+    fn turn_phase(&self) -> f32 {
+        phase(self.since, self.period, TURN_MOTION)
+    }
+
+    fn board_phase(&self) -> f32 {
+        self.turn.as_ref().and_then(|turn| turn.resume).map_or_else(
+            || self.phase(),
+            |since| phase(since, self.period, self.motion),
+        )
+    }
+
+    fn end_turn(&mut self) {
+        if let Some(since) = self.turn.take().and_then(|turn| turn.resume) {
+            self.since = since;
+        }
+    }
+
+    fn resting_poses(&self, target: TurnTarget, centre: Vec2) -> Vec<MachinePose> {
+        match target {
+            TurnTarget::Board(id) => {
+                let (item, at, dir) = match id {
+                    Id::Arm(i) => match self.sim.arms.get(i) {
+                        Some(arm) => (Machine::Arm, arm.pivot, arm.dir),
+                        None => return Vec::new(),
+                    },
+                    Id::Glyph(i) => match self.sim.glyphs.get(i).copied().flatten() {
+                        Some(glyph) => (Machine::Glyph(glyph.kind), glyph.at, glyph.dir),
+                        None => return Vec::new(),
+                    },
+                    Id::Atom(_) => unreachable!("an atom has no facing"),
+                };
+                vec![MachinePose {
+                    item,
+                    at: px(at),
+                    angle: look::turn(dir),
+                }]
+            }
+            TurnTarget::Held => match &self.focus {
+                Some(Focus::Hold { set, .. }) => held_machine_poses(set, centre)
+                    .into_iter()
+                    .map(|(item, at, dir)| MachinePose {
+                        item,
+                        at,
+                        angle: look::turn(dir),
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
+        }
+    }
+
+    fn facing_poses(&self, target: TurnTarget, centre: Vec2) -> Vec<MachinePose> {
+        match &self.turn {
+            Some(turn) if turn.target == target && self.turn_phase() < 1.0 => {
+                turn.poses(self.turn_phase(), centre)
+            }
+            _ => self.resting_poses(target, centre),
+        }
+    }
+
+    fn turn_source(&self, target: TurnTarget, centre: Vec2) -> Vec<MachinePose> {
+        let TurnTarget::Board(Id::Arm(i)) = target else {
+            return self.resting_poses(target, centre);
+        };
+        let frame = Frame::between(&self.prev, self.shown(), self.phase());
+        frame.arms.get(i).map_or_else(Vec::new, |arm| {
+            vec![MachinePose {
+                item: Machine::Arm,
+                at: arm.pivot,
+                angle: (arm.hand - arm.pivot).to_angle(),
+            }]
+        })
+    }
+
+    fn begin_turn(&mut self, target: TurnTarget, spin: Spin, centre: Vec2) {
+        let phase = self.turn_phase();
+        let resume = self
+            .turn
+            .as_ref()
+            .filter(|turn| turn.target == target)
+            .and_then(|turn| turn.resume)
+            .or_else(|| (target == TurnTarget::Held).then_some(self.since));
+        let (from, remaining) = match &self.turn {
+            Some(turn) if turn.target == target && phase < 1.0 => (
+                turn.poses(phase, centre),
+                turn.angle * (1.0 - turn.progress(phase)),
+            ),
+            _ => {
+                let from = self.turn_source(target, centre);
+                let remaining = from
+                    .first()
+                    .zip(self.resting_poses(target, centre).first())
+                    .map_or(0.0, |(from, rest)| {
+                        Vec2::from_angle(from.angle).angle_to(Vec2::from_angle(rest.angle))
+                    });
+                (from, remaining)
+            }
+        };
+        let angle = spin_angle(spin);
+        self.turn = Some(FacingTween {
+            target,
+            centre,
+            cell: hex_at(centre),
+            from,
+            angle: remaining + angle,
+            resume,
+        });
+        self.since = 0.0;
+    }
+
+    fn board_turn_pose(&self) -> Option<(Id, MachinePose)> {
+        let TurnTarget::Board(id) = self.turn.as_ref()?.target else {
+            return None;
+        };
+        let centre = self
+            .resting_poses(TurnTarget::Board(id), Vec2::ZERO)
+            .first()?
+            .at;
+        self.facing_poses(TurnTarget::Board(id), centre)
+            .into_iter()
+            .next()
+            .map(|pose| (id, pose))
     }
 
     fn holding(&self) -> bool {
@@ -882,6 +1059,7 @@ impl World {
         if !self.edits(ids) {
             return;
         }
+        self.end_turn();
         self.remove_from_sim(ids);
         self.focus = None;
         self.down = None;
@@ -918,6 +1096,7 @@ impl World {
 
     fn begin_machine_drag(&mut self, ids: Vec<Id>, cell: Hex) {
         debug_assert!(ids.iter().all(|id| !matches!(id, Id::Atom(_))));
+        self.end_turn();
         let set = self.lifted(&ids, cell);
         let sim = Box::new(self.sim.clone());
         let prev = Box::new(self.prev.clone());
@@ -1012,6 +1191,7 @@ impl World {
         if self.holding() {
             return;
         }
+        self.end_turn();
         self.focus = Some(Focus::Hold {
             set: Box::new(set),
             back,
@@ -1105,6 +1285,7 @@ impl World {
     }
 
     fn place(&mut self, at: Option<Hex>) {
+        self.end_turn();
         let Some(Focus::Hold { set, back }) =
             self.focus.take_if(|f| matches!(f, Focus::Hold { .. }))
         else {
@@ -1149,6 +1330,7 @@ impl World {
     }
 
     fn pop(&mut self, mut set: Sim, back: Back) {
+        self.end_turn();
         match back {
             Back::Inventory | Back::Ghost => {}
             Back::Pick {
@@ -1199,6 +1381,7 @@ impl World {
             }
             KeyG => {
                 if !self.running && self.sim.inventory.spend(Item::Step) {
+                    self.end_turn();
                     self.down = None;
                     self.unpick_atoms();
                     let (prev, mut events) = self.sim.replayed(self.ghosts());
@@ -1215,6 +1398,7 @@ impl World {
                 if let (false, Some(n)) = (self.running, self.ghosts().checked_sub(1))
                     && self.sim.inventory.spend(Item::Step)
                 {
+                    self.end_turn();
                     self.down = None;
                     self.resim(n);
                 }
@@ -1224,6 +1408,9 @@ impl World {
         }
         let instr = instr_of(key, shift);
         if self.holding() {
+            if let (Some(Instr::Rot(spin)), Some(pointer)) = (instr, self.pointer) {
+                self.begin_turn(TurnTarget::Held, spin, pointer);
+            }
             match (key, instr) {
                 (Escape, _) => {
                     let Some(Focus::Hold { set, back }) = self.focus.take() else {
@@ -1244,6 +1431,7 @@ impl World {
                         _ => false,
                     };
                     if deletes {
+                        self.end_turn();
                         let Some(Focus::Hold { set, back }) = self.focus.take() else {
                             unreachable!()
                         };
@@ -1293,6 +1481,7 @@ impl World {
                         let mut set = self.lifted(&ids, at);
                         turn(&mut set, spin);
                         if self.sim.fits(&set, at, &ids) {
+                            self.begin_turn(TurnTarget::Board(*id), spin, px(at));
                             self.set_pose(*id, at, spin.turn(self.dir(*id)));
                             self.resim(self.ghosts());
                         }
@@ -3396,18 +3585,18 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         &mut self,
         item: Machine,
         at: Vec2,
-        dir: usize,
+        angle: f32,
         z: f32,
         response: (bool, f32, sim::ActivationEnergy),
     ) {
         let look = look::machine(item);
         match (item, look.marking) {
             (Machine::Arm, MachineMark::Hand(_, _)) => {
-                let hand = at + px(DIRS[dir % 6]);
+                let hand = at + Vec2::from_angle(angle) * px(DIRS[0]).length();
                 self.arm(at, hand, RING_OPEN, look, z, response);
             }
             (Machine::Glyph(_), MachineMark::Sprite(_)) => {
-                self.rig(item, at, look::turn(dir), z, response);
+                self.rig(item, at, angle, z, response);
             }
             _ => unworn(look),
         }
@@ -3481,8 +3670,12 @@ struct Frame<'a> {
     arms: Vec<ArmPose>,
 }
 
-fn sweep(centre: Vec2, spin: Spin, e: f32) -> impl Fn(Vec2) -> Vec2 {
-    let angle = px(DIRS[0]).angle_to(px(DIRS[spin.turn(0)])) * e;
+fn spin_angle(spin: Spin) -> f32 {
+    px(DIRS[0]).angle_to(px(DIRS[spin.turn(0)]))
+}
+
+fn sweep(centre: Vec2, angle: f32, e: f32) -> impl Fn(Vec2) -> Vec2 {
+    let angle = angle * e;
     move |v| centre + Vec2::from_angle(angle).rotate(v - centre)
 }
 
@@ -3517,7 +3710,8 @@ impl Frame<'_> {
                 (None, step) if step != Vec2::ZERO => (None, step * e),
                 _ => continue,
             };
-            let carried = |v: Vec2| about.map_or(v, |(c, spin)| sweep(c, spin, e)(v)) + shift;
+            let carried =
+                |v: Vec2| about.map_or(v, |(c, spin)| sweep(c, spin_angle(spin), e)(v)) + shift;
             pose.pivot += shift;
             pose.hand = carried(pose.hand);
             if a.holding
@@ -3681,12 +3875,21 @@ fn draw(
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
     };
-    let f = Frame::between(&world.prev, world.shown(), world.phase());
+    let board_phase = world.board_phase();
+    let f = Frame::between(&world.prev, world.shown(), board_phase);
     let events = world
         .events
         .last()
         .map_or(&[][..], |tick| tick.events.as_slice());
-    scene(&mut p, &f, 0.0, events, world.phase(), true);
+    scene(
+        &mut p,
+        &f,
+        0.0,
+        events,
+        board_phase,
+        true,
+        world.board_turn_pose(),
+    );
     if world.down.is_none()
         && !world.holding()
         && !world.over_ui
@@ -3730,13 +3933,13 @@ fn draw(
                     p.outline(px(cell), HEX * 0.9);
                 }
             }
-            let machines = held_machine_poses(set, pointer);
-            for (i, (item, at, dir)) in machines.iter().enumerate() {
+            let machines = world.facing_poses(TurnTarget::Held, pointer);
+            for (i, pose) in machines.iter().enumerate() {
                 let z = layer::z(layer::HELD, i, machines.len());
                 p.machine(
-                    *item,
-                    *at,
-                    *dir,
+                    pose.item,
+                    pose.at,
+                    pose.angle,
                     z,
                     (false, 1.0, sim::ActivationEnergy::default()),
                 );
@@ -3838,6 +4041,7 @@ fn scene<G: GizmoConfigGroup>(
     events: &[sim::TickEvent],
     phase: f32,
     particles: bool,
+    turn: Option<(Id, MachinePose)>,
 ) {
     for (index, glyph) in f.sim.glyphs.iter().enumerate() {
         let Some(g) = glyph else { continue };
@@ -3845,10 +4049,18 @@ fn scene<G: GizmoConfigGroup>(
         let fired = events
             .iter()
             .any(|event| rig::activation(item).matches(event, index));
+        let pose = turn.filter(|(id, _)| *id == Id::Glyph(index)).map_or(
+            MachinePose {
+                item,
+                at: px(g.at),
+                angle: look::turn(g.dir),
+            },
+            |(_, pose)| pose,
+        );
         p.machine(
-            item,
-            px(g.at),
-            g.dir,
+            pose.item,
+            pose.at,
+            pose.angle,
             layer::GLYPHS + lift,
             (fired, phase, g.energy),
         );
@@ -3879,9 +4091,17 @@ fn scene<G: GizmoConfigGroup>(
         let fired = events
             .iter()
             .any(|event| rig::activation(Machine::Arm).matches(event, i));
+        let (pivot, hand) =
+            turn.filter(|(id, _)| *id == Id::Arm(i))
+                .map_or((arm.pivot, arm.hand), |(_, pose)| {
+                    (
+                        pose.at,
+                        pose.at + Vec2::from_angle(pose.angle) * px(DIRS[0]).length(),
+                    )
+                });
         p.arm(
-            arm.pivot,
-            arm.hand,
+            pivot,
+            hand,
             arm.ring,
             look,
             z,
@@ -3976,7 +4196,7 @@ fn hover_card<G: GizmoConfigGroup>(
         for h in playfield(machine) {
             p.tile(h, layer::LIFT);
         }
-        scene(p, f, layer::LIFT, events, phase, false);
+        scene(p, f, layer::LIFT, events, phase, false, None);
     });
 }
 
@@ -4110,7 +4330,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 52] = [
+    pub const SCENES: [&str; 53] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4163,6 +4383,7 @@ mod shot {
         "machine-drag-88",
         "atom-machine-pick-92",
         "atom-card-94",
+        "machine-turn-89",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -4748,6 +4969,17 @@ mod shot {
                     script.push((141 + step, Act::DragPoint(point)));
                 }
                 script.push((202, Act::Release(Hex::new(3, 0))));
+            }
+            "machine-turn-89" => {
+                world.sim = Sim::empty();
+                world
+                    .sim
+                    .glyphs
+                    .push(Some(Glyph::new(GlyphKind::Bonder, FOCUS, 0)));
+                world.focus = Some(Focus::Pick(vec![Id::Glyph(0)]));
+                for frame in [20, 32, 44, 56, 68, 80] {
+                    script.extend(tap(frame, KeyD));
+                }
             }
             "output" => {
                 let mut sim = Sim::empty();
@@ -6033,6 +6265,83 @@ mod tests {
         let moved = w.sim.glyphs[0].unwrap();
         assert_eq!(moved.dir, 3);
         assert_eq!(moved.slots().nth(1), Some(to));
+    }
+
+    #[test]
+    fn a_frame_sampled_mid_sweep_draws_a_placed_sprite_strictly_between_rest_angles() {
+        let mut w = lone(vec![bonder(ORIGIN, 0)], vec![]);
+        w.running = false;
+        w.since = w.period;
+        w.focus = picked(&[Id::Glyph(0)]);
+        let start = look::turn(0);
+        let end = look::turn(1);
+        w.key(KeyCode::KeyD, false);
+        assert_eq!(w.sim.glyphs[0].unwrap().dir, 1);
+        assert_eq!(w.turn_phase(), 0.0);
+        w.advance(w.period * TURN_MOTION * 0.3);
+        let angle = w.facing_poses(TurnTarget::Board(Id::Glyph(0)), px(ORIGIN))[0].angle;
+        assert!(end < angle && angle < start, "{end} < {angle} < {start}");
+    }
+
+    #[test]
+    fn a_held_machine_turn_changes_its_state_before_its_sprite_finishes_sweeping() {
+        let mut w = lone(vec![bonder(ORIGIN, 0)], vec![]);
+        w.running = false;
+        w.since = w.period * 0.4;
+        w.press(px(ORIGIN), px(ORIGIN));
+        let pointer = px(ORIGIN) + Vec2::new(DRAG_PX * 2.0, 0.0);
+        w.pointer = Some(pointer);
+        w.drag(pointer);
+        assert!(w.has_machine_rollback());
+        w.key(KeyCode::KeyD, false);
+        assert!((w.board_phase() - 0.4).abs() < 1e-5);
+        let Some(Focus::Hold { set, .. }) = &w.focus else {
+            panic!("the machine is not held")
+        };
+        assert_eq!(set.glyphs[0].unwrap().dir, 1);
+        assert_eq!(w.turn_phase(), 0.0);
+        let start = look::turn(0);
+        let end = look::turn(1);
+        w.advance(w.period * TURN_MOTION * 0.3);
+        let angle = w.facing_poses(TurnTarget::Held, pointer)[0].angle;
+        assert!(end < angle && angle < start, "{end} < {angle} < {start}");
+        w.advance(w.period * TURN_MOTION);
+        assert!((w.since - w.period * 0.4).abs() < 1e-5);
+    }
+
+    #[test]
+    fn six_turn_presses_land_the_sprite_exactly_on_its_start_angle() {
+        let mut w = lone(vec![bonder(ORIGIN, 0)], vec![]);
+        w.running = false;
+        w.since = w.period;
+        w.focus = picked(&[Id::Glyph(0)]);
+        let start = look::turn(0);
+        for _ in 0..6 {
+            w.key(KeyCode::KeyD, false);
+        }
+        assert_eq!(w.sim.glyphs[0].unwrap().dir, 0);
+        w.advance(w.period * TURN_MOTION);
+        assert!(w.turn.is_none());
+        let angle = w.facing_poses(TurnTarget::Board(Id::Glyph(0)), px(ORIGIN))[0].angle;
+        assert_eq!(angle, start);
+    }
+
+    #[test]
+    fn an_editor_turn_during_an_arm_sweep_finishes_at_the_new_simulation_facing() {
+        let mut w = lone(vec![], vec![Arm::new(ORIGIN, 0, vec![])]);
+        w.running = false;
+        w.sim.arms[0].pivot = DIRS[0];
+        w.sim.arms[0].dir = 1;
+        w.since = w.period * 0.3;
+        w.focus = picked(&[Id::Arm(0)]);
+        w.key(KeyCode::KeyD, false);
+        assert_eq!(w.sim.arms[0].dir, 2);
+        let turn = w.turn.as_ref().unwrap();
+        assert!((turn.from[0].angle + turn.angle - look::turn(2)).abs() < 1e-5);
+        assert_eq!(turn.poses(1.0, px(DIRS[0]))[0].at, px(DIRS[0]));
+        w.advance(w.period * TURN_MOTION);
+        let angle = w.facing_poses(TurnTarget::Board(Id::Arm(0)), px(DIRS[0]))[0].angle;
+        assert_eq!(angle, look::turn(2));
     }
 
     #[test]

@@ -428,6 +428,8 @@ A turn changes the machine's simulation facing at the key press, then the drawin
 
 This is the dumbest design satisfying the directive because facing becomes one more pose carried by the existing tween, with one transient source pose and no second interpolator or clock. Queueing six independent sweeps was rejected because the drawing would lag behind simulation state, while snapping an interrupted sweep to its prior target would break the visible continuity the animation exists to provide.
 
+Checks cover a placed machine between rest angles, a held machine whose simulation facing changes before its drawing settles, and six turns returning to the exact starting angle. `proofs/machine-turn-89.gif` (`art/gif.sh proofs/machine-turn-89.gif machine-turn-89 4 1280:720:0:0`) shows a picked machine turning six times at the shipped size.
+
 ### Toy 1 wears the Fired Workshop look
 
 The Fired Workshop direction (issue #9) carries two rules: every atom is visually distinct from every other atom, and the same for every glyph, machine, and bond type. `art/BIBLE.md` is the design ethos, palette, and the checkable form of the rules: two members of one class differ in at least two of hue, value, shape, marking, never by hue alone. The sim and the tick period are untouched; only the drawing changed.
