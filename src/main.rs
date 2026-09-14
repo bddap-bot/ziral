@@ -439,7 +439,7 @@ impl World {
     }
 
     fn advance(&mut self, dt: f32) {
-        if !self.holding_machine() {
+        if !self.has_machine_rollback() {
             self.since = (self.since + dt).min(self.period);
         }
         if self.running && self.saveable() && self.since >= self.period {
@@ -594,7 +594,7 @@ impl World {
     }
 
     fn set_cap(&mut self, item: Item, notches: i32) {
-        if self.holding_machine() {
+        if self.has_machine_rollback() {
             return;
         }
         self.sim.inventory.set_cap(item, notches);
@@ -660,7 +660,7 @@ impl World {
         matches!(self.focus, Some(Focus::Hold { .. }))
     }
 
-    fn holding_machine(&self) -> bool {
+    fn has_machine_rollback(&self) -> bool {
         matches!(
             self.focus,
             Some(Focus::Hold {
@@ -916,15 +916,29 @@ impl World {
         Self::remove_from(&mut self.sim, ids);
     }
 
-    fn take_machines(&mut self, ids: &[Id]) {
+    fn begin_machine_drag(&mut self, ids: Vec<Id>, cell: Hex) {
         debug_assert!(ids.iter().all(|id| !matches!(id, Id::Atom(_))));
-        Self::remove_from(&mut self.sim, ids);
-        Self::remove_from(&mut self.prev, ids);
+        let set = self.lifted(&ids, cell);
+        let sim = Box::new(self.sim.clone());
+        let prev = Box::new(self.prev.clone());
+        let rollback_ghost = self.ghost.clone().map(Box::new);
+        let events = self.events.clone();
+        Self::remove_from(&mut self.sim, &ids);
+        Self::remove_from(&mut self.prev, &ids);
         if let Some(ghost) = &mut self.ghost {
-            Self::remove_from(ghost, ids);
+            Self::remove_from(ghost, &ids);
         }
         self.events.clear();
-        self.focus = None;
+        self.focus = Some(Focus::Hold {
+            set: Box::new(set),
+            back: Back::Pick {
+                ids,
+                sim,
+                prev,
+                ghost: rollback_ghost,
+                events,
+            },
+        });
         self.down = None;
     }
 
@@ -998,10 +1012,6 @@ impl World {
         if self.holding() {
             return;
         }
-        if let Back::Pick { ids, .. } = &back {
-            let machines = set.glyphs.iter().flatten().count() + set.arms.len();
-            debug_assert_eq!(ids.len(), machines);
-        }
         self.focus = Some(Focus::Hold {
             set: Box::new(set),
             back,
@@ -1070,16 +1080,7 @@ impl World {
                     self.down = None;
                     return;
                 }
-                let set = self.lifted(&ids, cell);
-                let back = Back::Pick {
-                    ids: ids.clone(),
-                    sim: Box::new(self.sim.clone()),
-                    prev: Box::new(self.prev.clone()),
-                    ghost: self.ghost.clone().map(Box::new),
-                    events: self.events.clone(),
-                };
-                self.take_machines(&ids);
-                self.lift(set, back);
+                self.begin_machine_drag(ids, cell);
             }
             Some(Press::Ground {
                 screen: start,
@@ -1123,12 +1124,9 @@ impl World {
             self.pop(*set, back);
             return;
         }
-        let mut ghosts = self.ghosts();
+        let ghosts = self.ghosts();
         let ids = match back {
-            Back::Pick {
-                ids, sim, ghost, ..
-            } => {
-                ghosts = ghost.as_ref().map_or(0, |ghost| ghost.tick - sim.tick);
+            Back::Pick { ids, sim, .. } => {
                 self.sim = *sim;
                 let arms = ids.iter().filter(|id| matches!(id, Id::Arm(_)));
                 for (id, a) in arms.zip(&set.arms) {
@@ -1187,7 +1185,7 @@ impl World {
     fn key(&mut self, key: KeyCode, shift: bool) {
         use KeyCode::*;
         self.refused = None;
-        if matches!(key, Space | KeyG | KeyS) && self.holding_machine() {
+        if matches!(key, Space | KeyG | KeyS) && self.has_machine_rollback() {
             return;
         }
         match key {
@@ -1225,30 +1223,46 @@ impl World {
             _ => {}
         }
         let instr = instr_of(key, shift);
-        if matches!(self.focus, Some(Focus::Hold { .. })) {
-            let Some(Focus::Hold { mut set, mut back }) = self.focus.take() else {
-                unreachable!()
-            };
+        if self.holding() {
             match (key, instr) {
-                (Escape, _) => self.pop(*set, back),
-                (KeyZ, _) => match &back {
-                    Back::Inventory | Back::Ghost => {}
-                    Back::Pick { ids, .. } if self.edits(ids) => {
-                        self.return_to_inventory(&set);
-                        self.resim(self.ghosts());
+                (Escape, _) => {
+                    let Some(Focus::Hold { set, back }) = self.focus.take() else {
+                        unreachable!()
+                    };
+                    self.pop(*set, back);
+                }
+                (KeyZ, _) => {
+                    let deletes = match &self.focus {
+                        Some(Focus::Hold {
+                            back: Back::Inventory | Back::Ghost,
+                            ..
+                        }) => true,
+                        Some(Focus::Hold {
+                            back: Back::Pick { ids, .. },
+                            ..
+                        }) => self.edits(ids),
+                        _ => false,
+                    };
+                    if deletes {
+                        let Some(Focus::Hold { set, back }) = self.focus.take() else {
+                            unreachable!()
+                        };
+                        if matches!(back, Back::Pick { .. }) {
+                            self.return_to_inventory(&set);
+                            self.resim(self.ghosts());
+                        }
                     }
-                    Back::Pick { .. } | Back::Cell { .. } => {
-                        self.focus = Some(Focus::Hold { set, back });
-                    }
-                },
+                }
                 (_, Some(Instr::Rot(spin))) => {
-                    turn(&mut set, spin);
-                    if let Back::Cell { turns, .. } = &mut back {
+                    let Some(Focus::Hold { set, back }) = &mut self.focus else {
+                        unreachable!()
+                    };
+                    turn(set, spin);
+                    if let Back::Cell { turns, .. } = back {
                         *turns = spin.turn(*turns);
                     }
-                    self.focus = Some(Focus::Hold { set, back });
                 }
-                _ => self.focus = Some(Focus::Hold { set, back }),
+                _ => {}
             }
             return;
         }
@@ -1441,7 +1455,7 @@ fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnO
 }
 
 fn refill_inventory(mut world: ResMut<World>) {
-    if world.holding_machine() {
+    if world.has_machine_rollback() {
         return;
     }
     while let Some(fragment) = take_inventory_fragment() {
@@ -5972,14 +5986,14 @@ mod tests {
         let other = bonder(Hex::new(2, 0), 0);
         let mut w = lone(vec![mover, other], vec![]);
         w.running = false;
-        let before = persist::encode(&w.sim).unwrap();
+        let before = w.sim.clone();
         w.press(px(ORIGIN), px(ORIGIN));
         let pointer = px(Hex::new(1, 0)) + Vec2::new(8.0, 2.0);
         w.pointer = Some(pointer);
         w.drag(pointer);
-        assert_ne!(persist::encode(&w.sim).unwrap(), before);
+        assert_ne!(w.sim, before);
         w.release(Some(Hex::new(1, 0)));
-        assert_eq!(persist::encode(&w.sim).unwrap(), before);
+        assert_eq!(w.sim, before);
         assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
     }
 
