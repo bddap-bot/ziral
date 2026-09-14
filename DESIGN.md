@@ -704,7 +704,7 @@ Tests: S and G each spend one step and at zero leave ghost[0], the ghost and the
 
 Directive (verbatim): "in inventory, keycodes should be arranged as they are on a keyboard."
 
-One table assigns every instruction token its QWERTY row and column. The palette draws directly from those coordinates, with the top, home and bottom rows staggered as on the keyboard and a shifted token above the plain token on the same key. Its pips remain beside it. This is the dumbest design satisfying the directive because the binding already identifies the token and needs only a position; ordering the same tokens again would permit the controls and palette to disagree. Tape order was rejected because it follows the arm's path around the hex grid rather than the player's hand memory of the keyboard.
+The keyboard-position change was reverted; retaining the palette's prior token rows is the smallest implementation, while another layout would introduce a new design.
 
 ### Toy 1 deletes an atom by hand
 

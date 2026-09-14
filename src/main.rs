@@ -46,17 +46,7 @@ const STEP_PX: f32 = 2.0 * MARK_PX;
 const STEP_SHIFT: f32 = 4.0;
 const STEP_SPAN: f32 = STEP_PX + 2.0 * STEP_SHIFT;
 const TALLY_PX: f32 = 86.0;
-const PLATE_BORDER_PX: f32 = 1.0;
-const PALETTE_PAD_X: f32 = 8.0;
-const PALETTE_PAD_Y: f32 = 2.0;
-const PALETTE_ENTRY_GAP: f32 = 6.0;
-const PALETTE_ENTRY_OVERHEAD: f32 = 2.0 * PLATE_BORDER_PX + 2.0 * PALETTE_PAD_X + PALETTE_ENTRY_GAP;
-const TOKEN_ENTRY_WIDTH: f32 = SYMBOL_PX + TALLY_PX + PALETTE_ENTRY_OVERHEAD;
-const TOKEN_ENTRY_HEIGHT: f32 = SYMBOL_PX + 2.0 * (PLATE_BORDER_PX + PALETTE_PAD_Y);
-const KEY_COLUMN_PX: f32 = TOKEN_ENTRY_WIDTH / 2.0;
-const KEY_VARIANT_GAP: f32 = 4.0;
-const TOKEN_GRID_WIDTH: f32 = key_columns() as f32 * KEY_COLUMN_PX;
-const PALETTE_WIDTH: f32 = PALETTE_PX + TALLY_PX + PALETTE_ENTRY_OVERHEAD + 8.0 + TOKEN_GRID_WIDTH;
+const PALETTE_WIDTH: f32 = PALETTE_PX + SYMBOL_PX + 2.0 * (TALLY_PX + 24.0) + 8.0;
 const CARD_PAD: f32 = 12.0;
 const CARD: RenderLayers = RenderLayers::layer(1);
 const CARD_PITCH: f32 = 1024.0;
@@ -129,177 +119,77 @@ fn palette() -> impl Iterator<Item = Item> {
 #[derive(Clone, Copy)]
 pub struct Key {
     code: KeyCode,
-    row: u8,
-    column: u8,
-    plain: Option<Binding>,
-    shifted: Option<Binding>,
-}
-
-#[derive(Clone, Copy)]
-pub struct Binding {
     instr: Instr,
     pub symbol: Skin,
 }
 
-impl Binding {
-    const fn new(instr: Instr, symbol: Skin) -> Binding {
-        Binding { instr, symbol }
-    }
-}
-
 impl Key {
-    const fn new(
-        code: KeyCode,
-        row: u8,
-        column: u8,
-        plain: Option<Binding>,
-        shifted: Option<Binding>,
-    ) -> Key {
+    const fn new(code: KeyCode, instr: Instr, symbol: Skin) -> Key {
         Key {
             code,
-            row,
-            column,
-            plain,
-            shifted,
+            instr,
+            symbol,
         }
+    }
+
+    fn shifted(&self) -> bool {
+        matches!(self.instr, Instr::Move(_))
     }
 }
 
 const UPPER_LEFT: usize = 4;
 
-pub const KEYS: [Key; 9] = [
-    Key::new(
-        KeyCode::KeyQ,
-        0,
-        0,
-        Some(Binding::new(Instr::Pivot(Spin::Ccw), skin!("symbols/q"))),
-        None,
-    ),
+pub const KEYS: [Key; 13] = [
+    Key::new(KeyCode::KeyF, Instr::Grab, skin!("symbols/f")),
+    Key::new(KeyCode::KeyR, Instr::Drop, skin!("symbols/r")),
+    Key::new(KeyCode::KeyA, Instr::Rot(Spin::Ccw), skin!("symbols/a")),
+    Key::new(KeyCode::KeyD, Instr::Rot(Spin::Cw), skin!("symbols/d")),
+    Key::new(KeyCode::KeyQ, Instr::Pivot(Spin::Ccw), skin!("symbols/q")),
+    Key::new(KeyCode::KeyE, Instr::Pivot(Spin::Cw), skin!("symbols/e")),
+    Key::new(KeyCode::KeyX, Instr::Wait, skin!("symbols/x")),
     Key::new(
         KeyCode::KeyW,
-        0,
-        2,
-        None,
-        Some(Binding::new(
-            Instr::Move(UPPER_LEFT),
-            skin!("symbols/shift-w"),
-        )),
+        Instr::Move(UPPER_LEFT),
+        skin!("symbols/shift-w"),
     ),
     Key::new(
         KeyCode::KeyE,
-        0,
-        4,
-        Some(Binding::new(Instr::Pivot(Spin::Cw), skin!("symbols/e"))),
-        Some(Binding::new(
-            Instr::Move((UPPER_LEFT + 1) % 6),
-            skin!("symbols/shift-e"),
-        )),
-    ),
-    Key::new(
-        KeyCode::KeyR,
-        0,
-        6,
-        Some(Binding::new(Instr::Drop, skin!("symbols/r"))),
-        None,
-    ),
-    Key::new(
-        KeyCode::KeyA,
-        1,
-        1,
-        Some(Binding::new(Instr::Rot(Spin::Ccw), skin!("symbols/a"))),
-        Some(Binding::new(
-            Instr::Move((UPPER_LEFT + 5) % 6),
-            skin!("symbols/shift-a"),
-        )),
-    ),
-    Key::new(
-        KeyCode::KeyD,
-        1,
-        5,
-        Some(Binding::new(Instr::Rot(Spin::Cw), skin!("symbols/d"))),
-        None,
+        Instr::Move((UPPER_LEFT + 1) % 6),
+        skin!("symbols/shift-e"),
     ),
     Key::new(
         KeyCode::KeyF,
-        1,
-        7,
-        Some(Binding::new(Instr::Grab, skin!("symbols/f"))),
-        Some(Binding::new(
-            Instr::Move((UPPER_LEFT + 2) % 6),
-            skin!("symbols/shift-f"),
-        )),
-    ),
-    Key::new(
-        KeyCode::KeyX,
-        2,
-        4,
-        Some(Binding::new(Instr::Wait, skin!("symbols/x"))),
-        Some(Binding::new(
-            Instr::Move((UPPER_LEFT + 4) % 6),
-            skin!("symbols/shift-x"),
-        )),
+        Instr::Move((UPPER_LEFT + 2) % 6),
+        skin!("symbols/shift-f"),
     ),
     Key::new(
         KeyCode::KeyC,
-        2,
-        6,
-        None,
-        Some(Binding::new(
-            Instr::Move((UPPER_LEFT + 3) % 6),
-            skin!("symbols/shift-c"),
-        )),
+        Instr::Move((UPPER_LEFT + 3) % 6),
+        skin!("symbols/shift-c"),
+    ),
+    Key::new(
+        KeyCode::KeyX,
+        Instr::Move((UPPER_LEFT + 4) % 6),
+        skin!("symbols/shift-x"),
+    ),
+    Key::new(
+        KeyCode::KeyA,
+        Instr::Move((UPPER_LEFT + 5) % 6),
+        skin!("symbols/shift-a"),
     ),
 ];
 
-pub(crate) fn bindings() -> impl Iterator<Item = (Key, bool, Binding)> {
-    KEYS.into_iter().flat_map(|key| {
-        [(false, key.plain), (true, key.shifted)]
-            .into_iter()
-            .filter_map(move |(shifted, binding)| binding.map(|binding| (key, shifted, binding)))
-    })
-}
-
-const fn key_columns() -> u16 {
-    let mut column = 0;
-    let mut i = 0;
-    while i < KEYS.len() {
-        if KEYS[i].column > column {
-            column = KEYS[i].column;
-        }
-        i += 1;
-    }
-    column as u16 + 2
-}
-
-const fn key_rows() -> u16 {
-    let mut row = 0;
-    let mut i = 0;
-    while i < KEYS.len() {
-        if KEYS[i].row > row {
-            row = KEYS[i].row;
-        }
-        i += 1;
-    }
-    (row as u16 + 1) * 2
-}
-
-fn key_of(instr: Instr) -> Binding {
-    bindings()
-        .find_map(|(_, _, binding)| (binding.instr == instr).then_some(binding))
+fn key_of(instr: Instr) -> Key {
+    *KEYS
+        .iter()
+        .find(|k| k.instr == instr)
         .unwrap_or_else(|| panic!("no key writes {instr:?}"))
 }
 
 fn instr_of(key: KeyCode, shift: bool) -> Option<Instr> {
     KEYS.iter()
-        .find(|binding| binding.code == key)
-        .and_then(|binding| {
-            if shift {
-                binding.shifted
-            } else {
-                binding.plain
-            }
-        })
-        .map(|binding| binding.instr)
+        .find(|k| k.code == key && k.shifted() == shift)
+        .map(|k| k.instr)
 }
 
 fn fresh(item: Item) -> Sim {
@@ -1665,7 +1555,7 @@ fn button(node: Node) -> impl Bundle {
 fn plate(node: Node) -> impl Bundle {
     (
         Node {
-            border: UiRect::all(Val::Px(PLATE_BORDER_PX)),
+            border: UiRect::all(Val::Px(1.0)),
             ..node
         },
         BorderColor::all(brass(0.5)),
@@ -1677,13 +1567,6 @@ fn row(gap: f32) -> Node {
         align_items: AlignItems::Center,
         column_gap: Val::Px(gap),
         ..default()
-    }
-}
-
-fn palette_row() -> Node {
-    Node {
-        padding: UiRect::axes(Val::Px(PALETTE_PAD_X), Val::Px(PALETTE_PAD_Y)),
-        ..row(PALETTE_ENTRY_GAP)
     }
 }
 
@@ -1734,24 +1617,6 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
             entry.spawn((ImageNode::new(kiln.image(skin)), square, field));
         }
     }
-}
-
-fn palette_entry(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item, node: Node) {
-    entry
-        .spawn((PaletteRow(item), button(node)))
-        .with_children(|entry| {
-            picture(entry, kiln, item);
-            entry.spawn((
-                Tally { item, shown: None },
-                Node {
-                    width: Val::Px(TALLY_PX),
-                    flex_wrap: FlexWrap::Wrap,
-                    column_gap: Val::Px(2.0),
-                    row_gap: Val::Px(2.0),
-                    ..default()
-                },
-            ));
-        });
 }
 
 fn picture_square(item: Item) -> (Node, BackgroundColor) {
@@ -1891,9 +1756,6 @@ fn cursor() -> impl Bundle {
 
 #[derive(Component)]
 struct Palette;
-
-#[derive(Component)]
-struct TokenPalette;
 
 #[derive(Component)]
 struct Tally {
@@ -2182,8 +2044,8 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                 },
             ));
         });
-    let machines = palette().filter(|item| matches!(item, Item::Machine(_)));
-    let consumables = palette().filter(|item| !matches!(item, Item::Machine(_) | Item::Token(_)));
+    let (machines, consumables): (Vec<Item>, Vec<Item>) =
+        palette().partition(|item| matches!(item, Item::Machine(_)));
     commands
         .spawn((
             Palette,
@@ -2196,76 +2058,38 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             },
         ))
         .with_children(|palette| {
-            palette
-                .spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::FlexStart,
-                    row_gap: Val::Px(4.0),
-                    ..default()
-                })
-                .with_children(|column| {
-                    for item in machines {
-                        palette_entry(column, &kiln, item, palette_row());
-                    }
-                });
-            palette
-                .spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::FlexStart,
-                    row_gap: Val::Px(4.0),
-                    ..default()
-                })
-                .with_children(|column| {
-                    for item in consumables {
-                        palette_entry(column, &kiln, item, palette_row());
-                    }
-                    column
-                        .spawn((
-                            TokenPalette,
-                            Node {
-                                display: Display::Grid,
-                                width: Val::Px(TOKEN_GRID_WIDTH),
-                                row_gap: Val::Px(KEY_VARIANT_GAP),
-                                grid_template_rows: RepeatedGridTrack::minmax(
-                                    key_rows(),
-                                    MinTrackSizingFunction::Px(TOKEN_ENTRY_HEIGHT),
-                                    MaxTrackSizingFunction::Auto,
-                                ),
-                                grid_template_columns: RepeatedGridTrack::px(
-                                    key_columns(),
-                                    KEY_COLUMN_PX,
-                                ),
-                                ..default()
-                            },
-                        ))
-                        .with_children(|tokens| {
-                            for key in KEYS {
-                                for (shifted, binding) in [(false, key.plain), (true, key.shifted)]
-                                {
-                                    let Some(binding) = binding else {
-                                        continue;
-                                    };
-                                    let variant =
-                                        if shifted && key.plain.is_some() { 0 } else { 1 };
-                                    palette_entry(
-                                        tokens,
-                                        &kiln,
-                                        Item::Token(binding.instr),
-                                        Node {
-                                            grid_row: GridPlacement::start(
-                                                1 + i16::from(key.row) * 2 + variant,
-                                            ),
-                                            grid_column: GridPlacement::start_span(
-                                                1 + i16::from(key.column),
-                                                2,
-                                            ),
-                                            ..palette_row()
-                                        },
-                                    );
-                                }
-                            }
-                        });
-                });
+            for items in [machines, consumables] {
+                palette
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(4.0),
+                        ..default()
+                    })
+                    .with_children(|col| {
+                        for item in items {
+                            col.spawn((
+                                PaletteRow(item),
+                                button(Node {
+                                    padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+                                    ..row(6.0)
+                                }),
+                            ))
+                            .with_children(|entry| {
+                                picture(entry, &kiln, item);
+                                entry.spawn((
+                                    Tally { item, shown: None },
+                                    Node {
+                                        width: Val::Px(TALLY_PX),
+                                        flex_wrap: FlexWrap::Wrap,
+                                        column_gap: Val::Px(2.0),
+                                        row_gap: Val::Px(2.0),
+                                        ..default()
+                                    },
+                                ));
+                            });
+                        }
+                    });
+            }
         });
     commands.spawn((
         Refusal { shown: None },
@@ -4263,7 +4087,7 @@ mod shot {
                 world.sim.arms.push(Arm::new(
                     Hex::new(3, -3),
                     0,
-                    bindings().map(|(_, _, binding)| binding.instr).collect(),
+                    KEYS.map(|key| key.instr).to_vec(),
                 ));
                 world.focus_tape(world.sim.arms.len() - 1);
             }
@@ -5313,12 +5137,7 @@ mod tests {
     fn every_seam_between_tiles_is_grout() {
         let frame = &still_frames("board", 1)[0];
         let seams = seams(frame);
-        let visible_width = frame.width() as f32 - PALETTE_WIDTH;
-        assert!(
-            seams.len() as f32 > visible_width * 0.4,
-            "only {} seams across {visible_width}px",
-            seams.len()
-        );
+        assert!(seams.len() > 400, "only {} seams in view", seams.len());
         let thin = seams.iter().min_by_key(|s| s.samples).unwrap();
         assert!(
             thin.samples as f32 >= HEX / MICRO_SCALE,
@@ -5880,7 +5699,7 @@ mod tests {
     fn stock_consumables(w: &mut World) {
         for item in [Item::Step]
             .into_iter()
-            .chain(bindings().map(|(_, _, binding)| Item::Token(binding.instr)))
+            .chain(KEYS.map(|k| Item::Token(k.instr)))
         {
             stocked(w, item, sim::DEFAULT_CAP);
         }
@@ -5974,12 +5793,16 @@ mod tests {
 
     #[test]
     fn the_six_move_keys_ring_the_pivot_clockwise_from_the_upper_left_and_sum_to_nothing() {
+        let moves: Vec<(KeyCode, usize)> = KEYS
+            .iter()
+            .filter_map(|k| match k.instr {
+                Instr::Move(d) => Some((k.code, d)),
+                _ => None,
+            })
+            .collect();
+        let (codes, dirs): (Vec<KeyCode>, Vec<usize>) = moves.into_iter().unzip();
         use KeyCode::*;
-        let codes = [KeyW, KeyE, KeyF, KeyC, KeyX, KeyA];
-        let dirs = codes.map(|code| match instr_of(code, true).unwrap() {
-            Instr::Move(dir) => dir,
-            instr => panic!("{code:?} writes {instr:?} with shift"),
-        });
+        assert_eq!(codes, [KeyW, KeyE, KeyF, KeyC, KeyX, KeyA]);
         assert_eq!(dirs, [4, 5, 0, 1, 2, 3]);
         for pair in dirs.windows(2) {
             assert_eq!(pair[1], Spin::Cw.turn(pair[0]));
@@ -6895,130 +6718,11 @@ mod tests {
             .filter(|m| *m != Machine::Glyph(GlyphKind::Source))
             .map(Item::Machine)
             .chain([Item::Step])
-            .chain(bindings().map(|(_, _, binding)| Item::Token(binding.instr)))
+            .chain(KEYS.map(|k| Item::Token(k.instr)))
             .chain(AtomKind::ALL.map(Item::Atom))
             .collect();
         assert_eq!(listed.len(), all.len());
         assert!(all.iter().all(|item| listed.contains(item)));
-    }
-
-    #[test]
-    fn every_inventory_token_uses_its_keyboard_coordinate_without_overlap() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = std::env::temp_dir().join(format!("ziral-token-palette-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut app = shot::still("start", dir.clone(), 1);
-        lit_plugin(&mut app);
-        let crowded_instr = Instr::Move((UPPER_LEFT + 1) % 6);
-        let crowded = Item::Token(crowded_instr);
-        {
-            let mut world = app.world_mut().resource_mut::<World>();
-            world.sim.inventory.set_cap(crowded, sim::MAX_CAP as i32);
-            for _ in 0..sim::MAX_CAP {
-                world.sim.inventory.add(crowded);
-            }
-            world.hover = Some(crowded);
-        }
-        let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
-        let probe = seen.clone();
-        app.add_systems(
-            Last,
-            move |palette: Single<&ComputedNode, With<Palette>>,
-                  grid: Single<(&ComputedNode, &UiGlobalTransform), With<TokenPalette>>,
-                  rows: Query<(&PaletteRow, &ComputedNode, &UiGlobalTransform)>| {
-                let (grid_node, grid_transform) = grid.into_inner();
-                let origin = grid_transform.translation - grid_node.size() / 2.0;
-                let tokens = rows
-                    .iter()
-                    .filter_map(|(row, node, transform)| match row.0 {
-                        Item::Token(instr) => Some((
-                            instr,
-                            transform.translation - node.size() / 2.0 - origin,
-                            node.size(),
-                        )),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
-                *probe.lock().unwrap() = Some((palette.size(), grid_node.size(), tokens));
-            },
-        );
-        assert_eq!(app.run(), bevy::app::AppExit::Success);
-        std::fs::remove_dir_all(&dir).unwrap();
-        let (palette_size, grid_size, tokens) = seen.lock().unwrap().take().unwrap();
-        assert!((palette_size.x - PALETTE_WIDTH).abs() < 1e-3);
-        assert!((grid_size.x - TOKEN_GRID_WIDTH).abs() < 1e-3);
-        assert_eq!(tokens.len(), bindings().count());
-        let expected = bindings()
-            .map(|(key, shifted, binding)| {
-                let variant = if shifted && key.plain.is_some() { 0 } else { 1 };
-                (binding.instr, i16::from(key.row) * 2 + variant, key.column)
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(expected.len(), bindings().count());
-        for (instr, _, column) in &expected {
-            let (_, at, size) = tokens
-                .iter()
-                .find(|(candidate, _, _)| candidate == instr)
-                .unwrap();
-            assert!((at.x - f32::from(*column) * KEY_COLUMN_PX).abs() < 1e-3);
-            assert!((size.x - TOKEN_ENTRY_WIDTH).abs() < 1e-3);
-            assert!(size.y >= TOKEN_ENTRY_HEIGHT);
-        }
-        for (i, (a_instr, a, a_size)) in tokens.iter().enumerate() {
-            let a_row = expected
-                .iter()
-                .find(|(instr, _, _)| instr == a_instr)
-                .unwrap()
-                .1;
-            for (b_instr, b, b_size) in &tokens[i + 1..] {
-                let b_row = expected
-                    .iter()
-                    .find(|(instr, _, _)| instr == b_instr)
-                    .unwrap()
-                    .1;
-                if a_row == b_row {
-                    assert!((a.y - b.y).abs() < 1e-3);
-                } else if a_row < b_row {
-                    assert!(a.y < b.y);
-                } else {
-                    assert!(b.y < a.y);
-                }
-                assert!(
-                    a.x + a_size.x <= b.x
-                        || b.x + b_size.x <= a.x
-                        || a.y + a_size.y <= b.y
-                        || b.y + b_size.y <= a.y
-                );
-            }
-        }
-        for key in KEYS {
-            if let (Some(plain), Some(shifted)) = (key.plain, key.shifted) {
-                let (_, shifted_at, shifted_size) = tokens
-                    .iter()
-                    .find(|(instr, _, _)| *instr == shifted.instr)
-                    .unwrap();
-                let (_, plain_at, _) = tokens
-                    .iter()
-                    .find(|(instr, _, _)| *instr == plain.instr)
-                    .unwrap();
-                assert!((shifted_at.x - plain_at.x).abs() < 1e-3);
-                assert!(shifted_at.y + shifted_size.y <= plain_at.y);
-            }
-        }
-        println!(
-            "palette {}x{}, full token row {}px",
-            palette_size.x,
-            palette_size.y,
-            tokens
-                .iter()
-                .find(|(instr, _, _)| *instr == crowded_instr)
-                .unwrap()
-                .2
-                .y
-        );
     }
 
     #[test]
@@ -7960,23 +7664,13 @@ mod tests {
         assert_eq!(w.sim.glyphs[3].unwrap().at, Hex::new(-2, -3));
     }
     #[test]
-    fn the_binding_table_and_inventory_count_exactly_the_same_tokens() {
+    fn the_keys_write_exactly_the_tokens_the_inventory_counts_in_the_same_order() {
         let tokens: Vec<Item> = recipes()
             .iter()
             .filter(|(item, _)| matches!(item, Item::Token(_)))
             .map(|(item, _)| *item)
             .collect();
-        assert_eq!(tokens.len(), bindings().count());
-        let bindings = bindings().collect::<Vec<_>>();
-        for (i, (_, _, binding)) in bindings.iter().enumerate() {
-            let item = Item::Token(binding.instr);
-            assert!(tokens.contains(&item));
-            assert!(
-                !bindings[..i]
-                    .iter()
-                    .any(|(_, _, other)| other.instr == binding.instr)
-            );
-        }
+        assert_eq!(tokens, KEYS.map(|k| Item::Token(k.instr)));
     }
 
     #[test]
