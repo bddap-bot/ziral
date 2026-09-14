@@ -231,6 +231,19 @@ fn machines(ids: &[Id]) -> Vec<Id> {
         .collect()
 }
 
+fn held_machine_poses(set: &Sim, pointer: Vec2) -> Vec<(Machine, Vec2, usize)> {
+    set.glyphs
+        .iter()
+        .flatten()
+        .map(|g| (Machine::Glyph(g.kind), pointer + px(g.at), g.dir))
+        .chain(
+            set.arms
+                .iter()
+                .map(|a| (Machine::Arm, pointer + px(a.pivot), a.dir)),
+        )
+        .collect()
+}
+
 fn runs(set: &Sim) -> bool {
     !set.arms.is_empty() || set.atoms.iter().any(Option::is_some)
 }
@@ -251,17 +264,17 @@ fn turn(set: &mut Sim, spin: Spin) {
 enum Back {
     Inventory,
     Ghost,
-    Pick(Vec<Id>),
-    Cell { cell: Hex, turns: usize },
-}
-
-impl Back {
-    fn picked(&self) -> &[Id] {
-        match self {
-            Back::Pick(ids) => ids,
-            _ => &[],
-        }
-    }
+    Pick {
+        ids: Vec<Id>,
+        sim: Box<Sim>,
+        prev: Box<Sim>,
+        ghost: Option<Box<Sim>>,
+        events: Vec<sim::TickEvents>,
+    },
+    Cell {
+        cell: Hex,
+        turns: usize,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -421,7 +434,9 @@ impl World {
     }
 
     fn advance(&mut self, dt: f32) {
-        self.since = (self.since + dt).min(self.period);
+        if !self.holding_machine() {
+            self.since = (self.since + dt).min(self.period);
+        }
         if self.running && self.saveable() && self.since >= self.period {
             self.since = 0.0;
             self.step();
@@ -578,16 +593,11 @@ impl World {
     }
 
     fn set_cap(&mut self, item: Item, notches: i32) {
+        if self.holding_machine() {
+            return;
+        }
         self.sim.inventory.set_cap(item, notches);
         self.resim(self.ghosts());
-    }
-
-    fn item(&self, id: Id) -> Option<Machine> {
-        match id {
-            Id::Arm(_) => Some(Machine::Arm),
-            Id::Glyph(i) => Some(Machine::Glyph(self.glyph(i).kind)),
-            Id::Atom(_) => None,
-        }
     }
 
     fn shown(&self) -> &Sim {
@@ -642,31 +652,46 @@ impl World {
         matches!(self.focus, Some(Focus::Hold { .. }))
     }
 
+    fn holding_machine(&self) -> bool {
+        matches!(
+            self.focus,
+            Some(Focus::Hold {
+                back: Back::Pick { .. },
+                ..
+            })
+        )
+    }
+
     fn saveable(&self) -> bool {
         !matches!(
             self.focus,
             Some(Focus::Hold {
-                back: Back::Cell { .. },
+                back: Back::Cell { .. } | Back::Pick { .. },
                 ..
             })
         )
     }
 
     fn snapshot(&self) -> Sim {
-        let Some(Focus::Hold {
-            set,
-            back: Back::Cell { cell, turns },
-        }) = &self.focus
-        else {
-            return self.sim.clone();
-        };
-        let mut set = (**set).clone();
-        for _ in 0..*turns {
-            turn(&mut set, Spin::Ccw);
+        match &self.focus {
+            Some(Focus::Hold {
+                set,
+                back: Back::Cell { cell, turns },
+            }) => {
+                let mut set = (**set).clone();
+                for _ in 0..*turns {
+                    turn(&mut set, Spin::Ccw);
+                }
+                let mut sim = self.sim.clone();
+                sim.place(&set, *cell);
+                sim
+            }
+            Some(Focus::Hold {
+                back: Back::Pick { sim, .. },
+                ..
+            }) => (**sim).clone(),
+            _ => self.sim.clone(),
         }
-        let mut sim = self.sim.clone();
-        sim.place(&set, *cell);
-        sim
     }
 
     fn focus_tape(&mut self, arm: usize) {
@@ -795,6 +820,13 @@ impl World {
         if !self.edits(ids) {
             return;
         }
+        self.remove_from_sim(ids);
+        self.focus = None;
+        self.down = None;
+        self.resim(self.ghosts());
+    }
+
+    fn remove_from(sim: &mut Sim, ids: &[Id]) {
         let (mut arms, mut glyphs, mut atoms) = (Vec::new(), Vec::new(), Vec::new());
         for id in ids {
             match id {
@@ -804,36 +836,49 @@ impl World {
             }
         }
         for i in glyphs {
-            self.sim.glyphs[i] = None;
+            sim.glyphs[i] = None;
         }
-        self.sim.consume(&atoms);
+        sim.consume(&atoms);
         arms.sort_unstable_by(|a, b| b.cmp(a));
         if !arms.is_empty() {
-            self.unstall();
+            for arm in &mut sim.arms {
+                arm.stall = None;
+            }
         }
         for i in arms {
-            self.sim.arms.remove(i);
+            sim.arms.remove(i);
         }
+    }
+
+    fn remove_from_sim(&mut self, ids: &[Id]) {
+        Self::remove_from(&mut self.sim, ids);
+    }
+
+    fn take_machines(&mut self, ids: &[Id]) {
+        debug_assert!(ids.iter().all(|id| !matches!(id, Id::Atom(_))));
+        Self::remove_from(&mut self.sim, ids);
+        Self::remove_from(&mut self.prev, ids);
+        if let Some(ghost) = &mut self.ghost {
+            Self::remove_from(ghost, ids);
+        }
+        self.events.clear();
         self.focus = None;
         self.down = None;
-        self.resim(self.ghosts());
     }
 
     fn delete(&mut self, ids: &[Id]) {
         if !self.edits(ids) {
             return;
         }
-        for id in ids {
-            if let Some(item) = self.item(*id) {
-                self.sim.inventory.add(Item::Machine(item));
-            }
-            if let Id::Arm(i) = id {
-                for instr in std::mem::take(&mut self.sim.arms[*i].tape) {
-                    self.sim.inventory.add(Item::Token(instr));
-                }
-            }
-        }
+        let set = self.lifted(&machines(ids), ORIGIN);
+        self.return_to_inventory(&set);
         self.remove(ids);
+    }
+
+    fn return_to_inventory(&mut self, set: &Sim) {
+        for item in set.bill() {
+            self.sim.inventory.add(item);
+        }
     }
 
     fn copy(&mut self, ids: &[Id]) {
@@ -891,7 +936,7 @@ impl World {
         if self.holding() {
             return;
         }
-        if let Back::Pick(ids) = &back {
+        if let Back::Pick { ids, .. } = &back {
             let machines = set.glyphs.iter().flatten().count() + set.arms.len();
             debug_assert_eq!(ids.len(), machines);
         }
@@ -965,7 +1010,15 @@ impl World {
                     return;
                 }
                 let set = self.lifted(&ids, cell);
-                self.lift(set, Back::Pick(ids));
+                let back = Back::Pick {
+                    ids: ids.clone(),
+                    sim: Box::new(self.sim.clone()),
+                    prev: Box::new(self.prev.clone()),
+                    ghost: self.ghost.clone().map(Box::new),
+                    events: self.events.clone(),
+                };
+                self.take_machines(&ids);
+                self.lift(set, back);
             }
             Some(Press::Ground {
                 screen: start,
@@ -996,9 +1049,7 @@ impl World {
             return;
         };
         let legal = |at: &Hex| {
-            back != Back::Ghost
-                && self.editable(runs(&set))
-                && self.sim.fits(&set, *at, back.picked())
+            back != Back::Ghost && self.editable(runs(&set)) && self.sim.fits(&set, *at, &[])
         };
         let Some(at) = at.filter(legal) else {
             self.pop(*set, back);
@@ -1011,8 +1062,13 @@ impl World {
             self.pop(*set, back);
             return;
         }
+        let mut ghosts = self.ghosts();
         let ids = match back {
-            Back::Pick(ids) => {
+            Back::Pick {
+                ids, sim, ghost, ..
+            } => {
+                ghosts = ghost.as_ref().map_or(0, |ghost| ghost.tick - sim.tick);
+                self.sim = *sim;
                 let arms = ids.iter().filter(|id| matches!(id, Id::Arm(_)));
                 for (id, a) in arms.zip(&set.arms) {
                     self.set_pose(*id, at.add(a.pivot), a.dir);
@@ -1030,13 +1086,25 @@ impl World {
             }
         };
         self.pick(ids);
-        self.resim(self.ghosts());
+        self.resim(ghosts);
     }
 
     fn pop(&mut self, mut set: Sim, back: Back) {
         match back {
             Back::Inventory | Back::Ghost => {}
-            Back::Pick(ids) => self.pick(ids),
+            Back::Pick {
+                ids,
+                sim,
+                prev,
+                ghost,
+                events,
+            } => {
+                self.sim = *sim;
+                self.prev = *prev;
+                self.ghost = ghost.map(|ghost| *ghost);
+                self.events = events;
+                self.pick(ids);
+            }
             Back::Cell { cell, turns } => {
                 for _ in 0..turns {
                     turn(&mut set, Spin::Ccw);
@@ -1058,6 +1126,9 @@ impl World {
     fn key(&mut self, key: KeyCode, shift: bool) {
         use KeyCode::*;
         self.refused = None;
+        if matches!(key, Space | KeyG | KeyS) && self.holding_machine() {
+            return;
+        }
         match key {
             Space => {
                 self.running = !self.running;
@@ -1090,22 +1161,35 @@ impl World {
             _ => {}
         }
         let instr = instr_of(key, shift);
-        match self.focus.clone() {
-            Some(Focus::Hold { back, .. }) => match (key, instr, &mut self.focus) {
-                (Escape, _, _) => self.place(None),
-                (KeyZ, _, _) => match back {
-                    Back::Inventory | Back::Ghost => self.focus = None,
-                    Back::Pick(ids) => self.delete(&ids),
-                    Back::Cell { .. } => {}
+        if matches!(self.focus, Some(Focus::Hold { .. })) {
+            let Some(Focus::Hold { mut set, mut back }) = self.focus.take() else {
+                unreachable!()
+            };
+            match (key, instr) {
+                (Escape, _) => self.pop(*set, back),
+                (KeyZ, _) => match &back {
+                    Back::Inventory | Back::Ghost => {}
+                    Back::Pick { ids, .. } if self.edits(ids) => {
+                        self.return_to_inventory(&set);
+                        self.resim(self.ghosts());
+                    }
+                    Back::Pick { .. } | Back::Cell { .. } => {
+                        self.focus = Some(Focus::Hold { set, back });
+                    }
                 },
-                (_, Some(Instr::Rot(spin)), Some(Focus::Hold { set, back })) => {
-                    turn(set, spin);
-                    if let Back::Cell { turns, .. } = back {
+                (_, Some(Instr::Rot(spin))) => {
+                    turn(&mut set, spin);
+                    if let Back::Cell { turns, .. } = &mut back {
                         *turns = spin.turn(*turns);
                     }
+                    self.focus = Some(Focus::Hold { set, back });
                 }
-                _ => {}
-            },
+                _ => self.focus = Some(Focus::Hold { set, back }),
+            }
+            return;
+        }
+        match self.focus.clone() {
+            Some(Focus::Hold { .. }) => unreachable!(),
             Some(Focus::Pick(ids)) => match key {
                 _ if shift => {}
                 Escape => self.focus = None,
@@ -1293,6 +1377,9 @@ fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnO
 }
 
 fn refill_inventory(mut world: ResMut<World>) {
+    if world.holding_machine() {
+        return;
+    }
     while let Some(fragment) = take_inventory_fragment() {
         consume_inventory_fragment(&mut world, &fragment, clear_inventory_fragment);
     }
@@ -3197,7 +3284,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
     fn machine(
         &mut self,
         item: Machine,
-        at: Hex,
+        at: Vec2,
         dir: usize,
         z: f32,
         response: (bool, f32, sim::ActivationEnergy),
@@ -3205,11 +3292,11 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         let look = look::machine(item);
         match (item, look.marking) {
             (Machine::Arm, MachineMark::Hand(_, _)) => {
-                let hand = px(at.add(DIRS[dir % 6]));
-                self.arm(px(at), hand, RING_OPEN, look, z, response);
+                let hand = at + px(DIRS[dir % 6]);
+                self.arm(at, hand, RING_OPEN, look, z, response);
             }
             (Machine::Glyph(_), MachineMark::Sprite(_)) => {
-                self.rig(item, px(at), look::turn(dir), z, response);
+                self.rig(item, at, look::turn(dir), z, response);
             }
             _ => unworn(look),
         }
@@ -3510,24 +3597,20 @@ fn draw(
     }
     p.ghost = false;
     if let Some(pointer) = world.pointer {
-        if let Some(Focus::Hold { set, back }) = &world.focus {
+        if let Some(Focus::Hold { set, .. }) = &world.focus {
             let grab = hex_at(pointer);
             p.outline(px(grab), HEX * 0.9);
-            for id in world.sim.blocked(set, grab, back.picked()) {
+            for id in world.sim.blocked(set, grab, &[]) {
                 for cell in world.sim.stands(id) {
                     p.outline(px(cell), HEX * 0.9);
                 }
             }
-            let glyphs = set.glyphs.iter().flatten();
-            let machines: Vec<(Machine, Hex, usize)> = glyphs
-                .map(|g| (Machine::Glyph(g.kind), g.at, g.dir))
-                .chain(set.arms.iter().map(|a| (Machine::Arm, a.pivot, a.dir)))
-                .collect();
+            let machines = held_machine_poses(set, pointer);
             for (i, (item, at, dir)) in machines.iter().enumerate() {
                 let z = layer::z(layer::HELD, i, machines.len());
                 p.machine(
                     *item,
-                    grab.add(*at),
+                    *at,
                     *dir,
                     z,
                     (false, 1.0, sim::ActivationEnergy::default()),
@@ -3639,7 +3722,7 @@ fn scene<G: GizmoConfigGroup>(
             .any(|event| rig::activation(item).matches(event, index));
         p.machine(
             item,
-            g.at,
+            px(g.at),
             g.dir,
             layer::GLYPHS + lift,
             (fired, phase, g.energy),
@@ -3831,6 +3914,7 @@ mod shot {
         Up(KeyCode),
         Press(Hex),
         Drag(Hex),
+        DragPoint(Vec2),
         Release(Hex),
         Lift(Machine),
         Paste(&'static str),
@@ -3900,7 +3984,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 48] = [
+    pub const SCENES: [&str; 49] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -3949,6 +4033,7 @@ mod shot {
         "inventory-drags",
         "instruction-sites",
         "instruction-sites-manual",
+        "machine-drag-88",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -4469,6 +4554,25 @@ mod shot {
                 script.extend(tap(114, KeyD));
                 script.extend(tap(132, KeyD));
                 script.push((152, Act::Release(Hex::new(5, -2))));
+            }
+            "machine-drag-88" => {
+                let from = Hex::new(-3, 0);
+                let to = Hex::new(3, 0);
+                world.sim = Sim::empty();
+                world
+                    .sim
+                    .glyphs
+                    .push(Some(Glyph::new(GlyphKind::Bonder, from, 0)));
+                world
+                    .sim
+                    .glyphs
+                    .push(Some(Glyph::new(GlyphKind::SecondBond, Hex::new(0, 3), 1)));
+                script.push((20, Act::Press(from)));
+                for step in 0..=120 {
+                    let point = px(from).lerp(px(to), step as f32 / 120.0);
+                    script.push((21 + step, Act::DragPoint(point)));
+                }
+                script.push((151, Act::Release(to)));
             }
             "output" => {
                 let mut sim = Sim::empty();
@@ -5006,6 +5110,10 @@ mod shot {
                 Act::Drag(cell) => {
                     world.pointer = Some(px(cell));
                     world.drag(px(cell));
+                }
+                Act::DragPoint(point) => {
+                    world.pointer = Some(point);
+                    world.drag(point);
                 }
                 Act::Release(cell) => {
                     world.pointer = Some(px(cell));
@@ -5618,6 +5726,65 @@ mod tests {
     }
 
     #[test]
+    fn a_machine_drag_across_three_cells_draws_one_sprite_at_each_raw_pointer_position() {
+        let from = Hex::new(-1, 0);
+        let mut w = lone(vec![bonder(from, 0)], vec![]);
+        w.running = false;
+        w.press(px(from), px(from));
+        let points = [
+            px(from) + Vec2::new(DRAG_PX * 2.0, 0.0),
+            px(from).lerp(px(Hex::new(0, 0)), 0.5),
+            px(Hex::new(0, 0)).lerp(px(Hex::new(1, 0)), 0.5),
+            px(Hex::new(1, 0)).lerp(px(Hex::new(2, 0)), 0.5),
+        ];
+        for pointer in points {
+            w.pointer = Some(pointer);
+            w.drag(pointer);
+            let Some(Focus::Hold { set, .. }) = &w.focus else {
+                panic!("the machine is not held")
+            };
+            let poses = held_machine_poses(set, pointer);
+            assert_eq!(poses.len(), 1);
+            assert_eq!(poses[0].1, pointer);
+        }
+        let between = points[2];
+        assert_ne!(between, px(hex_at(between)));
+    }
+
+    #[test]
+    fn the_origin_cell_draws_no_machine_while_its_machine_is_held() {
+        let mut w = lone(vec![bonder(ORIGIN, 0)], vec![]);
+        w.running = false;
+        w.press(px(ORIGIN), px(ORIGIN));
+        let pointer = px(Hex::new(2, 0)) + Vec2::new(7.0, 3.0);
+        w.pointer = Some(pointer);
+        w.drag(pointer);
+        assert_eq!(w.shown().glyphs, [None]);
+        let Some(Focus::Hold { set, .. }) = &w.focus else {
+            panic!("the machine is not held")
+        };
+        assert_eq!(held_machine_poses(set, pointer).len(), 1);
+        assert!(w.shown().ids().all(|id| w.anchor(id) != ORIGIN));
+    }
+
+    #[test]
+    fn a_refused_machine_drop_restores_the_world_byte_for_byte() {
+        let mover = bonder(ORIGIN, 0);
+        let other = bonder(Hex::new(2, 0), 0);
+        let mut w = lone(vec![mover, other], vec![]);
+        w.running = false;
+        let before = persist::encode(&w.sim).unwrap();
+        w.press(px(ORIGIN), px(ORIGIN));
+        let pointer = px(Hex::new(1, 0)) + Vec2::new(8.0, 2.0);
+        w.pointer = Some(pointer);
+        w.drag(pointer);
+        assert_ne!(persist::encode(&w.sim).unwrap(), before);
+        w.release(Some(Hex::new(1, 0)));
+        assert_eq!(persist::encode(&w.sim).unwrap(), before);
+        assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
+    }
+
+    #[test]
     fn a_drag_from_an_empty_cell_moves_nothing() {
         let bonder = bonder(ORIGIN, 0);
         let arm = Arm::new(Hex::new(4, 0), 0, vec![]);
@@ -5750,7 +5917,7 @@ mod tests {
         assert_eq!(w.focus, Some(Focus::Tape { arm: 1, cursor: 0 }));
         w.drag(px(lone_arm) + Vec2::new(DRAG_PX * 2.0, 0.0));
         assert!(
-            matches!(&w.focus, Some(Focus::Hold { set, back: Back::Pick(from) }) if set.arms.len() == 1 && *from == [Id::Arm(1)])
+            matches!(&w.focus, Some(Focus::Hold { set, back: Back::Pick { ids, .. } }) if set.arms.len() == 1 && *ids == [Id::Arm(1)])
         );
         w.release(None);
         w.pick(INSIDE.to_vec());
@@ -6268,6 +6435,51 @@ mod tests {
     }
 
     #[test]
+    fn z_on_an_arm_held_at_a_ghost_frame_keeps_it_out_of_the_world_and_in_the_hand() {
+        let mut w = paused(4);
+        let pivot = w.shown().arms[0].pivot;
+        w.press(px(pivot), px(pivot));
+        let pointer = px(pivot) + Vec2::new(DRAG_PX * 2.0, 0.0);
+        w.pointer = Some(pointer);
+        w.drag(pointer);
+        let before = w.focus.clone();
+        w.key(KeyCode::KeyZ, false);
+        assert_eq!(w.focus, before);
+        let Some(Focus::Hold { set, .. }) = &w.focus else {
+            panic!("the arm is not held")
+        };
+        assert_eq!(held_machine_poses(set, pointer).len(), 1);
+        assert_eq!(w.shown().arms.len(), 1);
+    }
+
+    #[test]
+    fn playback_and_inventory_changes_during_a_machine_drag_change_nothing() {
+        let mut w = paused(0);
+        let pivot = w.shown().arms[0].pivot;
+        w.press(px(pivot), px(pivot));
+        let pointer = px(pivot) + Vec2::new(DRAG_PX * 2.0, 0.0);
+        w.pointer = Some(pointer);
+        w.drag(pointer);
+        let item = Item::Machine(Machine::Glyph(GlyphKind::Bonder));
+        let (sim, ghost, focus, running, since) = (
+            w.sim.clone(),
+            w.ghost.clone(),
+            w.focus.clone(),
+            w.running,
+            w.since,
+        );
+        w.key(KeyCode::KeyG, false);
+        w.key(KeyCode::KeyS, false);
+        w.key(KeyCode::Space, false);
+        w.set_cap(item, 1);
+        w.advance(w.period);
+        assert_eq!(
+            (w.sim, w.ghost, w.focus, w.running, w.since),
+            (sim, ghost, focus, running, since)
+        );
+    }
+
+    #[test]
     fn a_glyph_placed_at_n_appears_in_ghost0_and_in_the_re_simmed_ghost_n() {
         let mut w = paused(2);
         let ghost0 = w.sim.clone();
@@ -6417,7 +6629,7 @@ mod tests {
         w.press(px(DIRS[0]), px(DIRS[0]));
         assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
         lift_at(&mut w, DIRS[0]);
-        assert_eq!(held(&w).2, Back::Pick(vec![Id::Glyph(0)]));
+        assert!(matches!(held(&w).2, Back::Pick { ids, .. } if ids == [Id::Glyph(0)]));
         assert_eq!(atoms(&w).len(), 3);
         w.release(None);
         w.press(px(Hex::new(3, 3)), px(Hex::new(3, 3)));
@@ -6668,10 +6880,10 @@ mod tests {
         );
         w.running = false;
         lift_at(&mut w, Hex::new(3, 0));
-        let Some(Focus::Hold { set, back }) = w.focus.clone() else {
+        let Some(Focus::Hold { set, .. }) = w.focus.clone() else {
             panic!("not holding: {:?}", w.focus)
         };
-        let blocked = |at: Hex| w.sim.blocked(&set, at, back.picked()).collect::<Vec<Id>>();
+        let blocked = |at: Hex| w.sim.blocked(&set, at, &[]).collect::<Vec<Id>>();
         assert_eq!(blocked(Hex::new(1, 0)), vec![Id::Glyph(0)]);
         assert_eq!(blocked(Hex::new(2, 0)), Vec::<Id>::new());
         assert_eq!(blocked(Hex::new(3, 0)), Vec::<Id>::new());
@@ -7783,7 +7995,7 @@ mod tests {
         w.release(Some(ORIGIN));
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 0 }));
         lift_at(&mut w, ORIGIN);
-        assert_eq!(held(&w).2, Back::Pick(vec![Id::Arm(0)]));
+        assert!(matches!(held(&w).2, Back::Pick { ids, .. } if ids == [Id::Arm(0)]));
         assert_eq!(atoms(&w).len(), 2);
     }
 
@@ -7812,6 +8024,10 @@ mod tests {
                     shot::Act::Drag(cell) => {
                         w.pointer = Some(px(cell));
                         w.drag(px(cell));
+                    }
+                    shot::Act::DragPoint(point) => {
+                        w.pointer = Some(point);
+                        w.drag(point);
                     }
                     shot::Act::Release(cell) => {
                         w.pointer = Some(px(cell));

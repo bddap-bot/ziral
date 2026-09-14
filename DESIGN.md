@@ -267,6 +267,8 @@ At drag start, the selected machine set leaves the world and becomes the one hel
 
 This is the dumbest design satisfying the directive because it subtracts the world representation and makes the existing held set the only representation until placement. Hiding the world sprite while keeping the machine in the simulation was rejected because it would split one machine between logical and visual states. Moving the world machine continuously was rejected because the simulation has hex positions and would need a second position solely for drawing.
 
+Checks: a drag across three cells draws one sprite at each raw pointer position; the origin draws none while held; a refused drop restores the world byte for byte; Z on an arm held at a ghost frame keeps it held and out of the world; playback and inventory changes during a machine drag change nothing. Each check goes red when its guarded behavior is removed and green when restored. `proofs/machine-drag-88.gif` (`art/gif.sh proofs/machine-drag-88.gif machine-drag-88 7 1280:720:0:0`) is one continuous drag at the shipped size.
+
 ### Round 3, what Toy 1 now does
 
 Round 2 asked two questions. Q1: an output's slots fix an orientation; is fitting the compound to the glyph's turn the player's job, or should an output take any of its shape's six turns? Q2: bonders fire on atoms an arm still holds or that sit inside a bigger molecule; only the output waits for a released, isolated compound; should processing glyphs also wait for release? The answers above decide both.
