@@ -797,15 +797,16 @@ impl World {
         body_atom.or(machine).or(cell_atom)
     }
 
-    fn target_card(&self, point: Vec2, frame: &Frame) -> Option<Item> {
+    fn target_item(&self, point: Vec2, frame: &Frame) -> Option<Item> {
         self.hit(point, frame).map(|id| match id {
             Id::Arm(_) => Item::Machine(Machine::Arm),
             Id::Glyph(i) => Item::Machine(Machine::Glyph(self.glyph(i).kind)),
-            Id::Atom(i) => card_item(Item::Atom(self.shown().atoms[i].unwrap().kind)),
+            Id::Atom(i) => Item::Atom(self.shown().atoms[i].unwrap().kind),
         })
     }
 
     fn set_hover(&mut self, item: Option<Item>) {
+        let item = item.map(card_item);
         if self.hover == item {
             return;
         }
@@ -815,13 +816,6 @@ impl World {
             Some(Item::Step | Item::Token(_)) | None => None,
             Some(Item::Atom(_)) => unreachable!("an atom resolves to its route before hover"),
         };
-    }
-
-    fn hover_palette(&mut self, item: Option<Item>) {
-        self.palette_hover = item;
-        if let Some(item) = item {
-            self.set_hover(Some(card_item(item)));
-        }
     }
 
     fn marquee(&self, a: Vec2, b: Vec2) -> Vec<Id> {
@@ -2001,11 +1995,10 @@ fn hover(
         world.pointer = None;
     }
     if window.cursor_position().is_some() {
-        let item = rows
+        world.palette_hover = rows
             .iter()
             .find(|(_, i)| **i != Interaction::None)
             .map(|(row, _)| row.0);
-        world.hover_palette(item);
     }
     let notches = match scroll.unit {
         MouseScrollUnit::Line => scroll.delta.y,
@@ -2025,7 +2018,7 @@ fn recipe_side() -> f32 {
 fn picture_side(item: Item) -> f32 {
     match item {
         Item::Machine(machine) => look::quad(machine).side,
-        Item::Atom(_) => PALETTE_PX,
+        Item::Atom(_) => unreachable!("an atom resolves to its route before sizing"),
         Item::Step => STEP_SPAN,
         Item::Token(_) => SYMBOL_PX,
     }
@@ -2691,19 +2684,21 @@ fn edit(
     for key in pressed {
         world.key(key, shift);
     }
-    if !over_ui {
+    let item = if let Some(item) = inventory_at {
+        Some(item)
+    } else if !over_ui {
         let frame = Frame::between(&world.prev, world.shown(), world.phase());
-        let item = if world.down.is_none() && !world.holding() {
+        if world.down.is_none() && !world.holding() {
             world
                 .pointer
-                .and_then(|point| world.target_card(point, &frame))
+                .and_then(|point| world.target_item(point, &frame))
         } else {
             None
-        };
-        world.set_hover(item);
-    } else if inventory_at.is_none() {
-        world.set_hover(None);
-    }
+        }
+    } else {
+        None
+    };
+    world.set_hover(item);
 }
 
 fn persistence(
@@ -6095,14 +6090,23 @@ mod tests {
         let corner = centre + Vec2::new(ATOM_RADIUS + 4.0, 0.0);
         for reverse_atoms in [false, true] {
             for reverse_glyphs in [false, true] {
-                let w = atom_over_machine(reverse_atoms, reverse_glyphs);
-                let frame = Frame::between(&w.prev, w.shown(), w.phase());
+                let mut w = atom_over_machine(reverse_atoms, reverse_glyphs);
+                let item = {
+                    let frame = Frame::between(&w.prev, w.shown(), w.phase());
+                    w.target_item(centre, &frame)
+                };
+                w.set_hover(item);
                 assert_eq!(
-                    w.target_card(centre, &frame),
+                    w.hover,
                     Some(Item::Machine(Machine::Glyph(GlyphKind::Source)))
                 );
+                let item = {
+                    let frame = Frame::between(&w.prev, w.shown(), w.phase());
+                    w.target_item(corner, &frame)
+                };
+                w.set_hover(item);
                 assert_eq!(
-                    w.target_card(corner, &frame),
+                    w.hover,
                     Some(Item::Machine(Machine::Glyph(GlyphKind::Bonder)))
                 );
             }
@@ -7968,13 +7972,12 @@ mod tests {
             sim.spawn(Atom { kind, pos: ORIGIN });
             let mut world = World::new(sim);
             let frame = Frame::between(&world.prev, world.shown(), world.phase());
-            let hover = world.target_card(px(ORIGIN), &frame);
+            let hover = world.target_item(px(ORIGIN), &frame);
             world.set_hover(hover);
             assert_eq!(
                 world.play.as_ref().map(|play| (play.machine, play.at)),
                 Some((machine, 0))
             );
-            world.hover_palette(None);
             world.advance(world.period);
             assert_eq!(world.hover, Some(Item::Machine(machine)), "{kind:?} hover");
             assert_eq!(

@@ -1,4 +1,4 @@
-use crate::form::{ATOM_ROUTES, AtomRoute, Form, RECIPES, atom_route, recipes};
+use crate::form::{AtomRoute, Form, RECIPES, atom_route, recipes};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1458,6 +1458,7 @@ pub fn fixture(machine: Machine) -> Fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::form::ATOM_ROUTES;
 
     #[test]
     fn activation_energy_is_set_by_its_tick_event_and_decays_exactly_on_the_tick_grid() {
