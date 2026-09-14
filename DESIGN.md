@@ -148,6 +148,12 @@ Tests: a card's camera viewport is the card's rect in the target's own pixels at
 Directive (verbatim): "dragging an item from inventory using left mouse button should drag the card instead of the item if that slot is empty"
 At press time, a zero-count palette row begins the existing card drag while a nonzero row follows the existing item lift; this single branch is the dumbest design satisfying the directive because both drops retain their established behavior, while a second card-drag path would duplicate gesture state and release rules.
 
+Directive (verbatim): "make item cards pin to a world location instead of a screen location"
+
+A pin owns its item, one world anchor, and its display scale. Drawing projects that anchor through the board camera and centres the fixed-pixel card there; hit testing and card-camera placement use that same projected rectangle. Pinning and dragging replace the anchor with the world point under the pointer, while board pan and zoom change only the projection. The card therefore follows its cell without inheriting board zoom, and there is no screen position to keep synchronized.
+
+This is the dumbest design satisfying the directive because the existing board transform already converts both ways and one projected placement serves every screen-space consumer. Retaining a cached screen coordinate, storing both coordinate systems, or adjusting every card whenever the camera moves would create a second truth and the synchronization failure this change removes.
+
 ### Pointer picking
 
 Directive (verbatim): "it looks like when an atom lies atop a machine, grabbing and dragging picks a target nondeterministically, this is confusing.
