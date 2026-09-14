@@ -929,6 +929,16 @@ Alternatives disposed. Wiping once after the keep, leaving only the kept round: 
 
 Tests: three rounds with a stub critic scoring 5 and 7 in the first round and 6 in the second and third keep the 7 with its issues, record all six rows with their scores, paint the first two candidates under the first prompt and the other four under different ones, leave `prompt.txt` at the first, and write `round-1.txt` and `round-3.txt` with the prompts those rounds painted; a second run paints and judges nothing more; a hand pick of a third-round candidate redoes the relief alone and leaves both round files as they were; a run over the three rounds on disk with no keep recorded and a director that rewrites differently paints nothing, keeps the 7 again, and leaves the round files and `prompt.txt` as they were; a run where every candidate scores 6 keeps a first-round candidate; the rebrief test finds each round's rewrite in its round file with `prompt.txt` still the first; the changed-rubric test judges the keep once more and an unchanged run not at all. The shipped keeps' rows carry the hash of the rubric and their candidate's bytes, and the kept round's file exists. Mutation-tested both ways: keeping the last round's best fails the first test on the kept index; a tie going to the highest index fails the every-6 run; writing the round file on a round already on disk fails the no-keep run on `round-3.txt`; reusing a score without checking its hash fails the changed-rubric count, and never reusing one fails the unchanged-run count; a stale hash on a shipped keep fails the shipped test, as does a missing shipped round file.
 
+### Instruction marks use ivory on plum
+
+Directive (verbatim): "the orange on purple is too difficult to see when small, color in the instruction symbols needs a-changin'"
+
+Every instruction keeps its plum ground and changes its semantic mark from amber to ivory. The pair has a WCAG-style luminance ratio of 4.61:1 from the material palette's exact sRGB values, clearing a 4.5:1 floor; amber on plum is 2.45:1. The gate samples the mark and ground from every symbol after reduction to the shipped 26 px, so geometry or antialiasing cannot hide a low-contrast pair.
+
+This is the dumbest design satisfying the directive because it changes one shared mark color in the existing source. Changing the ground would also change the token's boundary against the dark-brass strip, while per-symbol colors would add distinctions the shapes already carry.
+
+Test: every symbol's rendered mark against its rendered ground clears 4.5:1 at 26 px. Mutation-tested both ways: restoring amber makes the contrast test fail, and restoring ivory makes it pass.
+
 ### Toy 1 fills inventory from a URL fragment
 
 Directive (verbatim): "wait, that's silly, just get me some non-guessable way to fill inventory when needed. something easier than building a molecule"
