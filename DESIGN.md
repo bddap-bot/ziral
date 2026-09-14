@@ -148,6 +148,18 @@ Tests: a card's camera viewport is the card's rect in the target's own pixels at
 Directive (verbatim): "dragging an item from inventory using left mouse button should drag the card instead of the item if that slot is empty"
 At press time, a zero-count palette row begins the existing card drag while a nonzero row follows the existing item lift; this single branch is the dumbest design satisfying the directive because both drops retain their established behavior, while a second card-drag path would duplicate gesture state and release rules.
 
+### Pointer picking
+
+Directive (verbatim): "it looks like when an atom lies atop a machine, grabbing and dragging picks a target nondeterministically, this is confusing.
+in the case of atom over machine, clicking and dragging the atom's body should move the atom
+if the cursor is in the hex cell, but outside of the atoms body, it should target the machine"
+
+One point-aware hit test chooses the target for hover and press. In a cell containing an atom and a machine, the atom wins only within the bead's drawn radius; the machine wins throughout the rest of the cell. With only one of them present, it wins throughout the cell. Machine anchors precede other occupied cells, and otherwise spatial position breaks a genuine overlap, so collection order never decides the result.
+
+This is the dumbest design satisfying the directive because press already decides click, drag, and whether a drag becomes a marquee: replacing its two lookups with one result removes the disagreement, and drawing the hover outline from that same result makes the preview exact. The current path first searches machines twice in `World::hit`, in collection order for anchors and then occupied cells, then separately calls `Sim::atom_at`; selection state can consequently send the click to the machine and the drag to the atom. Keeping an atom-first branch in `press`, adding an atom mask to drag, or testing the hover independently would retain the second decision that caused the fault.
+
+Tests cover the centre and a point near the cell corner with an atom and a machine stored in both possible construction orders, hover matching the following press, and lone atoms and machines winning throughout their cells. Removing the bead-radius branch makes the corner choose the atom; restoring the second atom lookup makes hover and press disagree. Each mutation is checked red before the fix is restored green.
+
 ## Parking lot
 
 ### Machine coverage proposals
