@@ -641,6 +641,7 @@ impl World {
     }
 
     fn resim(&mut self, n: u64) {
+        self.down = None;
         if n > 0 || self.ghost.is_some() {
             self.unpick_atoms();
         }
@@ -762,6 +763,7 @@ impl World {
 
     fn hit(&self, point: Vec2, frame: &Frame) -> Option<Id> {
         let cell = hex_at(point);
+        let changing = !std::ptr::eq(frame.sim, self.shown());
         let machine = self
             .hand_ids()
             .filter(|id| self.cells(*id).contains(&cell))
@@ -783,17 +785,19 @@ impl World {
                 .copied()
                 .flatten()
                 .is_some_and(|at| point.distance(at) <= ATOM_RADIUS)
+                && !(changing
+                    && self.events.last().is_some_and(|tick| {
+                        tick.events.iter().any(|event| {
+                            matches!(event, sim::TickEvent::Consumed { atoms, .. } if atoms.contains(&i))
+                        })
+                    }))
                 && body_atom.is_none_or(|(other, _)| key < other)
             {
                 body_atom = Some((key, Id::Atom(i)));
             }
         }
         let body_atom = body_atom.map(|(_, id)| id);
-        match (machine, body_atom) {
-            (Some(_), Some(atom)) => Some(atom),
-            (Some(machine), None) => Some(machine),
-            (None, body_atom) => cell_atom.or(body_atom),
-        }
+        body_atom.or(machine).or(cell_atom)
     }
 
     fn marquee(&self, a: Vec2, b: Vec2) -> Vec<Id> {
@@ -1178,6 +1182,7 @@ impl World {
             }
             KeyG => {
                 if !self.running && self.sim.inventory.spend(Item::Step) {
+                    self.down = None;
                     self.unpick_atoms();
                     let (prev, mut events) = self.sim.replayed(self.ghosts());
                     let mut ghost = prev.clone();
@@ -6077,6 +6082,34 @@ mod tests {
         w.drag(px(ORIGIN) + Vec2::new(DRAG_PX * 2.0, 0.0));
         assert!(w.down.is_none());
         assert!(!matches!(w.focus, Some(Focus::Hold { .. })));
+    }
+
+    #[test]
+    fn a_consumed_slot_cannot_borrow_its_previous_atoms_drawn_body() {
+        let mut w = World::new(fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim);
+        w.step();
+        w.since = w.period * 0.1;
+        assert_eq!(hit(&w, px(ORIGIN)), Some(Id::Glyph(0)));
+        w.since = w.period;
+        assert_eq!(hit(&w, px(ORIGIN)), Some(Id::Atom(0)));
+    }
+
+    #[test]
+    fn changing_the_preview_cancels_a_pending_atom_press() {
+        let mut w = World::new(fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim);
+        w.running = false;
+        stocked(&mut w, Item::Step, 3);
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.key(KeyCode::KeyG, false);
+        assert!(w.down.is_none());
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.key(KeyCode::KeyS, false);
+        assert!(w.down.is_none());
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.key(KeyCode::KeyG, false);
+        w.press(px(ORIGIN), px(ORIGIN));
+        w.key(KeyCode::Space, false);
+        assert!(w.down.is_none());
     }
 
     #[test]
