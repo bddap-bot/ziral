@@ -627,6 +627,13 @@ impl World {
         self.ghost = None;
         self.prev = self.sim.clone();
         let tick = self.sim.step();
+        if let Some(Press::Atom { id, .. }) = self.down
+            && tick.events.iter().any(
+                |event| matches!(event, sim::TickEvent::Consumed { atoms, .. } if atoms.contains(&id)),
+            )
+        {
+            self.down = None;
+        }
         self.score = Some(tick.clone());
         self.events = vec![tick];
 
@@ -6052,6 +6059,24 @@ mod tests {
         assert!(
             matches!(w.focus, Some(Focus::Hold { back: Back::Cell { cell, .. }, .. }) if cell == DIRS[0])
         );
+    }
+
+    #[test]
+    fn consuming_a_pressed_atom_cancels_the_drag_before_its_slot_is_reused() {
+        let mut w = World::new(fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim);
+        w.press(px(ORIGIN), px(ORIGIN));
+        assert!(matches!(w.down, Some(Press::Atom { id: 0, .. })));
+        w.step();
+        assert_eq!(
+            w.sim.atoms[0],
+            Some(Atom {
+                kind: AtomKind::Amber,
+                pos: ORIGIN,
+            })
+        );
+        w.drag(px(ORIGIN) + Vec2::new(DRAG_PX * 2.0, 0.0));
+        assert!(w.down.is_none());
+        assert!(!matches!(w.focus, Some(Focus::Hold { .. })));
     }
 
     #[test]
