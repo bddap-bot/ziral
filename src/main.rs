@@ -2684,21 +2684,23 @@ fn edit(
     for key in pressed {
         world.key(key, shift);
     }
-    let item = if let Some(item) = inventory_at {
-        Some(item)
-    } else if !over_ui {
-        let frame = Frame::between(&world.prev, world.shown(), world.phase());
-        if world.down.is_none() && !world.holding() {
-            world
-                .pointer
-                .and_then(|point| world.target_item(point, &frame))
+    if screen.is_some() {
+        let item = if let Some(item) = inventory_at {
+            Some(item)
+        } else if !over_ui {
+            let frame = Frame::between(&world.prev, world.shown(), world.phase());
+            if world.down.is_none() && !world.holding() {
+                world
+                    .pointer
+                    .and_then(|point| world.target_item(point, &frame))
+            } else {
+                None
+            }
         } else {
             None
-        }
-    } else {
-        None
-    };
-    world.set_hover(item);
+        };
+        world.set_hover(item);
+    }
 }
 
 fn persistence(
