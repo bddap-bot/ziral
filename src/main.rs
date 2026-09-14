@@ -811,6 +811,13 @@ impl World {
         })
     }
 
+    fn hover_palette(&mut self, item: Option<Item>) {
+        self.palette_hover = item;
+        if let Some(item) = item {
+            self.hover = Some(card_item(item));
+        }
+    }
+
     fn marquee(&self, a: Vec2, b: Vec2) -> Vec<Id> {
         let (lo, hi) = (a.min(b), a.max(b));
         let inside = |c: Hex| {
@@ -1988,11 +1995,11 @@ fn hover(
         world.pointer = None;
     }
     if window.cursor_position().is_some() {
-        world.palette_hover = rows
+        let item = rows
             .iter()
             .find(|(_, i)| **i != Interaction::None)
             .map(|(row, _)| row.0);
-        world.hover = world.palette_hover.map(card_item);
+        world.hover_palette(item);
     }
     let notches = match scroll.unit {
         MouseScrollUnit::Line => scroll.delta.y,
@@ -2030,7 +2037,8 @@ fn layout(item: Item) -> Layout {
     let recipe = recipe_side();
     let bounds = match item {
         Item::Machine(machine) => Some(play_bounds(&playfield(machine))),
-        Item::Atom(_) | Item::Step | Item::Token(_) => None,
+        Item::Step | Item::Token(_) => None,
+        Item::Atom(_) => unreachable!("an atom resolves to its route before layout"),
     };
     let span = bounds.map_or(Vec2::ZERO, |(lo, hi)| hi - lo);
     let width = 3.0 * CARD_PAD + picture + recipe + bounds.map_or(0.0, |_| CARD_PAD + span.x);
@@ -2052,7 +2060,7 @@ fn card_size(item: Item) -> Vec2 {
 
 fn card_item(item: Item) -> Item {
     match item {
-        Item::Atom(kind) => Item::Machine(atom_route(kind)),
+        Item::Atom(kind) => Item::Machine(atom_route(kind).machine(kind)),
         item => item,
     }
 }
@@ -2686,6 +2694,8 @@ fn edit(
         } else {
             None
         };
+    } else if inventory_at.is_none() {
+        world.hover = None;
     }
 }
 
@@ -3934,7 +3944,7 @@ fn hover_card<G: GizmoConfigGroup>(
             z(2),
             (false, 1.0, sim::ActivationEnergy::default()),
         ),
-        Item::Atom(kind) => p.bead(at, look::atom(kind), z(2)),
+        Item::Atom(_) => unreachable!("an atom resolves to its route before painting"),
         Item::Step => p.step(at, z(2)),
         Item::Token(instr) => p.instruction(instr, at, picture_side(item), z(2)),
     }
@@ -7955,9 +7965,13 @@ mod tests {
             let mut world = World::new(sim);
             let frame = Frame::between(&world.prev, world.shown(), world.phase());
             world.hover = world.target_card(px(ORIGIN), &frame);
-            world.advance(0.0);
+            world.hover_palette(None);
+            world.advance(world.period);
             assert_eq!(world.hover, Some(Item::Machine(machine)), "{kind:?} hover");
-            assert_eq!(world.play.as_ref().map(|play| play.machine), Some(machine));
+            assert_eq!(
+                world.play.as_ref().map(|play| (play.machine, play.at)),
+                Some((machine, 1))
+            );
             let id = world.pin(Item::Atom(kind), Vec2::splat(20.0));
             let pinned = world.pinned.iter().find(|card| card.id == id).unwrap();
             assert_eq!(pinned.item, Item::Machine(machine), "{kind:?} pin");
@@ -8267,7 +8281,7 @@ mod tests {
 
     #[test]
     fn every_card_fits_between_its_slot_and_the_next() {
-        for item in palette() {
+        for item in palette().map(card_item) {
             assert!(card_size(item).x < CARD_PITCH, "{item:?}");
         }
     }

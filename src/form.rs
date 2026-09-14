@@ -86,25 +86,38 @@ pub const RECIPES: [(Item, &str); 23] = [
     ),
 ];
 
-pub const ATOM_ROUTES: [(AtomKind, Machine, Option<&str>); 3] = [
-    (AtomKind::Base, Machine::Glyph(GlyphKind::Source), None),
+#[derive(Clone, Copy)]
+pub enum AtomRoute {
+    Source,
+    Converter(&'static str),
+}
+
+impl AtomRoute {
+    pub fn machine(self, kind: AtomKind) -> Machine {
+        match self {
+            AtomRoute::Source => Machine::Glyph(GlyphKind::Source),
+            AtomRoute::Converter(_) => Machine::Glyph(GlyphKind::Converter(kind)),
+        }
+    }
+}
+
+pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 3] = [
+    (AtomKind::Base, AtomRoute::Source),
     (
         AtomKind::Amber,
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)),
-        Some("B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0"),
+        AtomRoute::Converter("B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0"),
     ),
     (
         AtomKind::Plum,
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)),
-        Some("A0,0 B0,1 B1,1 0,0-0,1 0,1=1,1"),
+        AtomRoute::Converter("A0,0 B0,1 B1,1 0,0-0,1 0,1=1,1"),
     ),
 ];
 
-pub fn atom_route(kind: AtomKind) -> Machine {
+pub fn atom_route(kind: AtomKind) -> AtomRoute {
     ATOM_ROUTES
         .iter()
-        .find(|(made, _, _)| *made == kind)
-        .map(|(_, machine, _)| *machine)
+        .find(|(made, _)| *made == kind)
+        .map(|(_, route)| *route)
         .expect("an atom route")
 }
 
