@@ -995,3 +995,17 @@ One 24-character token, generated once from the system random source with a URL-
 This is the dumbest design satisfying the directive because the fragment is already an out-of-band input and the inventory already owns every count and cap. A recipe molecule needs building before it can help with development of the progression that teaches building. A key chord collides with bound keys and disappears into a focused tape. A mode, button or second inventory path would add state or interface where one consumed fragment and one inventory operation suffice.
 
 Tests: a matching fragment on a partly spent inventory reaches every cap, clears the fragment and leaves the world byte-equal otherwise; a different fragment changes nothing and remains present. Mutation-tested both ways: removing the fill leaves spent entries below their caps, and accepting a different fragment changes the world and its fragment.
+
+### Amber bonds at every base seat
+
+Directive (verbatim): "bug found, this A does not bond to the B
+A0,0
+B0,0 B0,1 B0,2 0,0-0,1 0,1=0,2"
+
+The cause was the bonder's two slots being made through the base-only slot constructor. The matching code therefore rejected amber before it reached either the absent-bond check or the compound-size check, despite the earlier rule that the bonder fires when both slots hold an atom and the later atom-ladder rule that bonders remain kind-blind. With the two compounds read through `Form::from_str`, amber refused at both end atoms and at the middle atom for that same accidental kind demand. This is not a valence, bond-count, or kind-pairing rule stated by the design.
+
+A slot either names the exact atom kind it accepts or accepts any atom kind. The bonder's two slots accept any kind. The reification centre already accepted any kind through a machine-specific branch in matching; its slot now expresses that fact too, and the branch is deleted. Typed slots remain typed: the second-bond applicator, converters, outputs, and the reification ring still demand base or amber exactly where their rules say so.
+
+This is the dumbest design satisfying the directive because the model already has slots and one matching path. Making the slot's kind optional represents both existing slot rules in that path and removes an exception. A bonder-only condition in matching would add another machine-specific path beside the reification exception while leaving the slot data false.
+
+The exact report is tried against all three chain atoms in separate worlds. Neither end refuses, and the middle does not refuse: each writes the same single bond. The middle then has three incident bonds because the model has no valence or per-atom bond-count rule. The only applicable refusal is the existing 256-atom compound cap: a join producing 257 atoms is rejected before mutation with the world byte-for-byte unchanged, while a join producing 256 atoms forms. `proofs/amber-chain-97.gif` shows the reported amber joining the free end at the shipped size.
