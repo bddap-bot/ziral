@@ -257,6 +257,16 @@ Input, output, and processing glyphs are one model: a glyph is a list of slots, 
 
 Editing: a click on a machine focuses it; Z deletes it; A and D turn a glyph. An arm with focus acts now: F grab, R drop, A counterclockwise, D clockwise, Q pivot counterclockwise, E pivot clockwise, X wait run on the arm at once and write nothing, so A and D on a focused arm are the rotate instructions, hand and all, Q and E the pivots, with the stalls the tape would meet. The strip along the bottom lists the tapes of the arms on screen, eight at most, each instruction as its symbol token (art/SYMBOLS.md) with the running one outlined; a click on one focuses that tape and shows a cursor. With a tape focused the same keys insert at the cursor, left and right move it, home and end jump, Z is backspace, and escape or a click elsewhere leaves; nothing runs. Nothing on screen is written in any language: holding Tab holds up a page of the workshop's own manual (art/overlay/), the seven tokens woven into its flourishes, each beside a picture of what it does; letting go takes it away. Dragging a machine, or dragging from the palette, carries a preview under the pointer; A and D turn it, Z deletes it, and a release over the panels returns it to where it was lifted, or, from the palette, discards it. Pan is right or middle drag.
 
+### Toy 1 lifts a dragged machine
+
+Directive (verbatim): "drag of a machine should:
+a) be continuous, no snap to grid until placed.
+b) not leave a visual copy of the existing machine behind"
+
+At drag start, the selected machine set leaves the world and becomes the one held set. Its grabbed point is drawn at the pointer's exact position every frame; the pointer becomes a cell only when the button is released. A refused drop restores the simulation from immediately before the lift exactly.
+
+This is the dumbest design satisfying the directive because it subtracts the world representation and makes the existing held set the only representation until placement. Hiding the world sprite while keeping the machine in the simulation was rejected because it would split one machine between logical and visual states. Moving the world machine continuously was rejected because the simulation has hex positions and would need a second position solely for drawing.
+
 ### Round 3, what Toy 1 now does
 
 Round 2 asked two questions. Q1: an output's slots fix an orientation; is fitting the compound to the glyph's turn the player's job, or should an output take any of its shape's six turns? Q2: bonders fire on atoms an arm still holds or that sit inside a bigger molecule; only the output waits for a released, isolated compound; should processing glyphs also wait for release? The answers above decide both.
