@@ -316,7 +316,7 @@ impl Focus {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Press {
-    Atom { screen: Vec2, cell: Hex, id: usize },
+    Atom { screen: Vec2, id: usize },
     Cell { screen: Vec2, cell: Hex },
     Ground { screen: Vec2, world: Vec2 },
     Marquee { from: Vec2 },
@@ -751,26 +751,14 @@ impl World {
         arms.chain(glyphs.map(|(i, _)| Id::Glyph(i)))
     }
 
-    fn hit(&self, point: Vec2) -> Option<Id> {
+    fn hit(&self, point: Vec2, frame: &Frame) -> Option<Id> {
         let cell = hex_at(point);
-        let frame = Frame::between(&self.prev, self.shown(), self.phase());
         let machine = self
             .hand_ids()
             .filter(|id| self.cells(*id).contains(&cell))
             .min_by_key(|id| {
                 let anchor = self.anchor(*id);
-                let kind = match *id {
-                    Id::Arm(_) => 0,
-                    Id::Glyph(i) => {
-                        GlyphKind::ALL
-                            .iter()
-                            .position(|kind| *kind == self.glyph(i).kind)
-                            .unwrap()
-                            + 1
-                    }
-                    Id::Atom(_) => unreachable!(),
-                };
-                (anchor != cell, anchor.r, anchor.q, kind, self.dir(*id))
+                (anchor != cell, anchor.r, anchor.q)
             });
         let mut cell_atom: Option<((i32, i32, sim::AtomKind), Id)> = None;
         let mut body_atom: Option<((i32, i32, sim::AtomKind), Id)> = None;
@@ -998,7 +986,8 @@ impl World {
             self.place(Some(cell));
             return;
         }
-        let target = self.hit(point);
+        let frame = Frame::between(&self.prev, self.shown(), self.phase());
+        let target = self.hit(point, &frame);
         let in_pick = target
             .is_some_and(|id| matches!(&self.focus, Some(Focus::Pick(ids)) if ids.contains(&id)));
         match target {
@@ -1008,11 +997,7 @@ impl World {
             None => {}
         }
         self.down = Some(match target {
-            Some(Id::Atom(id)) => Press::Atom {
-                screen,
-                cell: self.shown().atoms[id].unwrap().pos,
-                id,
-            },
+            Some(Id::Atom(id)) => Press::Atom { screen, id },
             Some(Id::Arm(_) | Id::Glyph(_)) => Press::Cell { screen, cell },
             None => Press::Ground {
                 screen,
@@ -1023,15 +1008,18 @@ impl World {
 
     fn drag(&mut self, screen: Vec2) {
         match self.down {
-            Some(Press::Atom {
-                screen: start,
-                cell,
-                id,
-            }) if start.distance(screen) > DRAG_PX => {
-                if self.shown().atoms.get(id).is_none_or(Option::is_none) {
+            Some(Press::Atom { screen: start, id }) if start.distance(screen) > DRAG_PX => {
+                let Some(cell) = self
+                    .shown()
+                    .atoms
+                    .get(id)
+                    .copied()
+                    .flatten()
+                    .map(|atom| atom.pos)
+                else {
                     self.down = None;
                     return;
-                }
+                };
                 let compound = self.shown().component(id);
                 let set = self.shown().fragment(&compound, cell);
                 let back = if self.editable(true) {
@@ -3621,7 +3609,7 @@ fn draw(
     scene(&mut p, &f, 0.0, events, world.phase(), true);
     if world.down.is_none()
         && !world.holding()
-        && let Some(target) = world.pointer.and_then(|point| world.hit(point))
+        && let Some(target) = world.pointer.and_then(|point| world.hit(point, &f))
     {
         match target {
             Id::Atom(i) => {
@@ -5784,6 +5772,11 @@ mod tests {
         World::new(sim)
     }
 
+    fn hit(w: &World, point: Vec2) -> Option<Id> {
+        let frame = Frame::between(&w.prev, w.shown(), w.phase());
+        w.hit(point, &frame)
+    }
+
     fn drag(w: &mut World, from: Hex, to: Hex) {
         w.press(px(from), px(from));
         w.drag(px(from) + Vec2::new(DRAG_PX * 2.0, 0.0));
@@ -5921,13 +5914,25 @@ mod tests {
         let arm = Arm::new(ORIGIN, 0, vec![]);
         assert_eq!(arm.hand(), bonder.at);
         assert_eq!(
-            lone(vec![bonder], vec![arm.clone()]).hit(px(bonder.at)),
+            hit(&lone(vec![bonder], vec![arm.clone()]), px(bonder.at)),
             Some(Id::Glyph(0))
         );
         assert_eq!(
-            lone(vec![bonder], vec![arm]).hit(px(ORIGIN)),
+            hit(&lone(vec![bonder], vec![arm]), px(ORIGIN)),
             Some(Id::Arm(0))
         );
+    }
+
+    #[test]
+    fn overlapping_arm_hands_pick_by_position_in_every_storage_order() {
+        let left = Arm::new(DIRS[3], 0, vec![]);
+        let right = Arm::new(DIRS[0], 3, vec![]);
+        assert_eq!(left.hand(), ORIGIN);
+        assert_eq!(right.hand(), ORIGIN);
+        for arms in [vec![left.clone(), right.clone()], vec![right, left]] {
+            let w = lone(vec![], arms);
+            assert_eq!(w.anchor(hit(&w, px(ORIGIN)).unwrap()), DIRS[3]);
+        }
     }
 
     fn atom_over_machine(reverse_atoms: bool, reverse_glyphs: bool) -> World {
@@ -5964,7 +5969,7 @@ mod tests {
         for reverse_atoms in [false, true] {
             for reverse_glyphs in [false, true] {
                 let mut w = atom_over_machine(reverse_atoms, reverse_glyphs);
-                let hovered = w.hit(centre).unwrap();
+                let hovered = hit(&w, centre).unwrap();
                 assert!(matches!(hovered, Id::Atom(_)));
                 assert_eq!(w.anchor(hovered), ORIGIN);
                 w.press(centre, centre);
@@ -5981,7 +5986,7 @@ mod tests {
                 assert_eq!(w.sim.glyphs.iter().flatten().count(), 2);
 
                 let mut w = atom_over_machine(reverse_atoms, reverse_glyphs);
-                let hovered = w.hit(corner).unwrap();
+                let hovered = hit(&w, corner).unwrap();
                 assert!(matches!(hovered, Id::Glyph(_)));
                 assert_eq!(w.anchor(hovered), ORIGIN);
                 w.press(corner, corner);
@@ -6008,9 +6013,9 @@ mod tests {
             kind: AtomKind::Base,
             pos: ORIGIN,
         }));
-        assert_eq!(World::new(atom).hit(point), Some(Id::Atom(0)));
+        assert_eq!(hit(&World::new(atom), point), Some(Id::Atom(0)));
         assert_eq!(
-            lone(vec![bonder(ORIGIN, 0)], vec![]).hit(point),
+            hit(&lone(vec![bonder(ORIGIN, 0)], vec![]), point),
             Some(Id::Glyph(0))
         );
     }
@@ -6033,13 +6038,16 @@ mod tests {
         w.prev = prev;
         w.since = w.period * 0.1;
         let drawn = Frame::between(&w.prev, w.shown(), w.phase()).atoms[0].unwrap();
-        assert_eq!(w.hit(drawn), Some(Id::Atom(0)));
+        assert_eq!(hit(&w, drawn), Some(Id::Atom(0)));
         assert!(matches!(
-            w.hit(px(DIRS[0])),
+            hit(&w, px(DIRS[0])),
             Some(Id::Arm(_) | Id::Glyph(_))
         ));
         w.press(drawn, drawn);
-        assert!(matches!(w.down, Some(Press::Atom { cell, .. }) if cell == DIRS[0]));
+        w.drag(drawn + Vec2::new(DRAG_PX * 2.0, 0.0));
+        assert!(
+            matches!(w.focus, Some(Focus::Hold { back: Back::Cell { cell, .. }, .. }) if cell == DIRS[0])
+        );
     }
 
     #[test]
