@@ -23,7 +23,7 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
-use form::{Form, atom_route, recipes};
+use form::{Form, atom_machine, recipes};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, px, skin};
 use sim::{
     Arm, BondKind, DIRS, Fixture, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine, ORIGIN, Short,
@@ -2059,7 +2059,7 @@ fn card_size(item: Item) -> Vec2 {
 
 fn card_item(item: Item) -> Item {
     match item {
-        Item::Atom(kind) => Item::Machine(atom_route(kind).machine(kind)),
+        Item::Atom(kind) => Item::Machine(atom_machine(kind)),
         item => item,
     }
 }

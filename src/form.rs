@@ -92,15 +92,6 @@ pub enum AtomRoute {
     Converter(&'static str),
 }
 
-impl AtomRoute {
-    pub fn machine(self, kind: AtomKind) -> Machine {
-        match self {
-            AtomRoute::Source => Machine::Glyph(GlyphKind::Source),
-            AtomRoute::Converter(_) => Machine::Glyph(GlyphKind::Converter(kind)),
-        }
-    }
-}
-
 pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 3] = [
     (AtomKind::Base, AtomRoute::Source),
     (
@@ -119,6 +110,13 @@ pub fn atom_route(kind: AtomKind) -> AtomRoute {
         .find(|(made, _)| *made == kind)
         .map(|(_, route)| *route)
         .expect("an atom route")
+}
+
+pub fn atom_machine(kind: AtomKind) -> Machine {
+    match atom_route(kind) {
+        AtomRoute::Source => Machine::Glyph(GlyphKind::Source),
+        AtomRoute::Converter(_) => Machine::Glyph(GlyphKind::Converter(kind)),
+    }
 }
 
 const fn glyph(kind: GlyphKind) -> Item {
