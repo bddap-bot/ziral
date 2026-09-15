@@ -9462,6 +9462,18 @@ mod tests {
     }
 
     #[test]
+    fn an_unrepresentable_fragment_translation_is_refused_byte_equal() {
+        let mut w = lone(vec![], vec![]);
+        stocked(&mut w, Item::Atom(AtomKind::Base), 2);
+        let before = persist::encode(&w.sim).unwrap();
+        assert!(w.paste_text("B0,0\nB0,2147483647"));
+        w.place(Some(Hex::new(0, 1)));
+        assert_eq!(persist::encode(&w.sim).unwrap(), before);
+        assert_eq!(w.focus, None);
+        assert_eq!(w.refused, None);
+    }
+
+    #[test]
     fn a_paste_does_not_replace_a_held_fragment() {
         let mut w = lone(vec![], vec![]);
         assert!(w.paste_text("bonder 0,0 0"));

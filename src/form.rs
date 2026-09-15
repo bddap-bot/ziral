@@ -415,7 +415,6 @@ fn fragment_text(sim: &Sim) -> String {
         let form = sim.fragment(&compound, Hex::new(0, 0));
         lines.push(compound_text(&form));
     }
-    lines.sort_unstable();
     lines.join("\n")
 }
 
@@ -443,9 +442,7 @@ fn posed_form(sim: &Sim) -> Form {
 }
 
 fn fragment_key(sim: &Sim) -> (Form, Vec<String>) {
-    let mut machines = machine_lines(sim);
-    machines.sort_unstable();
-    (posed_form(sim), machines)
+    (posed_form(sim), machine_lines(sim))
 }
 
 fn compound_text(sim: &Sim) -> String {
@@ -623,6 +620,12 @@ fn parse_machine(line: &str, sim: &mut Sim) -> Result<(), String> {
         let dir = number(fields[2], "turn")?;
         if dir >= 6 {
             return Err(format!("{} is not one of six turns", fields[2]));
+        }
+        if kind.rule().slots.iter().any(|slot| {
+            let offset = slot.at.turned(dir);
+            at.q.checked_add(offset.q).is_none() || at.r.checked_add(offset.r).is_none()
+        }) {
+            return Err(format!("{} has a footprint outside the grid", fields[1]));
         }
         machine.glyphs.push(Some(Glyph::new(kind, at, dir)));
     }
@@ -831,5 +834,46 @@ mod tests {
         assert!(Fragment::of(&source).is_err());
         let too_wide = "arm 0,0 0 - 0\narm 2147483647,2147483647 0 - 0";
         assert!(too_wide.parse::<Fragment>().is_err());
+    }
+
+    #[test]
+    fn fragment_round_trip_preserves_machine_execution_order() {
+        let mut sim = Sim::empty();
+        sim.glyphs
+            .push(Some(Glyph::new(GlyphKind::SecondBond, Hex::new(7, 4), 3)));
+        sim.glyphs
+            .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(0, 0), 0)));
+        sim.arms
+            .push(crate::sim::Arm::new(Hex::new(8, 6), 2, vec![Instr::Wait]));
+        sim.arms
+            .push(crate::sim::Arm::new(Hex::new(1, 2), 1, vec![Instr::Grab]));
+
+        let text = Fragment::of(&sim).unwrap().to_string();
+        let read = text.parse::<Fragment>().unwrap().into_sim();
+        assert_eq!(
+            read.glyphs
+                .iter()
+                .flatten()
+                .map(|glyph| glyph.kind)
+                .collect::<Vec<_>>(),
+            [GlyphKind::SecondBond, GlyphKind::Bonder]
+        );
+        assert_eq!(
+            read.arms
+                .iter()
+                .map(|arm| arm.tape.as_slice())
+                .collect::<Vec<_>>(),
+            [&[Instr::Wait][..], &[Instr::Grab][..]]
+        );
+    }
+
+    #[test]
+    fn fragment_parser_refuses_a_glyph_whose_footprint_overflows() {
+        assert!("bonder 2147483647,0 0".parse::<Fragment>().is_err());
+        assert!(
+            "output-3 2147483647,2147483647 0"
+                .parse::<Fragment>()
+                .is_err()
+        );
     }
 }

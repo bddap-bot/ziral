@@ -27,6 +27,10 @@ impl Hex {
         Hex::new(self.q + o.q, self.r + o.r)
     }
 
+    pub fn checked_add(self, o: Hex) -> Option<Hex> {
+        Some(Hex::new(self.q.checked_add(o.q)?, self.r.checked_add(o.r)?))
+    }
+
     pub fn sub(self, o: Hex) -> Hex {
         Hex::new(self.q - o.q, self.r - o.r)
     }
@@ -793,14 +797,17 @@ impl Sim {
         set.ids()
             .flat_map(move |id| set.stands(id).map(move |cell| (id, cell)))
             .flat_map(move |(id, cell)| {
-                self.on(cell.add(at))
-                    .filter(move |other| !id.may_share(*other))
+                cell.checked_add(at)
+                    .into_iter()
+                    .flat_map(move |cell| self.on(cell).filter(move |other| !id.may_share(*other)))
             })
             .filter(move |other| !picked.contains(other))
     }
 
     pub fn fits(&self, set: &Sim, at: Hex, picked: &[Id]) -> bool {
-        self.blocked(set, at, picked).next().is_none()
+        set.ids()
+            .all(|id| set.stands(id).all(|cell| cell.checked_add(at).is_some()))
+            && self.blocked(set, at, picked).next().is_none()
     }
 
     pub fn replay(&self, ticks: u64) -> Sim {
