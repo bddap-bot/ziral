@@ -155,6 +155,7 @@ impl Fragment {
             .into_iter()
             .min_by_key(fragment_key)
             .expect("six turns");
+        validate_fragment(&posed)?;
         Ok(Fragment(parse_fragment(&fragment_text(&posed))?))
     }
 
@@ -292,6 +293,13 @@ fn machine_name(kind: GlyphKind) -> &'static str {
     }
 }
 
+fn footprint_fits(kind: GlyphKind, at: Hex, dir: usize) -> bool {
+    kind.rule().slots.iter().all(|slot| {
+        let offset = slot.at.turned(dir);
+        at.q.checked_add(offset.q).is_some() && at.r.checked_add(offset.r).is_some()
+    })
+}
+
 fn validate_fragment(sim: &Sim) -> Result<(), String> {
     if sim.ids().next().is_none() {
         return Err("empty fragment".to_string());
@@ -307,6 +315,12 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
         if glyph.dir >= 6 {
             return Err(format!("{} is not one of six turns", glyph.dir));
         }
+        if !footprint_fits(glyph.kind, glyph.at, glyph.dir) {
+            return Err(format!(
+                "{} has a footprint outside the grid",
+                cell(glyph.at)
+            ));
+        }
     }
     for arm in &sim.arms {
         if arm.dir >= 6 {
@@ -318,6 +332,12 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
             .any(|instr| matches!(instr, Instr::Move(dir) if *dir >= 6))
         {
             return Err("an arm tape has an invalid move".to_string());
+        }
+        if arm.pivot.checked_add(DIRS[arm.dir]).is_none() {
+            return Err(format!(
+                "{} has a footprint outside the grid",
+                cell(arm.pivot)
+            ));
         }
     }
     for bond in &sim.bonds {
@@ -621,10 +641,7 @@ fn parse_machine(line: &str, sim: &mut Sim) -> Result<(), String> {
         if dir >= 6 {
             return Err(format!("{} is not one of six turns", fields[2]));
         }
-        if kind.rule().slots.iter().any(|slot| {
-            let offset = slot.at.turned(dir);
-            at.q.checked_add(offset.q).is_none() || at.r.checked_add(offset.r).is_none()
-        }) {
+        if !footprint_fits(kind, at, dir) {
             return Err(format!("{} has a footprint outside the grid", fields[1]));
         }
         machine.glyphs.push(Some(Glyph::new(kind, at, dir)));
@@ -868,10 +885,15 @@ mod tests {
     }
 
     #[test]
-    fn fragment_parser_refuses_a_glyph_whose_footprint_overflows() {
+    fn fragment_parser_refuses_machine_footprints_that_overflow() {
         assert!("bonder 2147483647,0 0".parse::<Fragment>().is_err());
         assert!(
             "output-3 2147483647,2147483647 0"
+                .parse::<Fragment>()
+                .is_err()
+        );
+        assert!(
+            "arm 0,0 0 - 0\narm 0,2147483647 5 - 0"
                 .parse::<Fragment>()
                 .is_err()
         );

@@ -1440,9 +1440,9 @@ impl World {
                 KeyX | KeyC => {
                     if let Some(text) = self.copy(&ids) {
                         clipboard(&text);
-                    }
-                    if key == KeyX {
-                        self.delete(&machines(&ids));
+                        if key == KeyX {
+                            self.delete(&machines(&ids));
+                        }
                     }
                 }
                 KeyV => self.paste(),
@@ -3946,13 +3946,17 @@ fn draw(
                     (false, 1.0, sim::ActivationEnergy::default()),
                 );
             }
-            let at = |id: usize| px(grab.add(set.atoms[id].unwrap().pos));
-            for b in &set.bonds {
-                p.bond(at(b.a), at(b.b), b.kind, layer::z(layer::HELD, 0, 2));
+            let at = |id: usize| grab.checked_add(set.atoms[id].unwrap().pos).map(px);
+            for bond in &set.bonds {
+                if let (Some(a), Some(b)) = (at(bond.a), at(bond.b)) {
+                    p.bond(a, b, bond.kind, layer::z(layer::HELD, 0, 2));
+                }
             }
             for (id, atom) in set.atoms.iter().enumerate() {
-                if let Some(atom) = atom {
-                    p.bead(at(id), look::atom(atom.kind), layer::z(layer::HELD, 1, 2));
+                if let Some(atom) = atom
+                    && let Some(at) = at(id)
+                {
+                    p.bead(at, look::atom(atom.kind), layer::z(layer::HELD, 1, 2));
                 }
             }
             if set.atoms.iter().any(Option::is_some) {
@@ -9471,6 +9475,24 @@ mod tests {
         assert_eq!(persist::encode(&w.sim).unwrap(), before);
         assert_eq!(w.focus, None);
         assert_eq!(w.refused, None);
+    }
+
+    #[test]
+    fn a_fragment_that_cannot_be_written_is_not_cut() {
+        let mut w = lone(
+            vec![],
+            vec![
+                Arm::new(Hex::new(i32::MIN, 0), 0, vec![]),
+                Arm::new(Hex::new(i32::MAX, 0), 3, vec![]),
+            ],
+        );
+        let ids = [Id::Arm(0), Id::Arm(1)];
+        w.pick(ids.to_vec());
+        let before = persist::encode(&w.sim).unwrap();
+        assert!(w.copy(&ids).is_none());
+        w.key(KeyCode::KeyX, false);
+        assert_eq!(persist::encode(&w.sim).unwrap(), before);
+        assert_eq!(w.focus, picked(&ids));
     }
 
     #[test]
