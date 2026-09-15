@@ -23,7 +23,7 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
-use form::{Form, atom_machine, recipes};
+use form::{Form, Fragment, atom_machine, recipes};
 use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, px, skin};
 use sim::{
     Arm, BondKind, DIRS, Fixture, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine, ORIGIN, Short,
@@ -429,7 +429,6 @@ struct World {
     running: bool,
     focus: Option<Focus>,
     down: Option<Press>,
-    clipboard: Option<Sim>,
     pointer: Option<Vec2>,
     over_ui: bool,
     hover: Option<Item>,
@@ -457,7 +456,6 @@ impl World {
             running: true,
             focus: None,
             down: None,
-            clipboard: None,
             pointer: None,
             over_ui: false,
             hover: None,
@@ -1000,8 +998,9 @@ impl World {
             match *id {
                 Id::Arm(i) => {
                     let a = &self.shown().arms[i];
-                    set.arms
-                        .push(Arm::new(a.pivot.sub(grab), a.dir, a.tape.clone()));
+                    let mut arm = Arm::new(a.pivot.sub(grab), a.dir, a.tape.clone());
+                    arm.pc = a.pc;
+                    set.arms.push(arm);
                 }
                 Id::Glyph(i) => {
                     let g = self.glyph(i);
@@ -1122,17 +1121,11 @@ impl World {
         }
     }
 
-    fn copy(&mut self, ids: &[Id]) {
-        let machines = machines(ids);
-        if let Some(first) = machines.first() {
-            self.clipboard = Some(self.lifted(&machines, self.anchor(*first)));
-        }
-    }
-
-    fn compounds(&self, ids: &[Id]) -> String {
+    fn copy(&self, ids: &[Id]) -> Option<String> {
+        let machine_ids = machines(ids);
+        let mut set = self.lifted(&machine_ids, ORIGIN);
         let sim = self.shown();
         let mut seen: Vec<usize> = Vec::new();
-        let mut lines: Vec<String> = Vec::new();
         for id in ids {
             let Id::Atom(i) = id else { continue };
             if seen.contains(i) {
@@ -1140,36 +1133,28 @@ impl World {
             }
             let compound = sim.component(*i);
             seen.extend(&compound);
-            lines.push(Form::of(&sim.fragment(&compound, ORIGIN)).to_string());
+            set.place(&sim.fragment(&compound, ORIGIN), ORIGIN);
         }
-        lines.sort_unstable();
-        lines.join("\n")
+        (!machine_ids.is_empty() || !seen.is_empty()).then(|| Fragment::of(&set).to_string())
     }
 
     fn paste(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if clipboard_text().is_some_and(|text| self.paste_text(&text)) {
-                return;
+            if let Some(text) = clipboard_text() {
+                self.paste_text(&text);
             }
-            self.paste_machines();
         }
 
         #[cfg(target_arch = "wasm32")]
         clipboard_text();
     }
 
-    fn paste_machines(&mut self) {
-        if let Some(set) = self.clipboard.clone() {
-            self.lift(set, Back::Inventory);
-        }
-    }
-
     fn paste_text(&mut self, text: &str) -> bool {
-        let Ok(form) = text.parse::<Form>() else {
+        let Ok(fragment) = text.parse::<Fragment>() else {
             return false;
         };
-        self.lift(form.sim(), Back::Inventory);
+        self.lift(fragment.sim(), Back::Inventory);
         true
     }
 
@@ -1446,11 +1431,9 @@ impl World {
                 KeyZ => self.delete(&ids),
                 KeyX | KeyC if !self.edits(&machines(&ids)) => {}
                 KeyX | KeyC => {
-                    let text = self.compounds(&ids);
-                    if !text.is_empty() {
+                    if let Some(text) = self.copy(&ids) {
                         clipboard(&text);
                     }
-                    self.copy(&ids);
                     if key == KeyX {
                         self.delete(&machines(&ids));
                     }
@@ -1530,7 +1513,7 @@ fn clipboard(text: &str) {
             written
         }),
     };
-    written.unwrap_or_else(|e| panic!("the clipboard refused the compound: {e}"));
+    written.unwrap_or_else(|e| panic!("the clipboard refused the fragment: {e}"));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1550,7 +1533,7 @@ fn clipboard(text: &str) {
     wasm_bindgen_futures::spawn_local(async move {
         wasm_bindgen_futures::JsFuture::from(written)
             .await
-            .unwrap_or_else(|e| panic!("the clipboard refused the compound: {e:?}"));
+            .unwrap_or_else(|e| panic!("the clipboard refused the fragment: {e:?}"));
     });
 }
 
@@ -1576,8 +1559,8 @@ static PASTED: std::sync::Mutex<Option<Option<String>>> = std::sync::Mutex::new(
 #[cfg(target_arch = "wasm32")]
 fn clipboard_paste(mut world: ResMut<World>) {
     if let Some(text) = PASTED.lock().unwrap().take() {
-        if !text.is_some_and(|text| world.paste_text(&text)) {
-            world.paste_machines();
+        if let Some(text) = text {
+            world.paste_text(&text);
         }
     }
 }
@@ -4338,7 +4321,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 54] = [
+    pub const SCENES: [&str; 55] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4353,6 +4336,7 @@ mod shot {
         "start",
         "craft",
         "copy",
+        "clipboard-103",
         "walk",
         "ghost",
         "hold",
@@ -4733,6 +4717,18 @@ mod shot {
                 ));
             }
             "start" => world.sim = sim::start(),
+            "clipboard-103" => {
+                let text = "B0,3 A1,3 0,3-1,3\narm 2,0 1 FwR 1\nbonder 0,2 4";
+                let set = text.parse::<Fragment>().unwrap().sim();
+                let mut sim = Sim::empty();
+                for item in set.bill() {
+                    sim.inventory.add(item);
+                }
+                world.sim = sim;
+                world.running = false;
+                script.push((2, Act::Paste(text)));
+                script.push((4, Act::Press(Hex::new(-1, -1))));
+            }
             "converters" => {
                 let mut sim = Sim::empty();
                 sim.place(
@@ -5161,12 +5157,11 @@ mod shot {
                 script.push((36, Act::Drag(Hex::new(0, 1))));
                 script.push((42, Act::Drag(Hex::new(4, 3))));
                 script.push((48, Act::Release(Hex::new(4, 3))));
-                script.extend(tap(60, KeyC));
-                script.extend(tap(72, KeyV));
+                script.push((72, Act::Paste("arm 0,0 2 F 0\nbonder 0,3 2")));
                 script.push((96, Act::Press(Hex::new(2, -4))));
                 script.push((150, Act::Press(Hex::new(-2, 0))));
                 script.extend(tap(168, KeyZ));
-                script.extend(tap(192, KeyV));
+                script.push((192, Act::Paste("arm 0,0 2 F 0\nbonder 0,3 2")));
                 script.push((216, Act::Press(Hex::new(2, -4))));
             }
             "reification" => {
@@ -6793,36 +6788,37 @@ mod tests {
     fn cut_removes_the_selection_and_paste_reproduces_it_under_the_cursor() {
         let mut w = cluster();
         w.pick(INSIDE.to_vec());
-        let before = offsets(&w, &INSIDE);
-        let (arm, glyph) = (w.sim.arms[0].clone(), w.sim.glyphs[0]);
+        w.sim.arms[0].pc = 1;
+        let text = w.copy(&INSIDE).unwrap();
+        let mut expected = text.parse::<Fragment>().unwrap().sim();
+        turn(&mut expected, Spin::Cw);
         let (other_arm, other_glyph) = (w.sim.arms[1].clone(), w.sim.glyphs[1]);
-        w.key(KeyCode::KeyX, false);
+        w.delete(&INSIDE);
         assert_eq!(w.sim.arms, vec![other_arm.clone()]);
         assert_eq!(w.sim.glyphs, vec![None, other_glyph]);
         assert_eq!(w.focus, None);
-        assert!(w.clipboard.is_some());
-        w.key(KeyCode::KeyV, false);
+        assert!(w.paste_text(&text));
         assert!(matches!(
             &w.focus,
             Some(Focus::Hold { set, back: Back::Inventory }) if set.arms.len() == 1 && set.glyphs.len() == 1
         ));
+        w.key(KeyCode::KeyD, false);
         let to = Hex::new(5, 5);
         w.press(px(to), px(to));
         assert_eq!(w.sim.arms.len(), 2);
         assert_eq!(w.sim.glyphs.len(), 2);
         let pasted = [Id::Arm(1), Id::Glyph(0)];
         let after = offsets(&w, &pasted);
-        let shift = to.sub(before[0].0);
-        for ((at, dir), (was, was_dir)) in after.iter().zip(&before) {
-            assert_eq!(*at, was.add(shift));
-            assert_eq!(dir, was_dir);
-        }
-        assert_eq!(w.sim.arms[1].tape, arm.tape);
-        assert_eq!(w.sim.arms[1], Arm::new(after[0].0, after[0].1, arm.tape));
-        assert_eq!(w.sim.glyphs[0].unwrap().kind, glyph.unwrap().kind);
+        assert_eq!(
+            after[0],
+            (to.add(expected.arms[0].pivot), expected.arms[0].dir)
+        );
+        let expected_glyph = expected.glyphs[0].unwrap();
+        assert_eq!(after[1], (to.add(expected_glyph.at), expected_glyph.dir));
+        assert_eq!(w.sim.arms[1].tape, expected.arms[0].tape);
+        assert_eq!(w.sim.arms[1].pc, 1);
         assert_eq!(w.focus, picked(&pasted));
-        w.key(KeyCode::KeyC, false);
-        assert!(w.clipboard.is_some());
+        assert!(w.copy(&pasted).is_some());
         assert_eq!(w.sim.arms.len(), 2);
     }
 
@@ -7247,7 +7243,6 @@ mod tests {
         w.key(KeyCode::KeyD, false);
         w.key(KeyCode::KeyC, false);
         w.key(KeyCode::KeyX, false);
-        assert!(w.clipboard.is_none());
         w.key(KeyCode::KeyZ, false);
         w.lift(fresh(Item::Machine(Machine::Arm)), Back::Inventory);
         w.place(Some(Hex::new(5, 5)));
@@ -7625,13 +7620,13 @@ mod tests {
             vec![Some(other), Some(bonder(Hex::new(1, 0), 0))]
         );
         assert_eq!(w.sim.inventory.count(item), Some(0));
-        w.clipboard = Some(fresh(Item::Machine(Machine::Glyph(GlyphKind::Bonder))));
+        let text = "bonder 0,0 0";
         w.sim.inventory.add(item);
-        w.paste();
+        assert!(w.paste_text(text));
         w.release(Some(Hex::new(4, 0)));
         assert_eq!(w.sim.glyphs.len(), 2);
         assert_eq!(w.sim.inventory.count(item), Some(1));
-        w.paste();
+        assert!(w.paste_text(text));
         w.release(Some(Hex::new(5, 0)));
         assert_eq!(w.sim.glyphs[2], Some(bonder(Hex::new(5, 0), 0)));
         assert_eq!(w.sim.inventory.count(item), Some(0));
@@ -7811,10 +7806,11 @@ mod tests {
         w.lift_inventory(bonder);
         assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
         stocked(&mut w, bonder, sim::DEFAULT_CAP);
-        w.key(KeyCode::KeyX, false);
+        let text = w.copy(&[Id::Glyph(0)]).unwrap();
+        w.delete(&[Id::Glyph(0)]);
         assert_eq!(w.sim.glyphs[0], None);
         assert_eq!(count(&w, bonder), sim::DEFAULT_CAP + 1);
-        w.key(KeyCode::KeyV, false);
+        assert!(w.paste_text(&text));
         w.release(Some(to));
         assert_eq!(count(&w, bonder), sim::DEFAULT_CAP);
         w.key(KeyCode::KeyZ, false);
@@ -8152,9 +8148,7 @@ mod tests {
         w.pointer = Some(corner + Vec2::splat(1.0));
         w.release(Some(Hex::new(0, 0)));
         assert_eq!(w.focus, picked(&[Id::Atom(first)]));
-        assert_eq!(w.compounds(&[Id::Atom(first)]), text);
-        w.copy(&[Id::Atom(first)]);
-        assert!(w.clipboard.is_none());
+        assert_eq!(w.copy(&[Id::Atom(first)]).as_deref(), Some(text));
         let (lo, hi) = (px(Hex::new(-7, 0)), px(Hex::new(5, 5)));
         w.press(lo, lo);
         w.drag(hi);
@@ -8163,10 +8157,11 @@ mod tests {
         let ids = w.focus.as_ref().unwrap().picked();
         assert!(ids.contains(&Id::Glyph(0)));
         assert_eq!(ids.iter().filter(|id| matches!(id, Id::Atom(_))).count(), 6);
-        assert_eq!(w.compounds(&ids), format!("{text}\n{text}"));
-        w.copy(&ids);
-        assert_eq!(w.clipboard.as_ref().unwrap().glyphs.len(), 1);
-        assert!(w.clipboard.as_ref().unwrap().atoms.is_empty());
+        let copied = w.copy(&ids).unwrap();
+        let fragment = copied.parse::<Fragment>().unwrap().sim();
+        assert_eq!(fragment.glyphs.iter().flatten().count(), 1);
+        assert_eq!(fragment.atoms.iter().flatten().count(), 6);
+        assert_eq!(copied.lines().count(), 3);
     }
 
     fn card_fills(machine: Machine, ticks: u64) -> Vec<(Vec3, f32)> {
@@ -9256,10 +9251,11 @@ mod tests {
         let mut w = armed(tape);
         w.sim.inventory = sim::Inventory::EMPTY;
         w.pick(vec![Id::Arm(0)]);
-        w.key(KeyCode::KeyX, false);
+        let copied = w.copy(&[Id::Arm(0)]).unwrap();
+        w.delete(&[Id::Arm(0)]);
         assert!(w.sim.arms.is_empty());
         assert_eq!(counts(&w), (1, 2, 1, 1, 0));
-        assert!(w.clipboard.is_some());
+        assert!(copied.starts_with("arm "));
     }
 
     const BONDER: Item = Item::Machine(Machine::Glyph(GlyphKind::Bonder));
@@ -9269,14 +9265,15 @@ mod tests {
     const SECOND: Item = Item::Machine(Machine::Glyph(GlyphKind::SecondBond));
     const SECOND_AT: Hex = Hex::new(0, -3);
 
-    fn copied() -> World {
+    fn copied() -> (World, String) {
         let arm = Arm::new(Hex::new(3, 0), 0, vec![Instr::Grab, Instr::Grab]);
         let second = Glyph::new(GlyphKind::SecondBond, SECOND_AT, 0);
         let mut w = lone(vec![bonder(ORIGIN, 0), second], vec![arm]);
         w.running = false;
-        w.pick(vec![Id::Glyph(0), Id::Glyph(1), Id::Arm(0)]);
-        w.key(KeyCode::KeyC, false);
-        w
+        let ids = [Id::Glyph(0), Id::Glyph(1), Id::Arm(0)];
+        w.pick(ids.to_vec());
+        let text = w.copy(&ids).unwrap();
+        (w, text)
     }
 
     fn counts(w: &World) -> (u32, u32, u32, u32) {
@@ -9288,8 +9285,8 @@ mod tests {
         )
     }
 
-    fn pasted(w: &mut World, at: Hex) {
-        w.key(KeyCode::KeyV, false);
+    fn pasted(w: &mut World, text: &str, at: Hex) {
+        assert!(w.paste_text(text));
         w.press(px(at), px(at));
     }
 
@@ -9300,18 +9297,18 @@ mod tests {
     #[test]
     fn a_paste_pays_its_whole_bill_and_a_short_one_is_refused_whole_naming_the_short_items() {
         let at = Hex::new(0, 6);
-        let mut w = copied();
+        let (mut w, text) = copied();
         for (item, n) in [(BONDER, 1), (SECOND, 1), (ARM, 1), (GRAB, 1)] {
             stocked(&mut w, item, n);
         }
         let before = w.sim.clone();
-        pasted(&mut w, at);
+        pasted(&mut w, &text, at);
         assert_eq!(w.sim, before);
         assert_eq!(w.focus, None);
         let refused = |short: Vec<Short>| Some(Refused { at, short });
         assert_eq!(w.refused, refused(vec![short(GRAB, 1, 2)]));
         assert!(w.sim.inventory.spend(BONDER));
-        pasted(&mut w, at);
+        pasted(&mut w, &text, at);
         assert_eq!(
             w.sim.inventory,
             after_spending(&before, BONDER, 1).inventory
@@ -9324,29 +9321,44 @@ mod tests {
         );
         stocked(&mut w, BONDER, 1);
         stocked(&mut w, GRAB, 1);
-        pasted(&mut w, at);
+        let set = text.parse::<Fragment>().unwrap().sim();
+        pasted(&mut w, &text, at);
         assert_eq!(w.refused, None);
         assert_eq!(w.sim.arms.len(), 2);
         assert_eq!(w.sim.arms[1].tape, vec![Instr::Grab, Instr::Grab]);
-        let second = |at: Hex| Some(Glyph::new(GlyphKind::SecondBond, at, 0));
-        assert_eq!(w.sim.glyphs[2], Some(bonder(at, 0)));
-        assert_eq!(w.sim.glyphs[3], second(at.add(SECOND_AT)));
+        let expected: Vec<Glyph> = set
+            .glyphs
+            .iter()
+            .flatten()
+            .map(|g| Glyph::new(g.kind, at.add(g.at), g.dir))
+            .collect();
+        assert_eq!(w.sim.glyphs[2], Some(expected[0]));
+        assert_eq!(w.sim.glyphs[3], Some(expected[1]));
         assert_eq!(counts(&w), (0, 0, 0, 0));
         let pasted = [Id::Arm(1), Id::Glyph(2), Id::Glyph(3)];
         assert_eq!(w.focus, picked(&pasted));
         let over = at.add(DIRS[0]);
         drag(&mut w, at, over);
-        assert_eq!(w.sim.glyphs[2], Some(bonder(over, 0)));
+        assert_eq!(
+            w.sim.glyphs[2],
+            Some(Glyph::new(
+                expected[0].kind,
+                expected[0].at.add(DIRS[0]),
+                expected[0].dir
+            ))
+        );
         assert_eq!(counts(&w), (0, 0, 0, 0));
         assert_eq!(w.refused, None);
         assert_eq!(w.focus, picked(&pasted));
         w.key(KeyCode::KeyZ, false);
         assert_eq!(counts(&w), (1, 1, 1, 2));
         assert_eq!(w.sim.arms.len(), 1);
+        assert_eq!(w.sim.glyphs[0], Some(bonder(ORIGIN, 0)));
         assert_eq!(
-            w.sim.glyphs,
-            vec![Some(bonder(ORIGIN, 0)), second(SECOND_AT), None, None]
+            w.sim.glyphs[1],
+            Some(Glyph::new(GlyphKind::SecondBond, SECOND_AT, 0))
         );
+        assert_eq!(&w.sim.glyphs[2..], &[None, None]);
     }
 
     #[test]
@@ -9376,6 +9388,67 @@ mod tests {
                 short: vec![short(base, 2, 3)]
             })
         );
+    }
+
+    #[test]
+    fn one_notation_copies_and_pastes_two_machines_a_mid_program_tape_and_a_compound() {
+        let mut source = lone(
+            vec![bonder(Hex::new(-3, 2), 4)],
+            vec![Arm::new(
+                Hex::new(2, -1),
+                1,
+                vec![Instr::Grab, Instr::Move(4), Instr::Drop],
+            )],
+        );
+        source.sim.arms[0].pc = 1;
+        let a = source.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(0, 3),
+        });
+        let b = source.sim.spawn(Atom {
+            kind: AtomKind::Amber,
+            pos: Hex::new(1, 3),
+        });
+        source.sim.bonds.push(sim::Bond {
+            a,
+            b,
+            kind: BondKind::Single,
+        });
+        let ids = [Id::Arm(0), Id::Glyph(0), Id::Atom(a)];
+        let text = source.copy(&ids).unwrap();
+        let fragment = text.parse::<Fragment>().unwrap().sim();
+        assert_eq!(Fragment::of(&fragment).to_string(), text);
+
+        let mut target = lone(vec![], vec![]);
+        for item in fragment.bill() {
+            target.sim.inventory.add(item);
+        }
+        assert!(target.paste_text(&text));
+        target.key(KeyCode::KeyD, false);
+        let at = Hex::new(8, 5);
+        target.place(Some(at));
+        assert_eq!(target.sim.arms[0].pc, 1);
+        assert_eq!(target.sim.arms[0].tape, source.sim.arms[0].tape);
+        assert_eq!(target.sim.arms[0].dir, (fragment.arms[0].dir + 1) % 6);
+        assert_eq!(
+            target.sim.arms[0].pivot,
+            at.add(fragment.arms[0].pivot.rotate(ORIGIN, Spin::Cw))
+        );
+        assert_eq!(Fragment::of(&target.sim).to_string(), text);
+    }
+
+    #[test]
+    fn one_malformed_machine_line_refuses_the_whole_paste_byte_equal() {
+        let mut w = lone(vec![bonder(Hex::new(2, 2), 0)], vec![]);
+        stocked(&mut w, Machine::Arm, 1);
+        stocked(&mut w, Item::Token(Instr::Grab), 1);
+        stocked(&mut w, Item::Atom(AtomKind::Base), 1);
+        let before = persist::encode(&w.sim).unwrap();
+        let text = "B0,0\narm 1,0 0 F nope\nbonder 2,0 0";
+        assert!(!w.paste_text(text));
+        assert_eq!(persist::encode(&w.sim).unwrap(), before);
+        assert_eq!(w.focus, None);
+        assert_eq!(w.refused, None);
     }
 
     #[test]
@@ -9431,7 +9504,7 @@ mod tests {
     #[test]
     fn the_refusal_line_goes_on_the_next_press_and_on_the_next_key() {
         let at = Hex::new(0, 6);
-        let mut w = copied();
+        let (mut w, text) = copied();
         let before = w.sim.clone();
         let line = Some(Refused {
             at,
@@ -9442,7 +9515,7 @@ mod tests {
                 short(GRAB, 0, 2),
             ],
         });
-        pasted(&mut w, at);
+        pasted(&mut w, &text, at);
         assert_eq!(w.sim, before);
         assert_eq!(w.focus, None);
         assert_eq!(w.refused, line);
@@ -9450,7 +9523,7 @@ mod tests {
         w.press(px(ground), px(ground));
         assert_eq!(w.refused, None);
         w.release(Some(ground));
-        pasted(&mut w, at);
+        pasted(&mut w, &text, at);
         assert_eq!(w.refused, line);
         w.key(KeyCode::Escape, false);
         assert_eq!(w.refused, None);
@@ -9461,11 +9534,11 @@ mod tests {
         let _render = RENDER_TEST
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut w = copied();
+        let (mut w, text) = copied();
         for item in [SECOND, ARM, GRAB] {
             stocked(&mut w, item, 1);
         }
-        pasted(&mut w, Hex::new(0, 6));
+        pasted(&mut w, &text, Hex::new(0, 6));
         assert_eq!(
             w.refused.as_ref().map(|r| r.short.clone()),
             Some(vec![short(BONDER, 0, 1), short(GRAB, 1, 2)])
@@ -9562,7 +9635,7 @@ mod tests {
         assert_eq!(count(&w, BONDER), 1);
         let w = played("refuse", 240);
         assert_eq!(w.refused, None);
-        assert_eq!(w.sim.glyphs, vec![Some(bonder(Hex::new(-1, -4), 0))]);
+        assert_eq!(w.sim.glyphs, vec![Some(bonder(Hex::new(2, -1), 2))]);
         assert_eq!(w.sim.arms.len(), 2);
         assert_eq!(w.sim.arms[1].tape, vec![Instr::Grab]);
         assert_eq!(
