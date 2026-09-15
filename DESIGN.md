@@ -941,7 +941,13 @@ V first reads the system clipboard through `Form::from_str`, the one compound pa
 
 Three alternatives are disposed. Refunding deleted atoms makes deletion a second ingress beside the glyph. A cheaper wrap weakens the decided radius-two, fully bonded cost into another recipe. Letting paste create atoms from nothing bypasses both the glyph and the inventory check.
 
-Open question. Should the notation carry machines and tapes too, making the system clipboard the one buffer, or should compound text and the machine buffer remain separate?
+Directive (verbatim): "it should definately carry machines and machine data too. even tape program counter maybe. is ths serde-shaped problem?"
+
+The notation carries one whole fragment. A compound remains one line of its existing atom and bond tokens. Each machine is one short line containing its kind, cell and turn. An arm line then contains its tape as the existing key letters, lower-case for shifted moves, and its program counter. The writer turns and translates the fragment to one canonical text while preserving the relative cells and turns of everything in it; the reader reconstructs that fragment, so the held paste may be moved and turned as one piece. A compound-only line keeps its existing canonical text and meaning.
+
+The system clipboard is the only buffer. C and X write every selected machine and every whole compound touched by the selection through the fragment writer. V reads that text through the fragment reader, and a successful drop pays the existing bill for its machines, tokens and atoms. A malformed line refuses the whole read before a hold, placement or inventory change. The separate machine buffer and its fallback paste path are deleted.
+
+This is the dumbest design satisfying the directive because it adds a machine line to the one hand-written, line-oriented format and sends both clipboard actions through it. A serde text encoding was rejected because its field syntax would make the common line longer without removing the custom rules for canonical turns, compact tape keys, connected compounds and whole-fragment refusal. Keeping a machine buffer beside compound text was rejected because copy and paste would still have two truths and pasted bug reports would omit the running state that matters.
 
 Tests: the complete wrap reifies either centre kind, while one missing bond or one amber outer atom leaves it untouched; an affordable double-bonded pair spends its two atoms and one sacrificial base atom and lands with its bond, while one base atom short changes nothing and shows the refusal; a paste onto an atom and a paste beyond ghost zero are refused. The recipe test holds the reification row distinct under every turn from every other recipe and inside its tier-two bound.
 
