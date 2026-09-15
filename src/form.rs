@@ -480,7 +480,9 @@ fn posed_form(sim: &Sim) -> Form {
 }
 
 fn fragment_key(sim: &Sim) -> (Form, Vec<String>) {
-    (posed_form(sim), machine_lines(sim))
+    let mut machines = machine_lines(sim);
+    machines.sort_unstable();
+    (posed_form(sim), machines)
 }
 
 fn compound_text(sim: &Sim) -> String {
