@@ -6652,6 +6652,61 @@ mod tests {
     }
 
     #[test]
+    fn one_move_driven_blueprint_pasted_at_all_six_turns_reaches_rotated_cells_tick_for_tick() {
+        let tape = vec![
+            Instr::Move(0),
+            Instr::Move(1),
+            Instr::Move(1),
+            Instr::Move(5),
+            Instr::Move(4),
+        ];
+        let mut blueprint = Sim::empty();
+        blueprint.arms.push(Arm::new(ORIGIN, 0, tape.clone()));
+        let placements = [
+            Hex::new(-30, 0),
+            Hex::new(-18, 0),
+            Hex::new(-6, 0),
+            Hex::new(6, 0),
+            Hex::new(18, 0),
+            Hex::new(30, 0),
+        ];
+        let mut sim = Sim::empty();
+        for (facing, placement) in placements.iter().enumerate() {
+            let mut pasted = blueprint.clone();
+            for _ in 0..facing {
+                turn(&mut pasted, Spin::Cw);
+            }
+            assert_eq!(pasted.arms[0].tape, tape);
+            sim.place(&pasted, *placement);
+        }
+        for tick in 0..=tape.len() {
+            let original = sim.arms[0].pivot.sub(placements[0]);
+            for (facing, (arm, placement)) in sim.arms.iter().zip(placements).enumerate() {
+                assert_eq!(
+                    arm.pivot.sub(placement),
+                    original.turned(facing),
+                    "turn {facing}, tick {tick}"
+                );
+            }
+            if tick < tape.len() {
+                sim.step();
+            }
+        }
+    }
+
+    #[test]
+    fn turning_a_placed_arm_turns_its_future_moves_without_rewriting_its_tape() {
+        let tape = vec![Instr::Move(0)];
+        let mut w = lone(vec![], vec![Arm::new(ORIGIN, 0, tape.clone())]);
+        w.pick(vec![Id::Arm(0)]);
+        w.key(KeyCode::KeyD, false);
+        assert_eq!(w.sim.arms[0].dir, 1);
+        assert_eq!(w.sim.arms[0].tape, tape);
+        w.step();
+        assert_eq!(w.sim.arms[0].pivot, DIRS[1]);
+    }
+
+    #[test]
     fn escape_while_holding_puts_the_set_back_untouched() {
         let mut w = cluster();
         w.pointer = Some(px(Hex::new(5, 5)));

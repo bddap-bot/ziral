@@ -94,7 +94,7 @@ impl Instr {
     pub fn posed(self, pivot: Hex, dir: usize) -> (Hex, usize) {
         match self {
             Instr::Rot(spin) => (pivot, spin.turn(dir)),
-            Instr::Move(d) => (pivot.add(DIRS[d]), dir),
+            Instr::Move(d) => (pivot.add(DIRS[(d + dir) % DIRS.len()]), dir),
             _ => (pivot, dir),
         }
     }
@@ -1071,6 +1071,7 @@ impl Sim {
         let arm = &self.arms[i];
         let hand = arm.hand();
         let (pivot, dir) = instr.posed(arm.pivot, arm.dir);
+        let step = pivot.sub(arm.pivot);
         match instr {
             Instr::Wait => {}
             Instr::Grab => {
@@ -1080,7 +1081,7 @@ impl Sim {
             Instr::Drop => self.arms[i].holding = false,
             Instr::Rot(spin) => self.carry(i, pivot, |p| p.rotate(pivot, spin))?,
             Instr::Pivot(spin) => self.carry(i, pivot, |p| p.rotate(hand, spin))?,
-            Instr::Move(d) => self.carry(i, pivot, |p| p.add(DIRS[d]))?,
+            Instr::Move(_) => self.carry(i, pivot, |p| p.add(step))?,
         }
         let arm = &mut self.arms[i];
         (arm.pivot, arm.dir) = (pivot, dir);
@@ -2517,7 +2518,7 @@ mod tests {
     fn a_move_translates_the_pose_and_the_six_moves_compose_to_a_ring() {
         let start = (Hex::new(2, -1), 3);
         let (pivot, dir) = Instr::Move(0).posed(start.0, start.1);
-        assert_eq!((pivot, dir), (Hex::new(3, -1), 3));
+        assert_eq!((pivot, dir), (Hex::new(1, -1), 3));
         let ring = (0..6).fold(start, |(p, d), k| Instr::Move(k).posed(p, d));
         assert_eq!(ring, start);
         for k in 0..6 {
