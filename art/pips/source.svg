@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <style>
+      .edge { fill: none; stroke: #d8c3a5; stroke-width: 1.5; }
+      .whole { fill: #f4ede4; stroke: #f4ede4; stroke-width: 1; }
+      .whole-line { fill: none; stroke: #f4ede4; stroke-width: 2.5; stroke-linecap: round; }
+      .edge-line { fill: none; stroke: #d8c3a5; stroke-width: 3.5; stroke-linecap: round; }
+      .label { fill: #6b4f3a; stroke: #927557; stroke-width: 1; }
+      .letter { fill: #f4ede4; font-family: sans-serif; font-size: 22px; font-weight: bold; text-anchor: middle; }
+    </style>
+    <clipPath id="a3"><circle cx="89" cy="27" r="4.5"/></clipPath>
+    <clipPath id="a4"><circle cx="104" cy="27" r="5.5"/></clipPath>
+    <clipPath id="a5"><circle cx="122" cy="27" r="6.5"/></clipPath>
+    <clipPath id="c3"><rect x="84" y="17" width="38" height="5" rx="2.5"/></clipPath>
+    <clipPath id="c4"><rect x="78" y="10" width="50" height="5" rx="2.5"/></clipPath>
+    <clipPath id="c5"><rect x="72" y="3" width="62" height="5" rx="2.5"/></clipPath>
+    <g id="a-cap3">
+      <circle class="edge" cx="70" cy="27" r="2.5"/><circle class="edge" cx="78" cy="27" r="3.5"/><circle class="edge" cx="89" cy="27" r="4.5"/>
+      <circle class="whole" cx="70" cy="27" r="2.5"/><circle class="whole" cx="78" cy="27" r="3.5"/>
+      <rect x="84.5" y="22.5" width="4.5" height="9" class="whole" clip-path="url(#a3)"/>
+    </g>
+    <g id="a-cap4">
+      <circle class="edge" cx="70" cy="27" r="2.5"/><circle class="edge" cx="78" cy="27" r="3.5"/><circle class="edge" cx="89" cy="27" r="4.5"/><circle class="edge" cx="104" cy="27" r="5.5"/>
+      <circle class="whole" cx="70" cy="27" r="2.5"/><circle class="whole" cx="78" cy="27" r="3.5"/><circle class="whole" cx="89" cy="27" r="4.5"/>
+      <rect x="98.5" y="21.5" width="2.75" height="11" class="whole" clip-path="url(#a4)"/>
+    </g>
+    <g id="a-cap5">
+      <circle class="edge" cx="70" cy="27" r="2.5"/><circle class="edge" cx="78" cy="27" r="3.5"/><circle class="edge" cx="89" cy="27" r="4.5"/><circle class="edge" cx="104" cy="27" r="5.5"/><circle class="edge" cx="122" cy="27" r="6.5"/>
+      <circle class="whole" cx="70" cy="27" r="2.5"/><circle class="whole" cx="78" cy="27" r="3.5"/><circle class="whole" cx="89" cy="27" r="4.5"/><circle class="whole" cx="104" cy="27" r="5.5"/>
+      <rect x="115.5" y="20.5" width="8.125" height="13" class="whole" clip-path="url(#a5)"/>
+    </g>
+    <g id="b-cap3">
+      <circle class="edge" cx="103" cy="27" r="5"/><circle class="edge" cx="103" cy="27" r="10"/><circle class="edge" cx="103" cy="27" r="15"/>
+      <circle class="whole-line" cx="103" cy="27" r="5"/><circle class="whole-line" cx="103" cy="27" r="10"/>
+      <path class="whole-line" d="M103 12 A15 15 0 0 1 103 42"/>
+    </g>
+    <g id="b-cap4">
+      <circle class="edge" cx="103" cy="27" r="4"/><circle class="edge" cx="103" cy="27" r="8"/><circle class="edge" cx="103" cy="27" r="12"/><circle class="edge" cx="103" cy="27" r="16"/>
+      <circle class="whole-line" cx="103" cy="27" r="4"/><circle class="whole-line" cx="103" cy="27" r="8"/><circle class="whole-line" cx="103" cy="27" r="12"/>
+      <path class="whole-line" d="M103 11 A16 16 0 0 1 119 27"/>
+    </g>
+    <g id="b-cap5">
+      <circle class="edge" cx="103" cy="27" r="3.5"/><circle class="edge" cx="103" cy="27" r="7"/><circle class="edge" cx="103" cy="27" r="10.5"/><circle class="edge" cx="103" cy="27" r="14"/><circle class="edge" cx="103" cy="27" r="17.5"/>
+      <circle class="whole-line" cx="103" cy="27" r="3.5"/><circle class="whole-line" cx="103" cy="27" r="7"/><circle class="whole-line" cx="103" cy="27" r="10.5"/><circle class="whole-line" cx="103" cy="27" r="14"/>
+      <path class="whole-line" d="M103 9.5 A17.5 17.5 0 1 1 90.6 39.4"/>
+    </g>
+    <g id="c-cap3">
+      <rect class="edge" x="96" y="31" width="14" height="5" rx="2.5"/><rect class="edge" x="90" y="24" width="26" height="5" rx="2.5"/><rect class="edge" x="84" y="17" width="38" height="5" rx="2.5"/>
+      <rect class="whole" x="96" y="31" width="14" height="5" rx="2.5"/><rect class="whole" x="90" y="24" width="26" height="5" rx="2.5"/>
+      <rect class="whole" x="84" y="17" width="19" height="5" clip-path="url(#c3)"/>
+    </g>
+    <g id="c-cap4">
+      <rect class="edge" x="96" y="31" width="14" height="5" rx="2.5"/><rect class="edge" x="90" y="24" width="26" height="5" rx="2.5"/><rect class="edge" x="84" y="17" width="38" height="5" rx="2.5"/><rect class="edge" x="78" y="10" width="50" height="5" rx="2.5"/>
+      <rect class="whole" x="96" y="31" width="14" height="5" rx="2.5"/><rect class="whole" x="90" y="24" width="26" height="5" rx="2.5"/><rect class="whole" x="84" y="17" width="38" height="5" rx="2.5"/>
+      <rect class="whole" x="78" y="10" width="12.5" height="5" clip-path="url(#c4)"/>
+    </g>
+    <g id="c-cap5">
+      <rect class="edge" x="96" y="35" width="14" height="5" rx="2.5"/><rect class="edge" x="90" y="27" width="26" height="5" rx="2.5"/><rect class="edge" x="84" y="19" width="38" height="5" rx="2.5"/><rect class="edge" x="78" y="11" width="50" height="5" rx="2.5"/><rect class="edge" x="72" y="3" width="62" height="5" rx="2.5"/>
+      <rect class="whole" x="96" y="35" width="14" height="5" rx="2.5"/><rect class="whole" x="90" y="27" width="26" height="5" rx="2.5"/><rect class="whole" x="84" y="19" width="38" height="5" rx="2.5"/><rect class="whole" x="78" y="11" width="50" height="5" rx="2.5"/>
+      <rect class="whole" x="72" y="3" width="38.75" height="5" clip-path="url(#c5)"/>
+    </g>
+    <g id="d-cap3">
+      <path class="edge-line" d="M103 9 A18 18 0 0 1 118.3 17.5"/><path class="edge-line" d="M120.1 21.4 A18 18 0 0 1 116.8 38.6"/><path class="edge-line" d="M113.6 41.6 A18 18 0 0 1 96.3 43.7"/>
+      <path class="whole-line" d="M103 9 A18 18 0 0 1 118.3 17.5"/><path class="whole-line" d="M120.1 21.4 A18 18 0 0 1 116.8 38.6"/><path class="whole-line" d="M113.6 41.6 A18 18 0 0 1 105.2 44.9"/>
+      <circle cx="103" cy="27" r="4" fill="#6b4f3a" stroke="#d8c3a5" stroke-width="1.5"/>
+    </g>
+    <g id="d-cap4">
+      <path class="edge-line" d="M103 9 A18 18 0 0 1 118.3 17.5"/><path class="edge-line" d="M120.1 21.4 A18 18 0 0 1 116.8 38.6"/><path class="edge-line" d="M113.6 41.6 A18 18 0 0 1 96.3 43.7"/><path class="edge-line" d="M92.4 41.6 A18 18 0 0 1 85 25.7"/>
+      <path class="whole-line" d="M103 9 A18 18 0 0 1 118.3 17.5"/><path class="whole-line" d="M120.1 21.4 A18 18 0 0 1 116.8 38.6"/><path class="whole-line" d="M113.6 41.6 A18 18 0 0 1 96.3 43.7"/><path class="whole-line" d="M92.4 41.6 A18 18 0 0 1 89.1 38.4"/>
+      <circle cx="103" cy="27" r="4" fill="#6b4f3a" stroke="#d8c3a5" stroke-width="1.5"/>
+    </g>
+    <g id="d-cap5">
+      <path class="edge-line" d="M103 9 A18 18 0 0 1 118.3 17.5"/><path class="edge-line" d="M120.1 21.4 A18 18 0 0 1 116.8 38.6"/><path class="edge-line" d="M113.6 41.6 A18 18 0 0 1 96.3 43.7"/><path class="edge-line" d="M92.4 41.6 A18 18 0 0 1 85 25.7"/><path class="edge-line" d="M85.9 21.4 A18 18 0 0 1 98.5 9.6"/>
+      <path class="whole-line" d="M103 9 A18 18 0 0 1 118.3 17.5"/><path class="whole-line" d="M120.1 21.4 A18 18 0 0 1 116.8 38.6"/><path class="whole-line" d="M113.6 41.6 A18 18 0 0 1 96.3 43.7"/><path class="whole-line" d="M92.4 41.6 A18 18 0 0 1 85 25.7"/><path class="whole-line" d="M85.9 21.4 A18 18 0 0 1 92.4 12.4"/>
+      <circle cx="103" cy="27" r="4" fill="#6b4f3a" stroke="#d8c3a5" stroke-width="1.5"/>
+    </g>
+  </defs>
+  <path d="M320 0V720M640 0V720M960 0V720" stroke="#6b4f3a" stroke-width="4" opacity="0.75"/>
+  <g transform="translate(274 14)"><rect class="label" width="34" height="34"/><text class="letter" x="17" y="25">A</text></g>
+  <g transform="translate(594 14)"><rect class="label" width="34" height="34"/><text class="letter" x="17" y="25">B</text></g>
+  <g transform="translate(914 14)"><rect class="label" width="34" height="34"/><text class="letter" x="17" y="25">C</text></g>
+  <g transform="translate(1234 14)"><rect class="label" width="34" height="34"/><text class="letter" x="17" y="25">D</text></g>
+  <path fill="#6b4f3a" d="M216 543h83v52h-83zM216 601h83v52h-83zM216 659h83v52h-83zM536 543h83v52h-83zM536 601h83v52h-83zM536 659h83v52h-83zM856 543h83v52h-83zM856 601h83v52h-83zM856 659h83v52h-83zM1176 543h83v52h-83zM1176 601h83v52h-83zM1176 659h83v52h-83z"/>
+  <g transform="translate(167 542)"><use href="#a-cap3"/></g>
+  <g transform="translate(167 600)"><use href="#a-cap4"/></g>
+  <g transform="translate(167 658)"><use href="#a-cap5"/></g>
+  <g transform="translate(487 542)"><use href="#b-cap3"/></g>
+  <g transform="translate(487 600)"><use href="#b-cap4"/></g>
+  <g transform="translate(487 658)"><use href="#b-cap5"/></g>
+  <g transform="translate(803 542)"><use href="#c-cap3"/></g>
+  <g transform="translate(803 600)"><use href="#c-cap4"/></g>
+  <g transform="translate(803 658)"><use href="#c-cap5"/></g>
+  <g transform="translate(1127 542)"><use href="#d-cap3"/></g>
+  <g transform="translate(1127 600)"><use href="#d-cap4"/></g>
+  <g transform="translate(1127 658)"><use href="#d-cap5"/></g>
+</svg>

@@ -179,7 +179,7 @@ Tests cover the centre and a point near the cell corner with an atom and a machi
 
 Directive (verbatim): "separately, get me some mockups for a pip design with more moxie that fits the exponential repr. think outside the box here, \"given an exponential representation, how do we communicate both max and current, in a pleasing way\""
 
-One static comparison places four candidates on the real board and palette at the shipped pixel size. Every candidate shows the same three rows: caps 4, 8 and 16 with counts 3, 5 and 13. The whole marks carry 1, 2, 4, 8 and 16 in order; ivory shows the current whole marks and the fractional next mark, while dark-brass outlines show the remaining cap. The letters A through D distinguish proposals only. Nothing in the toy changes because choosing one is a separate decision.
+One static comparison places four candidates on the real board and palette at the shipped pixel size. Every candidate shows the same three rows: caps 4, 8 and 16 with counts 3, 5 and 13. The whole marks carry 1, 2, 4, 8 and 16 in order; ivory shows the current whole marks and the fractional next mark, while clay outlines show the remaining cap. The letters A through D distinguish proposals only. Nothing in the toy changes because choosing one is a separate decision.
 
 This is the dumbest design satisfying the directive because one reproducible sheet can answer the taste question without adding a runtime branch, temporary setting or second pip renderer. Changing the shipped equal circles before comparing them was rejected because it would turn a proposal into an unchosen implementation.
 
@@ -189,7 +189,7 @@ Candidate B nests successive circular marks. Its trade-off is a compact cap silh
 
 Candidate C stacks successively wider bars. Its trade-off is immediate whole-versus-fractional fill and a stable outer shape, at the cost of reading more like a gauge than a row of pips.
 
-Candidate D sweeps successive arcs around one brass centre. Its trade-off is a lively compact rhythm whose final stop makes the cap visible, at the cost of making exact whole-mark counting slower than the other candidates.
+Candidate D sweeps successive arc marks around one brass centre. Its trade-off is a lively compact rhythm whose final stop makes the cap visible, at the cost of making exact whole-mark counting slower than the other candidates.
 
 ### Machine coverage proposals
 
