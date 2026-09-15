@@ -562,7 +562,9 @@ impl Inventory {
     }
 
     pub fn valid(&self) -> bool {
-        self.cap.iter().all(|cap| *cap <= MAX_CAP)
+        self.cap
+            .iter()
+            .all(|cap| cap.is_power_of_two() && *cap <= MAX_CAP)
     }
 
     pub fn add(&mut self, item: Item) {
@@ -612,8 +614,31 @@ impl Inventory {
 
     pub fn set_cap(&mut self, item: Item, notches: i32) {
         if let Some(i) = item.index() {
-            self.cap[i] = self.cap[i].saturating_add_signed(notches).min(MAX_CAP);
+            let exponent = self.cap[i]
+                .ilog2()
+                .saturating_add_signed(notches)
+                .min(MAX_CAP.ilog2());
+            self.cap[i] = 1 << exponent;
         }
+    }
+
+    pub fn snap_caps(&mut self) -> bool {
+        if self.cap.iter().any(|cap| *cap > MAX_CAP) {
+            return false;
+        }
+        self.cap = self.cap.map(snap_cap);
+        true
+    }
+}
+
+fn snap_cap(cap: u32) -> u32 {
+    let cap = cap.clamp(1, MAX_CAP);
+    let lower = 1 << cap.ilog2();
+    let upper = (lower << 1).min(MAX_CAP);
+    if cap - lower < upper - cap {
+        lower
+    } else {
+        upper
     }
 }
 
@@ -2273,11 +2298,11 @@ mod tests {
         sim.step();
         assert!(lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP + 2);
-        sim.inventory.set_cap(bonder.into(), 3);
+        sim.inventory.set_cap(bonder.into(), 1);
         sim.step();
         assert!(!lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP + 3);
-        assert!(sim.inventory.full(bonder.into()));
+        assert!(!sim.inventory.full(bonder.into()));
     }
 
     #[test]

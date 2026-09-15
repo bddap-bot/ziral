@@ -24,10 +24,13 @@ pub fn decode(text: &str) -> Result<Sim, String> {
 }
 
 fn decode_for(text: &str, build: &str) -> Result<Sim, String> {
-    let save: Save =
+    let mut save: Save =
         serde_json::from_str(text).map_err(|_| "The save file is not valid.".to_owned())?;
     if save.build != build {
         return Err("The save belongs to a different build.".to_owned());
+    }
+    if !save.sim.inventory.snap_caps() {
+        return Err("The save file is not valid.".to_owned());
     }
     validate(&save.sim)?;
     Ok(save.sim)
@@ -201,6 +204,35 @@ mod tests {
         assert_eq!(
             decode_for(&save, "another-build"),
             Err("The save belongs to a different build.".to_owned())
+        );
+    }
+
+    #[test]
+    fn legacy_inventory_caps_snap_to_the_nearest_whole_pip() {
+        let save = encode(&crate::sim::start()).unwrap();
+        let mut save: serde_json::Value = serde_json::from_str(&save).unwrap();
+        let caps = save["sim"]["inventory"]["cap"].as_array_mut().unwrap();
+        let old = [0, 1, 2, 3, 6, 7, 9, 12, 15, 17, 255];
+        let expected = [1, 1, 2, 4, 8, 8, 8, 16, 16, 16, 256];
+        for (cap, value) in caps.iter_mut().zip(old.into_iter().cycle()) {
+            *cap = value.into();
+        }
+        let decoded = decode(&serde_json::to_string(&save).unwrap()).unwrap();
+        let encoded: serde_json::Value = serde_json::from_str(&encode(&decoded).unwrap()).unwrap();
+        let snapped = encoded["sim"]["inventory"]["cap"].as_array().unwrap();
+        for (cap, expected) in snapped.iter().zip(expected.into_iter().cycle()) {
+            assert_eq!(cap.as_u64(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn an_inventory_cap_above_the_bound_remains_an_invalid_save() {
+        let save = encode(&crate::sim::start()).unwrap();
+        let mut save: serde_json::Value = serde_json::from_str(&save).unwrap();
+        save["sim"]["inventory"]["cap"][0] = (crate::sim::MAX_CAP + 1).into();
+        assert_eq!(
+            decode(&serde_json::to_string(&save).unwrap()),
+            Err("The save file is not valid.".to_owned())
         );
     }
 }

@@ -46,8 +46,14 @@ const MANUAL_SYMBOL_PX: f32 = 128.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
 const MARK_PX: f32 = 6.0;
-const TALLY_PX: f32 = 86.0;
-const PALETTE_WIDTH: f32 = PALETTE_PX + SYMBOL_PX + 2.0 * (TALLY_PX + 24.0) + 8.0;
+const TALLY_PX: f32 = 70.0;
+const PALETTE_GAP_PX: f32 = 8.0;
+const PALETTE_ROW_GAP_PX: f32 = 6.0;
+const PALETTE_ROW_PAD_X: f32 = 8.0;
+const BORDER_PX: f32 = 1.0;
+const PALETTE_WIDTH: f32 = 2.0
+    * (PALETTE_PX + PALETTE_ROW_GAP_PX + TALLY_PX + 2.0 * (PALETTE_ROW_PAD_X + BORDER_PX))
+    + PALETTE_GAP_PX;
 const CARD_PAD: f32 = 12.0;
 const CARD: RenderLayers = RenderLayers::layer(1);
 const CARD_PITCH: f32 = 1024.0;
@@ -1930,7 +1936,7 @@ fn button(node: Node) -> impl Bundle {
 fn plate(node: Node) -> impl Bundle {
     (
         Node {
-            border: UiRect::all(Val::Px(1.0)),
+            border: UiRect::all(Val::Px(BORDER_PX)),
             ..node
         },
         BorderColor::all(brass(0.5)),
@@ -2098,24 +2104,35 @@ fn manual(keys: Res<ButtonInput<KeyCode>>, mut page: Single<&mut Node, With<Manu
 #[derive(Component)]
 struct Marks(u64);
 
-fn mark(k: u64, px: f32, filled: bool) -> impl Bundle {
-    let gap = if k > 0 && k.is_multiple_of(5) {
-        MARK_PX
-    } else {
-        0.0
-    };
-    (
+fn mark(row: &mut ChildSpawnerCommands, px: f32, fill: f32, gap: f32) {
+    row.spawn((
         Node {
             width: Val::Px(px),
             height: Val::Px(px),
             margin: UiRect::left(Val::Px(gap)),
             border: UiRect::all(Val::Px(1.0)),
             border_radius: BorderRadius::MAX,
+            overflow: Overflow::clip(),
             ..default()
         },
-        BackgroundColor(if filled { IVORY } else { Color::NONE }),
-        BorderColor::all(if filled { IVORY } else { brass(0.5) }),
-    )
+        BackgroundColor(if fill == 1.0 { IVORY } else { Color::NONE }),
+        BorderColor::all(if fill == 1.0 { IVORY } else { brass(0.5) }),
+    ))
+    .with_children(|pip| {
+        if fill > 0.0 && fill < 1.0 {
+            pip.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(1.0),
+                    top: Val::Px(1.0),
+                    width: Val::Px((px - 2.0) * fill),
+                    height: Val::Px(px - 2.0),
+                    ..default()
+                },
+                BackgroundColor(IVORY),
+            ));
+        }
+    });
 }
 
 fn cursor() -> impl Bundle {
@@ -2161,9 +2178,30 @@ fn tally(mut commands: Commands, world: Res<World>, mut rows: Query<(Entity, &mu
 }
 
 fn stock(row: &mut ChildSpawnerCommands, filled: u32, upto: u32) {
-    for k in 0..u64::from(filled.max(upto).min(sim::MAX_CAP)) {
-        row.spawn(mark(k, MARK_PX, k < u64::from(filled)));
+    let cap = filled.max(upto).min(sim::MAX_CAP);
+    let (full, fraction) = pips(filled, cap);
+    let (cap_full, cap_fraction) = pips(cap, cap);
+    let slots = cap_full + u32::from(cap_fraction > 0.0);
+    for k in 0..slots {
+        let fill = if k < full {
+            1.0
+        } else if k == full {
+            fraction
+        } else {
+            0.0
+        };
+        mark(row, MARK_PX, fill, 0.0);
     }
+}
+
+fn pips(count: u32, cap: u32) -> (u32, f32) {
+    let count = count.min(cap);
+    if count == 0 {
+        return (0, 0.0);
+    }
+    let full = count.ilog2() + 1;
+    let base = 1 << (full - 1);
+    (full, (count - base) as f32 / base as f32)
 }
 
 fn hover(
@@ -2467,7 +2505,7 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                 left: Val::Px(8.0),
                 bottom: Val::Px(8.0),
                 align_items: AlignItems::FlexEnd,
-                ..row(8.0)
+                ..row(PALETTE_GAP_PX)
             },
         ))
         .with_children(|palette| {
@@ -2483,8 +2521,8 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                             col.spawn((
                                 PaletteRow(item),
                                 button(Node {
-                                    padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
-                                    ..row(6.0)
+                                    padding: UiRect::axes(Val::Px(PALETTE_ROW_PAD_X), Val::Px(2.0)),
+                                    ..row(PALETTE_ROW_GAP_PX)
                                 }),
                             ))
                             .with_children(|entry| {
@@ -2966,7 +3004,12 @@ fn tapes(
             .despawn_children()
             .with_children(|strip| {
                 for k in 0..marks.0 {
-                    strip.spawn(mark(k, MARK_PX, true));
+                    let gap = if k > 0 && k.is_multiple_of(5) {
+                        MARK_PX
+                    } else {
+                        0.0
+                    };
+                    mark(strip, MARK_PX, 1.0, gap);
                 }
             });
     }
@@ -4295,7 +4338,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 53] = [
+    pub const SCENES: [&str; 54] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4349,6 +4392,7 @@ mod shot {
         "machine-turn-89",
         "pinned-world-93",
         "arm-local-move-81",
+        "exponential-pips-83",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -4449,6 +4493,17 @@ mod shot {
         };
         match name {
             "micro" => world.focus_tape(0),
+            "exponential-pips-83" => {
+                world.sim = Sim::empty();
+                let counts = [0, 1, 2, 3, 4, 5, 7, 8];
+                for (item, count) in palette().zip(counts.into_iter().cycle()) {
+                    world.sim.inventory.set_cap(item, -1);
+                    for _ in 0..count {
+                        world.sim.inventory.add(item);
+                    }
+                }
+                world.palette_hover = palette().nth(7);
+            }
             "pinned-world-93" => {
                 world.hover = None;
                 world.pin_world(
@@ -7778,7 +7833,7 @@ mod tests {
         );
         w.running = false;
         w.set_cap(bonder, -(sim::DEFAULT_CAP as i32) - 5);
-        assert_eq!(w.sim.inventory.cap(bonder), Some(0));
+        assert_eq!(w.sim.inventory.cap(bonder), Some(1));
         for item in palette().filter(|item| *item != bonder) {
             assert_eq!(
                 w.sim.inventory.cap(item),
@@ -7789,14 +7844,50 @@ mod tests {
         w.set_cap(bonder, i32::MAX);
         assert_eq!(w.sim.inventory.cap(bonder), Some(sim::MAX_CAP));
         w.set_cap(bonder, -(sim::MAX_CAP as i32));
+        stocked(&mut w, bonder, 1);
         pair(&mut w, at, BondKind::Single);
         w.step();
         assert_eq!(atoms(&w).len(), 2);
-        assert_eq!(count(&w, bonder), 0);
+        assert_eq!(count(&w, bonder), 1);
         w.set_cap(bonder, 1);
         w.step();
         assert_eq!(atoms(&w), vec![]);
-        assert_eq!(count(&w, bonder), 1);
+        assert_eq!(count(&w, bonder), 2);
+    }
+
+    #[test]
+    fn counts_at_cap_eight_have_their_exponential_full_pips_and_fraction() {
+        let expected = [
+            (0, (0, 0.0)),
+            (1, (1, 0.0)),
+            (2, (2, 0.0)),
+            (3, (2, 0.5)),
+            (4, (3, 0.0)),
+            (5, (3, 0.25)),
+            (7, (3, 0.75)),
+            (8, (4, 0.0)),
+        ];
+        for (count, representation) in expected {
+            assert_eq!(pips(count, 8), representation);
+        }
+    }
+
+    #[test]
+    fn a_wheel_notch_from_eight_reaches_sixteen_or_four() {
+        let item = Item::from(Machine::Glyph(GlyphKind::Bonder));
+        let mut inventory = sim::Inventory::EMPTY;
+        inventory.set_cap(item, -1);
+        assert_eq!(inventory.cap(item), Some(8));
+        inventory.set_cap(item, 1);
+        assert_eq!(inventory.cap(item), Some(16));
+        inventory.set_cap(item, -2);
+        assert_eq!(inventory.cap(item), Some(4));
+    }
+
+    #[test]
+    fn the_shipped_palette_is_narrower_at_the_same_caps() {
+        assert_eq!(TALLY_PX, 70.0);
+        assert_eq!(PALETTE_WIDTH, 292.0);
     }
 
     #[test]
@@ -7940,13 +8031,13 @@ mod tests {
         assert_surface_at_corners(
             &frame,
             "palette",
-            [(183, 78), (208, 78), (183, 103), (208, 103)],
+            [(179, 75), (204, 75), (179, 100), (204, 100)],
             strip,
         );
         assert_surface_at_corners(
             &frame,
             "tape",
-            [(395, 643), (420, 643), (395, 668), (420, 668)],
+            [(355, 642), (380, 642), (355, 667), (380, 667)],
             strip,
         );
         assert_surface_at_corners(
