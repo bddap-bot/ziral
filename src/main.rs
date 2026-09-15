@@ -1135,7 +1135,11 @@ impl World {
             seen.extend(&compound);
             set.place(&sim.fragment(&compound, ORIGIN), ORIGIN);
         }
-        (!machine_ids.is_empty() || !seen.is_empty()).then(|| Fragment::of(&set).to_string())
+        if machine_ids.is_empty() && seen.is_empty() {
+            None
+        } else {
+            Fragment::of(&set).ok().map(|fragment| fragment.to_string())
+        }
     }
 
     fn paste(&mut self) {
@@ -1151,10 +1155,13 @@ impl World {
     }
 
     fn paste_text(&mut self, text: &str) -> bool {
+        if self.holding() {
+            return false;
+        }
         let Ok(fragment) = text.parse::<Fragment>() else {
             return false;
         };
-        self.lift(fragment.sim(), Back::Inventory);
+        self.lift(fragment.into_sim(), Back::Inventory);
         true
     }
 
@@ -1549,19 +1556,19 @@ fn clipboard_text() {
             .await
             .ok()
             .and_then(|text| text.as_string());
-        *PASTED.lock().unwrap() = Some(text);
+        if let Some(text) = text {
+            *PASTED.lock().unwrap() = Some(text);
+        }
     });
 }
 
 #[cfg(target_arch = "wasm32")]
-static PASTED: std::sync::Mutex<Option<Option<String>>> = std::sync::Mutex::new(None);
+static PASTED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 #[cfg(target_arch = "wasm32")]
 fn clipboard_paste(mut world: ResMut<World>) {
     if let Some(text) = PASTED.lock().unwrap().take() {
-        if let Some(text) = text {
-            world.paste_text(&text);
-        }
+        world.paste_text(&text);
     }
 }
 
@@ -4719,7 +4726,7 @@ mod shot {
             "start" => world.sim = sim::start(),
             "clipboard-103" => {
                 let text = "B0,3 A1,3 0,3-1,3\narm 2,0 1 FwR 1\nbonder 0,2 4";
-                let set = text.parse::<Fragment>().unwrap().sim();
+                let set = text.parse::<Fragment>().unwrap().into_sim();
                 let mut sim = Sim::empty();
                 for item in set.bill() {
                     sim.inventory.add(item);
@@ -6790,7 +6797,7 @@ mod tests {
         w.pick(INSIDE.to_vec());
         w.sim.arms[0].pc = 1;
         let text = w.copy(&INSIDE).unwrap();
-        let mut expected = text.parse::<Fragment>().unwrap().sim();
+        let mut expected = text.parse::<Fragment>().unwrap().into_sim();
         turn(&mut expected, Spin::Cw);
         let (other_arm, other_glyph) = (w.sim.arms[1].clone(), w.sim.glyphs[1]);
         w.delete(&INSIDE);
@@ -7069,17 +7076,20 @@ mod tests {
     }
 
     #[test]
-    fn a_copied_arm_is_a_blueprint_without_its_running_state() {
+    fn a_copied_arm_keeps_its_counter_but_not_transient_running_state() {
         let mut w = cluster();
         w.sim.arms[0].pc = 1;
         w.sim.arms[0].holding = true;
         w.sim.arms[0].stall = Some(Stall::Illegal);
         w.pick(vec![Id::Arm(0)]);
-        w.key(KeyCode::KeyC, false);
-        w.key(KeyCode::KeyV, false);
+        let text = w.copy(&[Id::Arm(0)]).unwrap();
+        w.focus = None;
+        assert!(w.paste_text(&text));
         w.press(px(Hex::new(6, 6)), px(Hex::new(6, 6)));
         let pasted = &w.sim.arms[2];
-        assert_eq!(*pasted, Arm::new(Hex::new(6, 6), 3, pasted.tape.clone()));
+        let mut expected = Arm::new(Hex::new(6, 6), 0, pasted.tape.clone());
+        expected.pc = 1;
+        assert_eq!(*pasted, expected);
     }
 
     #[test]
@@ -8158,7 +8168,7 @@ mod tests {
         assert!(ids.contains(&Id::Glyph(0)));
         assert_eq!(ids.iter().filter(|id| matches!(id, Id::Atom(_))).count(), 6);
         let copied = w.copy(&ids).unwrap();
-        let fragment = copied.parse::<Fragment>().unwrap().sim();
+        let fragment = copied.parse::<Fragment>().unwrap().into_sim();
         assert_eq!(fragment.glyphs.iter().flatten().count(), 1);
         assert_eq!(fragment.atoms.iter().flatten().count(), 6);
         assert_eq!(copied.lines().count(), 3);
@@ -9321,7 +9331,7 @@ mod tests {
         );
         stocked(&mut w, BONDER, 1);
         stocked(&mut w, GRAB, 1);
-        let set = text.parse::<Fragment>().unwrap().sim();
+        let set = text.parse::<Fragment>().unwrap().into_sim();
         pasted(&mut w, &text, at);
         assert_eq!(w.refused, None);
         assert_eq!(w.sim.arms.len(), 2);
@@ -9416,8 +9426,8 @@ mod tests {
         });
         let ids = [Id::Arm(0), Id::Glyph(0), Id::Atom(a)];
         let text = source.copy(&ids).unwrap();
-        let fragment = text.parse::<Fragment>().unwrap().sim();
-        assert_eq!(Fragment::of(&fragment).to_string(), text);
+        let fragment = text.parse::<Fragment>().unwrap().into_sim();
+        assert_eq!(Fragment::of(&fragment).unwrap().to_string(), text);
 
         let mut target = lone(vec![], vec![]);
         for item in fragment.bill() {
@@ -9434,7 +9444,7 @@ mod tests {
             target.sim.arms[0].pivot,
             at.add(fragment.arms[0].pivot.rotate(ORIGIN, Spin::Cw))
         );
-        assert_eq!(Fragment::of(&target.sim).to_string(), text);
+        assert_eq!(Fragment::of(&target.sim).unwrap().to_string(), text);
     }
 
     #[test]
@@ -9449,6 +9459,18 @@ mod tests {
         assert_eq!(persist::encode(&w.sim).unwrap(), before);
         assert_eq!(w.focus, None);
         assert_eq!(w.refused, None);
+    }
+
+    #[test]
+    fn a_paste_does_not_replace_a_held_fragment() {
+        let mut w = lone(vec![], vec![]);
+        assert!(w.paste_text("bonder 0,0 0"));
+        assert!(!w.paste_text("arm 0,0 0 - 0"));
+        let Some(Focus::Hold { set, .. }) = &w.focus else {
+            panic!("a held fragment")
+        };
+        assert_eq!(set.arms.len(), 0);
+        assert_eq!(set.glyphs[0].unwrap().kind, GlyphKind::Bonder);
     }
 
     #[test]

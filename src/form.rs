@@ -143,20 +143,23 @@ pub struct Form {
     bonds: Vec<(Hex, Hex, BondKind)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Fragment(Sim);
 
 impl Fragment {
-    pub fn of(sim: &Sim) -> Fragment {
-        let text = (0..6)
-            .map(|turn| fragment_text(&posed(sim, turn)))
-            .min()
+    pub fn of(sim: &Sim) -> Result<Fragment, String> {
+        validate_fragment(sim)?;
+        let posed = (0..6)
+            .map(|turn| posed(sim, turn))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .min_by_key(fragment_key)
             .expect("six turns");
-        Fragment(parse_fragment(&text).expect("the writer makes a fragment"))
+        Ok(Fragment(parse_fragment(&fragment_text(&posed))?))
     }
 
-    pub fn sim(&self) -> Sim {
-        self.0.clone()
+    pub fn into_sim(self) -> Sim {
+        self.0
     }
 }
 
@@ -276,17 +279,55 @@ impl fmt::Display for Form {
 
 fn machine_name(kind: GlyphKind) -> &'static str {
     match kind {
-        GlyphKind::Source => "source",
+        GlyphKind::Source => panic!("a source is world-placed and never copied"),
         GlyphKind::Bonder => "bonder",
         GlyphKind::SecondBond => "second-bond",
         GlyphKind::Reification => "reification",
-        GlyphKind::Converter(AtomKind::Base) => "base-converter",
+        GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
         GlyphKind::Converter(AtomKind::Amber) => "amber-converter",
         GlyphKind::Converter(AtomKind::Plum) => "plum-converter",
         GlyphKind::Output(Tier::One) => "output-1",
         GlyphKind::Output(Tier::Two) => "output-2",
         GlyphKind::Output(Tier::Three) => "output-3",
     }
+}
+
+fn validate_fragment(sim: &Sim) -> Result<(), String> {
+    if sim.ids().next().is_none() {
+        return Err("empty fragment".to_string());
+    }
+    for glyph in sim.glyphs.iter().flatten() {
+        match glyph.kind {
+            GlyphKind::Source => return Err("a source cannot be copied".to_string()),
+            GlyphKind::Converter(AtomKind::Base) => {
+                return Err("the base atom has no converter".to_string());
+            }
+            _ => {}
+        }
+        if glyph.dir >= 6 {
+            return Err(format!("{} is not one of six turns", glyph.dir));
+        }
+    }
+    for arm in &sim.arms {
+        if arm.dir >= 6 {
+            return Err(format!("{} is not one of six turns", arm.dir));
+        }
+        if arm
+            .tape
+            .iter()
+            .any(|instr| matches!(instr, Instr::Move(dir) if *dir >= 6))
+        {
+            return Err("an arm tape has an invalid move".to_string());
+        }
+    }
+    for bond in &sim.bonds {
+        for end in [bond.a, bond.b] {
+            if sim.atoms.get(end).and_then(Option::as_ref).is_none() {
+                return Err("a bond joins no atom".to_string());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn glyph_kind(name: &str) -> Option<GlyphKind> {
@@ -341,9 +382,8 @@ fn instruction(letter: char) -> Option<Instr> {
     }
 }
 
-fn fragment_text(sim: &Sim) -> String {
-    let mut lines: Vec<String> = sim
-        .glyphs
+fn machine_lines(sim: &Sim) -> Vec<String> {
+    sim.glyphs
         .iter()
         .flatten()
         .map(|g| format!("{} {} {}", machine_name(g.kind), cell(g.at), g.dir))
@@ -355,7 +395,11 @@ fn fragment_text(sim: &Sim) -> String {
             };
             format!("arm {} {} {tape} {}", cell(a.pivot), a.dir, a.pc)
         }))
-        .collect();
+        .collect()
+}
+
+fn fragment_text(sim: &Sim) -> String {
+    let mut lines = machine_lines(sim);
     let mut seen = Vec::new();
     for i in sim
         .atoms
@@ -375,12 +419,12 @@ fn fragment_text(sim: &Sim) -> String {
     lines.join("\n")
 }
 
-fn compound_text(sim: &Sim) -> String {
+fn posed_form(sim: &Sim) -> Form {
     let mut atoms: Vec<(Hex, AtomKind)> = sim
         .atoms
         .iter()
         .flatten()
-        .map(|a| (a.pos, a.kind))
+        .map(|atom| (atom.pos, atom.kind))
         .collect();
     let mut bonds: Vec<(Hex, Hex, BondKind)> = sim
         .bonds
@@ -395,57 +439,79 @@ fn compound_text(sim: &Sim) -> String {
         .collect();
     atoms.sort_unstable();
     bonds.sort_unstable();
-    Form { atoms, bonds }.to_string()
+    Form { atoms, bonds }
 }
 
-fn posed(sim: &Sim, turn: usize) -> Sim {
+fn fragment_key(sim: &Sim) -> (Form, Vec<String>) {
+    let mut machines = machine_lines(sim);
+    machines.sort_unstable();
+    (posed_form(sim), machines)
+}
+
+fn compound_text(sim: &Sim) -> String {
+    posed_form(sim).to_string()
+}
+
+fn wide_turn(at: Hex, turn: usize) -> (i64, i64) {
+    let (q, r) = (i64::from(at.q), i64::from(at.r));
+    match turn % 6 {
+        0 => (q, r),
+        1 => (q + r, -q),
+        2 => (r, -q - r),
+        3 => (-q, -r),
+        4 => (-q - r, q),
+        _ => (-r, q + r),
+    }
+}
+
+fn posed(sim: &Sim, turn: usize) -> Result<Sim, String> {
     let ids: Vec<usize> = sim
         .atoms
         .iter()
         .enumerate()
         .filter_map(|(i, atom)| atom.map(|_| i))
         .collect();
+    let positions: Vec<(i64, i64)> = sim
+        .arms
+        .iter()
+        .map(|arm| arm.pivot)
+        .chain(sim.glyphs.iter().flatten().map(|glyph| glyph.at))
+        .chain(sim.atoms.iter().flatten().map(|atom| atom.pos))
+        .map(|at| wide_turn(at, turn))
+        .collect();
+    let origin = (
+        positions.iter().map(|at| at.0).min().expect("a position"),
+        positions.iter().map(|at| at.1).min().expect("a position"),
+    );
+    let at = |position: Hex| {
+        let position = wide_turn(position, turn);
+        let q = i32::try_from(position.0 - origin.0);
+        let r = i32::try_from(position.1 - origin.1);
+        match (q, r) {
+            (Ok(q), Ok(r)) => Ok(Hex::new(q, r)),
+            _ => Err("fragment coordinates are too far apart".to_string()),
+        }
+    };
     let mut posed = sim.fragment(&ids, Hex::new(0, 0));
     posed.arms = sim
         .arms
         .iter()
         .map(|a| {
-            let mut arm =
-                crate::sim::Arm::new(a.pivot.turned(turn), (a.dir + turn) % 6, a.tape.clone());
+            let mut arm = crate::sim::Arm::new(at(a.pivot)?, (a.dir + turn) % 6, a.tape.clone());
             arm.pc = a.pc;
-            arm
+            Ok(arm)
         })
-        .collect();
+        .collect::<Result<Vec<_>, String>>()?;
     posed.glyphs = sim
         .glyphs
         .iter()
         .flatten()
-        .map(|g| Some(Glyph::new(g.kind, g.at.turned(turn), (g.dir + turn) % 6)))
-        .collect();
-    for atom in posed.atoms.iter_mut().flatten() {
-        atom.pos = atom.pos.turned(turn);
+        .map(|g| Ok(Some(Glyph::new(g.kind, at(g.at)?, (g.dir + turn) % 6))))
+        .collect::<Result<Vec<_>, String>>()?;
+    for (atom, id) in posed.atoms.iter_mut().flatten().zip(ids) {
+        atom.pos = at(sim.atoms[id].unwrap().pos)?;
     }
-    let positions = posed
-        .arms
-        .iter()
-        .map(|a| a.pivot)
-        .chain(posed.glyphs.iter().flatten().map(|g| g.at))
-        .chain(posed.atoms.iter().flatten().map(|a| a.pos));
-    let positions: Vec<Hex> = positions.collect();
-    let origin = Hex::new(
-        positions.iter().map(|at| at.q).min().unwrap_or(0),
-        positions.iter().map(|at| at.r).min().unwrap_or(0),
-    );
-    for arm in &mut posed.arms {
-        arm.pivot = arm.pivot.sub(origin);
-    }
-    for glyph in posed.glyphs.iter_mut().flatten() {
-        glyph.at = glyph.at.sub(origin);
-    }
-    for atom in posed.atoms.iter_mut().flatten() {
-        atom.pos = atom.pos.sub(origin);
-    }
-    posed
+    Ok(posed)
 }
 
 impl fmt::Display for Fragment {
@@ -601,7 +667,7 @@ impl FromStr for Fragment {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Fragment, String> {
-        Ok(Fragment::of(&parse_fragment(text)?))
+        Fragment::of(&parse_fragment(text)?)
     }
 }
 
@@ -648,6 +714,11 @@ mod tests {
                 "{item:?} is not in canonical form in the table"
             );
             assert_eq!(Form::of(&form.sim()), *form, "{item:?}");
+            assert_eq!(
+                Fragment::of(&form.sim()).unwrap().to_string(),
+                written,
+                "{item:?}"
+            );
             assert_eq!(form.crafts(), Some(*item));
         }
         let arm = Machine::Arm.recipe().unwrap();
@@ -714,7 +785,7 @@ mod tests {
             2,
             vec![Instr::Grab, Instr::Move(4), Instr::Rot(Spin::Cw)],
         );
-        arm.pc = 2;
+        arm.pc = 17;
         sim.arms.push(arm);
         let a = sim.spawn(Atom {
             kind: AtomKind::Base,
@@ -730,14 +801,35 @@ mod tests {
             kind: BondKind::Double,
         });
 
-        let text = Fragment::of(&sim).to_string();
+        let text = Fragment::of(&sim).unwrap().to_string();
         let read = text.parse::<Fragment>().unwrap();
         assert_eq!(read.to_string(), text);
         assert_eq!(read.0.arms.len(), 1);
         assert_eq!(read.0.glyphs.iter().flatten().count(), 1);
         assert_eq!(read.0.atoms.iter().flatten().count(), 2);
-        assert_eq!(read.0.arms[0].pc, 2);
+        assert_eq!(read.0.arms[0].pc, 17);
         assert_eq!(read.0.arms[0].tape, sim.arms[0].tape);
-        assert!(text.lines().any(|line| line.contains(" FwD 2")));
+        assert!(text.lines().any(|line| line.contains(" FwD 17")));
+        let empty_tape = "arm 0,0 0 - 23".parse::<Fragment>().unwrap();
+        assert!(empty_tape.0.arms[0].tape.is_empty());
+        assert_eq!(empty_tape.0.arms[0].pc, 23);
+        for kind in GlyphKind::ALL
+            .into_iter()
+            .filter(|kind| *kind != GlyphKind::Source)
+        {
+            assert_eq!(glyph_kind(machine_name(kind)), Some(kind));
+        }
+    }
+
+    #[test]
+    fn fragment_construction_rejects_empty_sources_and_unrepresentable_coordinates() {
+        assert!(Fragment::of(&Sim::empty()).is_err());
+        let mut source = Sim::empty();
+        source
+            .glyphs
+            .push(Some(Glyph::new(GlyphKind::Source, Hex::new(0, 0), 0)));
+        assert!(Fragment::of(&source).is_err());
+        let too_wide = "arm 0,0 0 - 0\narm 2147483647,2147483647 0 - 0";
+        assert!(too_wide.parse::<Fragment>().is_err());
     }
 }
