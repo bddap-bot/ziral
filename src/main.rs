@@ -8176,7 +8176,7 @@ mod tests {
         assert_surface_at_corners(
             &frame,
             "palette",
-            [(179, 75), (204, 75), (179, 100), (204, 100)],
+            [(123, 147), (148, 147), (123, 172), (148, 172)],
             strip,
         );
         assert_surface_at_corners(
