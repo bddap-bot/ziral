@@ -673,6 +673,24 @@ Tests: every recipe is one compound within the first tier, bonded across adjacen
 
 Question for the next round: the arm's recipe needs a second-bond applicator, so the first hours run bonder, second-bond, arm by hand before the first arm moves. Is that the intended length of the hand-built prologue, or should the arm's recipe be single-bonded so the first arm comes second?
 
+### Toy 1 proves reachability
+
+Directive (verbatim): "here is an idea for a unit test that would catch this, and other more complex issues as the game becomes more complex.
+
+the test is a proof verification. simple example, we need to assert that Base atom is synthesizable in-world. the three premises are
+- one base atom emitter exists in world
+- one first tier output glyph attainable
+- one single-bonder attainable
+the test plops a base atom emitter in the world, ticks, and observes that the atom exists in the world.
+
+more complex proofs can rely on previous ones without re-running the previous ones"
+
+One test-only proof function owns each fact and names its earlier facts as premises. A run memoises the result of every function, grants successful premises into a fresh world in their typed form, and reports the function and its premises. An attainable item is added to inventory, a synthesizable compound is parsed from its canonical notation and placed, and a synthesizable atom kind is spawned. A failed premise stops a dependent before its construction runs and identifies that premise.
+
+The source, first output, and bonder are the three world grants. The source proves the base atom after one 400 ms tick. From there, table-driven functions prove every recipe form from its atom inputs at the bonder and second-bond applicator, every recipe item from its form at the first output, and amber and plum in ladder order from their converter inputs. The proof for every recipe is generated directly from `form::RECIPES`, so a new recipe cannot exist outside the reachability suite. Typed conclusions keep an inventory item, compound notation, and atom kind distinct, and the dependency graph proves every machine, token, recipe compound, and atom kind without replaying an earlier construction.
+
+This is the dumbest design satisfying the directive because it is a small dependency walk around ordinary test functions and the model's existing tables and transitions. One monolithic play-through was rejected because a late failure would obscure the missing fact and replay the whole ladder. Per-recipe fixtures were rejected because each would repeat the same grants, bonding, and output construction while permitting the fixture list to drift from `form::RECIPES`.
+
 ### Toy 1 keeps one art direction and draws each recipe for the painter
 
 Directive (verbatim): "Lets remove the rust typing around visual descriptions for the art department. We don't need to differentiate
