@@ -6,7 +6,7 @@ Two rules bind the direction, and section 3 makes them checkable: every atom is 
 
 ## 1. Palette
 
-Seven glazes. Every drawn thing takes its fill from this list; a new color is a bible change, not a code change.
+Eight glazes. Every drawn thing takes its fill from this list; a new color is a bible change, not a code change.
 
 | glaze | hex | hue | luminance | role |
 |---|---|---|---|---|
@@ -16,6 +16,7 @@ Seven glazes. Every drawn thing takes its fill from this list; a new color is a 
 | blue-green | `#4F8A8B` | 181° | 0.22 | the base atom; the source glyph |
 | amber | `#E0A458` | 34° | 0.43 | the amber atom; saturated gold |
 | plum | `#7D5BA6` | 267° | 0.15 | the second-bond glyph; the double bond |
+| cobalt | `#3657A7` | 220° | 0.10 | the cobalt atom; its converter path |
 | ivory | `#F4EDE4` | — | 0.85 | the output cup; the pick and stall marks; UI text |
 
 Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth naming (chroma 0.06); it reads by value only. The amber atom loses no more than 0.15 chroma from its glaze, keeping its gold saturated through the surface variation. Structure that is neither glaze nor state (grout, wells, rims, strips, borders) is dark brass lifted toward clay by some fraction, never a new color.

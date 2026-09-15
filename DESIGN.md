@@ -110,6 +110,18 @@ Directive (verbatim): "This gold-colored atom is visually washed out and looks s
 
 The amber texture keeps its existing ringed bead and is regraded toward its existing amber glaze. Its glaze-wearing gate now limits lost chroma as well as hue and luminance drift. This is the dumbest design satisfying the directive because one texture correction and one focused material invariant address the faded appearance without adding a glaze, asset variant, or rendering path. Repainting was rejected because the silhouette and surface already carry the intended ringed ceramic form; replacing them would solve more than the color defect.
 
+### Cobalt atom and four-cell converter
+
+Directive (verbatim): "make a new machine for converting B0 to B2 it's a four tile machine, converts atoms 1-1. buncha fancy asthetic bullshit on the tiles between input and output:"
+
+Directive (verbatim): "the atom my new machine creates need not be plum, i said plum originally because i thought plum was unused and unsynthesizable.
+
+early game things should each have exactly one route, late-game, we will start introducing more-efficient, but also more complex ways to get the staple ingreedients"
+
+The new fourth atom is cobalt, written `C`, and its only route is the four-cell converter in [the supplied figure](docs/converter-cobalt-sketch.jpg). The footprint is the figure's rhombus: a lone base input at one end, an empty cobalt output at the opposite end, and two body cells between them. One fired 400 ms tick consumes the base and fills the output; an occupied output is backpressure. A cobalt-glazed path through the middle responds as one moving part, and the firing emitter follows the same event. The housing fills all four cells while only the two end marks are openings. Its one manufacturing recipe uses a plum-tier compound.
+
+This is the dumbest design satisfying the directive because it adds one atom row, one route, one converter rule, one recipe, and one fixture to the existing tables and tick stream. A configurable converter, a recipe compound at the input, a delayed internal atom, or another way to make cobalt was rejected because each adds a route or state absent from the requested one-to-one conversion. Cobalt was chosen because its blue value remains distinct from the existing blue-green base while fitting fired glaze; one tick reuses the game's only clock and makes the occupied output the only stall state.
+
 ### Playtest saves
 
 Directive (verbatim): "I'd like to be able to playtest this without starting from scratch each time. Time for save-load functionality?"

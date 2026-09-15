@@ -32,6 +32,10 @@ A broad brass pivot, one-piece link, and terracotta rubber-lined horseshoe make 
 
 A single blue-green ceramic feed hopper with one unmistakable seat, a brass metering ring, a short delivery chute, and a worn rubber gate. It reads as dispensing one bead, never storing a second.
 
+## Cobalt converter
+
+One stout housing fills the four-cell rhombus of `docs/converter-cobalt-sketch.jpg`. A terracotta-collared input opening and a cobalt-collared output opening sit at opposite ends on their marks. Between them, the two body cells carry one conspicuous cobalt-glazed path through darkened-brass guides; that path moves on the fired event. The openings remain empty and unobstructed, and no other cup or seat appears in the body.
+
 ## Bonder
 
 Two adjacent cells as equal seats joined by a heavy compression bridge. Opposed clamps and shared pressure plumbing say that both atoms survive and leave joined; there is no third or sacrificial intake.
