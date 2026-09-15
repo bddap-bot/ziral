@@ -750,6 +750,16 @@ Three alternatives disposed. Free steps with a cooldown make the cost time and n
 
 Tests: S and G each spend one step and at zero leave ghost[0], the ghost and the previous frame byte-equal, and a step restocked is spent by S; a write spends the token, a second write and a write of another token at zero leave the sim as it was with the cursor where it was, backspace and Z return the token; a refused write at ghost[2] leaves ghost[0] and ghost[2] as they were and an accepted one replays; deleting an arm returns the arm and every token on its tape, two of one kind counted twice, and a cut returns none; a lone atom on a pad at ghost[1] is a step in the ghost and not in ghost[0], and is a step in ghost[0] once the world runs; the keys write exactly the tokens the table prices, in tape order; the step is one atom, every token carries the arm's double bond with three atoms or four for a move, grab, drop and wait are their own mirror images, each pair of turns and each opposite pair of moves is a mirror pair bending the way this round says, and a lone atom on a first- or third-tier pad crafts one step; the `spend` scene spends three steps, refuses the fourth, and returns the erased grab. Mutation-tested both ways: a step that spends nothing, a write that spends nothing, a backspace that returns nothing, a delete that returns the arm alone, a craft applied to ghost[0], and a mirror swapped in the table each fail the test that names it. `art/reference/proof/spend.gif` (`art/gif.sh art/reference/proof/spend.gif spend 15 700:520:0:200`) is the `spend` shot scene: three steps in the palette and one grab; paused, G four times, the tally growing to three and the step row emptying, the fourth doing nothing; the arm clicked, F, the grab's bead going out as the token appears on the tape, and backspace, the bead back.
 
+### Toy 1 makes debug stepping free
+
+Directive (verbatim): "lets make debug stepping free forward and back"
+
+S and G move through ghost frames while paused without reading or changing the inventory, however many times either key is pressed; S at ghost[0] remains the boundary and does nothing. Tokens keep their recipes and price. The step inventory item is deleted with its one-atom recipe, palette row, card, picture, spend, scene, proof, and price tests. A lone atom on an output pad consequently matches no recipe and remains on the pad.
+
+The dumbest design is the deletion: stepping already knows whether the world is paused and which ghost frame to replay, so removing the inventory condition makes both directions free without another path or state. A cooldown would turn the removed material price into a time price and add a clock to an action that already has one result per press. A per-session cap would replace the removed inventory count with another count and make a later press fail again. Neither satisfies unrestricted stepping.
+
+Tests press G and S with empty inventory and with stocked tokens, require the canonical inventory to stay byte-equal, and require every requested frame through ghost[0] to be reached. `proofs/free-debug-stepping-79.gif` is the shipped-size `ghost` scene paused, stepped forward five frames and back three, with no step row or count.
+
 ### Toy 1 arranges inventory tokens as keys
 
 Directive (verbatim): "in inventory, keycodes should be arranged as they are on a keyboard."

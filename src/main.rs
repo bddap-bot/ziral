@@ -46,9 +46,6 @@ const MANUAL_SYMBOL_PX: f32 = 128.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
 const MARK_PX: f32 = 6.0;
-const STEP_PX: f32 = 2.0 * MARK_PX;
-const STEP_SHIFT: f32 = 4.0;
-const STEP_SPAN: f32 = STEP_PX + 2.0 * STEP_SHIFT;
 const TALLY_PX: f32 = 86.0;
 const PALETTE_WIDTH: f32 = PALETTE_PX + SYMBOL_PX + 2.0 * (TALLY_PX + 24.0) + 8.0;
 const CARD_PAD: f32 = 12.0;
@@ -85,30 +82,6 @@ fn zoomed(scale: f32, notches: f32) -> f32 {
 }
 
 const IVORY: Color = Glaze::Ivory.color();
-
-#[derive(Clone, Copy, Component, Debug, PartialEq)]
-enum StepFrame {
-    Projected,
-    Current,
-}
-
-impl StepFrame {
-    fn shift(self) -> f32 {
-        match self {
-            StepFrame::Projected => STEP_SHIFT,
-            StepFrame::Current => -STEP_SHIFT,
-        }
-    }
-
-    fn color(self) -> Color {
-        match self {
-            StepFrame::Projected => IVORY.with_alpha(GHOST),
-            StepFrame::Current => IVORY,
-        }
-    }
-}
-
-const STEP_ART: [StepFrame; 2] = [StepFrame::Projected, StepFrame::Current];
 
 #[derive(Clone, Copy, Component)]
 struct PaletteRow(Item);
@@ -221,7 +194,7 @@ fn fresh(item: Item) -> Sim {
         Item::Atom(kind) => {
             set.spawn(sim::Atom { kind, pos: ORIGIN });
         }
-        Item::Step | Item::Token(_) => {}
+        Item::Token(_) => {}
     }
     set
 }
@@ -997,7 +970,7 @@ impl World {
         self.hover = item;
         self.play = match item {
             Some(Item::Machine(machine)) => Some(Play::at(machine, 0)),
-            Some(Item::Step | Item::Token(_)) | None => None,
+            Some(Item::Token(_)) | None => None,
             Some(Item::Atom(_)) => unreachable!("an atom resolves to its route before hover"),
         };
     }
@@ -1387,7 +1360,7 @@ impl World {
                 return;
             }
             KeyG => {
-                if !self.running && self.sim.inventory.spend(Item::Step) {
+                if !self.running {
                     self.end_turn();
                     self.down = None;
                     self.unpick_atoms();
@@ -1402,9 +1375,7 @@ impl World {
                 return;
             }
             KeyS => {
-                if let (false, Some(n)) = (self.running, self.ghosts().checked_sub(1))
-                    && self.sim.inventory.spend(Item::Step)
-                {
+                if let (false, Some(n)) = (self.running, self.ghosts().checked_sub(1)) {
                     self.end_turn();
                     self.down = None;
                     self.resim(n);
@@ -1997,25 +1968,6 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
                 field,
             ));
         }
-        Item::Step => {
-            entry.spawn((square, field)).with_children(|picture| {
-                for frame in STEP_ART {
-                    picture.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px((STEP_SPAN - STEP_PX) / 2.0 + frame.shift()),
-                            top: Val::Px((STEP_SPAN - STEP_PX) / 2.0),
-                            width: Val::Px(STEP_PX),
-                            height: Val::Px(STEP_PX),
-                            border_radius: BorderRadius::MAX,
-                            ..default()
-                        },
-                        BackgroundColor(frame.color()),
-                        frame,
-                    ));
-                }
-            });
-        }
         Item::Token(instr) => {
             entry.spawn((InstructionSymbol::Ui(instr), square, field));
         }
@@ -2026,7 +1978,6 @@ fn picture_square(item: Item) -> (Node, BackgroundColor) {
     let side = match item {
         Item::Machine(_) => PALETTE_PX,
         Item::Atom(_) => PALETTE_PX,
-        Item::Step => STEP_SPAN,
         Item::Token(_) => SYMBOL_PX,
     };
     let world = matches!(item, Item::Machine(_) | Item::Atom(_));
@@ -2252,7 +2203,6 @@ fn picture_side(item: Item) -> f32 {
     match item {
         Item::Machine(machine) => look::quad(machine).side,
         Item::Atom(_) => unreachable!("an atom resolves to its route before sizing"),
-        Item::Step => STEP_SPAN,
         Item::Token(_) => SYMBOL_PX,
     }
 }
@@ -2269,7 +2219,7 @@ fn layout(item: Item) -> Layout {
     let recipe = recipe_side();
     let bounds = match item {
         Item::Machine(machine) => Some(play_bounds(&playfield(machine))),
-        Item::Step | Item::Token(_) => None,
+        Item::Token(_) => None,
         Item::Atom(_) => unreachable!("an atom resolves to its route before layout"),
     };
     let span = bounds.map_or(Vec2::ZERO, |(lo, hi)| hi - lo);
@@ -3097,7 +3047,6 @@ struct Kiln {
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 7],
     patina: [Handle<ColorMaterial>; 2],
-    step_ghost: Handle<ColorMaterial>,
     card: [Handle<ColorMaterial>; 2],
     atoms: [Handle<Image>; 3],
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
@@ -3347,7 +3296,6 @@ fn fire_kiln(
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: [0.5, 0.5 * GHOST].map(|a| materials.add(Glaze::Brass.color().with_alpha(a))),
-        step_ghost: materials.add(StepFrame::Projected.color()),
         card: [Glaze::Clay.color(), brass(0.5)].map(|c| materials.add(c)),
         atoms,
         skins,
@@ -3517,28 +3465,6 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         let (skin, patina) = (self.skin(look.skin), &kiln.patina[usize::from(self.ghost)]);
         self.stamp(&kiln.circle, skin, at, ATOM_RADIUS, z);
         self.stamp(&kiln.rim, patina, at, ATOM_RADIUS, z + layer::RIM);
-    }
-
-    fn step(&mut self, at: Vec2, z: f32) {
-        for (index, frame) in STEP_ART.into_iter().enumerate() {
-            let material = match frame {
-                StepFrame::Projected => &self.kiln.step_ghost,
-                StepFrame::Current => self.kiln.material(Glaze::Ivory),
-            };
-            self.commands.spawn((
-                frame,
-                Fill,
-                self.layers.clone(),
-                Mesh2d(self.kiln.circle.clone()),
-                MeshMaterial2d(material.clone()),
-                Transform {
-                    translation: (at + Vec2::new(frame.shift(), 0.0) + self.shift)
-                        .extend(z + index as f32 * 0.0001),
-                    scale: Vec2::splat(STEP_PX / 2.0).extend(1.0),
-                    ..default()
-                },
-            ));
-        }
     }
 
     fn bond(&mut self, a: Vec2, c: Vec2, kind: BondKind, z: f32) {
@@ -4226,7 +4152,6 @@ fn hover_card<G: GizmoConfigGroup>(
             (false, 1.0, sim::ActivationEnergy::default()),
         ),
         Item::Atom(_) => unreachable!("an atom resolves to its route before painting"),
-        Item::Step => p.step(at, z(2)),
         Item::Token(instr) => p.instruction(instr, at, picture_side(item), z(2)),
     }
     if let Some(recipe) = item.recipe() {
@@ -4370,7 +4295,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 54] = [
+    pub const SCENES: [&str; 52] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4381,8 +4306,6 @@ mod shot {
         "bonders",
         "focus",
         "write",
-        "spend",
-        "step-art",
         "hand",
         "start",
         "craft",
@@ -4709,39 +4632,12 @@ mod shot {
                     kind: AtomKind::Base,
                     pos: arm.add(DIRS[0]),
                 });
-                world.sim.inventory.add(Item::Step);
                 world.sim.inventory.add(Item::Token(Instr::Grab));
                 script.extend(tap(30, Space));
                 script.push((54, Act::Press(arm)));
                 script.push((60, Act::Release(arm)));
                 script.extend(tap(96, KeyF));
                 script.extend(tap(132, KeyG));
-            }
-            "spend" => {
-                let arm = Hex::new(-2, 0);
-                let mut sim = Sim::empty();
-                sim.arms.push(Arm::new(arm, 0, Vec::new()));
-                sim.spawn(Atom {
-                    kind: AtomKind::Base,
-                    pos: arm.add(DIRS[0]),
-                });
-                for _ in 0..3 {
-                    sim.inventory.add(Item::Step);
-                }
-                sim.inventory.add(Item::Token(Instr::Grab));
-                world.sim = sim;
-                script.extend(tap(30, Space));
-                for k in 0..4 {
-                    script.extend(tap(60 + 24 * k, KeyG));
-                }
-                script.push((170, Act::Press(arm)));
-                script.push((176, Act::Release(arm)));
-                script.extend(tap(200, KeyF));
-                script.extend(tap(240, Backspace));
-            }
-            "step-art" => {
-                world.set_hover(Some(Item::Step));
-                world.period = f32::INFINITY;
             }
             "hand" => {
                 let source = Hex::new(-4, 1);
@@ -4935,9 +4831,6 @@ mod shot {
                 world.sim = sim;
                 world.focus_tape(0);
                 if name == "ghost" {
-                    for _ in 0..5 {
-                        world.sim.inventory.add(Item::Step);
-                    }
                     world.sim.inventory.add(Item::Token(Instr::Rot(Spin::Cw)));
                     script.extend(tap(60, Space));
                     for k in 0..5 {
@@ -5746,19 +5639,6 @@ mod tests {
     const SEAM_TONE: f32 = 0.05;
     const SEAM_GRAIN: f32 = 0.015;
     const BLUR_PX: f32 = 1.0;
-
-    type StepPictures<'w, 's> = Query<
-        'w,
-        's,
-        (
-            &'static StepFrame,
-            Option<&'static Node>,
-            Option<&'static BackgroundColor>,
-            Option<&'static Transform>,
-            Option<&'static Mesh2d>,
-            Option<&'static MeshMaterial2d<ColorMaterial>>,
-        ),
-    >;
 
     type InstructionSymbols<'w, 's> = Query<
         'w,
@@ -6627,7 +6507,6 @@ mod tests {
         let mut replay =
             World::new(fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim);
         replay.running = false;
-        stocked(&mut replay, Item::Step, 3);
         replay.key(KeyCode::KeyG, false);
         replay.key(KeyCode::KeyG, false);
         replay.key(KeyCode::KeyS, false);
@@ -6639,7 +6518,6 @@ mod tests {
     fn changing_the_preview_cancels_a_pending_atom_press() {
         let mut w = World::new(fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim);
         w.running = false;
-        stocked(&mut w, Item::Step, 3);
         w.press(px(ORIGIN), px(ORIGIN));
         w.key(KeyCode::KeyG, false);
         assert!(w.down.is_none());
@@ -6825,10 +6703,7 @@ mod tests {
     }
 
     fn stock_consumables(w: &mut World) {
-        for item in [Item::Step]
-            .into_iter()
-            .chain(KEYS.map(|k| Item::Token(k.instr)))
-        {
+        for item in KEYS.map(|k| Item::Token(k.instr)) {
             stocked(w, item, sim::DEFAULT_CAP);
         }
     }
@@ -7203,7 +7078,7 @@ mod tests {
         let w = paused(5);
         let (_, expected_events) = w.sim.replayed(5);
         assert_eq!(w.ghosts(), 5);
-        assert_eq!(w.sim, after_spending(&ghost0, Item::Step, 5));
+        assert_eq!(w.sim, ghost0);
         assert_eq!(*w.shown(), w.sim.replay(5));
         assert_eq!(w.prev, w.sim.replay(4));
         assert_eq!(w.events, expected_events);
@@ -7897,7 +7772,6 @@ mod tests {
             .into_iter()
             .filter(|m| *m != Machine::Glyph(GlyphKind::Source))
             .map(Item::Machine)
-            .chain([Item::Step])
             .chain(KEYS.map(|k| Item::Token(k.instr)))
             .chain(AtomKind::ALL.map(Item::Atom))
             .collect();
@@ -8035,63 +7909,6 @@ mod tests {
                 [100, 67, 23],
             ],
         );
-    }
-
-    #[test]
-    fn the_step_picture_is_one_solid_frame_projected_right_at_ghost_opacity_in_the_palette_and_card()
-     {
-        assert_eq!(STEP_ART, [StepFrame::Projected, StepFrame::Current]);
-        assert_eq!(StepFrame::Projected.shift(), 4.0);
-        assert_eq!(StepFrame::Current.shift(), -4.0);
-        assert_eq!(STEP_PX, 2.0 * MARK_PX);
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = std::env::temp_dir().join(format!("ziral-step-art-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut app = shot::still("step-art", dir.clone(), 1);
-        lit_plugin(&mut app);
-        app.add_systems(Last, |kiln: Res<Kiln>, parts: StepPictures| {
-            let mut seen = [[0; 2]; STEP_ART.len()];
-            for (frame, node, background, transform, mesh, material) in &parts {
-                let index = STEP_ART
-                    .iter()
-                    .position(|expected| expected == frame)
-                    .unwrap();
-                if let (Some(node), Some(background)) = (node, background) {
-                    assert_eq!(node.width, Val::Px(STEP_PX));
-                    assert_eq!(node.height, Val::Px(STEP_PX));
-                    assert_eq!(
-                        node.left,
-                        Val::Px((STEP_SPAN - STEP_PX) / 2.0 + frame.shift())
-                    );
-                    assert_eq!(node.top, Val::Px((STEP_SPAN - STEP_PX) / 2.0));
-                    assert_eq!(node.border_radius, BorderRadius::MAX);
-                    assert_eq!(background.0, frame.color());
-                    seen[index][0] += 1;
-                }
-                if let (Some(transform), Some(mesh), Some(material)) = (transform, mesh, material) {
-                    let expected = card_slot_at(0)
-                        + layout(Item::Step).picture
-                        + Vec2::new(frame.shift(), 0.0);
-                    assert!(transform.translation.truncate().distance(expected) < 1e-3);
-                    assert_eq!(transform.scale.truncate(), Vec2::splat(STEP_PX / 2.0));
-                    assert_eq!(mesh.0, kiln.circle);
-                    assert_eq!(
-                        material.0,
-                        match frame {
-                            StepFrame::Projected => kiln.step_ghost.clone(),
-                            StepFrame::Current => kiln.material(Glaze::Ivory).clone(),
-                        }
-                    );
-                    seen[index][1] += 1;
-                }
-            }
-            assert_eq!(seen, [[1, 1]; STEP_ART.len()]);
-        });
-        assert_eq!(app.run(), bevy::app::AppExit::Success);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -8887,16 +8704,14 @@ mod tests {
     }
 
     #[test]
-    fn a_token_or_step_card_ends_at_its_recipe_and_a_machine_card_holds_its_playfield() {
-        for item in [Item::Step, Item::Token(Instr::Grab)] {
-            let card = layout(item);
-            assert_eq!(card.field, None, "{item:?}");
-            assert_eq!(
-                card.size.x,
-                3.0 * CARD_PAD + picture_side(item) + recipe_side(),
-                "{item:?}"
-            );
-        }
+    fn a_token_card_ends_at_its_recipe_and_a_machine_card_holds_its_playfield() {
+        let item = Item::Token(Instr::Grab);
+        let card = layout(item);
+        assert_eq!(card.field, None);
+        assert_eq!(
+            card.size.x,
+            3.0 * CARD_PAD + picture_side(item) + recipe_side()
+        );
         let bonder = Machine::Glyph(GlyphKind::Bonder);
         let (lo, hi) = play_bounds(&playfield(bonder));
         let card = layout(bonder.into());
@@ -8960,7 +8775,7 @@ mod tests {
         }
         assert_eq!(w.ghosts(), 0);
         w.release(Some(Hex::new(5, 5)));
-        assert_eq!(w.sim, after_spending(&ghost0, Item::Step, 6));
+        assert_eq!(w.sim, ghost0);
         assert_eq!(w.focus, None);
     }
 
@@ -8974,7 +8789,7 @@ mod tests {
         assert_eq!(w.ghosts(), 1);
         w.pointer = Some(px(Hex::new(8, 8)));
         w.release(Some(Hex::new(8, 8)));
-        assert_eq!(w.sim, after_spending(&ghost0, Item::Step, 1));
+        assert_eq!(w.sim, ghost0);
         assert_eq!(*w.shown(), w.sim.replay(1));
         assert_eq!(w.focus, None);
     }
@@ -9178,26 +8993,41 @@ mod tests {
     }
 
     #[test]
-    fn a_step_spends_one_step_item_and_refuses_at_zero_leaving_every_frame_as_it_was() {
-        let step = Item::Step;
-        let mut w = paused(0);
-        w.sim.inventory = sim::Inventory::EMPTY;
-        stocked(&mut w, step, 2);
-        let ghost0 = w.sim.clone();
-        w.key(KeyCode::KeyG, false);
-        assert_eq!((w.ghosts(), count(&w, step)), (1, 1));
-        w.key(KeyCode::KeyG, false);
-        assert_eq!((w.ghosts(), count(&w, step)), (2, 0));
-        let (sim, shown, prev) = (w.sim.clone(), w.shown().clone(), w.prev.clone());
-        w.key(KeyCode::KeyG, false);
-        w.key(KeyCode::KeyS, false);
-        assert_eq!(w.ghosts(), 2);
-        assert_eq!((&w.sim, w.shown(), &w.prev), (&sim, &shown, &prev));
-        assert_eq!(w.sim, after_spending(&ghost0, step, 2));
-        stocked(&mut w, step, 1);
-        w.key(KeyCode::KeyS, false);
-        assert_eq!((w.ghosts(), count(&w, step)), (1, 0));
-        assert_eq!(*w.shown(), w.sim.replay(1));
+    fn g_steps_forward_with_empty_or_full_inventory_without_changing_it() {
+        for full in [false, true] {
+            let mut w = paused(0);
+            w.sim.inventory = sim::Inventory::EMPTY;
+            if full {
+                w.sim.inventory.fill();
+            }
+            let inventory = w.sim.inventory;
+            for _ in 0..8 {
+                w.key(KeyCode::KeyG, false);
+            }
+            assert_eq!(w.ghosts(), 8);
+            assert_eq!(w.sim.inventory, inventory);
+            assert_eq!(*w.shown(), w.sim.replay(8));
+        }
+    }
+
+    #[test]
+    fn s_steps_back_with_empty_or_full_inventory_without_changing_it() {
+        for full in [false, true] {
+            let mut w = paused(0);
+            w.resim(8);
+            w.sim.inventory = sim::Inventory::EMPTY;
+            if full {
+                w.sim.inventory.fill();
+            }
+            let inventory = w.sim.inventory;
+            for expected in (0..8).rev() {
+                w.key(KeyCode::KeyS, false);
+                assert_eq!(w.ghosts(), expected);
+            }
+            w.key(KeyCode::KeyS, false);
+            assert_eq!(w.ghosts(), 0);
+            assert_eq!(w.sim.inventory, inventory);
+        }
     }
 
     #[test]
@@ -9270,45 +9100,6 @@ mod tests {
         assert!(w.sim.arms.is_empty());
         assert_eq!(counts(&w), (1, 2, 1, 1, 0));
         assert!(w.clipboard.is_some());
-    }
-
-    #[test]
-    fn a_craft_inside_a_ghost_frame_never_reaches_the_canonical_count() {
-        let step = Item::Step;
-        let mut w = lone(
-            vec![Glyph::new(GlyphKind::Output(Tier::One), Hex::new(4, 4), 0)],
-            vec![],
-        );
-        w.sim.spawn(Atom {
-            kind: AtomKind::Base,
-            pos: Hex::new(4, 4),
-        });
-        w.running = false;
-        stocked(&mut w, step, 1);
-        w.key(KeyCode::KeyG, false);
-        assert_eq!(w.ghosts(), 1);
-        assert_eq!(count(&w, step), 0);
-        assert_eq!(w.shown().inventory.count(step), Some(1));
-        assert!(w.shown().atoms.iter().flatten().next().is_none());
-        assert!(w.sim.atoms.iter().flatten().next().is_some());
-        w.key(KeyCode::Space, false);
-        assert_eq!(count(&w, step), 0);
-        w.step();
-        assert_eq!(count(&w, step), 1);
-    }
-
-    #[test]
-    fn the_spend_scene_runs_three_steps_refuses_the_fourth_and_returns_the_erased_grab() {
-        let w = played("spend", 150);
-        assert_eq!(w.ghosts(), 3);
-        assert_eq!(count(&w, Item::Step), 0);
-        let w = played("spend", 220);
-        assert_eq!(w.sim.arms[0].tape, vec![Instr::Grab]);
-        assert_eq!(count(&w, Item::Token(Instr::Grab)), 0);
-        let w = played("spend", 260);
-        assert_eq!(w.sim.arms[0].tape, vec![]);
-        assert_eq!(count(&w, Item::Token(Instr::Grab)), 1);
-        assert_eq!(w.ghosts(), 3);
     }
 
     const BONDER: Item = Item::Machine(Machine::Glyph(GlyphKind::Bonder));

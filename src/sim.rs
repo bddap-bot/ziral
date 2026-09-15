@@ -327,7 +327,6 @@ impl Machine {
 pub enum Item {
     Machine(Machine),
     Atom(AtomKind),
-    Step,
     Token(Instr),
 }
 
@@ -2040,14 +2039,13 @@ mod tests {
     }
 
     #[test]
-    fn the_step_is_one_atom_and_every_token_is_the_arm_with_its_act_drawn_on() {
-        assert_eq!(Item::Step.recipe().unwrap().atoms().len(), 1);
+    fn every_token_is_the_arm_with_its_act_drawn_on() {
         let recipe = |instr: Instr| Item::Token(instr).recipe().unwrap();
         let tokens: Vec<Instr> = recipes()
             .iter()
             .filter_map(|(item, _)| match item {
                 Item::Token(instr) => Some(*instr),
-                Item::Machine(_) | Item::Atom(_) | Item::Step => None,
+                Item::Machine(_) | Item::Atom(_) => None,
             })
             .collect();
         for instr in tokens {
@@ -2079,18 +2077,6 @@ mod tests {
         }
         assert_eq!(last_bend(recipe(Instr::Drop)), 0);
         assert_eq!(last_bend(recipe(Instr::Wait)), 0);
-        let a_lone_atom_on_a_pad = |tier| {
-            let mut sim = Sim::empty();
-            sim.glyphs.push(Some(output(tier, ORIGIN)));
-            sim.spawn(Atom {
-                kind: AtomKind::Base,
-                pos: ORIGIN,
-            });
-            sim.step();
-            (count(&sim, Item::Step), sim.atoms.iter().flatten().count())
-        };
-        assert_eq!(a_lone_atom_on_a_pad(Tier::One), (1, 0));
-        assert_eq!(a_lone_atom_on_a_pad(Tier::Three), (1, 0));
     }
 
     #[test]

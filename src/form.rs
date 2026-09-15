@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 23] = [
+pub const RECIPES: [(Item, &str); 22] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
@@ -37,7 +37,6 @@ pub const RECIPES: [(Item, &str); 23] = [
         glyph(GlyphKind::Reification),
         "B0,2 B0,3 B0,4 B1,1 B1,2 B1,3 B1,4 B2,0 B2,1 B2,2 B2,3 B2,4 B3,0 B3,1 B3,2 B3,3 B4,0 B4,1 B4,2 0,2-0,3 0,2-1,1 0,2-1,2 0,3-0,4 0,3-1,2 0,3-1,3 0,4-1,3 0,4-1,4 1,1-1,2 1,1-2,0 1,1-2,1 1,2-1,3 1,2-2,1 1,2-2,2 1,3-1,4 1,3-2,2 1,3-2,3 1,4-2,3 1,4-2,4 2,0-2,1 2,0-3,0 2,1-2,2 2,1-3,0 2,1-3,1 2,2-2,3 2,2-3,1 2,2-3,2 2,3-2,4 2,3-3,2 2,3-3,3 2,4-3,3 3,0-3,1 3,0-4,0 3,1-3,2 3,1-4,0 3,1-4,1 3,2-3,3 3,2-4,1 3,2-4,2 3,3-4,2 4,0-4,1 4,1-4,2",
     ),
-    (Item::Step, "B0,0"),
     (
         Item::Token(Instr::Grab),
         "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1=1,0",
