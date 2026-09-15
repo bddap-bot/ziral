@@ -940,6 +940,16 @@ The dumbest design is to point the existing image node at that rendered bead. Cl
 
 Test: every atom picture points at its kind's preview target, and every preview layer contains the circle and rim produced by the bead path. Mutation-tested both ways: restoring the raw skin image makes the target assertion fail; removing the rim makes the bead-fill assertion fail.
 
+### Toy 1 counts inventory exponentially
+
+Directive (verbatim): "i'll likely change this later, but please make out number representation system, \"pips\" as you call them, exponential. 1 pip = 1, 2 pips = 2, 3 pips = 4, 4 pips = 8. this should help to make the inventory screen smaller, which is a goal. the max value snaps to whole number pips but actual inventory count can be e.g. 5 which would be represnted as 3+some fractional pip."
+
+One pure function maps an inventory count and cap to the full pips and fractional next pip the palette draws. Zero has none; each full pip doubles the represented count, and the next pip fills by progress to the next power of two. Caps are powers of two from 1 through 256. A wheel notch moves one power in either direction, and a cap loaded from older state snaps to the nearest power, with a tie going upward. The palette draws the function directly, adding empty rings through the cap only while hovered. The pip itself is unchanged.
+
+This is the dumbest design satisfying the directive because the inventory retains one count and one cap while one function owns their visual representation. Linear pips grouped in fives would need sixteen marks at the default cap and up to 256 at the maximum; even wrapped, their fixed 86 px tally makes the shipped palette 302 px wide. Nine ungrouped exponential pips cover the maximum in 70 px, making the same palette 270 px wide without another display path.
+
+Tests cover 0, 1, 2, 3, 4, 5, 7 and 8 at cap 8 as 0, 1, 2, 2½, 3, 3¼, 3¾ and 4 pips; a wheel notch from 8 reaches 16 or 4 and no adjacent integer; legacy caps snap to the nearest power; and the shipped palette width falls from 302 px to 270 px at the same caps. Mutation passes restore linear cap steps, remove fractional fill, and restore the old tally width; each named test goes red before the implementation is restored.
+
 ### The sacrificial seat joins the bond-seat rail
 
 Directive (verbatim): "Double-bonder machine would be visually explained a little more intuitively if the sacrificial atom receptical
