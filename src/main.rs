@@ -9478,6 +9478,18 @@ mod tests {
     }
 
     #[test]
+    fn an_arm_whose_translated_hand_is_outside_the_grid_is_refused_byte_equal() {
+        let mut w = lone(vec![], vec![]);
+        stocked(&mut w, Machine::Arm, 1);
+        let before = persist::encode(&w.sim).unwrap();
+        assert!(w.paste_text("arm 0,0 0 - 0"));
+        w.place(Some(Hex::new(i32::MAX, 0)));
+        assert_eq!(persist::encode(&w.sim).unwrap(), before);
+        assert_eq!(w.focus, None);
+        assert_eq!(w.refused, None);
+    }
+
+    #[test]
     fn a_fragment_that_cannot_be_written_is_not_cut() {
         let mut w = lone(
             vec![],

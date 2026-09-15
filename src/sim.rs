@@ -807,6 +807,12 @@ impl Sim {
     pub fn fits(&self, set: &Sim, at: Hex, picked: &[Id]) -> bool {
         set.ids()
             .all(|id| set.stands(id).all(|cell| cell.checked_add(at).is_some()))
+            && set.arms.iter().all(|arm| {
+                arm.pivot
+                    .checked_add(at)
+                    .and_then(|pivot| pivot.checked_add(DIRS[arm.dir]))
+                    .is_some()
+            })
             && self.blocked(set, at, picked).next().is_none()
     }
 

@@ -156,6 +156,7 @@ impl Fragment {
             .min_by_key(fragment_key)
             .expect("six turns");
         validate_fragment(&posed)?;
+        validate_turns(&posed)?;
         Ok(Fragment(parse_fragment(&fragment_text(&posed))?))
     }
 
@@ -346,6 +347,23 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
                 return Err("a bond joins no atom".to_string());
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_turns(sim: &Sim) -> Result<(), String> {
+    let hands = sim
+        .arms
+        .iter()
+        .map(|arm| arm.pivot.checked_add(DIRS[arm.dir]).expect("a valid arm"));
+    let cells = sim.ids().flat_map(|id| sim.stands(id)).chain(hands);
+    if cells.into_iter().any(|at| {
+        (0..6).any(|turn| {
+            let (q, r) = wide_turn(at, turn);
+            i32::try_from(q).is_err() || i32::try_from(r).is_err()
+        })
+    }) {
+        return Err("the fragment cannot turn inside the grid".to_string());
     }
     Ok(())
 }
@@ -897,5 +915,11 @@ mod tests {
                 .parse::<Fragment>()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn fragment_parser_refuses_a_fragment_that_cannot_turn() {
+        let text = "B0,1000000000\nB0,2000000000\nB1000000000,0\nB1000000000,2000000000\nB2000000000,0\nB2000000000,1000000000";
+        assert!(text.parse::<Fragment>().is_err());
     }
 }
