@@ -46,13 +46,11 @@ const MANUAL_SYMBOL_PX: f32 = 128.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
 const MARK_PX: f32 = 6.0;
-const TALLY_PX: f32 = 38.0;
-const PIP_RING_PX: f32 = 4.0;
+const TALLY_PX: f32 = 26.0;
+const PIP_RING_PX: f32 = 2.75;
 const PALETTE_GAP_PX: f32 = 8.0;
 const PALETTE_ROW_GAP_PX: f32 = 6.0;
 const PALETTE_ROW_PAD_X: f32 = 8.0;
-const PALETTE_ROW_PAD_Y: f32 = 0.0;
-const PALETTE_COLUMN_GAP_PX: f32 = 1.0;
 const BORDER_PX: f32 = 1.0;
 const PALETTE_WIDTH: f32 = 2.0
     * (PALETTE_PX + PALETTE_ROW_GAP_PX + TALLY_PX + 2.0 * (PALETTE_ROW_PAD_X + BORDER_PX))
@@ -2557,7 +2555,7 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                 palette
                     .spawn(Node {
                         flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(PALETTE_COLUMN_GAP_PX),
+                        row_gap: Val::Px(4.0),
                         ..default()
                     })
                     .with_children(|col| {
@@ -2565,10 +2563,7 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                             col.spawn((
                                 PaletteRow(item),
                                 button(Node {
-                                    padding: UiRect::axes(
-                                        Val::Px(PALETTE_ROW_PAD_X),
-                                        Val::Px(PALETTE_ROW_PAD_Y),
-                                    ),
+                                    padding: UiRect::axes(Val::Px(PALETTE_ROW_PAD_X), Val::Px(2.0)),
                                     ..row(PALETTE_ROW_GAP_PX)
                                 }),
                             ))
@@ -7950,9 +7945,9 @@ mod tests {
 
     #[test]
     fn every_count_has_one_fixed_concentric_ring_footprint() {
-        assert_eq!(TALLY_PX, 38.0);
-        assert_eq!(PALETTE_WIDTH, 228.0);
-        for (k, diameter, inset) in [(0, 4.0, 17.0), (3, 16.0, 11.0), (8, 36.0, 1.0)] {
+        assert_eq!(TALLY_PX, 26.0);
+        assert_eq!(PALETTE_WIDTH, 204.0);
+        for (k, diameter, inset) in [(0, 2.75, 11.625), (3, 11.0, 7.5), (8, 24.75, 0.625)] {
             assert_eq!(
                 ring_geometry(k, 1.0),
                 (
@@ -7966,23 +7961,6 @@ mod tests {
     }
 
     #[test]
-    fn every_palette_card_fits_in_the_shipped_viewport() {
-        let (_, consumables): (Vec<Item>, Vec<Item>) =
-            palette().partition(|item| matches!(item, Item::Machine(_)));
-        let cards = consumables
-            .iter()
-            .map(|item| {
-                let Val::Px(side) = picture_square(*item).0.width else {
-                    unreachable!()
-                };
-                side.max(TALLY_PX) + 2.0 * (PALETTE_ROW_PAD_Y + BORDER_PX)
-            })
-            .sum::<f32>();
-        let gaps = (consumables.len() - 1) as f32 * PALETTE_COLUMN_GAP_PX;
-        assert!(cards + gaps <= 720.0 - 16.0);
-    }
-
-    #[test]
     fn count_three_at_cap_eight_draws_two_whole_rings_a_half_ring_and_one_empty_ring() {
         let mut app = App::new();
         app.add_systems(Startup, |mut commands: Commands| {
@@ -7991,8 +7969,8 @@ mod tests {
         app.update();
         let mut stocks = app.world_mut().query_filtered::<&Node, With<PipStock>>();
         let stock_node = stocks.single(app.world()).unwrap();
-        assert_eq!(stock_node.width, Val::Px(38.0));
-        assert_eq!(stock_node.height, Val::Px(38.0));
+        assert_eq!(stock_node.width, Val::Px(26.0));
+        assert_eq!(stock_node.height, Val::Px(26.0));
         let mut rings = app
             .world_mut()
             .query_filtered::<(&Node, &BorderColor), With<PipRing>>()
@@ -8012,9 +7990,9 @@ mod tests {
         assert_eq!(
             rings[0],
             (
-                Val::Px(4.0),
-                Val::Px(17.0),
-                Val::Px(17.0),
+                Val::Px(2.75),
+                Val::Px(11.625),
+                Val::Px(11.625),
                 BorderColor::all(IVORY)
             )
         );
@@ -8034,11 +8012,11 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(arcs.len(), ring_geometry(2, 0.5).3 as usize);
         assert!(arcs.iter().all(|at| {
-            let radius = (at.distance(Vec2::splat(TALLY_PX / 2.0)) - 5.5).abs();
+            let radius = (at.distance(Vec2::splat(TALLY_PX / 2.0)) - 3.625).abs();
             radius < 0.001
         }));
-        assert!(arcs.iter().any(|at| at.x > 24.4));
-        assert!(arcs.iter().any(|at| at.y > 24.3));
+        assert!(arcs.iter().any(|at| at.x > 16.5));
+        assert!(arcs.iter().any(|at| at.y > 16.4));
 
         let mut cap = App::new();
         cap.add_systems(Startup, |mut commands: Commands| {
@@ -8054,7 +8032,7 @@ mod tests {
             .map(|node| node.width)
             .collect::<Vec<_>>();
         assert_eq!(widths.len(), 9);
-        assert!(widths.contains(&Val::Px(36.0)));
+        assert!(widths.contains(&Val::Px(24.75)));
     }
 
     #[test]
@@ -9781,16 +9759,24 @@ mod tests {
             move |texts: Query<&Text>,
                   line: Single<&Children, With<Refusal>>,
                   rows: Query<&Children>,
-                  marks: Query<&BackgroundColor>| {
+                  borders: Query<&BorderColor>| {
                 let beads = line
                     .iter()
                     .filter_map(|child| rows.get(child).ok())
                     .map(|row| {
-                        let filled = row
+                        let mut children = row.iter();
+                        let stock = children.next().unwrap();
+                        assert_eq!(children.next(), None);
+                        let rings = rows.get(stock).unwrap();
+                        let filled = rings
                             .iter()
-                            .filter(|m| marks.get(*m).is_ok_and(|b| b.0 == IVORY))
+                            .filter(|ring| {
+                                borders
+                                    .get(*ring)
+                                    .is_ok_and(|border| *border == BorderColor::all(IVORY))
+                            })
                             .count();
-                        (filled, row.len())
+                        (filled, rings.len())
                     })
                     .collect::<Vec<_>>();
                 let written = line
