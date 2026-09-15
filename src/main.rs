@@ -46,10 +46,13 @@ const MANUAL_SYMBOL_PX: f32 = 128.0;
 const CURSOR_PX: f32 = 2.0;
 const PALETTE_PX: f32 = 48.0;
 const MARK_PX: f32 = 6.0;
-const TALLY_PX: f32 = 70.0;
+const TALLY_PX: f32 = 38.0;
+const PIP_RING_PX: f32 = 4.0;
 const PALETTE_GAP_PX: f32 = 8.0;
 const PALETTE_ROW_GAP_PX: f32 = 6.0;
 const PALETTE_ROW_PAD_X: f32 = 8.0;
+const PALETTE_ROW_PAD_Y: f32 = 0.0;
+const PALETTE_COLUMN_GAP_PX: f32 = 1.0;
 const BORDER_PX: f32 = 1.0;
 const PALETTE_WIDTH: f32 = 2.0
     * (PALETTE_PX + PALETTE_ROW_GAP_PX + TALLY_PX + 2.0 * (PALETTE_ROW_PAD_X + BORDER_PX))
@@ -2094,7 +2097,7 @@ fn manual(keys: Res<ButtonInput<KeyCode>>, mut page: Single<&mut Node, With<Manu
 #[derive(Component)]
 struct Marks(u64);
 
-fn mark(row: &mut ChildSpawnerCommands, px: f32, fill: f32, gap: f32) {
+fn mark(row: &mut ChildSpawnerCommands, px: f32, gap: f32) {
     row.spawn((
         Node {
             width: Val::Px(px),
@@ -2102,27 +2105,68 @@ fn mark(row: &mut ChildSpawnerCommands, px: f32, fill: f32, gap: f32) {
             margin: UiRect::left(Val::Px(gap)),
             border: UiRect::all(Val::Px(1.0)),
             border_radius: BorderRadius::MAX,
-            overflow: Overflow::clip(),
             ..default()
         },
-        BackgroundColor(if fill == 1.0 { IVORY } else { Color::NONE }),
+        BackgroundColor(IVORY),
+        BorderColor::all(IVORY),
+    ));
+}
+
+#[derive(Component)]
+struct PipStock;
+
+#[derive(Component)]
+struct PipRing;
+
+#[derive(Component)]
+struct PipArc;
+
+fn ring(parent: &mut ChildSpawnerCommands, k: u32, fill: f32) {
+    let (diameter, inset, points, lit) = ring_geometry(k, fill);
+    parent.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(inset),
+            top: Val::Px(inset),
+            width: Val::Px(diameter),
+            height: Val::Px(diameter),
+            border: UiRect::all(Val::Px(1.0)),
+            border_radius: BorderRadius::MAX,
+            ..default()
+        },
         BorderColor::all(if fill == 1.0 { IVORY } else { brass(0.5) }),
-    ))
-    .with_children(|pip| {
-        if fill > 0.0 && fill < 1.0 {
-            pip.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(1.0),
-                    top: Val::Px(1.0),
-                    width: Val::Px((px - 2.0) * fill),
-                    height: Val::Px(px - 2.0),
-                    ..default()
-                },
-                BackgroundColor(IVORY),
-            ));
-        }
-    });
+        PipRing,
+    ));
+    if fill <= 0.0 || fill == 1.0 {
+        return;
+    }
+    let radius = (diameter - 1.0) / 2.0;
+    for point in 0..lit {
+        let angle =
+            std::f32::consts::TAU * point as f32 / points as f32 - std::f32::consts::FRAC_PI_2;
+        let dot = 1.0;
+        parent.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(TALLY_PX / 2.0 + radius * angle.cos() - dot / 2.0),
+                top: Val::Px(TALLY_PX / 2.0 + radius * angle.sin() - dot / 2.0),
+                width: Val::Px(dot),
+                height: Val::Px(dot),
+                border_radius: BorderRadius::MAX,
+                ..default()
+            },
+            BackgroundColor(IVORY),
+            PipArc,
+        ));
+    }
+}
+
+fn ring_geometry(k: u32, fill: f32) -> (f32, f32, u32, u32) {
+    let diameter = PIP_RING_PX * (k + 1) as f32;
+    let inset = (TALLY_PX - diameter) / 2.0;
+    let points = (std::f32::consts::PI * diameter).ceil() as u32;
+    let lit = (points as f32 * fill).round() as u32;
+    (diameter, inset, points, lit)
 }
 
 fn cursor() -> impl Bundle {
@@ -2172,16 +2216,26 @@ fn stock(row: &mut ChildSpawnerCommands, filled: u32, upto: u32) {
     let (full, fraction) = pips(filled, cap);
     let (cap_full, cap_fraction) = pips(cap, cap);
     let slots = cap_full + u32::from(cap_fraction > 0.0);
-    for k in 0..slots {
-        let fill = if k < full {
-            1.0
-        } else if k == full {
-            fraction
-        } else {
-            0.0
-        };
-        mark(row, MARK_PX, fill, 0.0);
-    }
+    row.spawn((
+        PipStock,
+        Node {
+            width: Val::Px(TALLY_PX),
+            height: Val::Px(TALLY_PX),
+            ..default()
+        },
+    ))
+    .with_children(|rings| {
+        for k in 0..slots {
+            let fill = if k < full {
+                1.0
+            } else if k == full {
+                fraction
+            } else {
+                0.0
+            };
+            ring(rings, k, fill);
+        }
+    });
 }
 
 fn pips(count: u32, cap: u32) -> (u32, f32) {
@@ -2503,7 +2557,7 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                 palette
                     .spawn(Node {
                         flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.0),
+                        row_gap: Val::Px(PALETTE_COLUMN_GAP_PX),
                         ..default()
                     })
                     .with_children(|col| {
@@ -2511,7 +2565,10 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                             col.spawn((
                                 PaletteRow(item),
                                 button(Node {
-                                    padding: UiRect::axes(Val::Px(PALETTE_ROW_PAD_X), Val::Px(2.0)),
+                                    padding: UiRect::axes(
+                                        Val::Px(PALETTE_ROW_PAD_X),
+                                        Val::Px(PALETTE_ROW_PAD_Y),
+                                    ),
                                     ..row(PALETTE_ROW_GAP_PX)
                                 }),
                             ))
@@ -2521,9 +2578,6 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                                     Tally { item, shown: None },
                                     Node {
                                         width: Val::Px(TALLY_PX),
-                                        flex_wrap: FlexWrap::Wrap,
-                                        column_gap: Val::Px(2.0),
-                                        row_gap: Val::Px(2.0),
                                         ..default()
                                     },
                                 ));
@@ -2999,7 +3053,7 @@ fn tapes(
                     } else {
                         0.0
                     };
-                    mark(strip, MARK_PX, 1.0, gap);
+                    mark(strip, MARK_PX, gap);
                 }
             });
     }
@@ -7895,9 +7949,112 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_palette_is_narrower_at_the_same_caps() {
-        assert_eq!(TALLY_PX, 70.0);
-        assert_eq!(PALETTE_WIDTH, 292.0);
+    fn every_count_has_one_fixed_concentric_ring_footprint() {
+        assert_eq!(TALLY_PX, 38.0);
+        assert_eq!(PALETTE_WIDTH, 228.0);
+        for (k, diameter, inset) in [(0, 4.0, 17.0), (3, 16.0, 11.0), (8, 36.0, 1.0)] {
+            assert_eq!(
+                ring_geometry(k, 1.0),
+                (
+                    diameter,
+                    inset,
+                    (std::f32::consts::PI * diameter).ceil() as u32,
+                    (std::f32::consts::PI * diameter).ceil() as u32
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn every_palette_card_fits_in_the_shipped_viewport() {
+        let (_, consumables): (Vec<Item>, Vec<Item>) =
+            palette().partition(|item| matches!(item, Item::Machine(_)));
+        let cards = consumables
+            .iter()
+            .map(|item| {
+                let Val::Px(side) = picture_square(*item).0.width else {
+                    unreachable!()
+                };
+                side.max(TALLY_PX) + 2.0 * (PALETTE_ROW_PAD_Y + BORDER_PX)
+            })
+            .sum::<f32>();
+        let gaps = (consumables.len() - 1) as f32 * PALETTE_COLUMN_GAP_PX;
+        assert!(cards + gaps <= 720.0 - 16.0);
+    }
+
+    #[test]
+    fn count_three_at_cap_eight_draws_two_whole_rings_a_half_ring_and_one_empty_ring() {
+        let mut app = App::new();
+        app.add_systems(Startup, |mut commands: Commands| {
+            commands.spawn_empty().with_children(|row| stock(row, 3, 8));
+        });
+        app.update();
+        let mut stocks = app.world_mut().query_filtered::<&Node, With<PipStock>>();
+        let stock_node = stocks.single(app.world()).unwrap();
+        assert_eq!(stock_node.width, Val::Px(38.0));
+        assert_eq!(stock_node.height, Val::Px(38.0));
+        let mut rings = app
+            .world_mut()
+            .query_filtered::<(&Node, &BorderColor), With<PipRing>>()
+            .iter(app.world())
+            .map(|(node, color)| (node.width, node.left, node.top, *color))
+            .collect::<Vec<_>>();
+        rings.sort_by(|left, right| {
+            let Val::Px(left) = left.0 else {
+                unreachable!()
+            };
+            let Val::Px(right) = right.0 else {
+                unreachable!()
+            };
+            left.total_cmp(&right)
+        });
+        assert_eq!(rings.len(), 4);
+        assert_eq!(
+            rings[0],
+            (
+                Val::Px(4.0),
+                Val::Px(17.0),
+                Val::Px(17.0),
+                BorderColor::all(IVORY)
+            )
+        );
+        assert_eq!(rings[1].3, BorderColor::all(IVORY));
+        assert_eq!(rings[2].3, BorderColor::all(brass(0.5)));
+        assert_eq!(rings[3].3, BorderColor::all(brass(0.5)));
+        let arcs = app
+            .world_mut()
+            .query_filtered::<&Node, With<PipArc>>()
+            .iter(app.world())
+            .map(|node| {
+                let (Val::Px(left), Val::Px(top)) = (node.left, node.top) else {
+                    unreachable!()
+                };
+                Vec2::new(left + 0.5, top + 0.5)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(arcs.len(), ring_geometry(2, 0.5).3 as usize);
+        assert!(arcs.iter().all(|at| {
+            let radius = (at.distance(Vec2::splat(TALLY_PX / 2.0)) - 5.5).abs();
+            radius < 0.001
+        }));
+        assert!(arcs.iter().any(|at| at.x > 24.4));
+        assert!(arcs.iter().any(|at| at.y > 24.3));
+
+        let mut cap = App::new();
+        cap.add_systems(Startup, |mut commands: Commands| {
+            commands
+                .spawn_empty()
+                .with_children(|row| stock(row, sim::MAX_CAP, sim::MAX_CAP));
+        });
+        cap.update();
+        let widths = cap
+            .world_mut()
+            .query_filtered::<&Node, With<PipRing>>()
+            .iter(cap.world())
+            .map(|node| node.width)
+            .collect::<Vec<_>>();
+        assert_eq!(widths.len(), 9);
+        assert!(widths.contains(&Val::Px(36.0)));
     }
 
     #[test]

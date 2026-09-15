@@ -990,6 +990,16 @@ This is the dumbest design satisfying the directive because the inventory retain
 
 Tests cover 0, 1, 2, 3, 4, 5, 7 and 8 at cap 8 as 0, 1, 2, 2½, 3, 3¼, 3¾ and 4 pips; a wheel notch from 8 reaches 16 or 4 and no adjacent integer; legacy caps snap to the nearest power; and the shipped palette width falls from 324 px to 292 px at the same caps. Mutation passes restore linear cap steps, remove fractional fill, and restore the old tally width; each named test goes red before the implementation is restored.
 
+### Pips are concentric rings
+
+Directive (verbatim): "B works best because it communicates much information per pixel and can remain a fixed size. It also comes close to communicating the exponential nature of the repr."
+
+The inventory count occupies one 38 px circle at every count and cap. Each whole pip is one ivory concentric ring, ordered from the centre outward; an incomplete next pip is an ivory arc over its brass ring; and, while hovered, the remaining rings through the cap are brass. Palette cards and refusal cards use the one inventory renderer; pinned cards and the source and output pictures add no separate count renderer. Removing vertical card padding and reducing the gap between cards keeps the complete palette inside the shipped viewport.
+
+This is the dumbest design satisfying the directive because only the geometry inside the existing renderer changes: the count mapping, inventory state, and every caller remain one path. Keeping the row as a second layout was rejected because it would retain two representations of the same count, while a painted asset would duplicate geometry for every count and cap.
+
+Tests cover the fixed 38 px footprint, centred ring diameters through the maximum cap, complete inner rings, the partial outer arc, empty rings through the hovered cap, and the complete palette inside the shipped viewport. Removing the concentric placement, collapsing the arc points, removing the fractional arc, or restoring the former card spacing makes the corresponding assertion fail.
+
 ### The sacrificial seat joins the bond-seat rail
 
 Directive (verbatim): "Double-bonder machine would be visually explained a little more intuitively if the sacrificial atom receptical

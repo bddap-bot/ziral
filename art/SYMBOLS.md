@@ -27,3 +27,9 @@ The six straight arrows are the instruction's board directions without a second 
 `../proofs/instruction-contrast-86.png` places the full symbol set on a focused tape and in the palette at the shipped size, amber on plum before at left and ivory on dark brass after at right, without scaling either frame.
 
 `../proofs/instruction-corners-87.png` places the tape, palette, shortage notice, hover card, pinned card, and runtime-composed manual in two unscaled shipped-size frames, with the surface beneath visible at every rounded corner.
+
+# Inventory pips
+
+Every inventory count uses one fixed 38 px circular footprint. Whole pips are concentric ivory rings from the centre outward. A fractional next pip is an ivory clockwise arc from the top over a brass ring. Hovering exposes brass rings through the cap. Palette cards and refusal cards use this one geometry; pinned cards and the source and output pictures add no second count geometry. The palette removes vertical card padding and uses a 1 px gap so every card remains inside the shipped viewport.
+
+`../proofs/concentric-rings-113.png` compares the former marks with the shipped rings at native size on the same cards, including 1, 2½, 3¾ and the cap.
