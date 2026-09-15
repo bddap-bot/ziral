@@ -545,7 +545,7 @@ A move token names one of the six directions in the arm's own frame. At executio
 
 This is the dumbest design satisfying the directive because one function combines the two values already present at the instant they are needed, and no world direction is stored. Rotating every move token whenever a blueprint or placed arm turns was rejected because it would make editing and placement a second place that knows what a move means, allow tape state to drift from arm state, and rewrite an instruction whose meaning did not change. Existing tapes and blueprints are read as local-frame with no compatibility path.
 
-Tests place one move-driven blueprint at every turn and require the cells reached on every tick to be the corresponding rotated image, then turn a placed arm and require its next move to turn with it. Removing the base turn from move resolution breaks both comparisons.
+Tests place one move-driven blueprint at every turn and require the cells reached on every tick to be the corresponding rotated image, then turn a placed arm and require its next move to turn with it. Removing the base turn from move resolution breaks both comparisons. `proofs/arm-local-move-81.gif` (`art/gif.sh proofs/arm-local-move-81.gif arm-local-move-81 8 1280:720:0:0`) shows the blueprint pasted at two turns and running side by side at the shipped size.
 
 ### Tape symbols show shift in case
 

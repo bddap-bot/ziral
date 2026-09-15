@@ -4295,7 +4295,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 52] = [
+    pub const SCENES: [&str; 53] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4348,6 +4348,7 @@ mod shot {
         "atom-card-94",
         "machine-turn-89",
         "pinned-world-93",
+        "arm-local-move-81",
     ];
 
     fn typed(keys: &[(KeyCode, bool)]) -> Vec<(u32, Act)> {
@@ -4843,6 +4844,19 @@ mod shot {
                     }
                     script.extend(tap(308, Space));
                 }
+            }
+            "arm-local-move-81" => {
+                let tape = [0, 0, 1, 2, 3, 3, 4, 5].map(Instr::Move).to_vec();
+                let mut blueprint = Sim::empty();
+                blueprint.arms.push(Arm::new(ORIGIN, 0, tape));
+                let mut rotated = blueprint.clone();
+                turn(&mut rotated, Spin::Cw);
+                turn(&mut rotated, Spin::Cw);
+                let mut sim = Sim::empty();
+                sim.place(&blueprint, Hex::new(-4, 1));
+                sim.place(&rotated, Hex::new(4, -1));
+                world.sim = sim;
+                world.focus_tape(0);
             }
             "hold" => {
                 world.lift(

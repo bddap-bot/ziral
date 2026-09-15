@@ -1210,8 +1210,8 @@ pub fn layout() -> Sim {
     use Instr::*;
     let cw = Rot(Spin::Cw);
     let ccw = Rot(Spin::Ccw);
-    let out = Move(5);
-    let back = Move(2);
+    let out = Move(2);
+    let back = Move(5);
     let mut build = vec![Grab, cw, cw, cw, Drop, ccw, ccw, ccw];
     build.extend([Grab, cw, cw, Drop, ccw, ccw]);
     build.extend([Grab, cw, cw, cw, out, out, Drop, back, back, ccw, ccw, ccw]);
