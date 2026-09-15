@@ -537,6 +537,16 @@ The shifted keys write tokens only, inserted at the cursor of a focused tape; a 
 
 The six tokens are the shared square and palette in art/SYMBOLS.md with the key at bottom-left and a straight board-direction arrow at top-right. Tests: the fold composes six moves to a ring and an opposite pair to a return, and leaves every other instruction's pose alone; a move carries the arm and its held compound; a held atom into an occupied cell stalls until it clears; a move under two hands names the other hand; a base onto a glyph, another base (earlier or later in arm order) or an atom stalls and onto a free cell moves; a pivot or rotate that would set a held atom on a base stalls; a closed hand moving onto an atom holds it; between ticks the base, hand and held atom slide as one; the shifted keys write to a focused tape and run nothing on a focused arm; the six keys ring the pivot clockwise from the upper left and sum to nothing; the `walk` scene repeats its lap with the same three-tick stall. `art/reference/proof/walk.gif` (`art/gif.sh`) remains the motion proof; `proofs/tape-symbols-57.png` was that change's shipped-size symbol proof.
 
+### Toy 1 moves in the arm frame
+
+Directive (verbatim): "a blue relying on move arm move instructions stops working when rotated. i think arm move will need to be in local space relative to the arm."
+
+A move token names one of the six directions in the arm's own frame. At execution, `Instr::posed` adds the arm's current turn to that token and returns the next world pose; the same resolved step carries the base, hand and held compound. The tape and its card therefore keep the same token at every placement turn, while turning a placed arm also turns every future move.
+
+This is the dumbest design satisfying the directive because one function combines the two values already present at the instant they are needed, and no world direction is stored. Rotating every move token whenever a blueprint or placed arm turns was rejected because it would make editing and placement a second place that knows what a move means, allow tape state to drift from arm state, and rewrite an instruction whose meaning did not change. Existing tapes and blueprints are read as local-frame with no compatibility path.
+
+Tests place one move-driven blueprint at every turn and require the cells reached on every tick to be the corresponding rotated image, then turn a placed arm and require its next move to turn with it. Removing the base turn from move resolution breaks both comparisons.
+
 ### Tape symbols show shift in case
 
 Directive (verbatim): "Some of those key shortcuts are activated by pressing shift and a letter. Some are not. We can display difference by using lowercase to represent a button that is not pressed with shift."
