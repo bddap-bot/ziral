@@ -565,9 +565,14 @@ impl GlyphKind {
 
     pub fn cells(self) -> Vec<Hex> {
         match self {
-            GlyphKind::Source => std::iter::once(ORIGIN).chain(SOURCE_BODY).collect(),
             GlyphKind::Converter(AtomKind::Cobalt) => COBALT_FOOTPRINT.to_vec(),
-            _ => self.rule().slots.iter().map(|slot| slot.at).collect(),
+            _ => self
+                .rule()
+                .slots
+                .iter()
+                .map(|slot| slot.at)
+                .chain(self.body().iter().copied())
+                .collect(),
         }
     }
 
