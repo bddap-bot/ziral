@@ -464,6 +464,7 @@ const SECOND_BOND: [Slot; 3] = [
 ];
 const BONDER: [Slot; 2] = [any(ORIGIN), any(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
+const SOURCE_BODY: [Hex; 5] = [DIRS[1], DIRS[2], DIRS[3], DIRS[4], DIRS[5]];
 const AMBER_CONVERTER: [Slot; 3] = [consumed(ORIGIN), consumed(DIRS[0]), consumed(DIRS[1])];
 const PLUM_CONVERTER: [Slot; 3] = [
     Slot {
@@ -564,8 +565,16 @@ impl GlyphKind {
 
     pub fn cells(self) -> Vec<Hex> {
         match self {
+            GlyphKind::Source => std::iter::once(ORIGIN).chain(SOURCE_BODY).collect(),
             GlyphKind::Converter(AtomKind::Cobalt) => COBALT_FOOTPRINT.to_vec(),
             _ => self.rule().slots.iter().map(|slot| slot.at).collect(),
+        }
+    }
+
+    pub const fn body(self) -> &'static [Hex] {
+        match self {
+            GlyphKind::Source => &SOURCE_BODY,
+            _ => &[],
         }
     }
 
@@ -1418,7 +1427,7 @@ fn arm_fixture_done(s: &Sim) -> bool {
 }
 
 pub fn fixture(machine: Machine) -> Fixture {
-    use Instr::{Drop, Grab, Rot};
+    use Instr::{Drop, Grab, Move, Rot};
     let (cw, ccw) = (Rot(Spin::Cw), Rot(Spin::Ccw));
     let base = |pos| Atom {
         kind: AtomKind::Base,
@@ -1448,15 +1457,29 @@ pub fn fixture(machine: Machine) -> Fixture {
         Machine::Glyph(GlyphKind::Bonder) => {
             let mut sim = armed(
                 ArmLength::One,
-                vec![Grab, cw, cw, Drop, ccw, ccw, Grab, cw, Drop],
+                vec![
+                    Move(0),
+                    Grab,
+                    Move(3),
+                    cw,
+                    cw,
+                    Drop,
+                    ccw,
+                    ccw,
+                    Move(0),
+                    Grab,
+                    Move(3),
+                    cw,
+                    Drop,
+                ],
             );
             sim.glyphs
-                .push(Some(Glyph::new(GlyphKind::Source, DIRS[0], 0)));
+                .push(Some(Glyph::new(GlyphKind::Source, Hex::new(2, 0), 3)));
             sim.glyphs
                 .push(Some(Glyph::new(GlyphKind::Bonder, DIRS[2], 0)));
             Fixture {
                 sim,
-                ticks: 9,
+                ticks: 13,
                 done: |s| {
                     let (Some(a), Some(b)) = (s.atom_at(DIRS[1]), s.atom_at(DIRS[2])) else {
                         return false;
@@ -1468,9 +1491,9 @@ pub fn fixture(machine: Machine) -> Fixture {
             }
         }
         Machine::Glyph(GlyphKind::SecondBond) => {
-            let mut sim = armed(ArmLength::One, vec![Grab, cw, Drop]);
+            let mut sim = armed(ArmLength::One, vec![Move(0), Grab, Move(3), cw, Drop]);
             sim.glyphs
-                .push(Some(Glyph::new(GlyphKind::Source, DIRS[0], 0)));
+                .push(Some(Glyph::new(GlyphKind::Source, Hex::new(2, 0), 3)));
             let glyph = Glyph::new(GlyphKind::SecondBond, DIRS[1], 1);
             let bonded: Vec<usize> = glyph
                 .slots()
@@ -1485,7 +1508,7 @@ pub fn fixture(machine: Machine) -> Fixture {
             sim.glyphs.push(Some(glyph));
             Fixture {
                 sim,
-                ticks: 3,
+                ticks: 5,
                 done: |s| {
                     !s.arms[0].holding
                         && s.atom_at(DIRS[1]).is_none()
@@ -2884,7 +2907,7 @@ mod tests {
         put(&mut sim, -1, 0);
         assert_eq!(base_move_onto(&mut sim), Some(Stall::Illegal));
 
-        let mut sim = bench(vec![Instr::Move(2)], vec![source(Hex::new(1, -1))]);
+        let mut sim = bench(vec![Instr::Move(2)], vec![source(Hex::new(3, -1))]);
         sim.arms
             .push(Arm::new(ArmLength::One, Hex::new(-1, -1), 0, Vec::new()));
         put(&mut sim, 0, -2);
@@ -2926,6 +2949,47 @@ mod tests {
         sim.step();
         assert_eq!(sim.arms[0].pivot, Hex::new(2, 0));
         assert_eq!(sim.atoms[0].unwrap().pos, Hex::new(3, 0));
+    }
+
+    #[test]
+    fn the_source_occupies_its_centre_and_five_neighbours_through_all_six_turns() {
+        let at = Hex::new(3, -2);
+        for dir in 0..6 {
+            let source = Glyph::new(GlyphKind::Source, at, dir);
+            let mut cells: Vec<Hex> = source.cells().collect();
+            let mut expected: Vec<Hex> = std::iter::once(at)
+                .chain(
+                    DIRS.iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != dir)
+                        .map(|(_, d)| at.add(*d)),
+                )
+                .collect();
+            let key = |cell: &Hex| (cell.q, cell.r);
+            cells.sort_by_key(key);
+            expected.sort_by_key(key);
+            assert_eq!(cells, expected, "turn {dir}");
+            assert_eq!(source.slots().collect::<Vec<_>>(), [at], "turn {dir}");
+        }
+    }
+
+    #[test]
+    fn source_placement_is_refused_at_each_occupied_cell_and_fits_at_the_open_neighbour() {
+        let source = Glyph::new(GlyphKind::Source, ORIGIN, 0);
+        let mut set = Sim::empty();
+        set.glyphs.push(Some(source));
+        for cell in source.cells() {
+            let mut world = Sim::empty();
+            world
+                .arms
+                .push(Arm::new(ArmLength::One, cell, 0, Vec::new()));
+            assert!(!world.fits(&set, ORIGIN, &[]), "{cell:?}");
+        }
+        let mut world = Sim::empty();
+        world
+            .arms
+            .push(Arm::new(ArmLength::One, DIRS[0], 0, Vec::new()));
+        assert!(world.fits(&set, ORIGIN, &[]));
     }
 
     #[test]

@@ -243,7 +243,7 @@ event = "fired"
 
 [machine.converter-cobalt]
 direction = "The attached figure supplies only the four-cell rhombus footprint and the opposite endpoints, never tile outlines or surface shapes. Paint one stout sculpted converter housing filling that footprint: a terracotta-collared input opening at the first marked end and a cobalt #3657A7-collared output opening at the opposite marked end, joined across both middle cells by one broad cobalt-glazed serpentine kiln conduit in a continuous rounded ceramic chassis. The housing has an unmistakable machine silhouette with rounded shoulders and a narrow waist, never four polygonal slabs, a board, a plate or a tile-shaped backing. Both openings are empty untouched green inside, flat and concentric on their scaffold dots, with no black fill or visible inner wall. Darkened-brass braces, worn rubber seals and confident ceramic mass make one complete object under even diffuse light. Only the two ends are openings; no extra cup or seat, tiny ornamental hardware, bead, atom, text or exposed clockwork."
-reference = "../../docs/converter-cobalt-sketch.jpg"
+references = ["../../docs/converter-cobalt-sketch.jpg"]
 kept = 10
 briefed = "393ca6576614ffd6"
 painted = "fc98ff06db1c0e6d"
@@ -530,7 +530,7 @@ references = ["../../docs/source-six-cell-sketch.jpg"]
 kept = 9
 briefed = "80f367644443d5ef"
 painted = "9ed2194d48f2ad42"
-relit = "757be49d1863da69"
+relit = "bc1d3bd6404f3e7d"
 
 [machine.source.instrument]
 voice = "ceramic"

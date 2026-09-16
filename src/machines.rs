@@ -50,11 +50,13 @@ struct Style {
 #[serde(rename_all = "kebab-case")]
 enum Facing {
     Right,
+    Top,
     UpperRight,
     UpperLeft,
     Left,
     LowerLeft,
     LowerRight,
+    Bottom,
 }
 
 impl Facing {
@@ -66,26 +68,31 @@ impl Facing {
         Facing::LowerLeft,
         Facing::Left,
     ];
+    const SOURCE: [Facing; 4] = [Facing::Right, Facing::Top, Facing::Left, Facing::Bottom];
 
     fn name(self) -> &'static str {
         match self {
             Facing::Right => "right",
+            Facing::Top => "top",
             Facing::UpperRight => "upper-right",
             Facing::UpperLeft => "upper-left",
             Facing::Left => "left",
             Facing::LowerLeft => "lower-left",
             Facing::LowerRight => "lower-right",
+            Facing::Bottom => "bottom",
         }
     }
 
     fn azimuth(self) -> f32 {
         match self {
             Facing::Right => 0.0,
+            Facing::Top => 90.0,
             Facing::UpperRight => 60.0,
             Facing::UpperLeft => 120.0,
             Facing::Left => 180.0,
             Facing::LowerLeft => 240.0,
             Facing::LowerRight => 300.0,
+            Facing::Bottom => 270.0,
         }
     }
 
@@ -99,9 +106,12 @@ impl Facing {
     }
 }
 
-impl Style {
-    fn valid_facings(&self) -> bool {
-        self.facings == Facing::ALL
+fn relight_facings<'a>(name: &str, style: &'a Style) -> &'a [Facing] {
+    assert_eq!(style.facings, Facing::ALL);
+    if name == "source" {
+        &Facing::SOURCE
+    } else {
+        &style.facings
     }
 }
 
@@ -124,8 +134,8 @@ struct Thresholds {
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Entry {
     direction: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    reference: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    references: Vec<String>,
     kept: Option<u32>,
     briefed: Option<String>,
     painted: Option<String>,
@@ -348,6 +358,12 @@ impl Scaffold {
         self.in_cell(world, HEX).is_some()
     }
 
+    fn marked(&self) -> impl Iterator<Item = &Cell> {
+        self.cells
+            .iter()
+            .filter(|cell| !matches!(cell.role, Role::Body | Role::Housing))
+    }
+
     fn outside(&self, world: Vec2) -> f32 {
         self.cells
             .iter()
@@ -383,7 +399,7 @@ impl Scaffold {
                 consumed: false, ..
             }) => (ring || dot).then_some(Glaze::BlueGreen),
             Role::Seat(Slot { consumed: true, .. }) => (ring || dot).then_some(Glaze::Terracotta),
-            Role::Body => None,
+            Role::Body | Role::Housing => None,
             Role::Pivot => (r <= SEAT).then_some(Glaze::Brass),
             Role::Hand => {
                 let pivot = self
@@ -399,7 +415,10 @@ impl Scaffold {
     }
 
     fn paint(&self, world: Vec2) -> Rgba<u8> {
-        let glaze = self.in_cell(world, HEX).and_then(|c| self.mark(c, world));
+        let glaze = self.in_cell(world, HEX).and_then(|cell| match cell.role {
+            Role::Housing => Some(Glaze::Amber),
+            _ => self.mark(cell, world),
+        });
         rgba(glaze.map_or(KEY, Glaze::rgb), 1.0)
     }
 
@@ -456,13 +475,8 @@ impl Scaffold {
             (self.canvas, self.canvas),
             "a candidate is painted over the whole scaffold"
         );
-        let marked: Vec<&Cell> = self
-            .cells
-            .iter()
-            .filter(|cell| cell.role != Role::Body)
-            .collect();
-        let cells: Vec<Vec2> = marked.iter().map(|c| px(c.at)).collect();
-        let seats: Option<Vec<Vec2>> = marked.iter().map(|c| self.seat(candidate, c)).collect();
+        let cells: Vec<Vec2> = self.marked().map(|c| px(c.at)).collect();
+        let seats: Option<Vec<Vec2>> = self.marked().map(|c| self.seat(candidate, c)).collect();
         let Some(seats) = seats else {
             return Capture {
                 image: candidate.clone(),
@@ -491,9 +505,7 @@ impl Scaffold {
             bilinear(candidate, self.pixel(onto(world)))
         });
         let off_centre = self
-            .cells
-            .iter()
-            .filter(|cell| cell.role != Role::Body)
+            .marked()
             .map(|c| {
                 self.seat(&image, c)
                     .map_or(f32::INFINITY, |s| s.distance(px(c.at)) / HEX)
@@ -522,9 +534,7 @@ impl Scaffold {
             }
         }
         let seat = self
-            .cells
-            .iter()
-            .filter(|cell| cell.role != Role::Body)
+            .marked()
             .map(|cell| {
                 let mut mark = Mean::default();
                 let mut centre = Mean::default();
@@ -1074,6 +1084,55 @@ fn save(image: &RgbaImage, path: &Path) {
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
 }
 
+fn directional_samples(
+    images: &[RgbaImage],
+    lights: &[Light],
+    targets: &[Facing],
+) -> Vec<RgbaImage> {
+    if images.len() == targets.len() {
+        return images.to_vec();
+    }
+    let turn = |angle: f32| angle.rem_euclid(std::f32::consts::TAU);
+    let mut controls: Vec<(f32, &RgbaImage)> = lights
+        .iter()
+        .zip(images)
+        .map(|(light, image)| (turn(light.direction.y.atan2(light.direction.x)), image))
+        .collect();
+    controls.sort_by(|a, b| a.0.total_cmp(&b.0));
+    targets
+        .iter()
+        .map(|target| {
+            let angle = turn(target.azimuth().to_radians());
+            let upper = controls.partition_point(|(at, _)| *at <= angle);
+            let lo = if upper == 0 {
+                controls.len() - 1
+            } else {
+                upper - 1
+            };
+            let hi = upper % controls.len();
+            let a = controls[lo].0;
+            let mut b = controls[hi].0;
+            let mut x = angle;
+            if hi == 0 {
+                b += std::f32::consts::TAU;
+            }
+            if upper == 0 {
+                x += std::f32::consts::TAU;
+            }
+            let mix = ((x - a) / (b - a)).clamp(0.0, 1.0);
+            RgbaImage::from_fn(images[0].width(), images[0].height(), |x, y| {
+                let a = controls[lo].1.get_pixel(x, y);
+                let b = controls[hi].1.get_pixel(x, y);
+                Rgba(
+                    [0, 1, 2, 3].map(|i| {
+                        (f32::from(a[i]) * (1.0 - mix) + f32::from(b[i]) * mix).round() as u8
+                    }),
+                )
+            })
+        })
+        .collect()
+}
+
 fn stack(images: &[RgbaImage]) -> RgbaImage {
     let first = images.first().expect("a relight set is not empty");
     assert!(
@@ -1183,29 +1242,24 @@ fn key(parts: &[&[u8]]) -> String {
     format!("{h:016x}")
 }
 
-fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, reference: Option<&[u8]>) -> String {
-    let parts: [&[u8]; 4] = [
-        prompt.as_bytes(),
-        &count.to_le_bytes(),
-        &scaffold.width().to_le_bytes(),
-        scaffold.as_raw(),
-    ];
-    match reference {
-        Some(reference) => key(&[parts[0], parts[1], parts[2], parts[3], reference]),
-        None => key(&parts),
-    }
+fn input_key(text: &str, images: &[PathBuf]) -> String {
+    let contents: Vec<Vec<u8>> = images.iter().map(|path| read(path)).collect();
+    let mut parts = vec![text.as_bytes()];
+    parts.extend(contents.iter().map(Vec::as_slice));
+    key(&parts)
+}
+
+fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, references: &[PathBuf]) -> String {
+    let count = count.to_le_bytes();
+    let width = scaffold.width().to_le_bytes();
+    let contents: Vec<Vec<u8>> = references.iter().map(|path| read(path)).collect();
+    let mut parts = vec![prompt.as_bytes(), &count, &width, scaffold.as_raw()];
+    parts.extend(contents.iter().map(Vec::as_slice));
+    key(&parts)
 }
 
 fn brief(style: &Style, direction: &str) -> String {
     format!("{} {}", style.shared, direction)
-}
-
-fn briefed_key(art: &Art, style: &Style, entry: &Entry) -> String {
-    let brief = brief(style, &entry.direction);
-    match &entry.reference {
-        Some(path) => key(&[brief.as_bytes(), &read(&art.dir.join(path))]),
-        None => key(&[brief.as_bytes()]),
-    }
 }
 
 fn stored(path: &Path) -> Result<Option<String>, String> {
@@ -1228,8 +1282,8 @@ fn store(path: &Path, prompt: &str) -> Result<String, String> {
 const JUDGE: &str = "Answer with exactly one JSON object and nothing else, {\"score\": an integer from 0 to 10, \"issues\": a list of at most five strings, most important first, each one sentence naming what is wrong and where}; do not run commands, edit anything or write files.";
 const CRITIC_SCHEMA: &str = r#"{"type":"object","properties":{"score":{"type":"integer","minimum":0,"maximum":10},"issues":{"type":"array","maxItems":5,"items":{"type":"string"}}},"required":["score","issues"],"additionalProperties":false}"#;
 
-fn relit_key(kept: &[u8], style: &Style, prompts: &[String]) -> String {
-    let facings: Vec<&str> = style.facings.iter().map(|facing| facing.name()).collect();
+fn relit_key(kept: &[u8], style: &Style, facings: &[Facing], prompts: &[String]) -> String {
+    let facings: Vec<&str> = facings.iter().map(|facing| facing.name()).collect();
     let facings = facings.join("\n");
     let prompts = prompts.join("\n");
     key(&[
@@ -1241,15 +1295,14 @@ fn relit_key(kept: &[u8], style: &Style, prompts: &[String]) -> String {
     ])
 }
 
-fn direction_error(style: &Style, lights: &[Light]) -> f32 {
-    style
-        .facings
+fn direction_error(facings: &[Facing], elevation: f32, lights: &[Light]) -> f32 {
+    facings
         .iter()
         .zip(lights)
         .map(|(facing, light)| {
             light
                 .direction
-                .dot(facing.light(style.elevation))
+                .dot(facing.light(elevation))
                 .clamp(-1.0, 1.0)
                 .acos()
                 .to_degrees()
@@ -1426,6 +1479,7 @@ struct Relight<'a> {
     scaffold: &'a Scaffold,
     candidate: &'a RgbaImage,
     style: &'a Style,
+    facings: &'a [Facing],
     prompts: &'a [String],
     threshold: f32,
     source: RelightSource,
@@ -1502,12 +1556,9 @@ impl Remake<'_> {
         dir: &Path,
         master: &Path,
         style: &Style,
+        facings: &[Facing],
     ) -> Result<Vec<String>, String> {
-        if !style.valid_facings() {
-            return Err("relight facings are not the canonical set".to_string());
-        }
-        style
-            .facings
+        facings
             .iter()
             .map(|facing| {
                 let edge = facing.name();
@@ -1538,14 +1589,15 @@ impl Remake<'_> {
         candidate: &RgbaImage,
         keyed: &[u8],
         style: &Style,
+        facings: &[Facing],
     ) -> Result<(Vec<String>, String), String> {
         let relit = dir.join("relit");
         std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
         let master = scaffold.master(candidate, Some(Vec3::Z));
         let master_path = relit.join("master.png");
         save(&master, &master_path);
-        let prompts = self.relight_prompts(&relit, &master_path, style)?;
-        let key = relit_key(keyed, style, &prompts);
+        let prompts = self.relight_prompts(&relit, &master_path, style, facings)?;
+        let key = relit_key(keyed, style, facings, &prompts);
         Ok((prompts, key))
     }
 
@@ -1662,12 +1714,17 @@ impl Remake<'_> {
             changed = true;
         }
         let brief = brief(&style, &entry.direction);
-        let references = entry
-            .reference
+        let references: Vec<PathBuf> = entry
+            .references
             .iter()
-            .map(|path| self.art.dir.join(path))
-            .collect::<Vec<_>>();
-        let briefed = briefed_key(self.art, &style, &entry);
+            .map(|reference| self.art.dir.join(reference))
+            .collect();
+        for reference in &references {
+            if !reference.is_file() {
+                return Err(format!("{} is not a reference image", reference.display()));
+            }
+        }
+        let briefed = input_key(&brief, &references);
         let prompt = stored(&self.art.prompt(name))?
             .filter(|_| entry.briefed.as_deref() == Some(briefed.as_str()));
         Ok(Prepared {
@@ -1718,12 +1775,18 @@ impl Remake<'_> {
                     .collect::<Vec<_>>();
                 let written = self.author(&images, &brief)?;
                 let stored = store(&self.art.prompt(name), &written)?;
-                self.record(name, |e| e.briefed = Some(briefed_key(self.art, &style, e)));
+                self.record(name, |e| {
+                    let references: Vec<PathBuf> = e
+                        .references
+                        .iter()
+                        .map(|reference| self.art.dir.join(reference))
+                        .collect();
+                    e.briefed = Some(input_key(&brief, &references));
+                });
                 stored
             }
         };
-        let reference = references.first().map(|path| read(path));
-        let painted = painted_key(&prompt, count, &rendered, reference.as_deref());
+        let painted = painted_key(&prompt, count, &rendered, &references);
         if entry.painted.as_deref() != Some(painted.as_str()) {
             let _ = std::fs::remove_dir_all(&candidates);
             let _ = std::fs::remove_file(dir.join("scores.tsv"));
@@ -1829,12 +1892,14 @@ impl Remake<'_> {
             ));
         };
         let capture = scaffold.register(&open(self.art.candidate(name, kept)));
+        let facings = relight_facings(name, &style);
         let (prompts, relit) = self.prepare_relief(
             &dir,
             &scaffold,
             &capture.image,
             &read(&self.art.candidate(name, kept)),
             &style,
+            facings,
         )?;
         let relit_dir = dir.join("relit");
         let current = entry.relit.as_deref() == Some(relit.as_str())
@@ -1850,6 +1915,7 @@ impl Remake<'_> {
                     scaffold: &scaffold,
                     candidate: &capture.image,
                     style: &style,
+                    facings,
                     prompts: &prompts,
                     threshold: thresholds.sphere,
                     source: RelightSource::Machine,
@@ -1870,14 +1936,13 @@ impl Remake<'_> {
     }
 
     fn relief(&self, name: &str, request: &Relight<'_>) -> Result<(), String> {
-        if request.prompts.len() != request.style.facings.len() {
+        if request.prompts.len() != request.facings.len() {
             return Err("each relight facing needs one authored prompt".to_string());
         }
         let relit = request.dir.join("relit");
         std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
         let edits = |relit: &Path| {
             request
-                .style
                 .facings
                 .iter()
                 .filter(|facing| relit.join(format!("{}.png", facing.name())).exists())
@@ -1889,11 +1954,10 @@ impl Remake<'_> {
         };
         let mut why = String::new();
         for _ in 0..RELIGHTS {
-            for edge in request.style.facings.iter().map(|facing| facing.name()) {
+            for edge in request.facings.iter().map(|facing| facing.name()) {
                 let _ = std::fs::remove_file(relit.join(format!("{edge}.png")));
             }
             let jobs = request
-                .style
                 .facings
                 .iter()
                 .zip(request.prompts)
@@ -1912,11 +1976,11 @@ impl Remake<'_> {
                 .collect();
             self.paint(jobs);
             let edits = edits(&relit);
-            if edits.len() < request.style.facings.len() {
+            if edits.len() < request.facings.len() {
                 why = format!(
                     "{} of {} relights failed",
-                    request.style.facings.len() - edits.len(),
-                    request.style.facings.len()
+                    request.facings.len() - edits.len(),
+                    request.facings.len()
                 );
                 continue;
             }
@@ -1924,7 +1988,9 @@ impl Remake<'_> {
             println!("{name}\trelight error {error:.1} degrees");
             if error <= request.threshold {
                 for edge in ["top", "bottom"] {
-                    let _ = std::fs::remove_file(relit.join(format!("{edge}.png")));
+                    if !request.facings.iter().any(|facing| facing.name() == edge) {
+                        let _ = std::fs::remove_file(relit.join(format!("{edge}.png")));
+                    }
                 }
                 return Ok(());
             }
@@ -1954,7 +2020,7 @@ impl Remake<'_> {
                 )
             })
             .collect();
-        let direction = direction_error(request.style, &relief.lights);
+        let direction = direction_error(request.facings, request.style.elevation, &relief.lights);
         let error = relief.sphere.max(direction);
         lights.push(format!("sphere error {:.1} degrees", relief.sphere));
         lights.push(format!("direction error {direction:.1} degrees"));
@@ -1977,8 +2043,9 @@ impl Remake<'_> {
             RelightSource::Machine => request.scaffold.cut(image),
             RelightSource::Texture => request.scaffold.cropped(image),
         };
+        let runtime = directional_samples(&images, &relief.lights, &request.style.facings);
         save(
-            &stack(&images.iter().map(extract).collect::<Vec<_>>()),
+            &stack(&runtime.iter().map(extract).collect::<Vec<_>>()),
             &relit.join("albedo.png"),
         );
         quantise(&relit.join("albedo.png"))?;
@@ -2002,8 +2069,14 @@ impl Remake<'_> {
         let scaffold = Scaffold::texture(image.width());
         let candidate = scaffold.mount(&image);
         let dir = self.art.texture(name);
-        let (prompts, key) =
-            self.prepare_relief(&dir, &scaffold, &candidate, image.as_raw(), &style)?;
+        let (prompts, key) = self.prepare_relief(
+            &dir,
+            &scaffold,
+            &candidate,
+            image.as_raw(),
+            &style,
+            &style.facings,
+        )?;
         let relit = dir.join("relit");
         let current = entry.relit.as_deref() == Some(&key)
             && relit.join("albedo.png").exists()
@@ -2019,6 +2092,7 @@ impl Remake<'_> {
                 scaffold: &scaffold,
                 candidate: &candidate,
                 style: &style,
+                facings: &style.facings,
                 prompts: &prompts,
                 threshold: thresholds.sphere,
                 source: RelightSource::Texture,
@@ -2411,32 +2485,24 @@ mod tests {
             let prompt = stored(&Art::shipped().prompt(name))
                 .expect("prompt.txt is readable")
                 .unwrap_or_else(|| panic!("{name} has no prompt.txt: run ziral --gen {name}"));
+            let references: Vec<PathBuf> = machine
+                .references
+                .iter()
+                .map(|reference| Art::shipped().dir.join(reference))
+                .collect();
             assert_eq!(
                 machine.briefed.as_deref(),
-                Some(briefed_key(&Art::shipped(), &manifest.style, machine).as_str()),
+                Some(input_key(&brief(&manifest.style, &machine.direction), &references).as_str()),
                 "{name}: the prompt was written from another brief: run ziral --gen {name}"
             );
             assert_eq!(
                 machine.painted.as_deref(),
-                Some(
-                    painted_key(
-                        &prompt,
-                        manifest.candidates,
-                        &want,
-                        machine
-                            .reference
-                            .as_ref()
-                            .map(|path| read(&Art::shipped().dir.join(path)))
-                            .as_deref(),
-                    )
-                    .as_str(),
-                ),
+                Some(painted_key(&prompt, manifest.candidates, &want, &references,).as_str(),),
                 "{name}: the candidates are stale against the prompt: run ziral --gen {name}"
             );
             let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));
-            let relight_prompts: Option<Vec<String>> = manifest
-                .style
-                .facings
+            let facings = relight_facings(name, &manifest.style);
+            let relight_prompts: Option<Vec<String>> = facings
                 .iter()
                 .map(|facing| {
                     let edge = facing.name();
@@ -2451,10 +2517,13 @@ mod tests {
                     .unwrap_or_else(|| panic!("{name} has no complete relight prompt set"));
                 assert_eq!(
                     relit,
-                    &relit_key(&kept_png, &manifest.style, &prompts),
+                    &relit_key(&kept_png, &manifest.style, facings, &prompts),
                     "{name}: the maps are stale against the kept candidate: run ziral --gen {name}"
                 );
-                assert!(dir.join("relit/albedo.png").exists(), "{name}");
+                let atlas = open(dir.join("relit/albedo.png"));
+                let albedo = open(dir.join("albedo.png"));
+                assert_eq!(atlas.width(), albedo.width() * manifest.style.facings.len() as u32);
+                assert_eq!(atlas.height(), albedo.height(), "{name}");
             }
         }
     }
@@ -2495,7 +2564,12 @@ mod tests {
                     .collect();
                 assert_eq!(
                     relit,
-                    &relit_key(open(&source).as_raw(), &manifest.style, &prompts),
+                    &relit_key(
+                        open(&source).as_raw(),
+                        &manifest.style,
+                        &manifest.style.facings,
+                        &prompts,
+                    ),
                     "{name}"
                 );
                 assert!(dir.join("albedo.png").exists(), "{name}");
@@ -2513,16 +2587,25 @@ mod tests {
             .iter()
             .map(|facing| facing.name().to_string())
             .collect();
-        let original = relit_key(source, &style, &prompts);
+        let original = relit_key(source, &style, &style.facings, &prompts);
         style.elevation += 1.0;
-        assert_ne!(relit_key(source, &style, &prompts), original);
+        assert_ne!(
+            relit_key(source, &style, &style.facings, &prompts),
+            original
+        );
         style.elevation -= 1.0;
         style.facings.swap(0, 1);
-        assert_ne!(relit_key(source, &style, &prompts), original);
+        assert_ne!(
+            relit_key(source, &style, &style.facings, &prompts),
+            original
+        );
         style.facings.swap(0, 1);
         let mut revised = prompts.clone();
         revised[0].push('!');
-        assert_ne!(relit_key(source, &style, &revised), original);
+        assert_ne!(
+            relit_key(source, &style, &style.facings, &revised),
+            original
+        );
     }
 
     #[test]
@@ -2536,10 +2619,10 @@ mod tests {
                 ambient: AMBIENT,
             })
             .collect();
-        assert!(direction_error(&style, &lights) < 0.1);
+        assert!(direction_error(&style.facings, style.elevation, &lights) < 0.1);
         let mut swapped = lights;
         swapped.swap(0, 1);
-        assert!(direction_error(&style, &swapped) > 25.0);
+        assert!(direction_error(&style.facings, style.elevation, &swapped) > 25.0);
     }
 
     #[test]
@@ -2738,7 +2821,7 @@ mod tests {
                         name.to_string(),
                         Entry {
                             direction: format!("a {name}"),
-                            reference: None,
+                            references: Vec::new(),
                             kept: None,
                             briefed: None,
                             painted: None,
@@ -2910,6 +2993,7 @@ mod tests {
         let style = art.read().style;
         for name in ["bonder", "source"] {
             let dir = art.machine(name);
+            let facings = relight_facings(name, &style);
             let candidates: Vec<_> = recorded
                 .iter()
                 .filter(|(stem, _)| {
@@ -2924,11 +3008,11 @@ mod tests {
             let relights: Vec<_> = recorded
                 .iter()
                 .filter(|(stem, images)| {
-                    style.facings.iter().any(|facing| facing.name() == stem)
+                    facings.iter().any(|facing| facing.name() == stem)
                         && *images == [dir.join("relit/master.png")]
                 })
                 .collect();
-            assert_eq!(relights.len(), style.facings.len(), "{name}");
+            assert_eq!(relights.len(), facings.len(), "{name}");
         }
     }
 

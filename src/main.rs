@@ -4745,7 +4745,7 @@ mod shot {
             }
             "wide" => frame = Frame::Wide,
             "board" => world.sim = Sim::empty(),
-            "bonders" => world.sim = phased(&[(Hex::new(-5, 0), 16), (Hex::new(5, 0), 18)]),
+            "bonders" => world.sim = phased(&[(Hex::new(-7, 0), 16), (Hex::new(7, 0), 18)]),
             "focus" => {
                 world.sim = Sim::empty();
                 world.sim.arms.push(Arm::new(
@@ -6790,7 +6790,7 @@ mod tests {
     }
 
     fn cluster() -> World {
-        let source = Glyph::new(GlyphKind::Source, Hex::new(0, 3), 0);
+        let source = Glyph::new(GlyphKind::Source, Hex::new(2, 3), 0);
         let mut w = lone(
             vec![bonder(ORIGIN, 0), source],
             vec![
