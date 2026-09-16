@@ -156,7 +156,7 @@ direction = "The attached figure supplies only the four-cell rhombus footprint a
 reference = "../../docs/converter-cobalt-sketch.jpg"
 kept = 10
 briefed = "393ca6576614ffd6"
-painted = "e84dd0bb5f0e75b2"
+painted = "fc98ff06db1c0e6d"
 
 [machine.converter-cobalt.instrument]
 voice = "ceramic"

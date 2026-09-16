@@ -1183,13 +1183,17 @@ fn key(parts: &[&[u8]]) -> String {
     format!("{h:016x}")
 }
 
-fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage) -> String {
-    key(&[
+fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, reference: Option<&[u8]>) -> String {
+    let parts: [&[u8]; 4] = [
         prompt.as_bytes(),
         &count.to_le_bytes(),
         &scaffold.width().to_le_bytes(),
         scaffold.as_raw(),
-    ])
+    ];
+    match reference {
+        Some(reference) => key(&[parts[0], parts[1], parts[2], parts[3], reference]),
+        None => key(&parts),
+    }
 }
 
 fn brief(style: &Style, direction: &str) -> String {
@@ -1718,7 +1722,8 @@ impl Remake<'_> {
                 stored
             }
         };
-        let painted = painted_key(&prompt, count, &rendered);
+        let reference = references.first().map(|path| read(path));
+        let painted = painted_key(&prompt, count, &rendered, reference.as_deref());
         if entry.painted.as_deref() != Some(painted.as_str()) {
             let _ = std::fs::remove_dir_all(&candidates);
             let _ = std::fs::remove_file(dir.join("scores.tsv"));
@@ -2413,7 +2418,19 @@ mod tests {
             );
             assert_eq!(
                 machine.painted.as_deref(),
-                Some(painted_key(&prompt, manifest.candidates, &want).as_str()),
+                Some(
+                    painted_key(
+                        &prompt,
+                        manifest.candidates,
+                        &want,
+                        machine
+                            .reference
+                            .as_ref()
+                            .map(|path| read(&Art::shipped().dir.join(path)))
+                            .as_deref(),
+                    )
+                    .as_str(),
+                ),
                 "{name}: the candidates are stale against the prompt: run ziral --gen {name}"
             );
             let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));

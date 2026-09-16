@@ -502,7 +502,12 @@ fn prove_atom(kind: AtomKind, premises: &[Fact]) -> Result<Fact, String> {
     take_glyph(&mut sim, GlyphKind::Converter(kind), ORIGIN, 0)?;
     sim.step();
     let atoms: Vec<Atom> = sim.atoms.iter().flatten().copied().collect();
-    (atoms == [Atom { kind, pos: ORIGIN }])
+    let pos = glyph
+        .kind
+        .product()
+        .map(|offset| glyph.at.add(offset.turned(glyph.dir)))
+        .ok_or_else(|| format!("the {kind:?} converter has no output"))?;
+    (atoms == [Atom { kind, pos }])
         .then_some(Fact::Atom(kind))
         .ok_or_else(|| format!("the {kind:?} converter left {atoms:?}"))
 }
