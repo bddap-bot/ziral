@@ -7,8 +7,8 @@ mod sim;
 
 use form::{ATOM_ROUTES, AtomRoute, Form, RECIPES, atom_route};
 use sim::{
-    Atom, AtomKind, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, Machine, ORIGIN, Sim, Spin,
-    Tier,
+    ArmLength, Atom, AtomKind, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, Machine, ORIGIN,
+    Sim, Spin, Tier,
 };
 const TOKENS: [Instr; 13] = [
     Instr::Grab,
@@ -53,11 +53,12 @@ impl ProofId {
             ProofId::Starting(item) | ProofId::RecipeItem(item) => Fact::Item(item),
             ProofId::Compound(text) => Fact::Compound(text),
             ProofId::BrokenDependent => Fact::Compound(
-                recipe_text(Item::Machine(Machine::Arm)).expect("the arm has a recipe"),
+                recipe_text(Item::Machine(Machine::Arm(ArmLength::One)))
+                    .expect("the arm has a recipe"),
             ),
             ProofId::ConverterAtom(kind) => Fact::Atom(kind),
             ProofId::ReifiedAtom(kind) => Fact::Item(Item::Atom(kind)),
-            ProofId::BrokenTransitive => Fact::Item(Item::Machine(Machine::Arm)),
+            ProofId::BrokenTransitive => Fact::Item(Item::Machine(Machine::Arm(ArmLength::One))),
         }
     }
 
@@ -73,9 +74,12 @@ impl ProofId {
             }
             ProofId::Broken => "broken atom Base is synthesizable".to_string(),
             ProofId::BrokenDependent => compound_name(
-                recipe_text(Item::Machine(Machine::Arm)).expect("the arm has a recipe"),
+                recipe_text(Item::Machine(Machine::Arm(ArmLength::One)))
+                    .expect("the arm has a recipe"),
             ),
-            ProofId::BrokenTransitive => recipe_item_name(Item::Machine(Machine::Arm)),
+            ProofId::BrokenTransitive => {
+                recipe_item_name(Item::Machine(Machine::Arm(ArmLength::One)))
+            }
         }
     }
 
@@ -756,7 +760,7 @@ fn a_failed_premise_skips_every_dependent_and_names_it() {
     let dependent = ProofId::BrokenDependent;
     assert_eq!(
         dependent.fact(),
-        Fact::Compound(recipe_text(Item::Machine(Machine::Arm)).unwrap())
+        Fact::Compound(recipe_text(Item::Machine(Machine::Arm(ArmLength::One))).unwrap())
     );
     let mut run = Run::new(vec![broken, dependent, ProofId::BrokenTransitive]);
     run.prove_all();

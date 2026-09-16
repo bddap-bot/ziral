@@ -1,5 +1,5 @@
 use crate::sim::Machine;
-use crate::sim::{Arm, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot, Tier};
+use crate::sim::{Arm, ArmLength, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot, Tier};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
 use bevy::math::{Vec2, Vec3};
@@ -87,19 +87,21 @@ pub struct Cell {
 
 pub fn footprint(item: Machine) -> Vec<Cell> {
     match item {
-        Machine::Arm => {
-            let [pivot, hand] = Arm::new(ORIGIN, 0, Vec::new()).cells();
-            vec![
-                Cell {
-                    at: pivot,
-                    role: Role::Pivot,
+        Machine::Arm(length) => Arm::new(length, ORIGIN, 0, Vec::new())
+            .cells()
+            .into_iter()
+            .enumerate()
+            .map(|(i, at)| Cell {
+                at,
+                role: if i == 0 {
+                    Role::Pivot
+                } else if i == length.cells() as usize {
+                    Role::Hand
+                } else {
+                    Role::Body
                 },
-                Cell {
-                    at: hand,
-                    role: Role::Hand,
-                },
-            ]
-        }
+            })
+            .collect(),
         Machine::Glyph(kind @ GlyphKind::Converter(AtomKind::Cobalt)) => {
             let input = kind.rule().slots[0];
             let output = kind.product().expect("a converter has an output");
@@ -295,7 +297,7 @@ pub enum Shape {
     FacetedBead,
     KnobbedBead,
     Bars(usize),
-    Radial,
+    Radial(ArmLength),
     Cells(usize),
     Converter(AtomKind),
 }
@@ -375,12 +377,16 @@ pub fn bond(kind: BondKind) -> Look<()> {
 
 pub fn machine(item: Machine) -> Look<MachineMark> {
     let kind = match item {
-        Machine::Arm => {
-            let (skin, normal) = machine!("arm");
+        Machine::Arm(length) => {
+            let (skin, normal) = match length {
+                ArmLength::One => machine!("arm"),
+                ArmLength::Two => machine!("arm-2"),
+                ArmLength::Three => machine!("arm-3"),
+            };
             return Look {
                 glaze: Glaze::Brass,
                 skin,
-                shape: Shape::Radial,
+                shape: Shape::Radial(length),
                 marking: MachineMark::Hand(Glaze::Terracotta, normal),
             };
         }
@@ -412,7 +418,9 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
 
 pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
     let name = match item {
-        Machine::Arm => "arm",
+        Machine::Arm(ArmLength::One) => "arm",
+        Machine::Arm(ArmLength::Two) => "arm-2",
+        Machine::Arm(ArmLength::Three) => "arm-3",
         Machine::Glyph(GlyphKind::Source) => "source",
         Machine::Glyph(GlyphKind::Bonder) => "bonder",
         Machine::Glyph(GlyphKind::SecondBond) => "second-bond",
@@ -447,6 +455,10 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
     match (name, part) {
         ("arm", "base") => pair!("arm", "base"),
         ("arm", "hand") => pair!("arm", "moving"),
+        ("arm-2", "base") => pair!("arm-2", "base"),
+        ("arm-2", "hand") => pair!("arm-2", "moving"),
+        ("arm-3", "base") => pair!("arm-3", "base"),
+        ("arm-3", "hand") => pair!("arm-3", "moving"),
         ("bonder", "base") => pair!("bonder", "base"),
         ("bonder", "bar") => pair!("bonder", "moving"),
         ("converter-amber", "base") => pair!("converter-amber", "base"),
@@ -829,7 +841,7 @@ pub(crate) mod tests {
     fn every_glyph_is_distinct() {
         let glyphs = Machine::ALL.iter().filter_map(|item| match item {
             Machine::Glyph(kind) => Some(*kind),
-            Machine::Arm => None,
+            Machine::Arm(_) => None,
         });
         pairwise(
             "glyphs",

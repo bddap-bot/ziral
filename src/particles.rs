@@ -51,7 +51,7 @@ pub fn burst(
     let emitter = match response(machine) {
         Response::Default(emitter) | Response::Rig(emitter) => emitter,
     };
-    if machine == Machine::Arm
+    if matches!(machine, Machine::Arm(_))
         && events
             .iter()
             .any(|event| matches!(event, TickEvent::Stalled { arm, .. } if *arm == index))
@@ -81,6 +81,7 @@ pub fn burst(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::ArmLength;
     use crate::sim::{GlyphKind, Instr, Stall};
 
     #[test]
@@ -102,7 +103,7 @@ mod tests {
             assert!((1..=12).contains(&emitter.count));
             assert!((1..=ActivationEnergy::FULL.level()).contains(&(emitter.lifetime as usize)));
         }
-        assert_eq!((defaults, overrides), (7, 4));
+        assert_eq!((defaults, overrides), (7, 6));
     }
 
     #[test]
@@ -126,8 +127,24 @@ mod tests {
             instruction: Instr::Grab,
             reason: Stall::Illegal,
         }];
-        assert!(burst(Machine::Arm, 4, ActivationEnergy::FULL.decayed(), &stalled).is_none());
-        assert!(burst(Machine::Arm, 4, ActivationEnergy::FULL, &stalled).is_none());
+        assert!(
+            burst(
+                Machine::Arm(ArmLength::One),
+                4,
+                ActivationEnergy::FULL.decayed(),
+                &stalled
+            )
+            .is_none()
+        );
+        assert!(
+            burst(
+                Machine::Arm(ArmLength::One),
+                4,
+                ActivationEnergy::FULL,
+                &stalled
+            )
+            .is_none()
+        );
         assert!(burst(machine, 4, ActivationEnergy::FULL.decayed(), &stalled).is_some());
     }
 }

@@ -2288,7 +2288,7 @@ mod tests {
                 }
             }
             let mut footprint: Vec<Hex> = match item {
-                Machine::Arm => Arm::new(ORIGIN, 0, Vec::new()).cells().to_vec(),
+                Machine::Arm(length) => Arm::new(length, ORIGIN, 0, Vec::new()).cells(),
                 Machine::Glyph(kind) => Glyph {
                     kind,
                     at: ORIGIN,

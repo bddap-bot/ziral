@@ -35,6 +35,10 @@ impl Hex {
         Hex::new(self.q - o.q, self.r - o.r)
     }
 
+    pub fn scale(self, n: i32) -> Hex {
+        Hex::new(self.q * n, self.r * n)
+    }
+
     pub const fn ring(self) -> i32 {
         let (q, r, s) = (self.q.abs(), self.r.abs(), (self.q + self.r).abs());
         if q >= r && q >= s {
@@ -141,26 +145,31 @@ pub enum TickEvent {
     },
     Grabbed {
         arm: usize,
+        length: ArmLength,
         atom: usize,
         at: Hex,
     },
     Dropped {
         arm: usize,
+        length: ArmLength,
         atom: usize,
         at: Hex,
     },
     Rotated {
         arm: usize,
+        length: ArmLength,
         spin: Spin,
         at: Hex,
     },
     Pivoted {
         arm: usize,
+        length: ArmLength,
         spin: Spin,
         at: Hex,
     },
     Moved {
         arm: usize,
+        length: ArmLength,
         from: Hex,
         to: Hex,
     },
@@ -228,6 +237,7 @@ impl ActivationEnergy {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Arm {
+    pub length: ArmLength,
     pub pivot: Hex,
     pub dir: usize,
     pub tape: Vec<Instr>,
@@ -237,9 +247,35 @@ pub struct Arm {
     pub energy: ActivationEnergy,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ArmLength {
+    One,
+    Two,
+    Three,
+}
+
+impl ArmLength {
+    pub const ALL: [ArmLength; 3] = [ArmLength::One, ArmLength::Two, ArmLength::Three];
+
+    pub const fn cells(self) -> i32 {
+        match self {
+            ArmLength::One => 1,
+            ArmLength::Two => 2,
+            ArmLength::Three => 3,
+        }
+    }
+
+    pub fn from_cells(cells: usize) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|length| length.cells() as usize == cells)
+    }
+}
+
 impl Arm {
-    pub fn new(pivot: Hex, dir: usize, tape: Vec<Instr>) -> Self {
+    pub fn new(length: ArmLength, pivot: Hex, dir: usize, tape: Vec<Instr>) -> Self {
         Arm {
+            length,
             pivot,
             dir,
             tape,
@@ -251,7 +287,7 @@ impl Arm {
     }
 
     pub fn hand(&self) -> Hex {
-        self.pivot.add(DIRS[self.dir])
+        self.pivot.add(DIRS[self.dir].scale(self.length.cells()))
     }
 
     pub fn swung(&self, after: &Arm) -> Option<(Hex, Spin)> {
@@ -265,8 +301,14 @@ impl Arm {
         }
     }
 
-    pub fn cells(&self) -> [Hex; 2] {
-        [self.pivot, self.hand()]
+    pub fn cells(&self) -> Vec<Hex> {
+        (0..=self.length.cells())
+            .map(|n| self.pivot.add(DIRS[self.dir].scale(n)))
+            .collect()
+    }
+
+    pub const fn machine(&self) -> Machine {
+        Machine::Arm(self.length)
     }
 }
 
@@ -314,16 +356,21 @@ impl GlyphKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Machine {
-    Arm,
+    Arm(ArmLength),
     Glyph(GlyphKind),
 }
 
 impl Machine {
-    pub const ALL: [Machine; GlyphKind::ALL.len() + 1] = {
-        let mut all = [Machine::Arm; GlyphKind::ALL.len() + 1];
+    pub const ALL: [Machine; GlyphKind::ALL.len() + ArmLength::ALL.len()] = {
+        let mut all = [Machine::Arm(ArmLength::One); GlyphKind::ALL.len() + ArmLength::ALL.len()];
         let mut k = 0;
+        while k < ArmLength::ALL.len() {
+            all[k] = Machine::Arm(ArmLength::ALL[k]);
+            k += 1;
+        }
+        k = 0;
         while k < GlyphKind::ALL.len() {
-            all[k + 1] = Machine::Glyph(GlyphKind::ALL[k]);
+            all[k + ArmLength::ALL.len()] = Machine::Glyph(GlyphKind::ALL[k]);
             k += 1;
         }
         all
@@ -855,7 +902,7 @@ impl Sim {
             && set.arms.iter().all(|arm| {
                 arm.pivot
                     .checked_add(at)
-                    .and_then(|pivot| pivot.checked_add(DIRS[arm.dir]))
+                    .and_then(|pivot| pivot.checked_add(DIRS[arm.dir].scale(arm.length.cells())))
                     .is_some()
             })
             && self.blocked(set, at, picked).next().is_none()
@@ -1118,6 +1165,7 @@ impl Sim {
         let held = self.held(i);
         let stall = self.exec(i, instr).err();
         self.arms[i].stall = stall;
+        let length = self.arms[i].length;
         match stall {
             Some(reason) => events.push(TickEvent::Stalled {
                 arm: i,
@@ -1127,6 +1175,7 @@ impl Sim {
             None => match instr {
                 Instr::Grab => events.push(TickEvent::Grabbed {
                     arm: i,
+                    length,
                     atom: self.held(i).expect("a successful grab holds an atom"),
                     at: self.arms[i].pivot,
                 }),
@@ -1134,6 +1183,7 @@ impl Sim {
                     if let Some(atom) = held {
                         events.push(TickEvent::Dropped {
                             arm: i,
+                            length,
                             atom,
                             at: self.arms[i].pivot,
                         });
@@ -1141,16 +1191,19 @@ impl Sim {
                 }
                 Instr::Rot(spin) => events.push(TickEvent::Rotated {
                     arm: i,
+                    length,
                     spin,
                     at: self.arms[i].pivot,
                 }),
                 Instr::Pivot(spin) => events.push(TickEvent::Pivoted {
                     arm: i,
+                    length,
                     spin,
                     at: self.arms[i].pivot,
                 }),
                 Instr::Move(_) => events.push(TickEvent::Moved {
                     arm: i,
+                    length,
                     from,
                     to: self.arms[i].pivot,
                 }),
@@ -1223,7 +1276,7 @@ impl Sim {
             .flatten()
             .map(|g| Item::Machine(Machine::Glyph(g.kind)));
         let arms = self.arms.iter().flat_map(|a| {
-            std::iter::once(Item::Machine(Machine::Arm))
+            std::iter::once(Item::Machine(a.machine()))
                 .chain(a.tape.iter().map(|instr| Item::Token(*instr)))
         });
         let atoms = self
@@ -1304,8 +1357,11 @@ pub fn layout() -> Sim {
     let output = Hex::new(-2, 3);
     sim.glyphs
         .push(Some(Glyph::new(GlyphKind::Output(Tier::One), output, 0)));
-    sim.arms.push(Arm::new(ORIGIN, 0, vec![Instr::Wait]));
-    let recipe = Item::Machine(Machine::Arm).recipe().unwrap();
+    sim.arms
+        .push(Arm::new(ArmLength::One, ORIGIN, 0, vec![Instr::Wait]));
+    let recipe = Item::Machine(Machine::Arm(ArmLength::One))
+        .recipe()
+        .unwrap();
     let centre = recipe.centre(Tier::One.radius()).unwrap();
     sim.place(&recipe.sim(), output.sub(centre));
     sim
@@ -1340,9 +1396,9 @@ pub struct Fixture {
     pub done: fn(&Sim) -> bool,
 }
 
-fn armed(tape: Vec<Instr>) -> Sim {
+fn armed(length: ArmLength, tape: Vec<Instr>) -> Sim {
     let mut sim = Sim::empty();
-    sim.arms.push(Arm::new(ORIGIN, 0, tape));
+    sim.arms.push(Arm::new(length, ORIGIN, 0, tape));
     sim
 }
 
@@ -1355,6 +1411,12 @@ fn crafted(s: &Sim) -> bool {
             .all(|g| s.inventory.count(Item::Machine(Machine::Glyph(g.kind))) == Some(1))
 }
 
+fn arm_fixture_done(s: &Sim) -> bool {
+    let arm = &s.arms[0];
+    let drop = DIRS[1].scale(arm.length.cells());
+    s.atom_at(drop).is_some() && !arm.holding
+}
+
 pub fn fixture(machine: Machine) -> Fixture {
     use Instr::{Drop, Grab, Rot};
     let (cw, ccw) = (Rot(Spin::Cw), Rot(Spin::Ccw));
@@ -1363,13 +1425,14 @@ pub fn fixture(machine: Machine) -> Fixture {
         pos,
     };
     match machine {
-        Machine::Arm => {
-            let mut sim = armed(vec![Grab, cw, Drop]);
-            sim.spawn(base(DIRS[0]));
+        Machine::Arm(length) => {
+            let reach = DIRS[0].scale(length.cells());
+            let mut sim = armed(length, vec![Grab, cw, Drop]);
+            sim.spawn(base(reach));
             Fixture {
                 sim,
                 ticks: 3,
-                done: |s| s.atom_at(DIRS[1]).is_some() && !s.arms[0].holding,
+                done: arm_fixture_done,
             }
         }
         Machine::Glyph(GlyphKind::Source) => {
@@ -1383,7 +1446,10 @@ pub fn fixture(machine: Machine) -> Fixture {
             }
         }
         Machine::Glyph(GlyphKind::Bonder) => {
-            let mut sim = armed(vec![Grab, cw, cw, Drop, ccw, ccw, Grab, cw, Drop]);
+            let mut sim = armed(
+                ArmLength::One,
+                vec![Grab, cw, cw, Drop, ccw, ccw, Grab, cw, Drop],
+            );
             sim.glyphs
                 .push(Some(Glyph::new(GlyphKind::Source, DIRS[0], 0)));
             sim.glyphs
@@ -1402,7 +1468,7 @@ pub fn fixture(machine: Machine) -> Fixture {
             }
         }
         Machine::Glyph(GlyphKind::SecondBond) => {
-            let mut sim = armed(vec![Grab, cw, Drop]);
+            let mut sim = armed(ArmLength::One, vec![Grab, cw, Drop]);
             sim.glyphs
                 .push(Some(Glyph::new(GlyphKind::Source, DIRS[0], 0)));
             let glyph = Glyph::new(GlyphKind::SecondBond, DIRS[1], 1);
@@ -1546,7 +1612,7 @@ pub fn fixture(machine: Machine) -> Fixture {
                 atom.pos = grabbed(atom.pos);
             }
             let reach = tier.radius() + 1;
-            let mut sim = armed(vec![Grab, cw, Drop]);
+            let mut sim = armed(ArmLength::One, vec![Grab, cw, Drop]);
             sim.place(&compound, ORIGIN);
             sim.glyphs.push(Some(Glyph::new(
                 GlyphKind::Output(tier),
@@ -1597,7 +1663,8 @@ mod tests {
         let mut sim = Sim::empty();
         sim.glyphs = glyphs.into_iter().map(Some).collect();
 
-        sim.arms.push(Arm::new(Hex::new(0, 0), 0, tape));
+        sim.arms
+            .push(Arm::new(ArmLength::One, Hex::new(0, 0), 0, tape));
         sim
     }
 
@@ -1628,6 +1695,39 @@ mod tests {
     }
 
     #[test]
+    fn one_tape_grabs_rotates_and_drops_at_each_arm_length() {
+        use Instr::{Drop, Grab, Rot};
+        let tape = vec![Grab, Rot(Spin::Cw), Drop];
+        let mut sim = Sim::empty();
+        for (i, length) in ArmLength::ALL.into_iter().enumerate() {
+            let pivot = Hex::new(i as i32 * 8, 0);
+            let arm = Arm::new(length, pivot, 0, tape.clone());
+            sim.spawn(Atom {
+                kind: AtomKind::Base,
+                pos: arm.hand(),
+            });
+            sim.arms.push(arm);
+        }
+        sim.step();
+        assert!(sim.arms.iter().all(|arm| arm.holding));
+        sim.step();
+        for (i, arm) in sim.arms.iter().enumerate() {
+            assert_eq!(
+                sim.atoms[sim.held(i).unwrap()].unwrap().pos,
+                arm.pivot.add(DIRS[1].scale(arm.length.cells()))
+            );
+        }
+        sim.step();
+        for arm in &sim.arms {
+            assert!(!arm.holding);
+            assert!(
+                sim.atom_at(arm.pivot.add(DIRS[1].scale(arm.length.cells())))
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
     fn a_grab_over_an_empty_cell_stalls() {
         let mut sim = bench(vec![Instr::Grab], Vec::new());
         sim.step();
@@ -1640,6 +1740,7 @@ mod tests {
         use Instr::*;
         let mut sim = bench(vec![Grab, Rot(Spin::Cw)], Vec::new());
         sim.arms.push(Arm::new(
+            ArmLength::One,
             Hex::new(2, -2),
             4,
             vec![Wait, Wait, Grab, Rot(Spin::Cw)],
@@ -1663,8 +1764,12 @@ mod tests {
     fn a_grab_of_a_held_atom_puts_a_second_hand_on_it_and_rotates_stall_until_a_drop() {
         use Instr::*;
         let mut sim = bench(vec![Wait, Grab, Rot(Spin::Cw)], Vec::new());
-        sim.arms
-            .push(Arm::new(Hex::new(2, 0), 3, vec![Grab, Wait, Drop, Wait]));
+        sim.arms.push(Arm::new(
+            ArmLength::One,
+            Hex::new(2, 0),
+            3,
+            vec![Grab, Wait, Drop, Wait],
+        ));
         put(&mut sim, 1, 0);
         sim.step();
         sim.step();
@@ -1683,8 +1788,12 @@ mod tests {
     fn two_arms_contending_for_one_cell_resolve_in_arm_order() {
         use Instr::*;
         let mut sim = bench(vec![Grab, Rot(Spin::Cw), Rot(Spin::Cw), Wait], Vec::new());
-        sim.arms
-            .push(Arm::new(Hex::new(2, -2), 3, vec![Grab, Rot(Spin::Cw)]));
+        sim.arms.push(Arm::new(
+            ArmLength::One,
+            Hex::new(2, -2),
+            3,
+            vec![Grab, Rot(Spin::Cw)],
+        ));
         put(&mut sim, 1, 0);
         put(&mut sim, 1, -2);
         sim.step();
@@ -1969,10 +2078,13 @@ mod tests {
             let sim = recipe.sim();
             let tier = if matches!(
                 *item,
-                Item::Machine(Machine::Glyph(
-                    GlyphKind::Reification
-                        | GlyphKind::Converter(AtomKind::Plum | AtomKind::Cobalt)
-                ))
+                Item::Machine(
+                    Machine::Arm(ArmLength::Two | ArmLength::Three)
+                        | Machine::Glyph(
+                            GlyphKind::Reification
+                                | GlyphKind::Converter(AtomKind::Plum | AtomKind::Cobalt),
+                        ),
+                )
             ) {
                 Tier::Two
             } else {
@@ -2311,11 +2423,13 @@ mod tests {
             vec![Instr::Grab, Instr::Wait],
             vec![output(Tier::One, Hex::new(2, 0))],
         );
-        let arm = Item::Machine(Machine::Arm).recipe().unwrap();
+        let arm = Item::Machine(Machine::Arm(ArmLength::One))
+            .recipe()
+            .unwrap();
         let centre = arm.centre(Tier::One.radius()).unwrap();
         lay(&mut sim, arm, 0, Hex::new(2, 0).sub(centre));
         sim.step();
-        assert_eq!(count(&sim, Machine::Arm), 1);
+        assert_eq!(count(&sim, Machine::Arm(ArmLength::One)), 1);
         assert_eq!(count(&sim, Machine::Glyph(GlyphKind::Bonder)), 0);
         assert!(sim.arms[0].holding);
         assert_eq!(sim.held(0), None);
@@ -2347,12 +2461,14 @@ mod tests {
         sim.step();
         assert!(!lying(&sim, &triangle));
         assert_eq!(count(&sim, Machine::Glyph(GlyphKind::SecondBond)), 1);
-        assert_eq!(count(&sim, Machine::Arm), 1);
+        assert_eq!(count(&sim, Machine::Arm(ArmLength::One)), 1);
     }
 
     #[test]
     fn the_cobalt_arm_shape_crafts_at_an_output_and_the_base_shape_does_not() {
-        let cobalt = Item::Machine(Machine::Arm).recipe().unwrap();
+        let cobalt = Item::Machine(Machine::Arm(ArmLength::One))
+            .recipe()
+            .unwrap();
         let mut base = cobalt.sim();
         for atom in base.atoms.iter_mut().flatten() {
             atom.kind = AtomKind::Base;
@@ -2364,7 +2480,7 @@ mod tests {
             let centre = recipe.centre(Tier::One.radius()).unwrap();
             let ids = lay(&mut sim, recipe, 0, ORIGIN.sub(centre));
             sim.step();
-            assert_eq!(count(&sim, Machine::Arm), expected);
+            assert_eq!(count(&sim, Machine::Arm(ArmLength::One)), expected);
             assert_eq!(lying(&sim, &ids), expected == 0);
         }
     }
@@ -2412,13 +2528,21 @@ mod tests {
         let pair = lay(&mut sim, bonder.recipe().unwrap(), 0, Hex::new(-2, 0));
         let arm = lay(
             &mut sim,
-            Item::Machine(Machine::Arm).recipe().unwrap(),
+            Item::Machine(Machine::Arm(ArmLength::One))
+                .recipe()
+                .unwrap(),
             0,
             Hex::new(-1, -1),
         );
         sim.step();
         assert!(!lying(&sim, &pair) && !lying(&sim, &arm));
-        assert_eq!((count(&sim, bonder), count(&sim, Machine::Arm)), (1, 1));
+        assert_eq!(
+            (
+                count(&sim, bonder),
+                count(&sim, Machine::Arm(ArmLength::One))
+            ),
+            (1, 1)
+        );
     }
 
     #[test]
@@ -2484,8 +2608,8 @@ mod tests {
     #[test]
     fn a_drop_and_a_grab_of_one_atom_in_one_tick_end_the_same_in_either_arm_order() {
         use Instr::*;
-        let dropper = Arm::new(Hex::new(0, 0), 0, vec![Grab, Drop, Wait]);
-        let grabber = Arm::new(Hex::new(2, 0), 3, vec![Wait, Grab, Wait]);
+        let dropper = Arm::new(ArmLength::One, Hex::new(0, 0), 0, vec![Grab, Drop, Wait]);
+        let grabber = Arm::new(ArmLength::One, Hex::new(2, 0), 3, vec![Wait, Grab, Wait]);
         let ends: Vec<_> = [true, false]
             .into_iter()
             .map(|dropper_first| {
@@ -2564,8 +2688,12 @@ mod tests {
     fn a_pivot_under_two_hands_stalls_and_names_the_other_hand() {
         use Instr::*;
         let (mut sim, _, b) = held_pair(vec![Grab, Pivot(Spin::Cw)]);
-        sim.arms
-            .push(Arm::new(Hex::new(3, -1), 3, vec![Grab, Wait, Drop, Wait]));
+        sim.arms.push(Arm::new(
+            ArmLength::One,
+            Hex::new(3, -1),
+            3,
+            vec![Grab, Wait, Drop, Wait],
+        ));
         sim.step();
         sim.step();
         assert_eq!(sim.arms[0].stall, Some(Stall::Hand(1)));
@@ -2580,8 +2708,12 @@ mod tests {
     fn a_rotate_under_two_hands_stalls_and_names_the_other_hand_until_it_drops() {
         use Instr::*;
         let mut sim = bench(vec![Grab, Rot(Spin::Cw)], Vec::new());
-        sim.arms
-            .push(Arm::new(Hex::new(2, -2), 4, vec![Grab, Wait, Drop, Wait]));
+        sim.arms.push(Arm::new(
+            ArmLength::One,
+            Hex::new(2, -2),
+            4,
+            vec![Grab, Wait, Drop, Wait],
+        ));
         let a = put(&mut sim, 1, 0);
         let b = put(&mut sim, 1, -1);
         bond(&mut sim, a, b, BondKind::Single);
@@ -2629,7 +2761,10 @@ mod tests {
             .count();
         assert_eq!(cobalt, 5 * PLACEMENTS.len());
         sim.step();
-        assert_eq!(count(&sim, Machine::Arm), PLACEMENTS.len() as u32);
+        assert_eq!(
+            count(&sim, Machine::Arm(ArmLength::One)),
+            PLACEMENTS.len() as u32
+        );
     }
 
     #[test]
@@ -2679,6 +2814,7 @@ mod tests {
         use Instr::*;
         let mut sim = bench(vec![Grab, Move(0)], Vec::new());
         sim.arms.push(Arm::new(
+            ArmLength::One,
             Hex::new(3, 0),
             3,
             vec![Wait, Wait, Grab, Rot(Spin::Cw)],
@@ -2704,8 +2840,12 @@ mod tests {
     fn a_move_under_two_hands_stalls_and_names_the_other_hand() {
         use Instr::*;
         let mut sim = bench(vec![Grab, Move(2)], Vec::new());
-        sim.arms
-            .push(Arm::new(Hex::new(2, 0), 3, vec![Grab, Wait, Drop, Wait]));
+        sim.arms.push(Arm::new(
+            ArmLength::One,
+            Hex::new(2, 0),
+            3,
+            vec![Grab, Wait, Drop, Wait],
+        ));
         put(&mut sim, 1, 0);
         sim.step();
         sim.step();
@@ -2731,7 +2871,8 @@ mod tests {
         assert_eq!(sim.arms[0].pivot, ORIGIN);
 
         let mut sim = bench(Vec::new(), Vec::new());
-        sim.arms.push(Arm::new(Hex::new(-1, 0), 0, Vec::new()));
+        sim.arms
+            .push(Arm::new(ArmLength::One, Hex::new(-1, 0), 0, Vec::new()));
         assert_eq!(base_move_onto(&mut sim), Some(Stall::Illegal));
         sim.arms.swap(0, 1);
         sim.arms[1].tape = vec![Instr::Move(3)];
@@ -2744,7 +2885,8 @@ mod tests {
         assert_eq!(base_move_onto(&mut sim), Some(Stall::Illegal));
 
         let mut sim = bench(vec![Instr::Move(2)], vec![source(Hex::new(1, -1))]);
-        sim.arms.push(Arm::new(Hex::new(-1, -1), 0, Vec::new()));
+        sim.arms
+            .push(Arm::new(ArmLength::One, Hex::new(-1, -1), 0, Vec::new()));
         put(&mut sim, 0, -2);
         sim.step();
         assert_eq!(sim.arms[0].stall, None);
@@ -2762,7 +2904,8 @@ mod tests {
         assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
         assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
         sim.arms[0].tape.remove(1);
-        sim.arms.push(Arm::new(Hex::new(1, 1), 0, Vec::new()));
+        sim.arms
+            .push(Arm::new(ArmLength::One, Hex::new(1, 1), 0, Vec::new()));
         sim.step();
         assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
         assert_eq!(sim.atoms[b].unwrap().pos, Hex::new(2, -1));
@@ -2808,7 +2951,8 @@ mod tests {
         let mut sim = Sim::empty();
         sim.glyphs
             .push(Some(Glyph::new(GlyphKind::Source, Hex::new(2, 0), 0)));
-        sim.arms.push(Arm::new(ORIGIN, 0, vec![Instr::Grab]));
+        sim.arms
+            .push(Arm::new(ArmLength::One, ORIGIN, 0, vec![Instr::Grab]));
         let tick = sim.step();
         assert_eq!(
             tick,
@@ -2861,7 +3005,10 @@ mod tests {
             let f = fixture(machine);
             let kinds: Vec<GlyphKind> = f.sim.glyphs.iter().flatten().map(|g| g.kind).collect();
             match machine {
-                Machine::Arm => assert_eq!((kinds, f.sim.arms.len()), (vec![], 1)),
+                Machine::Arm(length) => {
+                    assert_eq!((kinds, f.sim.arms.len()), (vec![], 1));
+                    assert_eq!(f.sim.arms[0].length, length);
+                }
                 Machine::Glyph(kind) => {
                     assert_eq!(kinds.last(), Some(&kind), "{machine:?}");
                     assert!(kinds.iter().all(|k| *k == kind || *k == GlyphKind::Source));

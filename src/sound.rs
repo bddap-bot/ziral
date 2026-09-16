@@ -115,11 +115,11 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
         .filter_map(|event| {
             let (machine, at) = match event {
                 TickEvent::Fired { machine, at, .. } => (*machine, *at),
-                TickEvent::Grabbed { at, .. }
-                | TickEvent::Dropped { at, .. }
-                | TickEvent::Rotated { at, .. }
-                | TickEvent::Pivoted { at, .. } => (Machine::Arm, *at),
-                TickEvent::Moved { to, .. } => (Machine::Arm, *to),
+                TickEvent::Grabbed { length, at, .. }
+                | TickEvent::Dropped { length, at, .. }
+                | TickEvent::Rotated { length, at, .. }
+                | TickEvent::Pivoted { length, at, .. } => (Machine::Arm(*length), *at),
+                TickEvent::Moved { length, to, .. } => (Machine::Arm(*length), *to),
                 TickEvent::BondWritten { .. }
                 | TickEvent::Consumed { .. }
                 | TickEvent::Spawned { .. }
@@ -282,6 +282,7 @@ pub fn proof(ticks: &[(TickEvents, View)]) -> (String, Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::ArmLength;
     use crate::sim::{GlyphKind, Instr, Stall};
 
     #[test]
@@ -317,6 +318,7 @@ mod tests {
                 },
                 TickEvent::Rotated {
                     arm: 1,
+                    length: ArmLength::One,
                     spin: crate::sim::Spin::Cw,
                     at: crate::sim::ORIGIN,
                 },
@@ -331,8 +333,8 @@ mod tests {
                     at: crate::sim::ORIGIN,
                 },
                 Hit {
-                    machine: Machine::Arm,
-                    instrument: instrument(Machine::Arm),
+                    machine: Machine::Arm(ArmLength::One),
+                    instrument: instrument(Machine::Arm(ArmLength::One)),
                     at: crate::sim::ORIGIN,
                 },
             ]

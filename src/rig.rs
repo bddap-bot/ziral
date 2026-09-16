@@ -121,6 +121,7 @@ pub fn pulse(fired: bool, phase: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::ArmLength;
 
     #[test]
     fn every_machine_has_two_to_four_parts_and_every_motion_resolves_to_a_tick_event() {
@@ -138,11 +139,17 @@ mod tests {
                             machine,
                             at: crate::sim::ORIGIN,
                         },
-                        Event::Rotated => TickEvent::Rotated {
-                            arm: 7,
-                            spin: crate::sim::Spin::Cw,
-                            at: crate::sim::ORIGIN,
-                        },
+                        Event::Rotated => {
+                            let Machine::Arm(length) = machine else {
+                                unreachable!("only an arm rotates")
+                            };
+                            TickEvent::Rotated {
+                                arm: 7,
+                                length,
+                                spin: crate::sim::Spin::Cw,
+                                at: crate::sim::ORIGIN,
+                            }
+                        }
                     };
                     assert!(event.matches(&sample, 7));
                 }
@@ -152,7 +159,11 @@ mod tests {
 
     #[test]
     fn an_arm_has_no_part_rotation_beside_its_frame_sweep() {
-        assert!(parts(Machine::Arm).iter().all(|part| part.motion.is_none()));
+        assert!(
+            parts(Machine::Arm(ArmLength::One))
+                .iter()
+                .all(|part| part.motion.is_none())
+        );
     }
 
     #[test]

@@ -755,7 +755,9 @@ The one-format rule. The recipe table, `form::RECIPES`, is the machines and thei
 |---|---|
 | bonder | `B0,0 B0,1 0,0-0,1` |
 | second-bond applicator | `B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1-1,0` |
-| arm | `C0,1 C0,2 C1,0 C1,1 C2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1` |
+| arm, length one | `C0,1 C0,2 C1,0 C1,1 C2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1` |
+| arm, length two | `C0,1 C0,2 C1,0 C1,1 C2,1 C3,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1` |
+| arm, length three | `C0,1 C0,2 C1,0 C1,1 C2,1 C3,1 C4,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1 3,1-4,1` |
 | cleanup | `B0,0 B0,1 B0,2 0,0-0,1 0,1-0,2` |
 | output, first tier | `B0,0 B0,1 B1,1 0,0-0,1 0,1-1,1` |
 | output, second tier | `B0,1 B1,1 B1,2 B2,0 0,1-1,1 1,1-1,2 1,1-2,0` |

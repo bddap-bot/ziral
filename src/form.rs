@@ -1,20 +1,28 @@
 use crate::sim::{
-    Atom, AtomKind, Bond, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, MAX_COMPOUND_ATOMS,
-    Machine, Sim, Spin, Tier,
+    ArmLength, Atom, AtomKind, Bond, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item,
+    MAX_COMPOUND_ATOMS, Machine, Sim, Spin, Tier,
 };
 use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 23] = [
+pub const RECIPES: [(Item, &str); 25] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
         "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1-1,0",
     ),
     (
-        Item::Machine(Machine::Arm),
+        Item::Machine(Machine::Arm(ArmLength::One)),
         "C0,1 C0,2 C1,0 C1,1 C2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1",
+    ),
+    (
+        Item::Machine(Machine::Arm(ArmLength::Two)),
+        "C0,1 C0,2 C1,0 C1,1 C2,1 C3,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1",
+    ),
+    (
+        Item::Machine(Machine::Arm(ArmLength::Three)),
+        "C0,1 C0,2 C1,0 C1,1 C2,1 C3,1 C4,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1 3,1-4,1",
     ),
     (
         glyph(GlyphKind::Converter(AtomKind::Amber)),
@@ -342,7 +350,11 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
         {
             return Err("an arm tape has an invalid move".to_string());
         }
-        if arm.pivot.checked_add(DIRS[arm.dir]).is_none() {
+        if arm
+            .pivot
+            .checked_add(DIRS[arm.dir].scale(arm.length.cells()))
+            .is_none()
+        {
             return Err(format!(
                 "{} has a footprint outside the grid",
                 cell(arm.pivot)
@@ -360,10 +372,11 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
 }
 
 fn validate_turns(sim: &Sim) -> Result<(), String> {
-    let hands = sim
-        .arms
-        .iter()
-        .map(|arm| arm.pivot.checked_add(DIRS[arm.dir]).expect("a valid arm"));
+    let hands = sim.arms.iter().map(|arm| {
+        arm.pivot
+            .checked_add(DIRS[arm.dir].scale(arm.length.cells()))
+            .expect("a valid arm")
+    });
     let cells = sim.ids().flat_map(|id| sim.stands(id)).chain(hands);
     if cells.into_iter().any(|at| {
         (0..6).any(|turn| {
@@ -440,7 +453,13 @@ fn machine_lines(sim: &Sim) -> Vec<String> {
             } else {
                 a.tape.iter().copied().map(instruction_letter).collect()
             };
-            format!("arm {} {} {tape} {}", cell(a.pivot), a.dir, a.pc)
+            format!(
+                "arm {} {} {} {tape} {}",
+                a.length.cells(),
+                cell(a.pivot),
+                a.dir,
+                a.pc
+            )
         }))
         .collect()
 }
@@ -543,7 +562,8 @@ fn posed(sim: &Sim, turn: usize) -> Result<Sim, String> {
         .arms
         .iter()
         .map(|a| {
-            let mut arm = crate::sim::Arm::new(at(a.pivot)?, (a.dir + turn) % 6, a.tape.clone());
+            let mut arm =
+                crate::sim::Arm::new(a.length, at(a.pivot)?, (a.dir + turn) % 6, a.tape.clone());
             arm.pc = a.pc;
             Ok(arm)
         })
@@ -638,18 +658,20 @@ fn parse_machine(line: &str, sim: &mut Sim) -> Result<(), String> {
     let name = fields[0];
     let mut machine = Sim::empty();
     if name == "arm" {
-        if fields.len() != 5 {
+        if fields.len() != 6 {
             return Err(format!("{line:?} is not an arm line"));
         }
-        let pivot = parse_cell(fields[1])?;
-        let dir = number(fields[2], "turn")?;
+        let length = ArmLength::from_cells(number(fields[1], "arm length")?)
+            .ok_or_else(|| format!("{} is not an arm length", fields[1]))?;
+        let pivot = parse_cell(fields[2])?;
+        let dir = number(fields[3], "turn")?;
         if dir >= 6 {
-            return Err(format!("{} is not one of six turns", fields[2]));
+            return Err(format!("{} is not one of six turns", fields[3]));
         }
-        let tape = if fields[3] == "-" {
+        let tape = if fields[4] == "-" {
             Vec::new()
         } else {
-            fields[3]
+            fields[4]
                 .chars()
                 .map(|letter| {
                     instruction(letter)
@@ -657,8 +679,8 @@ fn parse_machine(line: &str, sim: &mut Sim) -> Result<(), String> {
                 })
                 .collect::<Result<Vec<_>, _>>()?
         };
-        let mut arm = crate::sim::Arm::new(pivot, dir, tape);
-        arm.pc = number(fields[4], "program counter")?;
+        let mut arm = crate::sim::Arm::new(length, pivot, dir, tape);
+        arm.pc = number(fields[5], "program counter")?;
         machine.arms.push(arm);
     } else {
         if fields.len() != 3 {
@@ -803,33 +825,57 @@ mod tests {
     }
 
     #[test]
-    fn the_arm_recipe_parses_as_five_cobalt_atoms_and_four_single_bonds() {
-        let arm = Machine::Arm.recipe().unwrap();
-        assert_eq!(
-            arm.atoms(),
-            &[
-                (Hex::new(0, 1), AtomKind::Cobalt),
-                (Hex::new(0, 2), AtomKind::Cobalt),
-                (Hex::new(1, 0), AtomKind::Cobalt),
-                (Hex::new(1, 1), AtomKind::Cobalt),
-                (Hex::new(2, 1), AtomKind::Cobalt),
-            ]
-        );
-        assert_eq!(
-            arm.bonds,
-            vec![
-                (Hex::new(0, 1), Hex::new(1, 0), BondKind::Single),
-                (Hex::new(0, 2), Hex::new(1, 1), BondKind::Single),
-                (Hex::new(1, 0), Hex::new(1, 1), BondKind::Single),
-                (Hex::new(1, 1), Hex::new(2, 1), BondKind::Single),
-            ]
-        );
-        assert_eq!(
-            "C7,4 C7,5 C8,3 C8,4 C9,4 7,4-8,3 7,5-8,4 8,3-8,4 8,4-9,4\n"
-                .parse::<Form>()
-                .unwrap(),
-            *arm
-        );
+    fn every_arm_recipe_has_its_cobalt_chain_and_the_long_ones_are_not_a_turned_or_mirrored_one() {
+        let expected = [
+            (
+                ArmLength::One,
+                "C0,1 C0,2 C1,0 C1,1 C2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1",
+            ),
+            (
+                ArmLength::Two,
+                "C0,1 C0,2 C1,0 C1,1 C2,1 C3,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1",
+            ),
+            (
+                ArmLength::Three,
+                "C0,1 C0,2 C1,0 C1,1 C2,1 C3,1 C4,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1 3,1-4,1",
+            ),
+        ];
+        for (length, text) in expected {
+            let recipe = Machine::Arm(length).recipe().unwrap();
+            assert_eq!(recipe.to_string(), text);
+            assert_eq!(recipe.atoms().len(), length.cells() as usize + 4);
+            assert!(
+                recipe
+                    .atoms()
+                    .iter()
+                    .all(|(_, kind)| *kind == AtomKind::Cobalt)
+            );
+            assert_eq!(recipe.bonds.len(), length.cells() as usize + 3);
+            assert!(
+                recipe
+                    .bonds
+                    .iter()
+                    .all(|(_, _, kind)| *kind == BondKind::Single)
+            );
+        }
+        let one = Machine::Arm(ArmLength::One).recipe().unwrap();
+        for turn in 0..6 {
+            let mut turned = one.sim();
+            for atom in turned.atoms.iter_mut().flatten() {
+                atom.pos = atom.pos.turned(turn);
+            }
+            let turned = Form::of(&turned);
+            let mut mirrored = one.sim();
+            for atom in mirrored.atoms.iter_mut().flatten() {
+                atom.pos = Hex::new(-atom.pos.q - atom.pos.r, atom.pos.r).turned(turn);
+            }
+            let mirrored = Form::of(&mirrored);
+            for length in [ArmLength::Two, ArmLength::Three] {
+                let long = Machine::Arm(length).recipe().unwrap();
+                assert_ne!(long, &turned, "{length:?}, turn {turn}");
+                assert_ne!(long, &mirrored, "{length:?}, mirror {turn}");
+            }
+        }
     }
 
     #[test]
@@ -853,6 +899,7 @@ mod tests {
         sim.glyphs
             .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(-2, 3), 5)));
         let mut arm = crate::sim::Arm::new(
+            ArmLength::One,
             Hex::new(4, -1),
             2,
             vec![Instr::Grab, Instr::Move(4), Instr::Rot(Spin::Cw)],
@@ -882,7 +929,7 @@ mod tests {
         assert_eq!(read.0.arms[0].pc, 17);
         assert_eq!(read.0.arms[0].tape, sim.arms[0].tape);
         assert!(text.lines().any(|line| line.contains(" FwD 17")));
-        let empty_tape = "arm 0,0 0 - 23".parse::<Fragment>().unwrap();
+        let empty_tape = "arm 1 0,0 0 - 23".parse::<Fragment>().unwrap();
         assert!(empty_tape.0.arms[0].tape.is_empty());
         assert_eq!(empty_tape.0.arms[0].pc, 23);
         for kind in GlyphKind::ALL
@@ -901,7 +948,7 @@ mod tests {
             .glyphs
             .push(Some(Glyph::new(GlyphKind::Source, Hex::new(0, 0), 0)));
         assert!(Fragment::of(&source).is_err());
-        let too_wide = "arm 0,0 0 - 0\narm 2147483647,2147483647 0 - 0";
+        let too_wide = "arm 1 0,0 0 - 0\narm 1 2147483647,2147483647 0 - 0";
         assert!(too_wide.parse::<Fragment>().is_err());
     }
 
@@ -912,10 +959,18 @@ mod tests {
             .push(Some(Glyph::new(GlyphKind::SecondBond, Hex::new(7, 4), 3)));
         sim.glyphs
             .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(0, 0), 0)));
-        sim.arms
-            .push(crate::sim::Arm::new(Hex::new(8, 6), 2, vec![Instr::Wait]));
-        sim.arms
-            .push(crate::sim::Arm::new(Hex::new(1, 2), 1, vec![Instr::Grab]));
+        sim.arms.push(crate::sim::Arm::new(
+            ArmLength::One,
+            Hex::new(8, 6),
+            2,
+            vec![Instr::Wait],
+        ));
+        sim.arms.push(crate::sim::Arm::new(
+            ArmLength::One,
+            Hex::new(1, 2),
+            1,
+            vec![Instr::Grab],
+        ));
 
         let text = Fragment::of(&sim).unwrap().to_string();
         let read = text.parse::<Fragment>().unwrap().into_sim();
@@ -945,7 +1000,7 @@ mod tests {
                 .is_err()
         );
         assert!(
-            "arm 0,0 0 - 0\narm 0,2147483647 5 - 0"
+            "arm 1 0,0 0 - 0\narm 1 0,2147483647 5 - 0"
                 .parse::<Fragment>()
                 .is_err()
         );

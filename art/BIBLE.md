@@ -74,7 +74,9 @@ Single and double differ in hue (26° vs 267°) and shape.
 
 | item | glaze | shape | marking |
 |---|---|---|---|
-| arm | dark brass, terracotta hand | radial: pivot disc and one link | horseshoe hand |
+| arm, length one | dark brass, terracotta hand | radial: pivot disc and one-cell link | horseshoe hand |
+| arm, length two | dark brass, terracotta hand | radial: pivot disc and two-cell link | horseshoe hand |
+| arm, length three | dark brass, terracotta hand | radial: pivot disc and three-cell link | horseshoe hand |
 | source | blue-green | six-cell housing open to the right | five feeds around one central outlet |
 | bonder | terracotta | two-cell well, bar | one spoke per slot; no ring |
 | second bond | plum | three-cell well, triangle | two spokes per slot; ring on the sacrificial slot |
@@ -84,7 +86,7 @@ Single and double differ in hue (26° vs 267°) and shape.
 | output, second tier | ivory | nineteen-cell well, hexagon | the first tier ringed by twelve cups and a brass ring |
 | output, third tier | ivory | thirty-seven-cell well, hexagon | the second tier ringed by eighteen cups and a second brass ring |
 
-Every pair differs in at least two ways. The near cases: arm vs bonder share a hue family and value (brass 26° / 0.09 against terracotta 10° / 0.19) and are told apart by shape and marking; bonder vs second bond are told apart by hue, shape, and marking; the three output tiers share glaze and value and are told apart by size, seven, nineteen and thirty-seven cells, and by texture; the texture term is judged on a sixteen-pixel thumbnail of each sprite, since at eight the second and third tiers, whose cups differ two to one in size, read as one ivory blur.
+Every pair differs in at least two ways. The near cases: the three arm lengths share hue, value and marking and differ by link length and texture; each arm vs bonder shares a hue family and value (brass 26° / 0.09 against terracotta 10° / 0.19) and is told apart by shape and marking; bonder vs second bond are told apart by hue, shape, and marking; the three output tiers share glaze and value and are told apart by size, seven, nineteen and thirty-seven cells, and by texture; the texture term is judged on a sixteen-pixel thumbnail of each sprite, since at eight the second and third tiers, whose cups differ two to one in size, read as one ivory blur.
 
 ## 4. Reference
 
@@ -95,6 +97,8 @@ Every pair differs in at least two ways. The near cases: arm vs bonder share a h
 `../proofs/machine-body-first-67.png` places new body-first arm, bonder and first-output proposals on the real board at shipped size. Each direction starts from one cast housing with its functional marks cut into the body; the sheet is a comparison and does not replace shipped machine art.
 
 `../proofs/arm-cobalt-recipe-101.png` is the shipped arm card at its native 405 by 184 pixels, with the five cobalt atoms and four single bonds drawn at tape size without stretching.
+
+`../proofs/arm-lengths-102.gif` places the three arm lengths on one tape at the shipped size, each grabbing, rotating and dropping at its own reach.
 
 `proofs/view-sound-58.mp4` moves the shipped view from one running side of the board to the other while the tick mix follows the visible cells and zoom.
 
