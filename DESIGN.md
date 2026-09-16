@@ -122,6 +122,9 @@ The new fourth atom is cobalt, written `C`, and its only route is the four-cell 
 
 This is the dumbest design satisfying the directive because it adds one atom row, one route, one converter rule, one recipe, and one fixture to the existing tables and tick stream. A configurable converter, a recipe compound at the input, a delayed internal atom, or another way to make cobalt was rejected because each adds a route or state absent from the requested one-to-one conversion. Cobalt was chosen because its blue value remains distinct from the existing blue-green base while fitting fired glaze; one tick reuses the game's only clock and makes the occupied output the only stall state.
 
+Directive (verbatim): "make the rescipe for arm B0,1 B0,2 B1,0 B1,1 B2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 except it uses the new token atoms"
+The arm recipe replaces its base atoms with cobalt in that five-atom, four-single-bond shape. This is the dumbest design satisfying the directive because it changes the one table row and its fixtures; a second recipe or conversion path was rejected because either would preserve the recipe being replaced.
+
 ### Playtest saves
 
 Directive (verbatim): "I'd like to be able to playtest this without starting from scratch each time. Time for save-load functionality?"
