@@ -2522,7 +2522,10 @@ mod tests {
                 );
                 let atlas = open(dir.join("relit/albedo.png"));
                 let albedo = open(dir.join("albedo.png"));
-                assert_eq!(atlas.width(), albedo.width() * manifest.style.facings.len() as u32);
+                assert_eq!(
+                    atlas.width(),
+                    albedo.width() * manifest.style.facings.len() as u32
+                );
                 assert_eq!(atlas.height(), albedo.height(), "{name}");
             }
         }
