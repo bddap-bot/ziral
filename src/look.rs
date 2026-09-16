@@ -74,6 +74,7 @@ pub fn turn(dir: usize) -> f32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     Seat(Slot),
+    Body,
     Pivot,
     Hand,
 }
@@ -98,6 +99,28 @@ pub fn footprint(item: Machine) -> Vec<Cell> {
                     role: Role::Hand,
                 },
             ]
+        }
+        Machine::Glyph(kind @ GlyphKind::Converter(AtomKind::Cobalt)) => {
+            let input = kind.rule().slots[0];
+            let output = kind.product().expect("a converter has an output");
+            kind.cells()
+                .into_iter()
+                .map(|at| Cell {
+                    at,
+                    role: if at == input.at {
+                        Role::Seat(input)
+                    } else if at == output {
+                        Role::Seat(Slot {
+                            at,
+                            kind: Some(AtomKind::Cobalt),
+                            consumed: false,
+                            lone: true,
+                        })
+                    } else {
+                        Role::Body
+                    },
+                })
+                .collect()
         }
         Machine::Glyph(kind) => kind
             .rule()
@@ -141,17 +164,19 @@ pub enum Glaze {
     BlueGreen,
     Amber,
     Plum,
+    Cobalt,
     Ivory,
 }
 
 impl Glaze {
-    pub const ALL: [Glaze; 7] = [
+    pub const ALL: [Glaze; 8] = [
         Glaze::Clay,
         Glaze::Brass,
         Glaze::Terracotta,
         Glaze::BlueGreen,
         Glaze::Amber,
         Glaze::Plum,
+        Glaze::Cobalt,
         Glaze::Ivory,
     ];
 
@@ -163,6 +188,7 @@ impl Glaze {
             Glaze::BlueGreen => Color::srgb_u8(0x4F, 0x8A, 0x8B),
             Glaze::Amber => Color::srgb_u8(0xE0, 0xA4, 0x58),
             Glaze::Plum => Color::srgb_u8(0x7D, 0x5B, 0xA6),
+            Glaze::Cobalt => Color::srgb_u8(0x36, 0x57, 0xA7),
             Glaze::Ivory => Color::srgb_u8(0xF4, 0xED, 0xE4),
         }
     }
@@ -267,6 +293,7 @@ pub enum Shape {
     Bead,
     RingedBead,
     FacetedBead,
+    KnobbedBead,
     Bars(usize),
     Radial,
     Cells(usize),
@@ -324,6 +351,12 @@ pub fn atom(kind: AtomKind) -> Look<()> {
             shape: Shape::FacetedBead,
             marking: (),
         },
+        AtomKind::Cobalt => Look {
+            glaze: Glaze::Cobalt,
+            skin: skin!("textures/atom-cobalt"),
+            shape: Shape::KnobbedBead,
+            marking: (),
+        },
     }
 }
 
@@ -360,6 +393,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
         GlyphKind::Reification => (Glaze::Amber, machine!("reification")),
         GlyphKind::Converter(AtomKind::Amber) => (Glaze::Amber, machine!("converter-amber")),
         GlyphKind::Converter(AtomKind::Plum) => (Glaze::Plum, machine!("converter-plum")),
+        GlyphKind::Converter(AtomKind::Cobalt) => (Glaze::Cobalt, machine!("converter-cobalt")),
         GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
         GlyphKind::Output(Tier::One) => (Glaze::Ivory, machine!("output-1")),
         GlyphKind::Output(Tier::Two) => (Glaze::Ivory, machine!("output-2")),
@@ -385,6 +419,7 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
         Machine::Glyph(GlyphKind::Reification) => "reification",
         Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)) => "converter-amber",
         Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)) => "converter-plum",
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt)) => "converter-cobalt",
         Machine::Glyph(GlyphKind::Converter(AtomKind::Base)) => {
             panic!("the base atom has a source")
         }
@@ -418,6 +453,8 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
         ("converter-amber", "ring") => pair!("converter-amber", "moving"),
         ("converter-plum", "base") => pair!("converter-plum", "base"),
         ("converter-plum", "ring") => pair!("converter-plum", "moving"),
+        ("converter-cobalt", "base") => pair!("converter-cobalt", "base"),
+        ("converter-cobalt", "flow") => pair!("converter-cobalt", "moving"),
         ("output-1", "base") => pair!("output-1", "base"),
         ("output-1", "rim") => pair!("output-1", "moving"),
         ("output-2", "base") => pair!("output-2", "base"),

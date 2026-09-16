@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 22] = [
+pub const RECIPES: [(Item, &str); 23] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
@@ -28,6 +28,10 @@ pub const RECIPES: [(Item, &str); 22] = [
     (
         glyph(GlyphKind::Converter(AtomKind::Plum)),
         "B0,0 B0,1 B0,2 A0,3 0,0-0,1 0,1=0,2 0,2-0,3",
+    ),
+    (
+        glyph(GlyphKind::Converter(AtomKind::Cobalt)),
+        "P0,0 A0,1 A0,2 B1,0 B1,1 B1,2 0,0-0,1 0,0-1,0 0,1-0,2 0,1-1,1 0,2-1,2 1,0=1,1 1,1-1,2",
     ),
     (
         glyph(GlyphKind::Output(Tier::Three)),
@@ -91,7 +95,7 @@ pub enum AtomRoute {
     Converter(&'static str),
 }
 
-pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 3] = [
+pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 4] = [
     (AtomKind::Base, AtomRoute::Source),
     (
         AtomKind::Amber,
@@ -101,6 +105,7 @@ pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 3] = [
         AtomKind::Plum,
         AtomRoute::Converter("A0,0 B0,1 B1,1 0,0-0,1 0,1=1,1"),
     ),
+    (AtomKind::Cobalt, AtomRoute::Converter("B0,0")),
 ];
 
 pub fn atom_route(kind: AtomKind) -> AtomRoute {
@@ -246,6 +251,7 @@ fn letter(kind: AtomKind) -> char {
         AtomKind::Base => 'B',
         AtomKind::Amber => 'A',
         AtomKind::Plum => 'P',
+        AtomKind::Cobalt => 'C',
     }
 }
 
@@ -254,6 +260,7 @@ fn kind(letter: char) -> Option<AtomKind> {
         'B' => Some(AtomKind::Base),
         'A' => Some(AtomKind::Amber),
         'P' => Some(AtomKind::Plum),
+        'C' => Some(AtomKind::Cobalt),
         _ => None,
     }
 }
@@ -288,6 +295,7 @@ fn machine_name(kind: GlyphKind) -> &'static str {
         GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
         GlyphKind::Converter(AtomKind::Amber) => "amber-converter",
         GlyphKind::Converter(AtomKind::Plum) => "plum-converter",
+        GlyphKind::Converter(AtomKind::Cobalt) => "cobalt-converter",
         GlyphKind::Output(Tier::One) => "output-1",
         GlyphKind::Output(Tier::Two) => "output-2",
         GlyphKind::Output(Tier::Three) => "output-3",
@@ -295,8 +303,8 @@ fn machine_name(kind: GlyphKind) -> &'static str {
 }
 
 fn footprint_fits(kind: GlyphKind, at: Hex, dir: usize) -> bool {
-    kind.rule().slots.iter().all(|slot| {
-        let offset = slot.at.turned(dir);
+    kind.cells().iter().all(|cell| {
+        let offset = cell.turned(dir);
         at.q.checked_add(offset.q).is_some() && at.r.checked_add(offset.r).is_some()
     })
 }
@@ -375,6 +383,7 @@ fn glyph_kind(name: &str) -> Option<GlyphKind> {
         "reification" => Some(GlyphKind::Reification),
         "amber-converter" => Some(GlyphKind::Converter(AtomKind::Amber)),
         "plum-converter" => Some(GlyphKind::Converter(AtomKind::Plum)),
+        "cobalt-converter" => Some(GlyphKind::Converter(AtomKind::Cobalt)),
         "output-1" => Some(GlyphKind::Output(Tier::One)),
         "output-2" => Some(GlyphKind::Output(Tier::Two)),
         "output-3" => Some(GlyphKind::Output(Tier::Three)),

@@ -176,10 +176,16 @@ pub enum AtomKind {
     Base,
     Amber,
     Plum,
+    Cobalt,
 }
 
 impl AtomKind {
-    pub const ALL: [AtomKind; 3] = [AtomKind::Base, AtomKind::Amber, AtomKind::Plum];
+    pub const ALL: [AtomKind; 4] = [
+        AtomKind::Base,
+        AtomKind::Amber,
+        AtomKind::Plum,
+        AtomKind::Cobalt,
+    ];
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -292,13 +298,14 @@ pub enum GlyphKind {
 }
 
 impl GlyphKind {
-    pub const ALL: [GlyphKind; 9] = [
+    pub const ALL: [GlyphKind; 10] = [
         GlyphKind::Source,
         GlyphKind::Bonder,
         GlyphKind::SecondBond,
         GlyphKind::Reification,
         GlyphKind::Converter(AtomKind::Amber),
         GlyphKind::Converter(AtomKind::Plum),
+        GlyphKind::Converter(AtomKind::Cobalt),
         GlyphKind::Output(Tier::One),
         GlyphKind::Output(Tier::Two),
         GlyphKind::Output(Tier::Three),
@@ -419,6 +426,12 @@ const PLUM_CONVERTER: [Slot; 3] = [
     consumed(DIRS[0]),
     consumed(Hex::new(2, -1)),
 ];
+const COBALT_CONVERTER: [Slot; 1] = [Slot {
+    lone: true,
+    ..consumed(ORIGIN)
+}];
+const COBALT_FOOTPRINT: [Hex; 4] = [ORIGIN, Hex::new(1, 0), Hex::new(0, 1), Hex::new(1, 1)];
+const COBALT_OUTPUT: [Hex; 1] = [Hex::new(1, 1)];
 
 const fn hexagon<const N: usize>(radius: i32) -> [Slot; N] {
     let mut cells = [consumed(ORIGIN); N];
@@ -494,10 +507,33 @@ impl GlyphKind {
                 ],
                 ..plain(&PLUM_CONVERTER)
             },
+            GlyphKind::Converter(AtomKind::Cobalt) => plain(&COBALT_CONVERTER),
             GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
             GlyphKind::Output(Tier::One) => plain(&OUTPUT_1),
             GlyphKind::Output(Tier::Two) => plain(&OUTPUT_2),
             GlyphKind::Output(Tier::Three) => plain(&OUTPUT_3),
+        }
+    }
+
+    pub fn cells(self) -> Vec<Hex> {
+        match self {
+            GlyphKind::Converter(AtomKind::Cobalt) => COBALT_FOOTPRINT.to_vec(),
+            _ => self.rule().slots.iter().map(|slot| slot.at).collect(),
+        }
+    }
+
+    const fn vacant(self) -> &'static [Hex] {
+        match self {
+            GlyphKind::Converter(AtomKind::Cobalt) => &COBALT_OUTPUT,
+            _ => &[],
+        }
+    }
+
+    pub const fn product(self) -> Option<Hex> {
+        match self {
+            GlyphKind::Converter(AtomKind::Amber | AtomKind::Plum) => Some(ORIGIN),
+            GlyphKind::Converter(AtomKind::Cobalt) => Some(COBALT_OUTPUT[0]),
+            _ => None,
         }
     }
 }
@@ -526,6 +562,15 @@ impl Glyph {
             .slots
             .iter()
             .map(move |s| self.at.add(s.at.turned(self.dir)))
+    }
+
+    pub fn cells(&self) -> impl Iterator<Item = Hex> {
+        let at = self.at;
+        let dir = self.dir;
+        self.kind
+            .cells()
+            .into_iter()
+            .map(move |cell| at.add(cell.turned(dir)))
     }
 }
 
@@ -779,7 +824,7 @@ impl Sim {
             Id::Atom(i) => (None, None, self.atoms[i].map(|a| a.pos)),
         };
         arm.into_iter()
-            .chain(glyph.into_iter().flat_map(Glyph::slots))
+            .chain(glyph.into_iter().flat_map(Glyph::cells))
             .chain(atom)
     }
 
@@ -931,6 +976,14 @@ impl Sim {
 
     fn matched(&self, g: Glyph) -> Option<Vec<usize>> {
         let rule = g.kind.rule();
+        if g.kind
+            .vacant()
+            .iter()
+            .map(|at| g.at.add(at.turned(g.dir)))
+            .any(|at| self.atom_at(at).is_some())
+        {
+            return None;
+        }
         let ids: Vec<usize> = g
             .slots()
             .zip(rule.slots)
@@ -1048,12 +1101,14 @@ impl Sim {
             self.inventory.add(Item::Atom(kind));
         }
         if let GlyphKind::Converter(kind) = g.kind {
-            let atom = self.spawn(Atom { kind, pos: g.at });
+            let offset = g.kind.product().expect("a converter has an output");
+            let at = g.at.add(offset.turned(g.dir));
+            let atom = self.spawn(Atom { kind, pos: at });
             events.push(TickEvent::Spawned {
                 glyph,
                 atom,
                 kind,
-                at: g.at,
+                at,
             });
         }
     }
@@ -1468,6 +1523,22 @@ pub fn fixture(machine: Machine) -> Fixture {
                     s.atoms.iter().flatten().eq([&Atom {
                         kind: AtomKind::Plum,
                         pos: ORIGIN,
+                    }])
+                },
+            }
+        }
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt)) => {
+            let glyph = Glyph::new(GlyphKind::Converter(AtomKind::Cobalt), ORIGIN, 0);
+            let mut sim = Sim::empty();
+            sim.spawn(base(ORIGIN));
+            sim.glyphs.push(Some(glyph));
+            Fixture {
+                sim,
+                ticks: 1,
+                done: |s| {
+                    s.atoms.iter().flatten().eq([&Atom {
+                        kind: AtomKind::Cobalt,
+                        pos: Hex::new(1, 1),
                     }])
                 },
             }
@@ -1920,7 +1991,8 @@ mod tests {
             let tier = if matches!(
                 *item,
                 Item::Machine(Machine::Glyph(
-                    GlyphKind::Reification | GlyphKind::Converter(AtomKind::Plum)
+                    GlyphKind::Reification
+                        | GlyphKind::Converter(AtomKind::Plum | AtomKind::Cobalt)
                 ))
             ) {
                 Tier::Two
@@ -2028,6 +2100,58 @@ mod tests {
             attached.step();
             assert_eq!(attached.atoms, before.atoms, "{kind:?} attached atom");
             assert_eq!(attached.bonds, before.bonds, "{kind:?} attached atom");
+        }
+    }
+
+    #[test]
+    fn the_cobalt_converter_changes_one_lone_base_at_its_input_into_one_cobalt_at_its_output() {
+        let machine = Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt));
+        let fixture = fixture(machine);
+        let before = fixture.sim.clone();
+        let after = fixture.sim.replay(1);
+        assert!((fixture.done)(&after));
+        assert_eq!(after.atoms.iter().flatten().count(), 1);
+        assert_eq!(after.bonds, before.bonds);
+        assert_eq!(after.glyphs.len(), before.glyphs.len());
+        assert_eq!(after.arms, before.arms);
+        assert_eq!(after.inventory, before.inventory);
+    }
+
+    #[test]
+    fn the_cobalt_converter_leaves_wrong_inputs_and_a_blocked_output_untouched() {
+        let kind = GlyphKind::Converter(AtomKind::Cobalt);
+        for wrong in [AtomKind::Amber, AtomKind::Plum] {
+            let mut sim = fixture(Machine::Glyph(kind)).sim;
+            sim.atoms[0].as_mut().unwrap().kind = wrong;
+            let before = sim.clone();
+            sim.step();
+            assert_eq!(sim.atoms, before.atoms, "{wrong:?} input");
+            assert_eq!(sim.bonds, before.bonds, "{wrong:?} input");
+        }
+        let mut blocked = fixture(Machine::Glyph(kind)).sim;
+        blocked.spawn(Atom {
+            kind: AtomKind::Plum,
+            pos: Hex::new(1, 1),
+        });
+        let before = blocked.clone();
+        blocked.step();
+        assert_eq!(blocked.atoms, before.atoms);
+        assert_eq!(blocked.bonds, before.bonds);
+    }
+
+    #[test]
+    fn the_cobalt_converter_occupies_its_four_cell_rhombus_at_every_turn() {
+        let glyph = Glyph::new(GlyphKind::Converter(AtomKind::Cobalt), ORIGIN, 0);
+        let expected = [ORIGIN, Hex::new(1, 0), Hex::new(0, 1), Hex::new(1, 1)];
+        for turn in 0..6 {
+            let turned = Glyph::new(glyph.kind, ORIGIN, turn)
+                .cells()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                turned,
+                expected.map(|cell| cell.turned(turn)),
+                "turn {turn}"
+            );
         }
     }
 

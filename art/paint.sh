@@ -4,6 +4,7 @@ shopt -s nullglob
 
 size=1024
 attach=()
+codex_root=${CODEX_HOME:-$HOME/.codex}
 while getopts 's:i:' opt; do
   case $opt in
   s) size=$OPTARG ;;
@@ -22,7 +23,9 @@ PROMPT>>>"
 
 received() {
   local thread=$1 rollout calls
-  rollout=$(find "$HOME/.codex/sessions" -name "rollout-*-$thread.jsonl" -print -quit)
+  local roots=("$codex_root/sessions")
+  [ ! -d "$HOME/.codex-accounts" ] || roots+=("$HOME/.codex-accounts")
+  rollout=$(find "${roots[@]}" -name "rollout-*-$thread.jsonl" -print -quit 2>/dev/null)
   [ -s "$rollout" ] || { echo "thread $thread has no rollout" >&2; return 1; }
   calls=$(jq -r 'select(.type == "response_item" and .payload.type == "custom_tool_call" and (.payload.input | type) == "string") | .payload.input | select(test("image_gen__imagegen")) | capture("\"?prompt\"?\\s*:\\s*(?<p>\"(?:[^\"\\\\]|\\\\.)*\")") | .p | fromjson | tojson' "$rollout")
   [ -n "$calls" ] || { echo "thread $thread made no image tool call" >&2; return 1; }
@@ -34,7 +37,7 @@ one() {
   events=$(codex exec --skip-git-repo-check --json "$prompt" "${attach[@]}" </dev/null)
   thread=$(printf '%s\n' "$events" | jq -r 'select(.type == "thread.started") | .thread_id' | head -1)
   [ -n "$thread" ] || { printf '%s\n' "$events" >&2; return 1; }
-  srcs=("$HOME/.codex/generated_images/$thread"/*.png)
+  srcs=("$codex_root/generated_images/$thread"/*.png)
   [ "${#srcs[@]}" -eq 1 ] || { echo "thread $thread holds ${#srcs[@]} images, not one" >&2; return 1; }
   got=$(received "$thread") || return 1
   printf '%s\n' "$got" | grep -qxF -- "$(jq -Rsr 'rtrimstr("\n") | tojson' <<<"$subject")" || { printf 'thread %s: the image tool received another prompt:\n%s\n' "$thread" "$(printf '%s\n' "$got" | jq -r .)" >&2; return 1; }

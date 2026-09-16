@@ -124,6 +124,8 @@ struct Thresholds {
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Entry {
     direction: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reference: Option<String>,
     kept: Option<u32>,
     briefed: Option<String>,
     painted: Option<String>,
@@ -381,6 +383,7 @@ impl Scaffold {
                 consumed: false, ..
             }) => (ring || dot).then_some(Glaze::BlueGreen),
             Role::Seat(Slot { consumed: true, .. }) => (ring || dot).then_some(Glaze::Terracotta),
+            Role::Body => None,
             Role::Pivot => (r <= SEAT).then_some(Glaze::Brass),
             Role::Hand => {
                 let pivot = self
@@ -453,8 +456,13 @@ impl Scaffold {
             (self.canvas, self.canvas),
             "a candidate is painted over the whole scaffold"
         );
-        let cells: Vec<Vec2> = self.cells.iter().map(|c| px(c.at)).collect();
-        let seats: Option<Vec<Vec2>> = self.cells.iter().map(|c| self.seat(candidate, c)).collect();
+        let marked: Vec<&Cell> = self
+            .cells
+            .iter()
+            .filter(|cell| cell.role != Role::Body)
+            .collect();
+        let cells: Vec<Vec2> = marked.iter().map(|c| px(c.at)).collect();
+        let seats: Option<Vec<Vec2>> = marked.iter().map(|c| self.seat(candidate, c)).collect();
         let Some(seats) = seats else {
             return Capture {
                 image: candidate.clone(),
@@ -485,6 +493,7 @@ impl Scaffold {
         let off_centre = self
             .cells
             .iter()
+            .filter(|cell| cell.role != Role::Body)
             .map(|c| {
                 self.seat(&image, c)
                     .map_or(f32::INFINITY, |s| s.distance(px(c.at)) / HEX)
@@ -515,6 +524,7 @@ impl Scaffold {
         let seat = self
             .cells
             .iter()
+            .filter(|cell| cell.role != Role::Body)
             .map(|cell| {
                 let mut mark = Mean::default();
                 let mut centre = Mean::default();
@@ -1083,7 +1093,7 @@ const RELIGHTS: u32 = 3;
 const ROUNDS: usize = 3;
 
 struct Paint {
-    image: PathBuf,
+    images: Vec<PathBuf>,
     output: PathBuf,
     prompt: String,
     size: u32,
@@ -1099,7 +1109,9 @@ fn paint_sh(art: &Art, job: &Paint) -> Result<(), String> {
         .unwrap_or_default();
     let mut command = std::process::Command::new(art.paint_sh());
     command.arg("-s").arg(job.size.to_string());
-    command.arg("-i").arg(&job.image);
+    for image in &job.images {
+        command.arg("-i").arg(image);
+    }
     let output = command
         .arg(&job.output)
         .arg(&job.prompt)
@@ -1182,6 +1194,14 @@ fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage) -> String {
 
 fn brief(style: &Style, direction: &str) -> String {
     format!("{} {}", style.shared, direction)
+}
+
+fn briefed_key(art: &Art, style: &Style, entry: &Entry) -> String {
+    let brief = brief(style, &entry.direction);
+    match &entry.reference {
+        Some(path) => key(&[brief.as_bytes(), &read(&art.dir.join(path))]),
+        None => key(&[brief.as_bytes()]),
+    }
 }
 
 fn stored(path: &Path) -> Result<Option<String>, String> {
@@ -1383,6 +1403,7 @@ struct Prepared {
     prompt: Option<String>,
     rendered: RgbaImage,
     scaffold_png: PathBuf,
+    references: Vec<PathBuf>,
     changed: bool,
 }
 
@@ -1637,7 +1658,12 @@ impl Remake<'_> {
             changed = true;
         }
         let brief = brief(&style, &entry.direction);
-        let briefed = key(&[brief.as_bytes()]);
+        let references = entry
+            .reference
+            .iter()
+            .map(|path| self.art.dir.join(path))
+            .collect::<Vec<_>>();
+        let briefed = briefed_key(self.art, &style, &entry);
         let prompt = stored(&self.art.prompt(name))?
             .filter(|_| entry.briefed.as_deref() == Some(briefed.as_str()));
         Ok(Prepared {
@@ -1650,6 +1676,7 @@ impl Remake<'_> {
             prompt,
             rendered,
             scaffold_png,
+            references,
             changed,
         })
     }
@@ -1671,6 +1698,7 @@ impl Remake<'_> {
             prompt,
             rendered,
             scaffold_png,
+            references,
             mut changed,
         } = prepared;
         let dir = self.art.machine(name);
@@ -1681,9 +1709,12 @@ impl Remake<'_> {
             Some(prompt) => prompt,
             None => {
                 changed = true;
-                let written = self.author(std::slice::from_ref(&scaffold_png), &brief)?;
+                let images = std::iter::once(scaffold_png.clone())
+                    .chain(references.iter().cloned())
+                    .collect::<Vec<_>>();
+                let written = self.author(&images, &brief)?;
                 let stored = store(&self.art.prompt(name), &written)?;
-                self.record(name, |e| e.briefed = Some(key(&[brief.as_bytes()])));
+                self.record(name, |e| e.briefed = Some(briefed_key(self.art, &style, e)));
                 stored
             }
         };
@@ -1702,7 +1733,10 @@ impl Remake<'_> {
                     && round > 1
                     && let Some(text) = rebrief(&brief, &prompt, &issues, round)
                 {
-                    prompt = self.author(std::slice::from_ref(&scaffold_png), &text)?;
+                    let images = std::iter::once(scaffold_png.clone())
+                        .chain(references.iter().cloned())
+                        .collect::<Vec<_>>();
+                    prompt = self.author(&images, &text)?;
                     changed = true;
                 }
                 let failed: Vec<String> = if empty {
@@ -1712,7 +1746,9 @@ impl Remake<'_> {
                             (
                                 format!("{name}-{i}"),
                                 Paint {
-                                    image: scaffold_png.clone(),
+                                    images: std::iter::once(scaffold_png.clone())
+                                        .chain(references.iter().cloned())
+                                        .collect(),
                                     output: self.art.candidate(name, i),
                                     prompt: prompt.clone(),
                                     size: scaffold.canvas,
@@ -1861,7 +1897,7 @@ impl Remake<'_> {
                     (
                         format!("{name}-{edge}"),
                         Paint {
-                            image: relit.join("master.png"),
+                            images: vec![relit.join("master.png")],
                             output: relit.join(format!("{edge}.png")),
                             prompt: prompt.clone(),
                             size: request.scaffold.canvas,
@@ -2254,7 +2290,7 @@ mod tests {
                     dir: 0,
                     energy: crate::sim::ActivationEnergy::default(),
                 }
-                .slots()
+                .cells()
                 .collect(),
             };
             let key = |h: &Hex| (h.q, h.r);
@@ -2372,7 +2408,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} has no prompt.txt: run ziral --gen {name}"));
             assert_eq!(
                 machine.briefed.as_deref(),
-                Some(key(&[brief(&manifest.style, &machine.direction).as_bytes()]).as_str()),
+                Some(briefed_key(&Art::shipped(), &manifest.style, machine).as_str()),
                 "{name}: the prompt was written from another brief: run ziral --gen {name}"
             );
             assert_eq!(
@@ -2418,6 +2454,7 @@ mod tests {
             [
                 "atom-amber",
                 "atom-base",
+                "atom-cobalt",
                 "atom-plum",
                 "bond-double",
                 "bond-single"
@@ -2684,6 +2721,7 @@ mod tests {
                         name.to_string(),
                         Entry {
                             direction: format!("a {name}"),
+                            reference: None,
                             kept: None,
                             briefed: None,
                             painted: None,
@@ -2707,13 +2745,12 @@ mod tests {
             .file_stem()
             .and_then(|s| s.to_str())
             .expect("an output stem");
-        let input = &job.image;
+        let input = job.images.first().expect("a paint input");
         if input.ends_with("scaffold.png") {
             let (name, index) = stem.rsplit_once('-').expect("name-index");
             let scaffold = Scaffold::of(item(name));
             let count = Art {
-                dir: job
-                    .image
+                dir: input
                     .parent()
                     .and_then(Path::parent)
                     .expect("the art dir")
@@ -2839,7 +2876,7 @@ mod tests {
     #[test]
     fn every_candidate_is_painted_over_the_scaffold_alone_and_every_relight_over_one_master() {
         let art = studio("scaffold", &["bonder", "source"]);
-        let jobs: std::sync::Mutex<Vec<(String, PathBuf)>> = std::sync::Mutex::new(Vec::new());
+        let jobs: std::sync::Mutex<Vec<(String, Vec<PathBuf>)>> = std::sync::Mutex::new(Vec::new());
         let painter = |job: &Paint| {
             let stem = job
                 .output
@@ -2847,7 +2884,7 @@ mod tests {
                 .unwrap()
                 .to_string_lossy()
                 .into_owned();
-            jobs.lock().unwrap().push((stem, job.image.clone()));
+            jobs.lock().unwrap().push((stem, job.images.clone()));
             fake(job)
         };
         let names = ["bonder".to_string(), "source".to_string()];
@@ -2864,14 +2901,14 @@ mod tests {
                 })
                 .collect();
             assert_eq!(candidates.len(), 2, "{name}");
-            for (_, image) in &candidates {
-                assert_eq!(*image, dir.join("scaffold.png"), "{name}");
+            for (_, images) in &candidates {
+                assert_eq!(*images, [dir.join("scaffold.png")], "{name}");
             }
             let relights: Vec<_> = recorded
                 .iter()
-                .filter(|(stem, image)| {
+                .filter(|(stem, images)| {
                     style.facings.iter().any(|facing| facing.name() == stem)
-                        && *image == dir.join("relit/master.png")
+                        && *images == [dir.join("relit/master.png")]
                 })
                 .collect();
             assert_eq!(relights.len(), style.facings.len(), "{name}");
@@ -2930,11 +2967,11 @@ mod tests {
              n=$((n + 1))\n\
              printf %s \"$n\" > \"$HOME/attempts\"\n\
              [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
-             mkdir -p \"$HOME/.codex/generated_images/t$n\" \"$HOME/.codex/sessions\"\n\
+             mkdir -p \"$CODEX_HOME/generated_images/t$n\" \"$CODEX_HOME/sessions\"\n\
              p=$(printf %s \"$4\" | sed -n '/^<<<PROMPT$/,/^PROMPT>>>$/p' | sed '1d;$d')\n\
              [ -z \"$REWRITE\" ] || p=\"Image 1 is the reference. $p\"\n\
-             jq -nc --arg p \"$p\" '{type:\"response_item\",payload:{type:\"custom_tool_call\",name:\"exec\",input:(\"tools.image_gen__imagegen({prompt:\" + ($p|@json) + \"})\")}}' > \"$HOME/.codex/sessions/rollout-x-t$n.jsonl\"\n\
-             magick -size 64x64 xc:'#00ff00' \"$HOME/.codex/generated_images/t$n/a.png\"\n\
+             jq -nc --arg p \"$p\" '{type:\"response_item\",payload:{type:\"custom_tool_call\",name:\"exec\",input:(\"tools.image_gen__imagegen({prompt:\" + ($p|@json) + \"})\")}}' > \"$CODEX_HOME/sessions/rollout-x-t$n.jsonl\"\n\
+             magick -size 64x64 xc:'#00ff00' \"$CODEX_HOME/generated_images/t$n/a.png\"\n\
              echo \"{\\\"type\\\":\\\"thread.started\\\",\\\"thread_id\\\":\\\"t$n\\\"}\"\n",
         )
         .expect("a fake codex");
@@ -2955,6 +2992,7 @@ mod tests {
                 .arg("a prompt\nwith a second line")
                 .env("PATH", &path)
                 .env("HOME", &root)
+                .env("CODEX_HOME", root.join("codex-home"))
                 .env("PASS_ON", pass_on.to_string())
                 .env("REWRITE", if rewrite { "1" } else { "" })
                 .output()
@@ -3169,7 +3207,11 @@ mod tests {
         };
         let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
         let painter = |job: &Paint| {
-            if job.image.ends_with("scaffold.png") {
+            if job
+                .images
+                .first()
+                .is_some_and(|image| image.ends_with("scaffold.png"))
+            {
                 prompts.lock().unwrap().push(job.prompt.clone());
             }
             fake(job)
@@ -3243,7 +3285,11 @@ mod tests {
         let paints = std::sync::atomic::AtomicUsize::new(0);
         let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
         let painter = |job: &Paint| {
-            if job.image.ends_with("scaffold.png") {
+            if job
+                .images
+                .first()
+                .is_some_and(|image| image.ends_with("scaffold.png"))
+            {
                 prompts.lock().unwrap().push(job.prompt.clone());
             }
             fake(job)

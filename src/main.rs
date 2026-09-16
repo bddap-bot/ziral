@@ -3127,10 +3127,10 @@ struct Kiln {
     bond: Handle<Mesh>,
     rim: Handle<Mesh>,
     tiled: Option<Tiling>,
-    glaze: [Handle<ColorMaterial>; 7],
+    glaze: [Handle<ColorMaterial>; 8],
     patina: [Handle<ColorMaterial>; 2],
     card: [Handle<ColorMaterial>; 2],
-    atoms: [Handle<Image>; 3],
+    atoms: [Handle<Image>; 4],
     skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
     lit: Vec<(Skin, [Handle<Lit>; 4])>,
 }
@@ -4793,11 +4793,15 @@ mod shot {
                 let mut sim = Sim::empty();
                 sim.place(
                     &sim::fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim,
-                    Hex::new(-2, 0),
+                    Hex::new(-4, 0),
                 );
                 sim.place(
                     &sim::fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Plum))).sim,
-                    Hex::new(2, 0),
+                    Hex::new(0, 0),
+                );
+                sim.place(
+                    &sim::fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt))).sim,
+                    Hex::new(4, 0),
                 );
                 world.sim = sim;
             }
@@ -4846,9 +4850,10 @@ mod shot {
             "converter-sheet" => {
                 let mut sim = Sim::empty();
                 for (kind, at) in [
-                    (AtomKind::Base, Hex::new(-2, -1)),
-                    (AtomKind::Amber, Hex::new(0, -1)),
-                    (AtomKind::Plum, Hex::new(2, -1)),
+                    (AtomKind::Base, Hex::new(-3, -1)),
+                    (AtomKind::Amber, Hex::new(-1, -1)),
+                    (AtomKind::Plum, Hex::new(1, -1)),
+                    (AtomKind::Cobalt, Hex::new(3, -1)),
                 ] {
                     sim.spawn(Atom { kind, pos: at });
                 }
@@ -4859,7 +4864,12 @@ mod shot {
                 )));
                 sim.glyphs.push(Some(Glyph::new(
                     GlyphKind::Converter(AtomKind::Plum),
-                    Hex::new(2, 1),
+                    Hex::new(1, 1),
+                    0,
+                )));
+                sim.glyphs.push(Some(Glyph::new(
+                    GlyphKind::Converter(AtomKind::Cobalt),
+                    Hex::new(4, 1),
                     0,
                 )));
                 world.sim = sim;
@@ -8525,6 +8535,10 @@ mod tests {
             (
                 AtomKind::Plum,
                 Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)),
+            ),
+            (
+                AtomKind::Cobalt,
+                Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt)),
             ),
         ];
         for (kind, machine) in routes {
