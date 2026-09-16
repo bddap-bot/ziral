@@ -3046,10 +3046,11 @@ mod tests {
 
     #[test]
     fn replay_returns_the_same_tick_events_and_state_as_stepping() {
-        let initial = fixture(Machine::Glyph(GlyphKind::Bonder)).sim;
-        let (replayed, events) = initial.replayed(9);
+        let fixture = fixture(Machine::Glyph(GlyphKind::Bonder));
+        let initial = fixture.sim;
+        let (replayed, events) = initial.replayed(fixture.ticks);
         let mut stepped = initial;
-        let expected: Vec<TickEvents> = (0..9).map(|_| stepped.step()).collect();
+        let expected: Vec<TickEvents> = (0..fixture.ticks).map(|_| stepped.step()).collect();
         assert_eq!(events, expected);
         assert_eq!(replayed, stepped);
         assert!(events.iter().any(|tick| tick.events.iter().any(|event| {
