@@ -1300,31 +1300,14 @@ pub const PLACEMENTS: [Hex; 6] = [
 ];
 
 pub fn layout() -> Sim {
-    use Instr::*;
-    let cw = Rot(Spin::Cw);
-    let ccw = Rot(Spin::Ccw);
-    let out = Move(2);
-    let back = Move(5);
-    let mut build = vec![Grab, cw, cw, cw, Drop, ccw, ccw, ccw];
-    build.extend([Grab, cw, cw, Drop, ccw, ccw]);
-    build.extend([Grab, cw, cw, cw, out, out, Drop, back, back, ccw, ccw, ccw]);
-    let mut ferry = vec![Wait; 5];
-    ferry.extend([Grab, ccw, Drop, cw]);
-    ferry.resize(build.len(), Wait);
     let mut sim = Sim::empty();
+    let output = Hex::new(-2, 3);
     sim.glyphs
-        .push(Some(Glyph::new(GlyphKind::Source, Hex::new(1, 0), 0)));
-    sim.glyphs.push(Some(Glyph::new(
-        GlyphKind::Output(Tier::One),
-        Hex::new(-2, 3),
-        0,
-    )));
-    sim.glyphs
-        .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(0, -1), 0)));
-    sim.glyphs
-        .push(Some(Glyph::new(GlyphKind::SecondBond, Hex::new(-2, 1), 0)));
-    sim.arms.push(Arm::new(ORIGIN, 0, build));
-    sim.arms.push(Arm::new(Hex::new(-2, 0), 0, ferry));
+        .push(Some(Glyph::new(GlyphKind::Output(Tier::One), output, 0)));
+    sim.arms.push(Arm::new(ORIGIN, 0, vec![Instr::Wait]));
+    let recipe = Item::Machine(Machine::Arm).recipe().unwrap();
+    let centre = recipe.centre(Tier::One.radius()).unwrap();
+    sim.place(&recipe.sim(), output.sub(centre));
     sim
 }
 
@@ -1348,10 +1331,6 @@ pub fn preloaded() -> Sim {
     for at in PLACEMENTS {
         world.place(&one, at);
     }
-    world.spawn(Atom {
-        kind: AtomKind::Base,
-        pos: Hex::new(1, -1).add(PLACEMENTS[PLACEMENTS.len() - 1]),
-    });
     world
 }
 
@@ -2363,14 +2342,14 @@ mod tests {
     }
 
     #[test]
-    fn a_pair_crafts_by_its_bond_and_an_extra_atom_or_bond_leaves_the_compound_untouched() {
+    fn an_arm_compound_crafts_and_an_extra_atom_or_bond_leaves_other_compounds_untouched() {
         let mut sim = bench(
             vec![Instr::Grab, Instr::Wait],
             vec![output(Tier::One, Hex::new(2, 0))],
         );
-        let a = put(&mut sim, 1, 0);
-        let b = put(&mut sim, 2, 0);
-        bond(&mut sim, a, b, BondKind::Double);
+        let arm = Item::Machine(Machine::Arm).recipe().unwrap();
+        let centre = arm.centre(Tier::One.radius()).unwrap();
+        lay(&mut sim, arm, 0, Hex::new(2, 0).sub(centre));
         sim.step();
         assert_eq!(count(&sim, Machine::Arm), 1);
         assert_eq!(count(&sim, Machine::Glyph(GlyphKind::Bonder)), 0);
@@ -2405,6 +2384,25 @@ mod tests {
         assert!(!lying(&sim, &triangle));
         assert_eq!(count(&sim, Machine::Glyph(GlyphKind::SecondBond)), 1);
         assert_eq!(count(&sim, Machine::Arm), 1);
+    }
+
+    #[test]
+    fn the_cobalt_arm_shape_crafts_at_an_output_and_the_base_shape_does_not() {
+        let cobalt = Item::Machine(Machine::Arm).recipe().unwrap();
+        let mut base = cobalt.sim();
+        for atom in base.atoms.iter_mut().flatten() {
+            atom.kind = AtomKind::Base;
+        }
+        let base = Form::of(&base);
+        for (recipe, expected) in [(cobalt, 1), (&base, 0)] {
+            let mut sim = Sim::empty();
+            sim.glyphs.push(Some(output(Tier::One, ORIGIN)));
+            let centre = recipe.centre(Tier::One.radius()).unwrap();
+            let ids = lay(&mut sim, recipe, 0, ORIGIN.sub(centre));
+            sim.step();
+            assert_eq!(count(&sim, Machine::Arm), expected);
+            assert_eq!(lying(&sim, &ids), expected == 0);
+        }
     }
 
     #[test]
@@ -2452,7 +2450,7 @@ mod tests {
             &mut sim,
             Item::Machine(Machine::Arm).recipe().unwrap(),
             0,
-            Hex::new(1, 0),
+            Hex::new(-1, -1),
         );
         sim.step();
         assert!(!lying(&sim, &pair) && !lying(&sim, &arm));
@@ -2657,23 +2655,17 @@ mod tests {
     }
 
     #[test]
-    fn preloaded_world_crafts_an_arm_every_period_until_the_cap_holds() {
+    fn preloaded_world_crafts_each_arm_recipe_on_its_first_tick() {
         let mut sim = preloaded();
-        let period = 26;
-        assert_eq!(sim.arms[0].tape.len(), period);
-        for _ in 0..period * 3 {
-            sim.step();
-        }
-        assert_eq!(count(&sim, Machine::Arm), 3 * (PLACEMENTS.len() as u32 - 1));
-        let stalled: Vec<usize> = (0..sim.arms.len())
-            .filter(|i| sim.arms[*i].stall.is_some())
-            .collect();
-        assert_eq!(stalled, vec![sim.arms.len() - 2, sim.arms.len() - 1]);
-        for _ in 0..period {
-            sim.step();
-        }
-        assert_eq!(count(&sim, Machine::Arm), DEFAULT_CAP);
-        assert!(sim.atoms.len() < 60);
+        let cobalt = sim
+            .atoms
+            .iter()
+            .flatten()
+            .filter(|atom| atom.kind == AtomKind::Cobalt)
+            .count();
+        assert_eq!(cobalt, 5 * PLACEMENTS.len());
+        sim.step();
+        assert_eq!(count(&sim, Machine::Arm), PLACEMENTS.len() as u32);
     }
 
     #[test]

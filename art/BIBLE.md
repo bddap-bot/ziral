@@ -94,6 +94,8 @@ Every pair differs in at least two ways. The near cases: arm vs bonder share a h
 
 `../proofs/machine-body-first-67.png` places new body-first arm, bonder and first-output proposals on the real board at shipped size. Each direction starts from one cast housing with its functional marks cut into the body; the sheet is a comparison and does not replace shipped machine art.
 
+`../proofs/arm-cobalt-recipe-101.png` is the shipped arm card at its native 405 by 184 pixels, with the five cobalt atoms and four single bonds drawn at tape size without stretching.
+
 `proofs/view-sound-58.mp4` moves the shipped view from one running side of the board to the other while the tick mix follows the visible cells and zoom.
 
 `../proofs/machine-drag-88.gif` is one machine lifted clear of its origin and carried continuously under the pointer at the shipped size.

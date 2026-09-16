@@ -52,7 +52,9 @@ impl ProofId {
             ProofId::BaseAtom | ProofId::Broken => Fact::Atom(AtomKind::Base),
             ProofId::Starting(item) | ProofId::RecipeItem(item) => Fact::Item(item),
             ProofId::Compound(text) => Fact::Compound(text),
-            ProofId::BrokenDependent => Fact::Compound("B0,0 B0,1 0,0=0,1"),
+            ProofId::BrokenDependent => Fact::Compound(
+                recipe_text(Item::Machine(Machine::Arm)).expect("the arm has a recipe"),
+            ),
             ProofId::ConverterAtom(kind) => Fact::Atom(kind),
             ProofId::ReifiedAtom(kind) => Fact::Item(Item::Atom(kind)),
             ProofId::BrokenTransitive => Fact::Item(Item::Machine(Machine::Arm)),
@@ -70,7 +72,9 @@ impl ProofId {
                 format!("atom {kind:?} is attainable through reification")
             }
             ProofId::Broken => "broken atom Base is synthesizable".to_string(),
-            ProofId::BrokenDependent => compound_name("B0,0 B0,1 0,0=0,1"),
+            ProofId::BrokenDependent => compound_name(
+                recipe_text(Item::Machine(Machine::Arm)).expect("the arm has a recipe"),
+            ),
             ProofId::BrokenTransitive => recipe_item_name(Item::Machine(Machine::Arm)),
         }
     }
@@ -750,6 +754,10 @@ fn every_item_compound_and_atom_kind_is_reachable_in_world() {
 fn a_failed_premise_skips_every_dependent_and_names_it() {
     let broken = ProofId::Broken;
     let dependent = ProofId::BrokenDependent;
+    assert_eq!(
+        dependent.fact(),
+        Fact::Compound(recipe_text(Item::Machine(Machine::Arm)).unwrap())
+    );
     let mut run = Run::new(vec![broken, dependent, ProofId::BrokenTransitive]);
     run.prove_all();
     run.report();

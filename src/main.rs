@@ -4508,7 +4508,7 @@ mod shot {
     fn phased(copies: &[(Hex, u64)]) -> Sim {
         let mut world = Sim::empty();
         for (at, ticks) in copies {
-            let mut one = sim::layout();
+            let mut one = sim::fixture(Machine::Glyph(GlyphKind::Bonder)).sim;
             for _ in 0..*ticks {
                 one.step();
             }
@@ -4740,40 +4740,20 @@ mod shot {
                 script.extend(tap(132, KeyG));
             }
             "hand" => {
-                let source = Hex::new(-4, 1);
                 let mut sim = Sim::empty();
-                sim.glyphs
-                    .push(Some(Glyph::new(GlyphKind::Source, source, 0)));
-                sim.glyphs
-                    .push(Some(Glyph::new(GlyphKind::Bonder, Hex::new(-1, 1), 0)));
-                sim.glyphs
-                    .push(Some(Glyph::new(GlyphKind::SecondBond, Hex::new(2, 0), 1)));
                 sim.glyphs.push(Some(Glyph::new(
                     GlyphKind::Output(sim::Tier::One),
-                    Hex::new(-1, -3),
-                    1,
+                    ORIGIN,
+                    0,
                 )));
-                sim.spawn(Atom {
-                    kind: AtomKind::Base,
-                    pos: source,
-                });
+                let recipe = Item::Machine(Machine::Arm).recipe().unwrap();
+                let centre = recipe.centre(sim::Tier::One.radius()).unwrap();
+                sim.place(&recipe.sim(), Hex::new(-4, 0).sub(centre));
                 world.sim = sim;
-                script.extend(carry(20, &[(-4, 1), (-3, 1), (-2, 1), (-1, 1)], None));
                 script.extend(carry(
-                    56,
-                    &[(-4, 1), (-3, 1), (-2, 1), (-1, 1), (0, 1)],
+                    20,
+                    &[(-4, 0), (-3, 0), (-2, 0), (-1, 0), (0, 0)],
                     None,
-                ));
-                script.extend(carry(116, &[(0, 1), (1, 0), (2, 0), (3, -1)], None));
-                script.extend(carry(
-                    150,
-                    &[(-4, 1), (-3, 1), (-2, 1), (-1, 1), (0, 1), (1, 0), (2, 0)],
-                    None,
-                ));
-                script.extend(carry(
-                    212,
-                    &[(2, -1), (1, -1), (0, -2), (-1, -2), (-1, -3)],
-                    Some(2),
                 ));
             }
             "start" => world.sim = sim::start(),
@@ -7827,14 +7807,16 @@ mod tests {
             vec![],
         );
         w.running = false;
-        pair(&mut w, at, BondKind::Double);
+        let recipe = Item::Machine(Machine::Arm).recipe().unwrap();
+        let centre = recipe.centre(sim::Tier::One.radius()).unwrap();
+        w.sim.place(&recipe.sim(), at.sub(centre));
         lift_at(&mut w, at);
         w.step();
         assert_eq!(count(&w, Machine::Arm), 0);
         w.pointer = Some(px(at));
         w.release(Some(at));
         assert_eq!(count(&w, Machine::Arm), 0);
-        assert_eq!(atoms(&w).len(), 2);
+        assert_eq!(atoms(&w).len(), 5);
         w.step();
         assert_eq!(count(&w, Machine::Arm), 1);
         assert_eq!(atoms(&w), vec![]);
@@ -9223,7 +9205,7 @@ mod tests {
         assert!(w.sim.arms.is_empty());
         assert_eq!(count(&w, Machine::Arm), 1, "{:?}", w.sim);
         assert_eq!(w.focus, None);
-        assert_eq!(atoms(&w).len(), 1);
+        assert!(atoms(&w).is_empty());
     }
 
     #[test]

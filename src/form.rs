@@ -12,7 +12,10 @@ pub const RECIPES: [(Item, &str); 23] = [
         glyph(GlyphKind::SecondBond),
         "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1-1,0",
     ),
-    (Item::Machine(Machine::Arm), "B0,0 B0,1 0,0=0,1"),
+    (
+        Item::Machine(Machine::Arm),
+        "C0,1 C0,2 C1,0 C1,1 C2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1",
+    ),
     (
         glyph(GlyphKind::Converter(AtomKind::Amber)),
         "B0,0 B0,1 B1,0 B1,1 0,0-0,1 0,0=1,0 0,1-1,1",
@@ -770,16 +773,9 @@ mod tests {
             );
             assert_eq!(form.crafts(), Some(*item));
         }
-        let arm = Machine::Arm.recipe().unwrap();
-        assert_eq!(arm.sim().bonds[0].kind, BondKind::Double);
-        assert_eq!(arm.to_string(), "B0,0 B0,1 0,0=0,1");
         assert_eq!(
             "0,1-0,0 B0,1 B0,0".parse::<Form>().unwrap(),
             *Machine::Glyph(GlyphKind::Bonder).recipe().unwrap()
-        );
-        assert_eq!(
-            "B7,3 B8,2 7,3=8,2\n".parse::<Form>().unwrap().to_string(),
-            arm.to_string()
         );
         for bad in [
             "",
@@ -806,6 +802,36 @@ mod tests {
         assert_eq!(
             chain.parse::<Form>(),
             Err("257 atoms, over 256".to_string())
+        );
+    }
+
+    #[test]
+    fn the_arm_recipe_parses_as_five_cobalt_atoms_and_four_single_bonds() {
+        let arm = Machine::Arm.recipe().unwrap();
+        assert_eq!(
+            arm.atoms(),
+            &[
+                (Hex::new(0, 1), AtomKind::Cobalt),
+                (Hex::new(0, 2), AtomKind::Cobalt),
+                (Hex::new(1, 0), AtomKind::Cobalt),
+                (Hex::new(1, 1), AtomKind::Cobalt),
+                (Hex::new(2, 1), AtomKind::Cobalt),
+            ]
+        );
+        assert_eq!(
+            arm.bonds,
+            vec![
+                (Hex::new(0, 1), Hex::new(1, 0), BondKind::Single),
+                (Hex::new(0, 2), Hex::new(1, 1), BondKind::Single),
+                (Hex::new(1, 0), Hex::new(1, 1), BondKind::Single),
+                (Hex::new(1, 1), Hex::new(2, 1), BondKind::Single),
+            ]
+        );
+        assert_eq!(
+            "C7,4 C7,5 C8,3 C8,4 C9,4 7,4-8,3 7,5-8,4 8,3-8,4 8,4-9,4\n"
+                .parse::<Form>()
+                .unwrap(),
+            *arm
         );
     }
 
