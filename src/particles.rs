@@ -102,7 +102,7 @@ mod tests {
             assert!((1..=12).contains(&emitter.count));
             assert!((1..=ActivationEnergy::FULL.level()).contains(&(emitter.lifetime as usize)));
         }
-        assert_eq!((defaults, overrides), (7, 3));
+        assert_eq!((defaults, overrides), (7, 4));
     }
 
     #[test]

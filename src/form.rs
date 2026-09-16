@@ -31,7 +31,7 @@ pub const RECIPES: [(Item, &str); 23] = [
     ),
     (
         glyph(GlyphKind::Converter(AtomKind::Cobalt)),
-        "P0,0 A0,1 A0,2 B1,0 B1,1 B1,2 0,0-0,1 0,0-1,0 0,1-0,2 0,1-1,1 0,2-1,2 1,0=1,1 1,1-1,2",
+        "B0,0 B0,1 B0,2 A1,0 A1,1 P1,2 0,0-0,1 0,0-1,0 0,1=0,2 0,1-1,1 0,2-1,2 1,0-1,1 1,1-1,2",
     ),
     (
         glyph(GlyphKind::Output(Tier::Three)),
