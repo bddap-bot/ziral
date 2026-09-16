@@ -75,7 +75,7 @@ Single and double differ in hue (26° vs 267°) and shape.
 | item | glaze | shape | marking |
 |---|---|---|---|
 | arm | dark brass, terracotta hand | radial: pivot disc and one link | horseshoe hand |
-| source | blue-green | one-cell well | a ring and a centre dot |
+| source | blue-green | six-cell housing open to the right | five feeds around one central outlet |
 | bonder | terracotta | two-cell well, bar | one spoke per slot; no ring |
 | second bond | plum | three-cell well, triangle | two spokes per slot; ring on the sacrificial slot |
 | amber converter | amber | three-cell fork | three brass-ringed seats and a Y channel |

@@ -1116,3 +1116,17 @@ The change is a `[profile.test]` with `opt-level = 3`, `debug-assertions = true`
 The alternative was to restructure the suite: proof renders behind a feature or in an integration binary, one app boot shared per module. The profile alone reaches the requirement, and each piece of the restructuring is a second path: a feature is a flag the test command has to carry, a shared app is state between tests that today start from nothing. The two slowest tests after the change, the shipped-machine manifest walk at 59 s and the card-at-tick scene at 51 s, are the first candidates for any further cut.
 
 Tests: none added or changed; the measured suite is the check, and `proofs/test-wall-114.png` charts the summed time per group before and after.
+
+### Toy 1 grows the source around its outlet
+
+Directive (verbatim): "embiggen the machine that makes base atoms.
+
+legend: orange: cool thematic artsy bullshit"
+
+The source occupies its centre and five adjacent cells at every turn. Its right-hand neighbour, `DIRS[0]` before a turn, stays open as in `docs/source-six-cell-sketch.jpg`. The centre remains the sole outlet and keeps the existing recipe, cap, palette row, tick event, and 400 ms cadence. The surrounding five cells are one housing whose motion and particles feed the centre opening.
+
+The dumbest design distinguishes the one functional slot from the five occupied body cells in the glyph model. Placement and playfield bounds read their union; matching and source emission continue to read the centre slot. The art scaffold gives only the centre a seat mark, masks the complete six-cell footprint, and supplies the sketch beside that scaffold to both the art director and painter through the existing image list. One returned square remains the source of every size and turn.
+
+The alternative was to call all six cells slots and special-case the renderer so five did not look like slots. That would make the simulation data claim five outlets while the picture denied it, and would leave matching, placement, and art with different meanings for the same array. A second source sprite laid under the old one would also split one housing into a compound and create two scaling paths.
+
+Tests cover the exact footprint through all six turns, refusal at each occupied cell, the unchanged one-tick fixture outcome, and card playback through the same fixture. Mutation passes remove one body cell and restore it, reopen a second neighbour and restore it, and move emission off the centre and restore it. `proofs/source-six-cell-95.gif` shows the fixture playing at the shipped size.
