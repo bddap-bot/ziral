@@ -1161,3 +1161,17 @@ The dumbest design distinguishes the one functional slot from the five occupied 
 The alternative was to call all six cells slots and special-case the renderer so five did not look like slots. That would make the simulation data claim five outlets while the picture denied it, and would leave matching, placement, and art with different meanings for the same array. A second source sprite laid under the old one would also split one housing into a compound and create two scaling paths.
 
 Tests cover the exact footprint through all six turns, refusal at each occupied cell, the unchanged one-tick fixture outcome, and card playback through the same fixture. Mutation passes remove one body cell and restore it, reopen a second neighbour and restore it, and move emission off the centre and restore it. `proofs/source-six-cell-95.gif` shows the fixture playing at the shipped size.
+
+### Toy 1 gives one arm three lengths
+
+Directive (verbatim): "add length 2 arm B0,1 B0,2 B1,0 B1,1 B2,1 B3,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1 again, using token atoms"
+
+Directive (verbatim): "and finally length 3 B0,1 B0,2 B1,0 B1,1 B2,1 B3,1 B4,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1 3,1-4,1"
+
+The arm has one length carried by both its recipe row and each placed arm. The three rows use lengths one, two and three; the latter rows are the stated six-cobalt, five-single-bond and seven-cobalt, six-single-bond chains. Length multiplies the facing vector, so grab and drop use the far cell, rotate sweeps the held compound around the pivot on the longer arc, and pivot sweeps the pivot and held compound around the hand on that same radius. The tape and every act are otherwise identical.
+
+The gameplay footprint remains the pivot cell, as it does at length one. The painted body reaches from the pivot through every intervening cell to the hand, and the hand's far cell is the reach. An intervening cell is crossed by the link but is not occupied for placement or collision: the existing link and its rotational sweep already cross cells without making them obstacles. Making the crossed cells occupied was rejected because it would add a stationary-wall rule to a moving arm and make the same link alternate between solid and permeable as it turns.
+
+This is the dumbest design satisfying both directives because it adds two rows to the existing recipe table and one length field to the existing arm. A second or third arm implementation was rejected because their only difference would be a repeated distance constant, creating parallel sweep, reach and drawing paths. A freely entered numeric length was rejected because only three recipes exist; the recipe rows are the complete set of constructible lengths and make a fourth length one more row.
+
+Each length is painted body-first in the same dark-brass and terracotta family, with one unbroken link through its crossed cells, one pivot, and one open hand. Each keeps its own palette row, hover card and fixture while sharing the arm rules. `proofs/arm-lengths-102.gif` places all three at shipped size on one tape, grabbing, rotating and dropping at their respective reaches.
