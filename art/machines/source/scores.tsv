@@ -1,4 +1,12 @@
-source-1	0.000	0.508	0.166	0.000	-	pass	[]	-
-source-2	0.000	0.547	0.142	0.000	6	pass	["The teal body reads as a shallow cup with a raised central plug, making the seat look occupied rather than broad and empty.","The dark upper interior and pale lower rim suggest a visible inner wall and directional lighting instead of a straight-down, evenly lit surface.","The brass surround and dark bottom tab blur into muddy bands, leaving little distinction between rubbed metal, worn rubber and glazed ceramic."]	bef6a855388a6c40
-source-3	0.000	0.249	0.189	0.000	-	pass	[]	-
-source-4	0.000	0.290	0.165	0.000	-	pass	[]	-
+source-1	0.048	0.787	0.183	0.028	5	pass	["The five teal hexagonal panels read as a tiled platform rather than a characterful machine with broad, empty circular seats.","The teal surfaces have cloudy, grainy shading that blurs the distinction between glazed ceramic, rubbed brass and matte rubber.","Diagonal pale streaks across the teal panels read as directional highlights that would swing with rotation.","Speckled wear spreads across the teal faces instead of gathering at contact edges.","The central brass fitting reads as a closed collar with a small striped tab rather than a clearly open rubber horseshoe."]	02895da1a1598858
+source-2	0.595	0.433	0.182	0.000	-	fail outside 0.595 > 0.05	[]	-
+source-3	0.600	0.436	0.196	0.000	-	fail outside 0.600 > 0.05	[]	-
+source-4	0.890	0.200	0.205	0.200	-	fail outside 0.890 > 0.05	[]	-
+source-5	0.582	0.622	0.174	0.000	-	fail outside 0.582 > 0.05	[]	-
+source-6	0.858	0.369	0.210	0.221	-	fail outside 0.858 > 0.05	[]	-
+source-7	0.530	0.638	0.123	0.000	-	fail outside 0.530 > 0.05	[]	-
+source-8	0.460	0.649	0.163	0.000	-	fail outside 0.460 > 0.05	[]	-
+source-9	0.017	0.832	0.185	0.000	6	pass	["The five teal lobes read as filled, recessed trays rather than broad, empty circular seats, leaving their usable openings unclear.","Deep dark rims and bright inward slopes make the teal lobes look like bowls with visible inner walls rather than forms viewed straight down.","The central brass ring has a strong bright-left, dark-right treatment that reads as directional lighting and would swing with rotation.","The teal surfaces are diffusely mottled rather than convincingly glazed, and no distinct matte rubber hand or open horseshoe silhouette emerges."]	f96ad427fdd53398
+source-10	0.081	0.709	0.212	0.000	-	fail outside 0.081 > 0.05	[]	-
+source-11	0.138	0.405	0.207	0.000	-	fail outside 0.138 > 0.05	[]	-
+source-12	0.115	0.775	0.215	0.028	-	fail outside 0.115 > 0.05	[]	-

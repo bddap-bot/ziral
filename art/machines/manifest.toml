@@ -525,10 +525,12 @@ motion = "turn"
 event = "fired"
 
 [machine.source]
-direction = "The machine is a one-cell source: a blue-green glazed ceramic feed hopper sunk into the well, with one central empty atom seat, a darkened-brass metering ring, a short delivery chute, a worn rubber gate and kiln-fired imperfections, dispensing one bead and never storing a second."
-kept = 2
-briefed = "81d5dc6036915ae9"
-painted = "e2d206d746813551"
+direction = 'Directive (verbatim): "orange: cool thematic artsy bullshit" The machine is one built six-cell source housing occupying the centre and five adjacent hexes, with the right-hand neighbour left open: five blue-green glazed ceramic body cells visibly feed inward to one central empty atom outlet, whose darkened-brass metering ring, short delivery opening, worn rubber gate and kiln-fired imperfections dispense one bead and never store a second. The orange marks identify the five body cells feeding the centre; they are not orange paint, writing or separate objects.'
+references = ["../../docs/source-six-cell-sketch.jpg"]
+kept = 9
+briefed = "80f367644443d5ef"
+painted = "9ed2194d48f2ad42"
+relit = "757be49d1863da69"
 
 [machine.source.instrument]
 voice = "ceramic"

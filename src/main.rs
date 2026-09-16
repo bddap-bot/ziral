@@ -4735,7 +4735,7 @@ mod shot {
                     sim.arms.push(arm);
                     sim.glyphs.push(Some(Glyph {
                         kind: GlyphKind::ALL[k % GlyphKind::ALL.len()],
-                        at: pivot.add(Hex::new(away.q * 4, away.r * 4)),
+                        at: pivot.add(Hex::new(away.q * 5, away.r * 5)),
                         dir,
                         energy: sim::ActivationEnergy::default(),
                     }));
@@ -4745,7 +4745,7 @@ mod shot {
             }
             "wide" => frame = Frame::Wide,
             "board" => world.sim = Sim::empty(),
-            "bonders" => world.sim = phased(&[(Hex::new(-3, 0), 16), (Hex::new(3, 0), 18)]),
+            "bonders" => world.sim = phased(&[(Hex::new(-5, 0), 16), (Hex::new(5, 0), 18)]),
             "focus" => {
                 world.sim = Sim::empty();
                 world.sim.arms.push(Arm::new(
@@ -8529,6 +8529,24 @@ mod tests {
                 _ => unreachable!(),
             })
             .sum()
+    }
+
+    #[test]
+    fn the_source_card_plays_its_fixture_from_an_empty_outlet_to_one_centre_atom() {
+        let source = Machine::Glyph(GlyphKind::Source);
+        let card = layout(source.into());
+        let beads = |tick| {
+            card_fills(source, tick)
+                .into_iter()
+                .filter(|(at, _)| (at.z - (layer::BEAD + layer::LIFT)).abs() < 1e-3)
+                .map(|(at, scale)| (at.truncate(), scale))
+                .collect::<Vec<_>>()
+        };
+        assert!(beads(0).is_empty());
+        assert_eq!(beads(1), [(card.field.unwrap() + px(ORIGIN), HEX * 0.4)]);
+        let fixture = fixture(source);
+        assert_eq!(fixture.ticks, 1);
+        assert!((fixture.done)(&fixture.sim.replay(1)));
     }
 
     #[test]

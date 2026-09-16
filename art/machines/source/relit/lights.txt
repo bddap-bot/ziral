@@ -1,5 +1,8 @@
-right	light=(+0.78,+0.25,+0.58)	ambient=0.24
-top	light=(+0.02,+0.90,+0.43)	ambient=0.08
-left	light=(-0.96,+0.18,+0.20)	ambient=0.19
-bottom	light=(-0.16,-0.60,+0.78)	ambient=0.22
-sphere error 20.8 degrees
+upper-left	light=(-0.35,+0.61,+0.71)	ambient=0.25
+upper-right	light=(+0.35,+0.61,+0.71)	ambient=0.25
+right	light=(+0.71,+0.00,+0.71)	ambient=0.25
+lower-right	light=(+0.35,-0.61,+0.71)	ambient=0.25
+lower-left	light=(-0.35,-0.61,+0.71)	ambient=0.25
+left	light=(-0.71,-0.00,+0.71)	ambient=0.25
+sphere error 7.1 degrees
+direction error 0.0 degrees

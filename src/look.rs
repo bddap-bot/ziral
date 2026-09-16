@@ -132,6 +132,10 @@ pub fn footprint(item: Machine) -> Vec<Cell> {
                 at: slot.at,
                 role: Role::Seat(*slot),
             })
+            .chain(kind.body().iter().map(|at| Cell {
+                at: *at,
+                role: Role::Body,
+            }))
             .collect(),
     }
 }

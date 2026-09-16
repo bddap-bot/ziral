@@ -1162,6 +1162,8 @@ The dumbest design distinguishes the one functional slot from the five occupied 
 
 The alternative was to call all six cells slots and special-case the renderer so five did not look like slots. That would make the simulation data claim five outlets while the picture denied it, and would leave matching, placement, and art with different meanings for the same array. A second source sprite laid under the old one would also split one housing into a compound and create two scaling paths.
 
+The shipped loop leaves the right-hand neighbour clear for one arm to carry each atom beyond the housing before the existing two arms bond it. This extra handoff exists because placing a functional glyph on any of the other five neighbours would overlap the source; keeping the old overlap would make the picture and placement rule disagree.
+
 Tests cover the exact footprint through all six turns, refusal at each occupied cell, the unchanged one-tick fixture outcome, and card playback through the same fixture. Mutation passes remove one body cell and restore it, reopen a second neighbour and restore it, and move emission off the centre and restore it. `proofs/source-six-cell-95.gif` shows the fixture playing at the shipped size.
 
 ### Toy 1 gives one arm three lengths
