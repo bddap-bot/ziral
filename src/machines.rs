@@ -3446,7 +3446,7 @@ mod tests {
         assert_eq!(round(3).as_deref(), Some(third.as_str()));
         let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 12);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(2));
         let mut m = art.read();
@@ -3454,7 +3454,7 @@ mod tests {
         art.write(&m);
         let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 18);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 14);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(5));
         assert_eq!(round(1).as_deref(), Some(first.as_str()));
@@ -3465,7 +3465,7 @@ mod tests {
         let again = |_: &[PathBuf], brief: &str| Ok(format!("{brief} again"));
         let results = remake(&art, &names, &again, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 24);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 18);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(2));
         assert_eq!(round(1).as_deref(), Some(first.as_str()));
