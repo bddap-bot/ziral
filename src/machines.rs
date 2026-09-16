@@ -2522,11 +2522,11 @@ mod tests {
                 );
                 let atlas = open(dir.join("relit/albedo.png"));
                 let albedo = open(dir.join("albedo.png"));
+                assert_eq!(atlas.width(), albedo.width(), "{name}");
                 assert_eq!(
-                    atlas.width(),
-                    albedo.width() * manifest.style.facings.len() as u32
+                    atlas.height(),
+                    albedo.height() * manifest.style.facings.len() as u32
                 );
-                assert_eq!(atlas.height(), albedo.height(), "{name}");
             }
         }
     }
@@ -2873,6 +2873,7 @@ mod tests {
             let scaffold = Scaffold::of(item(name));
             let light = Facing::ALL
                 .into_iter()
+                .chain(Facing::SOURCE)
                 .find(|facing| facing.name() == stem)
                 .unwrap_or_else(|| panic!("no light for {stem}"))
                 .light(45.0);
@@ -2918,7 +2919,7 @@ mod tests {
             let changed = results[0].1.clone().expect("source lands");
             (changed, calls.load(std::sync::atomic::Ordering::SeqCst))
         };
-        assert_eq!(run(&calls), (true, 8));
+        assert_eq!(run(&calls), (true, 6));
         let dir = art.machine("source");
         for made in [
             "scaffold.png",
@@ -2970,7 +2971,7 @@ mod tests {
         let mut m = art.read();
         m.machine.get_mut("source").expect("source").kept = Some(3 - kept);
         art.write(&m);
-        assert_eq!(run(&calls), (true, 6));
+        assert_eq!(run(&calls), (true, 4));
         assert_eq!(art.read().machine["source"].kept, Some(3 - kept));
         assert_ne!(read(&dir.join("albedo.png")), albedo);
         assert_eq!(run(&calls), (false, 0));
@@ -3412,7 +3413,7 @@ mod tests {
         let names = ["source".to_string()];
         let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 12);
+        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 10);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
         assert_eq!(art.read().machine["source"].kept, Some(2));
         assert!(art.machine("source").join("albedo.png").exists());
