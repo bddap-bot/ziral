@@ -819,6 +819,34 @@ The dumbest design is the deletion: stepping already knows whether the world is 
 
 Tests press G and S with empty inventory and with stocked tokens, require the canonical inventory to stay byte-equal, and require every requested frame through ghost[0] to be reached. `proofs/free-debug-stepping-79.gif` is the shipped-size `ghost` scene paused, stepped forward five frames and back three, with no step row or count.
 
+### Toy 1 prices every token from cobalt
+
+Directive (verbatim): "each tape symbol becomes a B2 plus some minimal structure to differentiate. goal is for them to be easy to craft manually. i expect the first automation players will set up will be "make B2""
+
+Every token recipe contains exactly one cobalt atom, `C`, plus the least connected structure that keeps all thirteen recipes distinct through every turn and mirror. F is cobalt alone and R is the single-bonded cobalt/base pair. Q, E and X are two base atoms bonded around cobalt at 60°, 120° and 180°. A and D close the 60° form into a triangle, with D distinguished by doubling its base/base bond. The six move keys are chains with cobalt at one end: Shift W, E and F use single bonds and open through 60°, 120° and 180°, while Shift A, X and C repeat those three shapes with only the base/base bond doubled. Thus one recipe has one atom, one has two atoms, and the remaining eleven need three; no recipe needs more than three bonds or one second-bond act. Every double bond joins two base atoms, the only pair the second-bond applicator accepts.
+
+The cobalt requirement puts token minting after the plum-tier route that makes cobalt, turning that route into the first shared automation target instead of thirteen unrelated material costs. The row and column families make the table learnable from the keyboard while bond strength, cobalt position and opening angle keep mirror images from collapsing two keys. This is the dumbest design satisfying the directive because it replaces the thirteen rows in the one recipe table and relies on the existing matcher, bonder, second-bond applicator, card renderer and key table. The arm recipe with the act drawn on it was rejected: it takes up to four atoms, is hard to craft by hand, and makes the token price describe the machine that executes it rather than the shared cobalt rung.
+
+| item | recipe |
+|---|---|
+| F, grab | `C0,0` |
+| R, drop | `B0,0 C0,1 0,0-0,1` |
+| A, rotate counterclockwise | `B0,0 B0,1 C1,0 0,0-0,1 0,0-1,0 0,1-1,0` |
+| D, rotate clockwise | `B0,0 B0,1 C1,0 0,0=0,1 0,0-1,0 0,1-1,0` |
+| Q, pivot counterclockwise | `B0,0 B0,1 C1,0 0,0-1,0 0,1-1,0` |
+| E, pivot clockwise | `B0,0 C0,1 B1,1 0,0-0,1 0,1-1,1` |
+| X, wait | `B0,0 C0,1 B0,2 0,0-0,1 0,1-0,2` |
+| Shift W, move upper left | `B0,0 B0,1 C1,0 0,0-0,1 0,1-1,0` |
+| Shift E, move upper right | `B0,0 B0,1 C1,1 0,0-0,1 0,1-1,1` |
+| Shift F, move right | `B0,0 B0,1 C0,2 0,0-0,1 0,1-0,2` |
+| Shift C, move lower right | `B0,0 B0,1 C0,2 0,0=0,1 0,1-0,2` |
+| Shift X, move lower left | `B0,0 B0,1 C1,1 0,0=0,1 0,1-1,1` |
+| Shift A, move left | `B0,0 B0,1 C1,0 0,0=0,1 0,1-1,0` |
+
+The cards need no token-specific drawing path: each already draws the table form beside the same 26 px symbol used by the tape. The proof sheet pins all thirteen cards at their shipped size in table order, so the symbol and the priced compound are visible together without scaling either.
+
+Tests require every token form to contain one cobalt atom, no other non-base atom, no more than three atoms, only base/base double bonds, and to differ from every other token after either form is mirrored; the canonical recipe test continues to cover all turns, adjacency, tier fit, pricing and crafting. The key-order test continues to require every key to write the token in the same order as these rows. `proofs/token-cobalt-recipes-91.png` is the `token-recipes` shot scene with all thirteen shipped cards in one native-size sheet.
+
 ### Toy 1 arranges inventory tokens as keys
 
 Directive (verbatim): "in inventory, keycodes should be arranged as they are on a keyboard."

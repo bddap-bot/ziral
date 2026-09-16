@@ -28,6 +28,8 @@ The six straight arrows are the instruction's board directions without a second 
 
 `../proofs/instruction-corners-87.png` places the tape, palette, shortage notice, hover card, pinned card, and runtime-composed manual in two unscaled shipped-size frames, with the surface beneath visible at every rounded corner.
 
+`../proofs/token-cobalt-recipes-91.png` places all thirteen token cards at their shipped size in recipe-table order. Each card pairs the same 26 px symbol used by the tape with its one-cobalt recipe; `cargo run -- --shot proofs/token-cobalt-recipes-91.png token-recipes 0` renders the sheet without scaling a card or symbol.
+
 # Inventory pips
 
 Every inventory count uses one fixed 26 px circular footprint, matching an instruction picture. Whole pips are concentric ivory rings from the centre outward. A fractional next pip is an ivory clockwise arc from the top over a brass ring. Hovering exposes brass rings through the cap. Palette cards and refusal cards use this one geometry; pinned cards and the source and output pictures add no second count geometry.

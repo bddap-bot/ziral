@@ -4381,7 +4381,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 55] = [
+    pub const SCENES: [&str; 56] = [
         "micro",
         "tab-held",
         "tab-released",
@@ -4430,6 +4430,7 @@ mod shot {
         "inventory-drags",
         "instruction-sites",
         "instruction-sites-manual",
+        "token-recipes",
         "machine-drag-88",
         "atom-machine-pick-92",
         "atom-card-94",
@@ -4537,6 +4538,21 @@ mod shot {
         };
         match name {
             "micro" => world.focus_tape(0),
+            "token-recipes" => {
+                world.sim = Sim::empty();
+                world.set_hover(None);
+                let viewport = Viewport {
+                    cam: px(FOCUS),
+                    size: SHOT_PX.as_vec2(),
+                    scale: MICRO_SCALE,
+                };
+                for (index, key) in KEYS.iter().enumerate() {
+                    let col = index % 4;
+                    let row = index / 4;
+                    let screen = Vec2::new(320.0 + col as f32 * 220.0, 90.0 + row as f32 * 155.0);
+                    world.pin_world(Item::Token(key.instr), viewport.world(screen));
+                }
+            }
             "exponential-pips-83" => {
                 world.sim = Sim::empty();
                 let counts = [0, 1, 2, 3, 4, 5, 7, 8];

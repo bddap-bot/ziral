@@ -2142,83 +2142,47 @@ mod tests {
         Form::of(&sim)
     }
 
-    fn last_bend(form: &Form) -> i32 {
-        let sim = form.sim();
-        let degree = |i: usize| sim.bonds.iter().filter(|b| b.a == i || b.b == i).count();
-        let double = sim
-            .bonds
-            .iter()
-            .find(|b| b.kind == BondKind::Double)
-            .expect("a token carries the arm's double bond");
-        let mut path = vec![
-            [double.a, double.b]
-                .into_iter()
-                .find(|i| degree(*i) == 1)
-                .expect("a chain from the arm"),
-        ];
-        while let Some(next) = sim.bonds.iter().find_map(|b| {
-            let last = *path.last().unwrap();
-            let other = if b.a == last {
-                b.b
-            } else if b.b == last {
-                b.a
-            } else {
-                return None;
-            };
-            (!path.contains(&other)).then_some(other)
-        }) {
-            path.push(next);
-        }
-        let at = |i: usize| sim.atoms[i].unwrap().pos;
-        let [a, b, c] = [
-            path[path.len() - 3],
-            path[path.len() - 2],
-            path[path.len() - 1],
-        ]
-        .map(at);
-        let (u, v) = (b.sub(a), c.sub(b));
-        u.q * v.r - u.r * v.q
-    }
-
     #[test]
-    fn every_token_is_the_arm_with_its_act_drawn_on() {
-        let recipe = |instr: Instr| Item::Token(instr).recipe().unwrap();
-        let tokens: Vec<Instr> = recipes()
+    fn every_token_is_one_cobalt_plus_at_most_two_base_atoms_and_distinct_through_turns_and_mirrors()
+     {
+        let tokens: Vec<(Instr, &Form)> = recipes()
             .iter()
-            .filter_map(|(item, _)| match item {
-                Item::Token(instr) => Some(*instr),
+            .filter_map(|(item, form)| match item {
+                Item::Token(instr) => Some((*instr, form)),
                 Item::Machine(_) | Item::Atom(_) => None,
             })
             .collect();
-        for instr in tokens {
-            let sim = recipe(instr).sim();
-            assert!(
-                sim.bonds.iter().any(|b| b.kind == BondKind::Double),
-                "{instr:?} has no arm in it"
+        assert_eq!(tokens.len(), 13);
+        for (k, (instr, form)) in tokens.iter().enumerate() {
+            assert_eq!(
+                form.atoms()
+                    .iter()
+                    .filter(|(_, kind)| *kind == AtomKind::Cobalt)
+                    .count(),
+                1,
+                "{instr:?}"
             );
-            let atoms = if matches!(instr, Instr::Move(_)) {
-                4
-            } else {
-                3
-            };
-            assert_eq!(sim.atoms.len(), atoms, "{instr:?}");
+            assert!(
+                form.atoms()
+                    .iter()
+                    .all(|(_, kind)| matches!(kind, AtomKind::Base | AtomKind::Cobalt)),
+                "{instr:?}"
+            );
+            assert!(form.atoms().len() <= 3, "{instr:?}");
+            let sim = form.sim();
+            for bond in sim
+                .bonds
+                .iter()
+                .filter(|bond| bond.kind == BondKind::Double)
+            {
+                assert_eq!(sim.atoms[bond.a].unwrap().kind, AtomKind::Base, "{instr:?}");
+                assert_eq!(sim.atoms[bond.b].unwrap().kind, AtomKind::Base, "{instr:?}");
+            }
+            let reflected = mirrored(form);
+            for (other, other_form) in &tokens[..k] {
+                assert_ne!(&reflected, *other_form, "{instr:?} mirrors {other:?}");
+            }
         }
-        for instr in [Instr::Grab, Instr::Drop, Instr::Wait] {
-            assert_eq!(mirrored(recipe(instr)), *recipe(instr), "{instr:?}");
-        }
-        for (ccw, cw) in [
-            (Instr::Rot(Spin::Ccw), Instr::Rot(Spin::Cw)),
-            (Instr::Pivot(Spin::Ccw), Instr::Pivot(Spin::Cw)),
-            (Instr::Move(1), Instr::Move(4)),
-            (Instr::Move(2), Instr::Move(5)),
-            (Instr::Move(3), Instr::Move(0)),
-        ] {
-            assert_eq!(mirrored(recipe(ccw)), *recipe(cw), "{ccw:?} {cw:?}");
-            assert!(last_bend(recipe(ccw)) > 0, "{ccw:?} bends clockwise");
-            assert!(last_bend(recipe(cw)) < 0, "{cw:?} bends counterclockwise");
-        }
-        assert_eq!(last_bend(recipe(Instr::Drop)), 0);
-        assert_eq!(last_bend(recipe(Instr::Wait)), 0);
     }
 
     #[test]
