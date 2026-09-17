@@ -1419,10 +1419,7 @@ fn armed(length: ArmLength, tape: Vec<Instr>) -> Sim {
 fn crafted(s: &Sim) -> bool {
     s.arms.iter().all(|a| !a.holding)
         && s.atoms.iter().all(Option::is_none)
-        && s.glyphs
-            .iter()
-            .flatten()
-            .all(|g| s.inventory.count(Item::Machine(Machine::Glyph(g.kind))) == Some(1))
+        && s.inventory.count.iter().sum::<u32>() == 1
 }
 
 fn arm_fixture_done(s: &Sim) -> bool {
@@ -1620,7 +1617,12 @@ pub fn fixture(machine: Machine) -> Fixture {
             panic!("the base atom has a source")
         }
         Machine::Glyph(GlyphKind::Output(tier)) => {
-            let form = machine.recipe().expect("every output tier has a recipe");
+            let product = match tier {
+                Tier::One => GlyphKind::Bonder,
+                Tier::Two => GlyphKind::SecondBond,
+                Tier::Three => GlyphKind::Converter(AtomKind::Amber),
+            };
+            let form = Machine::Glyph(product).recipe().unwrap();
             let centre = form
                 .centre(1)
                 .expect("every recipe lies within the first tier");
@@ -2995,6 +2997,34 @@ mod tests {
             .arms
             .push(Arm::new(ArmLength::One, DIRS[0], 0, Vec::new()));
         assert!(world.fits(&set, ORIGIN, &[]));
+    }
+
+    #[test]
+    fn output_fixtures_receive_three_distinct_products_other_than_their_own_recipes() {
+        let mut products = Vec::new();
+        for tier in [Tier::One, Tier::Two, Tier::Three] {
+            let machine = Machine::Glyph(GlyphKind::Output(tier));
+            let form = Form::of(&fixture(machine).sim);
+            assert_ne!(&form, machine.recipe().unwrap(), "{tier:?} receives itself");
+            let product = form.crafts().expect("the input has a recipe");
+            assert!(!products.contains(&product), "{tier:?} repeats a product");
+            products.push(product);
+        }
+    }
+
+    #[test]
+    fn output_fixtures_count_the_received_product_in_inventory() {
+        for tier in [Tier::One, Tier::Two, Tier::Three] {
+            let f = fixture(Machine::Glyph(GlyphKind::Output(tier)));
+            let product = Form::of(&f.sim).crafts().unwrap();
+            let mut sim = f.sim.replay(f.ticks);
+            let mut inventory = Inventory::EMPTY;
+            inventory.add(product);
+            assert_eq!(sim.inventory, inventory, "{tier:?} receipt");
+            assert!((f.done)(&sim), "{tier:?} completes");
+            sim.inventory = Inventory::EMPTY;
+            assert!(!(f.done)(&sim), "{tier:?} requires receipt");
+        }
     }
 
     #[test]

@@ -1179,3 +1179,6 @@ The gameplay footprint remains the pivot cell, as it does at length one. The pai
 This is the dumbest design satisfying both directives because it adds two rows to the existing recipe table and one length field to the existing arm. A second or third arm implementation was rejected because their only difference would be a repeated distance constant, creating parallel sweep, reach and drawing paths. A freely entered numeric length was rejected because only three recipes exist; the recipe rows are the complete set of constructible lengths and make a fourth length one more row.
 
 Each length is painted body-first in the same dark-brass and terracotta family, with one unbroken link through its crossed cells, one pivot, and one open hand. Each keeps its own palette row, hover card and fixture while sharing the arm rules. `proofs/arm-lengths-102.gif` places all three at shipped size on one tape, grabbing, rotating and dropping at their respective reaches.
+
+The three output fixtures receive the bonder, second-bond and amber-converter recipes respectively, so their wordless cards show three different accepted products instead of manufacturing themselves.
+The dumbest design changes the fixture inputs and checks receipt in inventory through the existing playback; a separate card scene would duplicate the fixture and let the two disagree.
