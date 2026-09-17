@@ -2072,7 +2072,7 @@ fn render_instruction_symbols(
             InstructionSymbol::Card(_) => {
                 commands.entity(entity).insert((
                     Mesh2d(kiln.bar.clone()),
-                    MeshMaterial2d(kiln.skin(skin, false).clone()),
+                    MeshMaterial2d(kiln.skin(skin).clone()),
                 ));
             }
         }
@@ -3129,10 +3129,10 @@ struct Kiln {
     rim: Handle<Mesh>,
     tiled: Option<Tiling>,
     glaze: [Handle<ColorMaterial>; 8],
-    patina: [Handle<ColorMaterial>; 2],
+    patina: Handle<ColorMaterial>,
     card: [Handle<ColorMaterial>; 2],
     atoms: [Handle<Image>; 4],
-    skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
+    skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
     lit: Vec<(Skin, [Handle<Lit>; 4])>,
 }
 
@@ -3185,15 +3185,15 @@ impl Kiln {
         &self.glaze[glaze as usize]
     }
 
-    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, [Handle<ColorMaterial>; 2]) {
+    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, Handle<ColorMaterial>) {
         self.skins
             .iter()
             .find(|(s, _, _)| *s == skin)
             .unwrap_or_else(|| panic!("{skin:?} was never fired"))
     }
 
-    fn skin(&self, skin: Skin, ghost: bool) -> &Handle<ColorMaterial> {
-        &self.fired(skin).2[usize::from(ghost)]
+    fn skin(&self, skin: Skin) -> &Handle<ColorMaterial> {
+        &self.fired(skin).2
     }
 
     fn image(&self, skin: Skin) -> Handle<Image> {
@@ -3280,7 +3280,7 @@ fn fire_kiln(
     mut images: ResMut<Assets<Image>>,
 ) {
     let grout = look::GROUT.decode();
-    let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
+    let skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)> = look::skins()
         .map(|skin| {
             let mut image = skin.decode();
             let crop = match skin.finish {
@@ -3307,13 +3307,7 @@ fn fire_kiln(
                 texture: Some(texture.clone()),
                 uv_transform,
             });
-            let ghost = materials.add(ColorMaterial {
-                color: Color::WHITE.with_alpha(GHOST),
-                alpha_mode: AlphaMode2d::Blend,
-                texture: Some(texture.clone()),
-                uv_transform,
-            });
-            (skin, texture, [fired, ghost])
+            (skin, texture, fired)
         })
         .collect();
     let image = |skin: Skin| {
@@ -3378,7 +3372,7 @@ fn fire_kiln(
         rim: meshes.add(Annulus::new(0.85, 1.0)),
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
-        patina: [0.5, 0.5 * GHOST].map(|a| materials.add(Glaze::Brass.color().with_alpha(a))),
+        patina: materials.add(Glaze::Brass.color().with_alpha(0.5)),
         card: [Glaze::Clay.color(), brass(0.5)].map(|c| materials.add(c)),
         atoms,
         skins,
@@ -3428,7 +3422,7 @@ struct CardGizmos;
 fn tile(kiln: &Kiln, h: Hex) -> (Mesh2d, MeshMaterial2d<ColorMaterial>, Transform) {
     (
         Mesh2d(kiln.hexagon.clone()),
-        MeshMaterial2d(kiln.skin(look::tile(h).skin, false).clone()),
+        MeshMaterial2d(kiln.skin(look::tile(h).skin).clone()),
         Transform {
             translation: px(h).extend(0.0),
             rotation: Quat::IDENTITY,
@@ -3441,7 +3435,6 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs, G: GizmoConfigGroup = DefaultGizmoConfigG
     gizmos: &'a mut Gizmos<'gw, 'gs, G>,
     commands: &'a mut Commands<'cw, 'cs>,
     kiln: &'a Kiln,
-    ghost: bool,
     layers: RenderLayers,
     shift: Vec2,
 }
@@ -3467,20 +3460,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
     }
 
     fn ring(&mut self, at: Vec2, r: f32) {
-        let ivory = self.line(IVORY);
-        self.gizmos.circle_2d(at + self.shift, r, ivory);
-    }
-
-    fn line(&self, color: Color) -> Color {
-        if self.ghost {
-            color.with_alpha(GHOST)
-        } else {
-            color
-        }
-    }
-
-    fn skin(&self, skin: Skin) -> &'a Handle<ColorMaterial> {
-        self.kiln.skin(skin, self.ghost)
+        self.gizmos.circle_2d(at + self.shift, r, IVORY);
     }
 
     fn fill<M: Material2d>(
@@ -3545,7 +3525,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
 
     fn bead(&mut self, at: Vec2, look: Look<()>, z: f32) {
         let kiln = self.kiln;
-        let (skin, patina) = (self.skin(look.skin), &kiln.patina[usize::from(self.ghost)]);
+        let (skin, patina) = (kiln.skin(look.skin), &kiln.patina);
         self.stamp(&kiln.circle, skin, at, ATOM_RADIUS, z);
         self.stamp(&kiln.rim, patina, at, ATOM_RADIUS, z + layer::RIM);
     }
@@ -3556,7 +3536,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
             unworn(look)
         };
         let kiln = self.kiln;
-        let material = self.skin(look.skin);
+        let material = kiln.skin(look.skin);
         let side = (c - a).perp().normalize_or_zero() * HEX * 0.16;
         for k in 0..n {
             let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
@@ -3568,7 +3548,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
         let turn = toward.to_angle() - (FRAC_PI_2 + 3.0 * FRAC_PI_4);
         let iso = Isometry2d::new(at + self.shift, Rot2::radians(turn));
-        let color = self.line(glaze.color());
+        let color = glaze.color();
         self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, color);
     }
 
@@ -3595,25 +3575,14 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
             let local = Vec2::from_angle(turn).rotate(quad.centre - pivot) + pivot + shift;
             let at = origin + Vec2::from_angle(angle).rotate(local);
             let part_z = z + index as f32 * 0.0001;
-            if self.ghost {
-                self.fill(
-                    &kiln.bar,
-                    self.skin(skin),
-                    at,
-                    angle + turn,
-                    quad.size() * scale,
-                    part_z,
-                );
-            } else {
-                self.fill(
-                    &kiln.bar,
-                    kiln.lit(skin, response.2),
-                    at,
-                    angle + turn,
-                    quad.size() * scale,
-                    part_z,
-                );
-            }
+            self.fill(
+                &kiln.bar,
+                kiln.lit(skin, response.2),
+                at,
+                angle + turn,
+                quad.size() * scale,
+                part_z,
+            );
         }
     }
 
@@ -3710,7 +3679,6 @@ mod layer {
 
 const RING_CLOSED: f32 = 0.5;
 const RING_OPEN: f32 = 0.9;
-const GHOST: f32 = 0.45;
 
 struct ArmPose {
     pivot: Vec2,
@@ -3925,7 +3893,6 @@ fn draw(
         gizmos: &mut gizmos,
         commands: &mut commands,
         kiln: &kiln,
-        ghost: world.ghosts() > 0,
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
     };
@@ -3977,7 +3944,6 @@ fn draw(
             p.outline(arm.pivot, HEX * 0.9);
         }
     }
-    p.ghost = false;
     if let Some(pointer) = world.pointer {
         if let Some(Focus::Hold { set, .. }) = &world.focus {
             let grab = hex_at(pointer);
@@ -4029,7 +3995,6 @@ fn draw(
             gizmos: &mut gizmos,
             commands: &mut commands,
             kiln: &kiln,
-            ghost: false,
             layers: layers.clone(),
             shift: Vec2::ZERO,
         };
@@ -4039,7 +4004,6 @@ fn draw(
         gizmos: &mut card_gizmos,
         commands: &mut commands,
         kiln: &kiln,
-        ghost: false,
         layers: CARD,
         shift: Vec2::ZERO,
     };
@@ -4986,17 +4950,10 @@ mod shot {
                 world.sim = sim;
                 world.focus_tape(0);
                 if name == "ghost" {
-                    world.sim.inventory.add(Item::Token(Instr::Rot(Spin::Cw)));
                     script.extend(tap(60, Space));
-                    for k in 0..5 {
-                        script.extend(tap(84 + 24 * k, KeyG));
-                    }
-                    script.extend(tap(204, Home));
-                    script.extend(tap(212, KeyD));
-                    for k in 0..3 {
-                        script.extend(tap(236 + 24 * k, KeyS));
-                    }
-                    script.extend(tap(308, Space));
+                    script.extend(tap(84, KeyG));
+                    script.extend(tap(108, KeyG));
+                    script.extend(tap(132, KeyS));
                 }
             }
             "arm-local-move-81" => {
@@ -5864,6 +5821,72 @@ mod tests {
             Option<&'static MeshMaterial2d<ColorMaterial>>,
         ),
     >;
+
+    #[test]
+    fn ghost_frames_keep_lit_rigs_solid_skins_and_the_step_tally() {
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = std::env::temp_dir().join(format!("ziral-ghost-material-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("ghost", dir.clone(), 120);
+        lit_plugin(&mut app);
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let probe = seen.clone();
+        app.add_systems(
+            Last,
+            move |world: Res<World>,
+                  kiln: Res<Kiln>,
+                  materials: Res<Assets<ColorMaterial>>,
+                  rigs: Query<(&MeshMaterial2d<Lit>, &RenderLayers), With<Fill>>,
+                  marks: Single<(&Marks, Option<&Children>)>| {
+                let n = world.ghosts();
+                assert_eq!(marks.0.0, n);
+                assert_eq!(marks.1.map_or(0, |children| children.len()), n as usize);
+                for (_, _, material) in &kiln.skins {
+                    assert_eq!(materials.get(material).unwrap().color, Color::WHITE);
+                }
+                assert_eq!(materials.get(&kiln.patina).unwrap().color.alpha(), 0.5);
+                let actual: Vec<_> = rigs
+                    .iter()
+                    .filter(|(_, layers)| **layers == RenderLayers::default())
+                    .map(|(material, _)| &material.0)
+                    .collect();
+                let kiln = &*kiln;
+                let expected: Vec<_> = world
+                    .shown()
+                    .arms
+                    .iter()
+                    .flat_map(|arm| {
+                        let item = Machine::Arm(arm.length);
+                        rig::parts(item).iter().map(move |part| {
+                            let (skin, _, _) = look::rig(item, &part.name);
+                            kiln.lit(skin, arm.energy)
+                        })
+                    })
+                    .collect();
+                assert_eq!(
+                    actual.len(),
+                    expected.len(),
+                    "every displayed rig part keeps its lit material"
+                );
+                for material in &expected {
+                    assert_eq!(
+                        actual.iter().filter(|m| *m == material).count(),
+                        expected.iter().filter(|m| *m == material).count(),
+                        "the lit material keeps the displayed activation energy"
+                    );
+                }
+                let mut seen = probe.lock().unwrap();
+                if seen.last() != Some(&n) {
+                    seen.push(n);
+                }
+            },
+        );
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(*seen.lock().unwrap(), [0, 1, 2, 1]);
+    }
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
         let _render = RENDER_TEST
@@ -8294,7 +8317,7 @@ mod tests {
                             ui.push(*instr);
                         }
                         (InstructionSymbol::Card(instr), None, Some(material)) => {
-                            assert_eq!(kiln.skin(skin, false), &material.0);
+                            assert_eq!(kiln.skin(skin), &material.0);
                             assert_eq!(
                                 materials.get(&material.0).unwrap().alpha_mode,
                                 AlphaMode2d::Blend

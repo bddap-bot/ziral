@@ -1137,3 +1137,13 @@ The dumbest design changes the fixture inputs and checks receipt in inventory th
 
 Stored paint prompts end with image inputs: repository paths and SHA-256 hashes captured with the verbatim caption from the image tool event, with unknown inputs explicit in older records.
 The dumbest design gives paint.sh the prompt file and extends its existing event check to compare attachments before replacing that record; a separate provenance manifest would duplicate the call and let text and images disagree.
+
+### Ghost frames keep their material
+
+Directive (verbatim): "Debug mode is called "ghost" mode, but i don't think machine tansparency is the right visual q to indicate it."
+
+The existing ivory tally alone distinguishes a projected frame from the canonical frame. G adds a mark and S removes one; returning to the canonical frame removes the tally. The world remains solid and its lit material preserves activation energy.
+
+The dumbest design deletes the ghost material variants and the painter's ghost state. The simulation already selects the displayed frame and the tally already reads that selection, so rendering needs no second mode. A chalk palette or dashed rim would introduce another material or geometry path to communicate the same distinction. No painting or texture resizing is needed.
+
+`proofs/ghost-solid-69-3681.gif` shows the canonical frame, G, G, S at 1280 by 720.
