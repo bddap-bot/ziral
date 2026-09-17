@@ -5,3 +5,7 @@ One continuous sculpted ceramic housing connects these opposite endpoints throug
 Photoreal ceramic substance, darkened-brass structural braces and broad worn-rubber seals give the object weight and purpose through restrained material texture and baked ambient occlusion. Cobalt #3657A7 dominates the conduit, warm clay #D8C3A5 shapes the chassis, terracotta #C8553D identifies the input, and dark brass #6B4F3A anchors the few simple braces. Surface color is matte and evenly readable, with no directional illumination, highlights, specular reflections or cast shadows; the sprite reads equally well at every gameplay rotation. Hardware is sparse and large enough to support the silhouette without competing with the two openings.
 
 The machine stands alone directly on the scaffold’s untouched flat pure green key. Green fills every uncovered pixel, including both aperture centers. There are exactly two openings and no additional cup, seat, well or funnel. There is no floor, base, plate, board, tile, table, room, black aperture fill, atom, bead, hand, fist, finger, exposed clockwork, ornamental miniature hardware, text, numeral, logo, watermark, interface or clutter, and no recognizable named-game styling.
+
+Image inputs:
+sha256 2b4933fbb8b22a8757bb91503150d7b849933fab3ffe2c8a9610e9cc68c3657b "art/machines/converter-cobalt/scaffold.png"
+sha256 c28153c588a2b7cacadd3d38745229b2ec5f4eeaf1f8b7c3752ffb494a9e6c72 "docs/converter-cobalt-sketch.jpg"

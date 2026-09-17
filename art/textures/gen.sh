@@ -17,11 +17,13 @@ done
 shift $((OPTIND - 1))
 [ $# -eq 1 ] || usage
 name=$1
-subject=$(cat "$here/$name.prompt.txt")
-if [ "$count" -eq 1 ]; then
-  "$here/../paint.sh" "${paint[@]}" "$out/$name.png" "$subject"
-else
-  for i in $(seq 0 $((count - 1))); do
-    "$here/../paint.sh" "${paint[@]}" "$(printf '%s/%s-%02d.png' "$out" "$name" "$i")" "$subject"
-  done
-fi
+mkdir -p "$out"
+for i in $(seq 0 $((count - 1))); do
+  stem=$name
+  [ "$count" -eq 1 ] || stem=$(printf '%s-%02d' "$name" "$i")
+  prompt="$out/$stem.prompt.txt"
+  if [ ! -e "$prompt" ]; then
+    cp "$here/$name.prompt.txt" "$prompt"
+  fi
+  "$here/../paint.sh" "${paint[@]}" "$out/$stem.png" "$prompt"
+done

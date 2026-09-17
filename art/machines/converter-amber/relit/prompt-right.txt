@@ -1,1 +1,4 @@
 A precise relighting of the attached picture, preserving its exact geometry, materials, colours, surface detail and framing: three teal metal rings with bronze rims joined by a worn bronze frame against vivid green, with the matte grey sphere and square grey pad unchanged in the lower-right corner. A single warm world light comes from the right at 45 degrees elevation. The sphere’s right half is bright and its opposite half is dark, establishing the lighting direction shared by every ridge, seam, rim and textured surface of the machine. Right-facing surfaces catch warm highlights; opposing surfaces fall into shadow. All differences from the reference are confined to illumination. Every object, edge, mark, texture detail, proportion and position remains identical, including the sphere and its pad. No added elements, altered surface features, secondary lights or changes to the composition.
+
+Image inputs:
+unknown "art/machines/converter-amber/relit/master.png"

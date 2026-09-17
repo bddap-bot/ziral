@@ -7,3 +7,6 @@ At the far endpoint, a restrained terracotta #C8553D collar supports a dominant 
 Photoreal material detail appears exclusively in flat base colour and fine surface texture. The pivot face has equal brightness in every quadrant and a constant-value perimeter around its full circumference. All material regions are rotationally neutral, without upper-left brightness, lower-right darkness, bevel gradients, directional illumination, highlights, specular reflections or cast shadows. Delicate baked ambient occlusion exists only as narrow, uniform contact seams between materials; it never models broad curvature or spreads onto the green. Large, decisive blocks of dark brass, blue-green ceramic, terracotta and dense charcoal rubber carry the design.
 
 The silhouette closely hugs the scaffold endpoints, with a slender direct connection and no raised housing, hanging parts or intermediate bulges. The arm stands alone directly on the key field, and every uncovered pixel remains the identical pure green. No base, plate, floor, board, tile outline, room, table, additional seat, cup, well, funnel, atom, bead, fist, finger, dial, emblem, rivet, exposed clockwork, text, numeral, logo, watermark, interface, clutter or named-game resemblance.
+
+Image inputs:
+sha256 fd2482fcb482a372e79a746a73c369ce5ad4deeb8ed26b10d9931d760023ab79 "art/machines/arm-2/scaffold.png"

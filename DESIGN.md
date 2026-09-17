@@ -1134,3 +1134,6 @@ Each length is painted as one complete arm in the same dark-brass and terracotta
 
 The three output fixtures receive the bonder, second-bond and amber-converter recipes respectively, so their wordless cards show three different accepted products instead of manufacturing themselves.
 The dumbest design changes the fixture inputs and checks receipt in inventory through the existing playback; a separate card scene would duplicate the fixture and let the two disagree.
+
+Stored paint prompts end with image inputs: repository paths and SHA-256 hashes captured with the verbatim caption from the image tool event, with unknown inputs explicit in older records.
+The dumbest design gives paint.sh the prompt file and extends its existing event check to compare attachments before replacing that record; a separate provenance manifest would duplicate the call and let text and images disagree.

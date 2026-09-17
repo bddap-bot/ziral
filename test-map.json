@@ -7,6 +7,13 @@
       "why": "editing the map re-lints its own completeness"
     },
     {
+      "paths": ["art/paint.sh", "art/textures/gen.sh", "art/tests/**"],
+      "tests": [
+        "nix-shell --run 'shellcheck art/paint.sh art/textures/gen.sh art/tests/paint.sh && art/tests/paint.sh'"
+      ],
+      "why": "the recorded image call supplies both caption and input hashes; mismatched attachments must fail before a record is replaced"
+    },
+    {
       "paths": ["**/*.md", ".gitignore"],
       "tests": [],
       "why": "prose; nothing executes it"

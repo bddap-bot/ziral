@@ -1154,7 +1154,7 @@ const ROUNDS: usize = 3;
 struct Paint {
     images: Vec<PathBuf>,
     output: PathBuf,
-    prompt: String,
+    prompt_path: PathBuf,
     size: u32,
 }
 
@@ -1173,7 +1173,7 @@ fn paint_sh(art: &Art, job: &Paint) -> Result<(), String> {
     }
     let output = command
         .arg(&job.output)
-        .arg(&job.prompt)
+        .arg(&job.prompt_path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .output()
@@ -1262,9 +1262,33 @@ fn brief(style: &Style, direction: &str) -> String {
     format!("{} {}", style.shared, direction)
 }
 
+fn caption(text: &str) -> &str {
+    text.rsplit_once("\n\nImage inputs:\n")
+        .filter(|(_, inputs)| {
+            let inputs = inputs.trim_end();
+            !inputs.is_empty()
+                && inputs.lines().all(|line| {
+                    line == "none"
+                        || line == "unknown"
+                        || line
+                            .strip_prefix("unknown ")
+                            .is_some_and(|path| serde_json::from_str::<String>(path).is_ok())
+                        || line
+                            .strip_prefix("sha256 ")
+                            .and_then(|line| line.split_once(' '))
+                            .is_some_and(|(hash, path)| {
+                                hash.len() == 64
+                                    && hash.bytes().all(|c| c.is_ascii_hexdigit())
+                                    && serde_json::from_str::<String>(path).is_ok()
+                            })
+                })
+        })
+        .map_or(text, |(caption, _)| caption)
+}
+
 fn stored(path: &Path) -> Result<Option<String>, String> {
     match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(text.trim().to_string()).filter(|text| !text.is_empty())),
+        Ok(text) => Ok(Some(caption(&text).trim().to_string()).filter(|text| !text.is_empty())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("{}: {e}", path.display())),
     }
@@ -1275,7 +1299,8 @@ fn store(path: &Path, prompt: &str) -> Result<String, String> {
     if prompt.is_empty() {
         return Err(format!("{}: an empty prompt was written", path.display()));
     }
-    std::fs::write(path, format!("{prompt}\n")).map_err(|e| format!("{}: {e}", path.display()))?;
+    std::fs::write(path, format!("{prompt}\n\nImage inputs:\nunknown\n"))
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(prompt.to_string())
 }
 
@@ -1480,7 +1505,6 @@ struct Relight<'a> {
     candidate: &'a RgbaImage,
     style: &'a Style,
     facings: &'a [Facing],
-    prompts: &'a [String],
     threshold: f32,
     source: RelightSource,
 }
@@ -1590,15 +1614,14 @@ impl Remake<'_> {
         keyed: &[u8],
         style: &Style,
         facings: &[Facing],
-    ) -> Result<(Vec<String>, String), String> {
+    ) -> Result<String, String> {
         let relit = dir.join("relit");
         std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
         let master = scaffold.master(candidate, Some(Vec3::Z));
         let master_path = relit.join("master.png");
         save(&master, &master_path);
         let prompts = self.relight_prompts(&relit, &master_path, style, facings)?;
-        let key = relit_key(keyed, style, facings, &prompts);
-        Ok((prompts, key))
+        Ok(relit_key(keyed, style, facings, &prompts))
     }
 
     fn score(&self, name: &str, scaffold: &Scaffold) -> Vec<(u32, Score)> {
@@ -1818,7 +1841,7 @@ impl Remake<'_> {
                                         .chain(references.iter().cloned())
                                         .collect(),
                                     output: self.art.candidate(name, i),
-                                    prompt: prompt.clone(),
+                                    prompt_path: self.art.round(name, round),
                                     size: scaffold.canvas,
                                 },
                             )
@@ -1833,6 +1856,10 @@ impl Remake<'_> {
                 };
                 let painted_now = empty && failed.len() < count as usize;
                 changed |= painted_now;
+                if painted_now && round == 1 {
+                    std::fs::copy(self.art.round(name, round), self.art.prompt(name))
+                        .map_err(|e| e.to_string())?;
+                }
                 if painted_now {
                     self.record(name, |e| {
                         e.kept = None;
@@ -1893,7 +1920,7 @@ impl Remake<'_> {
         };
         let capture = scaffold.register(&open(self.art.candidate(name, kept)));
         let facings = relight_facings(name, &style);
-        let (prompts, relit) = self.prepare_relief(
+        let relit = self.prepare_relief(
             &dir,
             &scaffold,
             &capture.image,
@@ -1916,7 +1943,6 @@ impl Remake<'_> {
                     candidate: &capture.image,
                     style: &style,
                     facings,
-                    prompts: &prompts,
                     threshold: thresholds.sphere,
                     source: RelightSource::Machine,
                 },
@@ -1936,9 +1962,6 @@ impl Remake<'_> {
     }
 
     fn relief(&self, name: &str, request: &Relight<'_>) -> Result<(), String> {
-        if request.prompts.len() != request.facings.len() {
-            return Err("each relight facing needs one authored prompt".to_string());
-        }
         let relit = request.dir.join("relit");
         std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
         let edits = |relit: &Path| {
@@ -1960,15 +1983,14 @@ impl Remake<'_> {
             let jobs = request
                 .facings
                 .iter()
-                .zip(request.prompts)
-                .map(|(facing, prompt)| {
+                .map(|facing| {
                     let edge = facing.name();
                     (
                         format!("{name}-{edge}"),
                         Paint {
                             images: vec![relit.join("master.png")],
                             output: relit.join(format!("{edge}.png")),
-                            prompt: prompt.clone(),
+                            prompt_path: relit.join(format!("prompt-{edge}.txt")),
                             size: request.scaffold.canvas,
                         },
                     )
@@ -2069,7 +2091,7 @@ impl Remake<'_> {
         let scaffold = Scaffold::texture(image.width());
         let candidate = scaffold.mount(&image);
         let dir = self.art.texture(name);
-        let (prompts, key) = self.prepare_relief(
+        let key = self.prepare_relief(
             &dir,
             &scaffold,
             &candidate,
@@ -2093,7 +2115,6 @@ impl Remake<'_> {
                 candidate: &candidate,
                 style: &style,
                 facings: &style.facings,
-                prompts: &prompts,
                 threshold: thresholds.sphere,
                 source: RelightSource::Texture,
             },
@@ -3059,94 +3080,6 @@ mod tests {
         assert!(landed(&[]));
     }
 
-    #[test]
-    fn paint_sh_retries_the_image_tool_with_backoff_and_reports_every_failed_attempt() {
-        let root = std::env::temp_dir().join(format!("ziral-paint-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("bin")).expect("a fake bin");
-        let codex = root.join("bin/codex");
-        std::fs::write(
-            &codex,
-            "#!/bin/sh\n\
-             n=$(cat \"$HOME/attempts\" 2>/dev/null || echo 0)\n\
-             n=$((n + 1))\n\
-             printf %s \"$n\" > \"$HOME/attempts\"\n\
-             [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
-             mkdir -p \"$CODEX_HOME/generated_images/t$n\" \"$CODEX_HOME/sessions\"\n\
-             p=$(printf %s \"$4\" | sed -n '/^<<<PROMPT$/,/^PROMPT>>>$/p' | sed '1d;$d')\n\
-             [ -z \"$REWRITE\" ] || p=\"Image 1 is the reference. $p\"\n\
-             jq -nc --arg p \"$p\" '{type:\"response_item\",payload:{type:\"custom_tool_call\",name:\"exec\",input:(\"tools.image_gen__imagegen({prompt:\" + ($p|@json) + \"})\")}}' > \"$CODEX_HOME/sessions/rollout-x-t$n.jsonl\"\n\
-             magick -size 64x64 xc:'#00ff00' \"$CODEX_HOME/generated_images/t$n/a.png\"\n\
-             echo \"{\\\"type\\\":\\\"thread.started\\\",\\\"thread_id\\\":\\\"t$n\\\"}\"\n",
-        )
-        .expect("a fake codex");
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        let path = format!(
-            "{}:{}",
-            root.join("bin").display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
-        let paint = |pass_on: u32, rewrite: bool| {
-            let _ = std::fs::remove_file(root.join("attempts"));
-            let _ = std::fs::remove_file(root.join("out.png"));
-            let started = std::time::Instant::now();
-            let out = std::process::Command::new(Art::shipped().paint_sh())
-                .args(["-s", "64"])
-                .arg(root.join("out.png"))
-                .arg("a prompt\nwith a second line")
-                .env("PATH", &path)
-                .env("HOME", &root)
-                .env("CODEX_HOME", root.join("codex-home"))
-                .env("PASS_ON", pass_on.to_string())
-                .env("REWRITE", if rewrite { "1" } else { "" })
-                .output()
-                .expect("paint.sh runs");
-            let attempts: u32 = std::fs::read_to_string(root.join("attempts"))
-                .expect("attempts")
-                .parse()
-                .expect("a count");
-            (
-                out.status.success(),
-                attempts,
-                String::from_utf8_lossy(&out.stderr).into_owned(),
-                started.elapsed().as_secs_f32(),
-            )
-        };
-        let (ok, attempts, stderr, took) = paint(3, false);
-        assert!(ok, "{stderr}");
-        assert!(root.join("out.png").exists());
-        assert_eq!(attempts, 3);
-        for line in [
-            "codex: boom 1",
-            "attempt 1 of 4 failed, retrying in 1s",
-            "codex: boom 2",
-            "attempt 2 of 4 failed, retrying in 2s",
-        ] {
-            assert!(stderr.contains(line), "{line:?} missing from {stderr}");
-        }
-        assert!(!stderr.contains("attempt 3 of 4"), "{stderr}");
-        assert!(took >= 3.0, "{took}s: no backoff");
-        let (ok, attempts, stderr, took) = paint(99, false);
-        assert!(!ok);
-        assert!(!root.join("out.png").exists());
-        assert_eq!(attempts, 4);
-        assert!(
-            stderr.contains("attempt 3 of 4 failed, retrying in 4s"),
-            "{stderr}"
-        );
-        assert!(stderr.contains("gave up after 4 attempts"), "{stderr}");
-        assert!(took >= 7.0, "{took}s: no backoff");
-        let (ok, attempts, stderr, _) = paint(1, true);
-        assert!(!ok);
-        assert!(!root.join("out.png").exists());
-        assert_eq!(attempts, 4);
-        assert!(
-            stderr.contains("the image tool received another prompt:\nImage 1 is the reference. a prompt\nwith a second line"),
-            "{stderr}"
-        );
-    }
-
     fn rows(art: &Art, name: &str) -> BTreeMap<String, (String, Score)> {
         std::fs::read_to_string(art.machine(name).join("scores.tsv"))
             .expect("scores.tsv")
@@ -3317,7 +3250,10 @@ mod tests {
                 .first()
                 .is_some_and(|image| image.ends_with("scaffold.png"))
             {
-                prompts.lock().unwrap().push(job.prompt.clone());
+                prompts
+                    .lock()
+                    .unwrap()
+                    .push(stored(&job.prompt_path).unwrap().unwrap());
             }
             fake(job)
         };
@@ -3395,7 +3331,10 @@ mod tests {
                 .first()
                 .is_some_and(|image| image.ends_with("scaffold.png"))
             {
-                prompts.lock().unwrap().push(job.prompt.clone());
+                prompts
+                    .lock()
+                    .unwrap()
+                    .push(stored(&job.prompt_path).unwrap().unwrap());
             }
             fake(job)
         };
