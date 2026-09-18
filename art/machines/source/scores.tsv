@@ -1,12 +1,12 @@
-source-1	0.048	0.787	0.183	0.028	5	pass	["The five teal hexagonal panels read as a tiled platform rather than a characterful machine with broad, empty circular seats.","The teal surfaces have cloudy, grainy shading that blurs the distinction between glazed ceramic, rubbed brass and matte rubber.","Diagonal pale streaks across the teal panels read as directional highlights that would swing with rotation.","Speckled wear spreads across the teal faces instead of gathering at contact edges.","The central brass fitting reads as a closed collar with a small striped tab rather than a clearly open rubber horseshoe."]	02895da1a1598858
-source-2	0.595	0.433	0.182	0.000	-	fail outside 0.595 > 0.05	[]	-
-source-3	0.600	0.436	0.196	0.000	-	fail outside 0.600 > 0.05	[]	-
-source-4	0.890	0.200	0.205	0.200	-	fail outside 0.890 > 0.05	[]	-
-source-5	0.582	0.622	0.174	0.000	-	fail outside 0.582 > 0.05	[]	-
-source-6	0.858	0.369	0.210	0.221	-	fail outside 0.858 > 0.05	[]	-
-source-7	0.530	0.638	0.123	0.000	-	fail outside 0.530 > 0.05	[]	-
-source-8	0.460	0.649	0.163	0.000	-	fail outside 0.460 > 0.05	[]	-
-source-9	0.017	0.832	0.185	0.000	6	pass	["The five teal lobes read as filled, recessed trays rather than broad, empty circular seats, leaving their usable openings unclear.","Deep dark rims and bright inward slopes make the teal lobes look like bowls with visible inner walls rather than forms viewed straight down.","The central brass ring has a strong bright-left, dark-right treatment that reads as directional lighting and would swing with rotation.","The teal surfaces are diffusely mottled rather than convincingly glazed, and no distinct matte rubber hand or open horseshoe silhouette emerges."]	f96ad427fdd53398
-source-10	0.081	0.709	0.212	0.000	-	fail outside 0.081 > 0.05	[]	-
-source-11	0.138	0.405	0.207	0.000	-	fail outside 0.138 > 0.05	[]	-
-source-12	0.115	0.775	0.215	0.028	-	fail outside 0.115 > 0.05	[]	-
+source-1	0.077	0.803	0.099	0.020	-	fail outside 0.077 > 0.05	[]	-	-
+source-2	0.088	0.831	0.099	0.000	-	fail outside 0.088 > 0.05	[]	-	-
+source-3	0.094	0.802	0.122	0.000	-	fail outside 0.094 > 0.05	[]	-	-
+source-4	0.201	0.781	0.103	0.000	-	fail outside 0.201 > 0.05	[]	-	-
+source-5	0.054	0.780	0.116	0.000	-	fail outside 0.054 > 0.05	[]	-	-
+source-6	0.048	0.768	0.088	0.000	7	pass	["The teal housing has weight, but the brass crescent and seat rim look like soft brown stains rather than distinct, rubbed metal; give their contact edges clearer material character.","The bright upper-left bevel and heavy dark lower edge imply directional lighting and visible thickness; model the rim with balanced, symmetric tones.","Speckled wear blankets the teal glaze, muddying its finish. Preserve quieter glazed surfaces and gather abrasion around the opening and contact edges."]	b7c20ff03481d013	false
+source-7	0.030	0.785	0.102	0.000	7	pass	["The bright upper-left rim and deep lower-right bevel make the housing read as a raised slab with visible side faces under directional light. Keep its weight with symmetric edge shading and no hanging shadow.","The ceramic, brass crescent and dark seat lining share a soft, mottled finish. Give the glaze clearer depth, the brass distinct rubbed contact edges and the rubber a convincingly matte surface."]	80869457a8fb99c1	false
+source-8	0.068	0.763	0.108	0.000	-	fail outside 0.068 > 0.05	[]	-	-
+source-9	0.092	0.769	0.118	0.000	-	fail outside 0.092 > 0.05	[]	-	-
+source-10	0.055	0.767	0.092	0.020	-	fail outside 0.055 > 0.05	[]	-	-
+source-11	0.064	0.756	0.145	0.000	-	fail outside 0.064 > 0.05	[]	-	-
+source-12	0.057	0.778	0.118	0.000	-	fail outside 0.057 > 0.05	[]	-	-

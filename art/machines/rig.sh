@@ -2,7 +2,14 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-for dir in "$here"/*; do
+if [ "$#" -eq 0 ]; then
+  set -- "$here"/*
+fi
+for name in "$@"; do
+  case $name in
+  /*) dir=$name ;;
+  *) dir="$here/$name" ;;
+  esac
   [ -f "$dir/albedo.png" ] || continue
   mkdir -p "$dir/parts"
   read -r width height < <(magick identify -format '%w %h\n' "$dir/albedo.png")

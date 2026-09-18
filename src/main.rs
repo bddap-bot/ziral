@@ -4515,6 +4515,17 @@ mod shot {
                 .unwrap_or_else(|| panic!("unknown machine {name}"))
         };
         match name {
+            name if name.starts_with("housing:") => {
+                world.sim = Sim::empty();
+                world.set_hover(None);
+                match machine(&name[8..]) {
+                    Machine::Glyph(kind) => world.sim.glyphs.push(Some(Glyph::new(kind, FOCUS, 0))),
+                    Machine::Arm(length) => {
+                        world.sim.arms.push(Arm::new(length, FOCUS, 0, Vec::new()))
+                    }
+                }
+                world.period = f32::INFINITY;
+            }
             "micro" => world.focus_tape(0),
             "token-recipes" => {
                 world.sim = Sim::empty();

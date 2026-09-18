@@ -1,4 +1,12 @@
-reification-1	0.833	0.144	0.072	0.502	-	fail outside 0.833 > 0.05	[]	-
-reification-2	0.678	0.198	0.033	0.500	-	fail outside 0.678 > 0.05	[]	-
-reification-3	0.566	0.145	0.067	0.506	-	fail outside 0.566 > 0.05	[]	-
-reification-4	0.000	0.823	0.275	0.045	6	pass	["The repeated pale seats and narrow brown struts read as a bead diagram rather than a solid, weighty kiln-floor machine with a distinctive character.","The struts look uniformly muddy brown, lacking the rubbed metallic depth and contact-edge wear that would make them read as brass.","Across the seats, dark upper crescents and bright lower rims suggest lit bowl interiors rather than flat, empty seats with rotationally symmetric glaze shading."]	02d8eb0c0fbb4f5d
+reification-1	0.146	0.837	0.152	0.080	-	fail outside 0.146 > 0.05	[]	-	-
+reification-2	0.136	0.846	0.180	0.045	-	fail outside 0.136 > 0.05	[]	-	-
+reification-3	0.151	0.839	0.164	0.063	-	fail outside 0.151 > 0.05	[]	-	-
+reification-4	0.025	0.849	0.189	0.020	7	pass	["The housing has weight, but the teal collars and central brass ring share the clay’s soft, chalky finish. Give brass a richer dark patina and rubber a distinct matte density.","Pale upper-left bevels and dark lower-right rims give the housing and openings directional lighting. Model their thickness with balanced tones around the edges.","Mottled wear spreads across the yellow and red glaze. Preserve cleaner glazed fields and concentrate abrasion at the opening lips and outer contact edges."]	25d34dd9aacfc877	false
+reification-5	0.056	0.807	0.160	0.020	-	fail outside 0.056 > 0.05	[]	-	-
+reification-6	0.112	0.835	0.122	0.040	-	fail outside 0.112 > 0.05	[]	-	-
+reification-7	0.166	0.814	0.154	0.072	-	fail outside 0.166 > 0.05	[]	-	-
+reification-8	0.102	0.838	0.117	0.045	-	fail outside 0.102 > 0.05	[]	-	-
+reification-9	0.262	0.953	0.139	0.080	-	fail outside 0.262 > 0.05	[]	-	-
+reification-10	0.147	0.941	0.170	0.040	-	fail outside 0.147 > 0.05	[]	-	-
+reification-11	0.230	0.857	0.165	0.028	-	fail outside 0.230 > 0.05	[]	-	-
+reification-12	0.206	0.927	0.175	0.063	-	fail outside 0.206 > 0.05	[]	-	-

@@ -47,11 +47,11 @@ The photorealism we can potentially get out of a diffusion model is attractive t
 
 Yeah flash would probably be gross. A shallower angle than 60° perhaps?"
 
-The incomplete replacement design requires six lighting layers of one kept picture for every rotatable texture under the same world light, one for each rest facing at 60° intervals and 45° elevation. The sphere-composited relight and normal-recovery step checks recovered directions and keys the result from kept pixels, authored prompts, control facings and elevation. The source derives six layers from four measured control lights; other entries request six captures. In that design, one runtime material samples the two neighbouring relights and blends them by the fractional facing. The mesh tangent supplies the facing, so rest frames select one layer and an arm swing crosses continuously to its neighbour. The material samples the recovered normal only for its activation ripple and flare. Ghosts keep drawing the unlit picture.
+The generator supplies albedo; all six relights are computed from that colour and one normal field at the manifest's requested 45° elevation and six azimuths. A shallow height approximation combines silhouette and a small luminance contribution, smooths it, then uses central differences for normals. The same Lambert renderer handles the machine and its analytic grey calibration sphere. Pixel measurements still check direction and sphere-shape error against the unchanged 25° limit. Small measured residuals are quantisation, not a new aim tolerance.
 
-This is the dumbest design satisfying the directive because it extends the one measured painter-relight path and the one material already beside `lit.wgsl`: six layers, one facing coordinate, one blend. A light at the camera was rejected because diffuse `n·z` loses the side cue that distinguishes a bump from a dent. Six equal lights in one painting were rejected because their sideways diffuse terms cancel to the same headlight while six sparkles stay baked to the turning picture. A runtime lobe over flat albedo was rejected because it is a synthetic Phong highlight rather than the painter's glaze. Separate atom, bond, or texture-generator lighting was rejected because it would duplicate the relight implementation and let the classes drift.
+The generated-relight loop, light-direction captions and source-only four-control interpolation are removed. The shipped normal-map material remains the one runtime lighting path. The six computed images and atlas are calibration evidence; no second material or facing blend is needed. Physical surface recovery from colour alone is not claimed: painted colour variation can become shallow relief, while material detail remains in the albedo.
 
-The first bounded paint run produced several sphere-shaped sets, but none also kept every recovered light within the unchanged 25° tolerance of its named azimuth and 45° elevation; the nine complete sphere-shaped attempts missed a requested direction by 32.3° to 45.6°. `proofs/relight-attempts-72.md` records every failed class and identifies what the two proof images demonstrate. The reusable pipeline, authored-prompt provenance, and visual evidence land, while runtime selection remains unconnected until every rotatable class has an accepted set; mixing painter relights with the old runtime-lit path would create the parallel implementation this design removes.
+The prior generated sets in [the attempt record](proofs/relight-attempts-72.md) failed the fixed direction limit. Replacing only their calibration spheres would measure different illumination from the machines and is invalid. The shipped-asset test compares every computed relight pixel with the renderer output, as well as remeasuring calibration; sphere-only replacement cannot satisfy it.
 
 ### Tick events and material response
 
@@ -206,7 +206,19 @@ Candidate C stacks successively wider bars. Its trade-off is immediate whole-ver
 
 Candidate D sweeps successive arc marks around one brass centre. Its trade-off is a lively compact rhythm whose final stop makes the cap visible, at the cost of making exact whole-mark counting slower than the other candidates.
 
+### Machine housings
+
+Each glyph is one substantial housing, with functional seats cut into its body. The ten current glyph entries include the second-bond applicator; all three arm lengths retain their existing art. Broad ceramic castings replace the separate seat pods and connecting bars. The footprint remains a measurement boundary, never a mask that clips the generated silhouette.
+
+The shared glyph scaffold supplies one grey envelope. The source's separate housing role and orange guide are deleted because its body cells have the same meaning as every other body cell. Its older sketch is no longer a paint input: the first treatment reproduced separate tile panels, so the replacement direction requires a continuous casting with a recessed metering groove. Exact captions and attachment hashes accompany the replacement candidates.
+
+The critic keeps its original rubric and threshold. An additional required compound judgment rejects a glyph regardless of taste score. Painting still stops after three rounds and retains the best measured, judged, non-compound candidate; a missing acceptable candidate fails the run. Computed lighting follows the single renderer described above.
+
+[The native-size before/after sheet](proofs/machine-housings-computed-67.png) compares the unchanged main assets with the new housings in the same board scene. [The coverage and calibration table](proofs/machine-housings-calibration-67.md) records the baseline commit, actual selections, coverage and measured directions. The arm is the unchanged visual control.
+
 ### Machine coverage proposals
+
+Historical proposals and experiments follow; the selected treatment is recorded above.
 
 Directive (verbatim): "I'd like to see some proposals for an art system where the machines cover more of the tiles. Large glyphs would
 not show much tile beneath."

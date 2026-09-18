@@ -75,7 +75,6 @@ pub fn turn(dir: usize) -> f32 {
 pub enum Role {
     Seat(Slot),
     Body,
-    Housing,
     Pivot,
     Hand,
 }
@@ -135,7 +134,7 @@ pub fn footprint(item: Machine) -> Vec<Cell> {
             })
             .chain(kind.body().iter().map(|at| Cell {
                 at: *at,
-                role: Role::Housing,
+                role: Role::Body,
             }))
             .collect(),
     }

@@ -1,4 +1,12 @@
-converter-plum-1	0.000	0.639	0.096	0.028	5	pass	["The narrow rings and flat straps read as a lightweight outline rather than a solid, weighty kiln-floor machine.","Across the plum surfaces and brass rims, the soft color bands barely distinguish glazed ceramic, rubbed metal or matte rubber, and lack convincing contact-edge wear.","The repeated plain collars and nearly featureless straps feel diagrammatic, with little character or crafted detail to reward a closer look."]	7d0724c5139ead20
-converter-plum-2	1.627	0.001	0.134	inf	-	fail outside 1.627 > 0.05	[]	-
-converter-plum-3	1.967	0.002	0.082	inf	-	fail outside 1.967 > 0.05	[]	-
-converter-plum-4	1.852	0.000	0.142	inf	-	fail outside 1.852 > 0.05	[]	-
+converter-plum-1	0.018	0.921	0.217	0.000	6	pass	["Material richness is thin: the plum housing reads as softly shaded plastic, while the brown inset between the seats reads as muddy fill rather than rubbed brass. Sharpen the material differences and concentrate wear at contact edges.","Bright upper rims and dark lower edges give the housing and seat collars directional lighting. Use symmetric tonal shaping so the object remains convincing when rotated.","The painting lacks distinctive craft: broad, blurred bevels dominate, with little purposeful surface detail to reward a closer look. Give the glaze and metal clearer, characterful finishes."]	ee17f464c6ad31c1	false
+converter-plum-2	0.136	0.905	0.223	0.000	-	fail outside 0.136 > 0.05	[]	-	-
+converter-plum-3	0.120	0.894	0.203	0.028	-	fail outside 0.120 > 0.05	[]	-	-
+converter-plum-4	0.069	0.884	0.201	0.000	-	fail outside 0.069 > 0.05	[]	-	-
+converter-plum-5	0.079	0.932	0.206	0.020	-	fail outside 0.079 > 0.05	[]	-	-
+converter-plum-6	0.076	0.905	0.182	0.028	-	fail outside 0.076 > 0.05	[]	-	-
+converter-plum-7	0.139	0.922	0.212	0.020	-	fail outside 0.139 > 0.05	[]	-	-
+converter-plum-8	0.070	0.918	0.209	0.020	-	fail outside 0.070 > 0.05	[]	-	-
+converter-plum-9	0.065	0.915	0.158	0.000	-	fail outside 0.065 > 0.05	[]	-	-
+converter-plum-10	0.086	0.936	0.213	0.020	-	fail outside 0.086 > 0.05	[]	-	-
+converter-plum-11	0.076	0.960	0.213	0.028	-	fail outside 0.076 > 0.05	[]	-	-
+converter-plum-12	0.123	0.915	0.217	0.028	-	fail outside 0.123 > 0.05	[]	-	-
