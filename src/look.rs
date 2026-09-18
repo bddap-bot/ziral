@@ -87,6 +87,10 @@ pub struct Cell {
 
 pub fn footprint(item: Machine) -> Vec<Cell> {
     match item {
+        Machine::Portal => vec![Cell {
+            at: ORIGIN,
+            role: Role::Body,
+        }],
         Machine::Arm(length) => Arm::new(length, ORIGIN, 0, Vec::new())
             .cells()
             .into_iter()
@@ -266,6 +270,8 @@ pub const TILES: [Skin; 24] = tiles![
 
 pub const MANUAL: Skin = skin!("overlay/page");
 
+pub const ETHEREAL: Skin = finish!("textures/ethereal", Finish::Grouted);
+
 pub const GROUT: Skin = skin!("textures/grout");
 
 impl Skin {
@@ -381,6 +387,15 @@ pub fn bond(kind: BondKind) -> Look<()> {
 
 pub fn machine(item: Machine) -> Look<MachineMark> {
     let kind = match item {
+        Machine::Portal => {
+            let (skin, normal) = machine!("portal");
+            return Look {
+                glaze: Glaze::Plum,
+                skin,
+                shape: Shape::Cells(1),
+                marking: MachineMark::Sprite(normal),
+            };
+        }
         Machine::Arm(length) => {
             let (skin, normal) = match length {
                 ArmLength::One => machine!("arm"),
@@ -422,25 +437,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
 }
 
 pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
-    let name = match item {
-        Machine::Arm(ArmLength::One) => "arm",
-        Machine::Arm(ArmLength::Two) => "arm-2",
-        Machine::Arm(ArmLength::Three) => "arm-3",
-        Machine::Glyph(GlyphKind::Source) => "source",
-        Machine::Glyph(GlyphKind::SourceTwo) => "source-2",
-        Machine::Glyph(GlyphKind::Bonder) => "bonder",
-        Machine::Glyph(GlyphKind::SecondBond) => "second-bond",
-        Machine::Glyph(GlyphKind::Reification) => "reification",
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)) => "converter-amber",
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)) => "converter-plum",
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt)) => "converter-cobalt",
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Base)) => {
-            panic!("the base atom has a source")
-        }
-        Machine::Glyph(GlyphKind::Output(Tier::One)) => "output-1",
-        Machine::Glyph(GlyphKind::Output(Tier::Two)) => "output-2",
-        Machine::Glyph(GlyphKind::Output(Tier::Three)) => "output-3",
-    };
+    let name = machine(item).skin.name.split('/').nth(1).unwrap();
     macro_rules! pair {
         ($machine:literal, $part:literal) => {{
             let albedo = finish!(
@@ -509,6 +506,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
             })
         }))
         .chain(TILES)
+        .chain([ETHEREAL])
         .chain(crate::KEYS.iter().map(|k| k.symbol))
         .chain([MANUAL])
 }
@@ -849,7 +847,7 @@ pub(crate) mod tests {
     fn every_glyph_is_distinct() {
         let glyphs = Machine::ALL.iter().filter_map(|item| match item {
             Machine::Glyph(kind) => Some(*kind),
-            Machine::Arm(_) => None,
+            Machine::Arm(_) | Machine::Portal => None,
         });
         pairwise(
             "glyphs",
@@ -1112,7 +1110,7 @@ pub(crate) mod tests {
                     .sum::<usize>()
                 + TILES.len()
                 + KEYS.len()
-                + 1
+                + 2
         );
     }
 

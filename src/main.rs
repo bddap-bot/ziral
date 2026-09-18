@@ -200,6 +200,7 @@ fn instr_of(key: KeyCode, shift: bool) -> Option<Instr> {
 fn fresh(item: Item) -> Sim {
     let mut set = Sim::empty();
     match item {
+        Item::Machine(Machine::Portal) => set.portals.push(Some(sim::Portal::new(ORIGIN))),
         Item::Machine(Machine::Arm(length)) => {
             set.arms.push(Arm::new(length, ORIGIN, 0, Vec::new()))
         }
@@ -220,10 +221,16 @@ fn machines(ids: &[Id]) -> Vec<Id> {
 }
 
 fn held_machine_poses(set: &Sim, pointer: Vec2) -> Vec<(Machine, Vec2, usize)> {
-    set.glyphs
+    set.portals
         .iter()
         .flatten()
-        .map(|g| (Machine::Glyph(g.kind), pointer + px(g.at), g.dir))
+        .map(|p| (Machine::Portal, pointer + px(p.at), 0))
+        .chain(
+            set.glyphs
+                .iter()
+                .flatten()
+                .map(|g| (Machine::Glyph(g.kind), pointer + px(g.at), g.dir)),
+        )
         .chain(
             set.arms
                 .iter()
@@ -279,11 +286,21 @@ impl FacingTween {
     }
 }
 
+fn recyclable(set: &Sim) -> bool {
+    set.portals
+        .iter()
+        .flatten()
+        .all(|p| p.sim.ids().next().is_none() && p.sim.inventory == sim::Inventory::EMPTY)
+}
+
 fn runs(set: &Sim) -> bool {
     !set.arms.is_empty() || set.atoms.iter().any(Option::is_some)
 }
 
 fn turn(set: &mut Sim, spin: Spin) {
+    for portal in set.portals.iter_mut().flatten() {
+        portal.at = portal.at.rotate(ORIGIN, spin);
+    }
     for g in set.glyphs.iter_mut().flatten() {
         (g.at, g.dir) = (g.at.rotate(ORIGIN, spin), spin.turn(g.dir));
     }
@@ -493,11 +510,6 @@ struct World {
     viewer: Viewer,
 }
 
-#[derive(Component)]
-struct Portal {
-    sim: Sim,
-}
-
 #[derive(Clone, Copy)]
 struct PortalView {
     center: Vec2,
@@ -505,7 +517,7 @@ struct PortalView {
 }
 
 impl PortalView {
-    const TILE: f32 = HEX * 1.5;
+    const TILE: f32 = HEX * 0.9;
 
     fn of(sim: &Sim) -> Self {
         let mut lo = Vec2::splat(f32::INFINITY);
@@ -555,8 +567,6 @@ enum Location {
 #[derive(Resource)]
 struct Game {
     overworld: World,
-    entities: bevy::prelude::World,
-    portals: Vec<Entity>,
     location: Location,
     crossing: [f32; 2],
     cue: Option<bool>,
@@ -599,7 +609,7 @@ impl Game {
         let mut changes = std::mem::take(&mut self.camera_changes);
         if let Location::Interior { portal, .. } = self.location {
             changes.push((
-                self.overworld.sim.portals[portal],
+                self.overworld.sim.portals[portal].as_ref().unwrap().at,
                 PortalView::of(self.sim()),
                 false,
             ));
@@ -616,9 +626,16 @@ impl Game {
             return false;
         }
         match (&self.location, portal) {
-            (Location::Overworld, Some(index)) if index < self.portals.len() => {
+            (Location::Overworld, Some(index))
+                if self
+                    .overworld
+                    .sim
+                    .portals
+                    .get(index)
+                    .is_some_and(Option::is_some) =>
+            {
                 self.camera_changes.push((
-                    self.overworld.sim.portals[index],
+                    self.overworld.sim.portals[index].as_ref().unwrap().at,
                     PortalView::of(&self.portal(index).sim),
                     true,
                 ));
@@ -636,7 +653,7 @@ impl Game {
             }
             (Location::Interior { portal, .. }, None) => {
                 self.camera_changes.push((
-                    self.overworld.sim.portals[*portal],
+                    self.overworld.sim.portals[*portal].as_ref().unwrap().at,
                     PortalView::of(&self.portal(*portal).sim),
                     false,
                 ));
@@ -646,6 +663,7 @@ impl Game {
                     self.next_card,
                 );
                 self.pins.insert(*portal, cards);
+                self.overworld.prev.portals = self.overworld.sim.portals.clone();
                 self.location = Location::Overworld;
                 self.overworld.down = None;
                 self.overworld.pointer = None;
@@ -661,53 +679,20 @@ impl Game {
     }
 
     fn state(&self) -> persist::State {
-        persist::State {
-            sim: self.overworld.snapshot(),
-            portals: (0..self.portals.len())
-                .map(|index| {
-                    let portal = self.portal(index);
-                    if matches!(self.location, Location::Interior { portal, .. } if portal == index)
-                    {
-                        self.snapshot()
-                    } else {
-                        portal.sim.clone()
-                    }
-                })
-                .collect(),
+        let mut sim = self.overworld.snapshot();
+        if let Location::Interior { portal, .. } = self.location {
+            sim.portals[portal].as_mut().unwrap().sim = self.snapshot();
         }
+        persist::State { sim }
     }
 
     fn from_state(state: persist::State) -> Self {
-        let mut game = Self::new(state.sim);
-        if !state.portals.is_empty() {
-            game.entities.clear_entities();
-            game.portals = state
-                .portals
-                .into_iter()
-                .map(|sim| game.entities.spawn(Portal { sim }).id())
-                .collect();
-        }
-        game
+        Self::new(state.sim)
     }
-    fn from_world(mut overworld: World) -> Self {
-        overworld.prev.portals = overworld.sim.portals.clone();
-        let mut entities = bevy::prelude::World::new();
-        let portals = overworld
-            .sim
-            .portals
-            .iter()
-            .map(|_| {
-                entities
-                    .spawn(Portal {
-                        sim: fixture(Machine::Arm(ArmLength::One)).sim,
-                    })
-                    .id()
-            })
-            .collect();
+
+    fn from_world(overworld: World) -> Self {
         Self {
             overworld,
-            entities,
-            portals,
             location: Location::Overworld,
             crossing: [0.0; 2],
             cue: None,
@@ -720,8 +705,8 @@ impl Game {
         matches!(self.location, Location::Interior { .. })
     }
 
-    fn portal(&self, index: usize) -> &Portal {
-        self.entities.get::<Portal>(self.portals[index]).unwrap()
+    fn portal(&self, index: usize) -> &sim::Portal {
+        self.overworld.sim.portals[index].as_ref().unwrap()
     }
 
     fn crossing(&self, viewport: &Viewport) -> Option<Option<usize>> {
@@ -732,9 +717,10 @@ impl Game {
             Location::Overworld
                 if viewport.scale * viewport.size.min_element() <= PortalView::TILE =>
             {
-                (0..self.portals.len())
+                (0..self.overworld.sim.portals.len())
+                    .filter(|index| self.overworld.sim.portals[*index].is_some())
                     .find(|index| {
-                        (viewport.cam - px(self.overworld.sim.portals[*index]))
+                        (viewport.cam - px(self.overworld.sim.portals[*index].as_ref().unwrap().at))
                             .abs()
                             .max_element()
                             <= PortalView::TILE / 2.0
@@ -760,6 +746,18 @@ impl Game {
 }
 
 impl WorldAccess for Game {
+    fn lift_inventory(&mut self, item: Item) {
+        if !self.inside() || item != Item::Machine(Machine::Portal) {
+            self.edit().lift_inventory(item);
+        }
+    }
+
+    fn lift(&mut self, set: Sim, back: Back) {
+        if !self.inside() || set.portals.iter().all(Option::is_none) {
+            self.edit().lift(set, back);
+        }
+    }
+
     fn new(sim: Sim) -> Self {
         Self::from_world(World::new(sim))
     }
@@ -776,12 +774,7 @@ impl WorldAccess for Game {
         match self.location {
             Location::Overworld => &mut self.overworld.sim,
             Location::Interior { portal, .. } => {
-                &mut self
-                    .entities
-                    .get_mut::<Portal>(self.portals[portal])
-                    .unwrap()
-                    .into_inner()
-                    .sim
+                &mut self.overworld.sim.portals[portal].as_mut().unwrap().sim
             }
         }
     }
@@ -797,12 +790,7 @@ impl WorldAccess for Game {
         match &mut self.location {
             Location::Overworld => self.overworld.edit(),
             Location::Interior { portal, viewer } => Editor {
-                sim: &mut self
-                    .entities
-                    .get_mut::<Portal>(self.portals[*portal])
-                    .unwrap()
-                    .into_inner()
-                    .sim,
+                sim: &mut self.overworld.sim.portals[*portal].as_mut().unwrap().sim,
                 viewer,
             },
         }
@@ -830,6 +818,15 @@ impl WorldAccess for Game {
             return;
         }
         self.edit().key(key, shift);
+        if !self.inside() && !self.holding() {
+            self.pins.retain(|index, _| {
+                self.overworld
+                    .sim
+                    .portals
+                    .get(*index)
+                    .is_some_and(Option::is_some)
+            });
+        }
     }
 }
 
@@ -1169,6 +1166,7 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
         match target {
             TurnTarget::Board(id) => {
                 let (item, at, dir) = match id {
+                    Id::Portal(i) => (Machine::Portal, self.sim.portals[i].as_ref().unwrap().at, 0),
                     Id::Arm(i) => match self.sim.arms.get(i) {
                         Some(arm) => (arm.machine(), arm.pivot, arm.dir),
                         None => return Vec::new(),
@@ -1305,6 +1303,7 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
 
     fn dir(&self, id: Id) -> usize {
         match id {
+            Id::Portal(_) => 0,
             Id::Arm(i) => self.shown().arms[i].dir,
             Id::Glyph(i) => self.glyph(i).dir,
             Id::Atom(_) => unreachable!("an atom has no direction"),
@@ -1313,6 +1312,7 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
 
     fn anchor(&self, id: Id) -> Hex {
         match id {
+            Id::Portal(i) => self.shown().portals[i].as_ref().unwrap().at,
             Id::Arm(i) => self.shown().arms[i].pivot,
             Id::Glyph(i) => self.glyph(i).at,
             Id::Atom(i) => self.shown().atoms[i].unwrap().pos,
@@ -1334,7 +1334,12 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
             .iter()
             .enumerate()
             .filter(|(_, g)| g.is_some_and(|g| !g.kind.is_source()));
-        arms.chain(glyphs.map(|(i, _)| Id::Glyph(i)))
+        arms.chain(glyphs.map(|(i, _)| Id::Glyph(i))).chain(
+            sim.portals
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| p.as_ref().map(|_| Id::Portal(i))),
+        )
     }
 
     fn hit(&self, point: Vec2, frame: &Frame) -> Option<Id> {
@@ -1378,6 +1383,7 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
 
     fn target_item(&self, point: Vec2, frame: &Frame) -> Option<Item> {
         self.hit(point, frame).map(|id| match id {
+            Id::Portal(_) => Item::Machine(Machine::Portal),
             Id::Arm(i) => Item::Machine(self.shown().arms[i].machine()),
             Id::Glyph(i) => Item::Machine(Machine::Glyph(self.glyph(i).kind)),
             Id::Atom(i) => Item::Atom(self.shown().atoms[i].unwrap().kind),
@@ -1401,6 +1407,11 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
         let mut set = Sim::empty();
         for id in ids {
             match *id {
+                Id::Portal(i) => {
+                    let mut portal = self.shown().portals[i].as_ref().unwrap().clone();
+                    portal.at = portal.at.sub(grab);
+                    set.portals.push(Some(portal));
+                }
                 Id::Arm(i) => {
                     let a = &self.shown().arms[i];
                     let mut arm = Arm::new(a.length, a.pivot.sub(grab), a.dir, a.tape.clone());
@@ -1735,6 +1746,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
 
     fn set_pose(&mut self, id: Id, at: Hex, dir: usize) {
         match id {
+            Id::Portal(i) => self.sim.portals[i].as_mut().unwrap().at = at,
             Id::Arm(i) => {
                 (self.sim.arms[i].pivot, self.sim.arms[i].dir) = (at, dir);
                 self.unstall();
@@ -1769,6 +1781,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         let (mut arms, mut glyphs, mut atoms) = (Vec::new(), Vec::new(), Vec::new());
         for id in ids {
             match id {
+                Id::Portal(i) => sim.portals[*i] = None,
                 Id::Arm(i) => arms.push(*i),
                 Id::Glyph(i) => glyphs.push(*i),
                 Id::Atom(i) => atoms.push(*i),
@@ -1825,6 +1838,9 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             return;
         }
         let set = self.lifted(&machines(ids), ORIGIN);
+        if !recyclable(&set) {
+            return;
+        }
         self.return_to_inventory(&set);
         self.remove(ids);
     }
@@ -1885,7 +1901,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         }
         self.down = Some(match target {
             Some(Id::Atom(id)) => Press::Atom { screen, id },
-            Some(Id::Arm(_) | Id::Glyph(_)) => Press::Cell { screen, cell },
+            Some(Id::Portal(_) | Id::Arm(_) | Id::Glyph(_)) => Press::Cell { screen, cell },
             None => Press::Ground {
                 screen,
                 world: point,
@@ -2014,17 +2030,20 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                 for (id, a) in arms.zip(&set.arms) {
                     self.set_pose(*id, at.add(a.pivot), a.dir);
                 }
+                for (id, portal) in ids
+                    .iter()
+                    .filter(|id| matches!(id, Id::Portal(_)))
+                    .zip(set.portals.iter().flatten())
+                {
+                    self.set_pose(*id, at.add(portal.at), 0);
+                }
                 let glyphs = ids.iter().filter(|id| matches!(id, Id::Glyph(_)));
                 for (id, g) in glyphs.zip(set.glyphs.iter().flatten()) {
                     self.set_pose(*id, at.add(g.at), g.dir);
                 }
                 ids
             }
-            Back::Inventory | Back::Ghost | Back::Cell { .. } => {
-                let arms = self.sim.arms.len()..self.sim.arms.len() + set.arms.len();
-                let glyphs = self.sim.place(&set, at).into_iter().map(Id::Glyph);
-                arms.map(Id::Arm).chain(glyphs).collect()
-            }
+            Back::Inventory | Back::Ghost | Back::Cell { .. } => self.sim.place(&set, at),
         };
         self.pick(ids);
         self.resim(ghosts);
@@ -2133,7 +2152,9 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                         }) => self.edits(ids),
                         _ => false,
                     };
-                    if deletes {
+                    if deletes
+                        && matches!(&self.focus, Some(Focus::Hold { set, .. }) if recyclable(set))
+                    {
                         self.end_turn();
                         let Some(Focus::Hold { set, back }) = self.focus.take() else {
                             unreachable!()
@@ -4057,8 +4078,6 @@ struct Kiln {
     atoms: [Handle<Image>; 4],
     skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
     lit: Vec<(Skin, [Handle<Lit>; 4])>,
-    portal: Handle<Image>,
-    ethereal: Vec<(Skin, Handle<ColorMaterial>)>,
 }
 
 impl Kiln {
@@ -4284,19 +4303,7 @@ fn fire_kiln(
         ));
         image
     });
-    let portal = image(look::machine(Machine::Glyph(GlyphKind::Source)).skin);
-    let ethereal = skins
-        .iter()
-        .filter(|(skin, _, _)| skin.finish == Finish::Grouted)
-        .map(|(skin, _, material)| {
-            let mut material = materials.get(material.id()).unwrap().clone();
-            material.color = Color::WHITE.mix(&Glaze::Plum.color(), 0.35);
-            (*skin, materials.add(material))
-        })
-        .collect();
     commands.insert_resource(Kiln {
-        portal,
-        ethereal,
         circle: meshes.add(Circle::new(1.0)),
         hexagon: meshes.add(RegularPolygon::new(1.0, 6)),
         bar: meshes.add(
@@ -4375,6 +4382,7 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs, G: GizmoConfigGroup = DefaultGizmoConfigG
     layers: RenderLayers,
     shift: Vec2,
     scale: f32,
+    portal_opacity: f32,
 }
 
 impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
@@ -4392,6 +4400,23 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         transform.scale *= self.scale;
         self.commands
             .spawn((Fill, self.layers.clone(), mesh, material, transform));
+    }
+
+    fn interior(&mut self, sim: &Sim, at: Vec2, scale: f32, lift: f32) {
+        let fit = PortalView::of(sim);
+        let (shift, old_scale) = (self.shift, self.scale);
+        self.shift += (at - fit.center * scale) * self.scale;
+        self.scale *= scale;
+        scene(
+            self,
+            &Frame::between(sim, sim, 1.0),
+            lift,
+            &[],
+            1.0,
+            false,
+            None,
+        );
+        (self.shift, self.scale) = (shift, old_scale);
     }
 
     fn outline(&mut self, at: Vec2, size: f32) {
@@ -4562,6 +4587,19 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
                     at + Vec2::from_angle(angle) * px(DIRS[0]).length() * length.cells() as f32;
                 self.arm(item, at, hand, RING_OPEN, z, response);
             }
+            (Machine::Portal, MachineMark::Sprite(_)) => {
+                self.commands.spawn((
+                    Fill,
+                    self.layers.clone(),
+                    Sprite {
+                        image: self.kiln.image(look.skin),
+                        color: Color::WHITE.with_alpha(self.portal_opacity),
+                        custom_size: Some(look::quad(item).size() * self.scale),
+                        ..default()
+                    },
+                    Transform::from_translation((at * self.scale + self.shift).extend(z)),
+                ));
+            }
             (Machine::Glyph(_), MachineMark::Sprite(_)) => {
                 self.rig(item, at, angle, z, response);
             }
@@ -4636,6 +4674,7 @@ struct ArmPose {
 
 struct Frame<'a> {
     sim: &'a Sim,
+    tick: f32,
     atoms: Vec<Option<Vec2>>,
     arms: Vec<ArmPose>,
 }
@@ -4653,6 +4692,7 @@ impl Frame<'_> {
     fn settled(s: &Sim) -> Frame<'_> {
         Frame {
             sim: s,
+            tick: s.tick as f32,
             atoms: s.atoms.iter().map(|a| a.map(|a| px(a.pos))).collect(),
             arms: s
                 .arms
@@ -4671,6 +4711,7 @@ impl Frame<'_> {
             return Frame::settled(cur);
         }
         let mut frame = Frame::settled(prev);
+        frame.tick += (cur.tick as f32 - frame.tick) * t;
         for (i, (a, b)) in prev.arms.iter().zip(&cur.arms).enumerate() {
             let e = Swing::from_cell(a.pivot).at(t);
             let pose = &mut frame.arms[i];
@@ -4808,13 +4849,7 @@ fn board(
                     let h = Hex::new(q, r);
                     let (mesh, mut material, transform) = tile(&kiln, h);
                     if world.inside() {
-                        material.0 = kiln
-                            .ethereal
-                            .iter()
-                            .find(|(skin, _)| *skin == look::tile(h).skin)
-                            .unwrap()
-                            .1
-                            .clone();
+                        material.0 = kiln.skin(look::ETHEREAL).clone();
                     }
                     commands.spawn((Board, mesh, material, transform));
                 }
@@ -4860,6 +4895,8 @@ fn draw(
     view: SceneView,
 ) {
     let (previews, window, camera) = view;
+    let (transform, projection) = camera.into_inner();
+    let viewport = Viewport::of(&window, transform, projection).unwrap();
     for e in &fills {
         commands.entity(e).despawn();
     }
@@ -4870,6 +4907,8 @@ fn draw(
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
         scale: 1.0,
+        portal_opacity: (viewport.scale * viewport.size.min_element() / PortalView::TILE - 1.0)
+            .clamp(0.0, 1.0),
     };
     let board_phase = world.board_phase();
     let f = Frame::between(&world.prev, world.shown(), board_phase);
@@ -4886,35 +4925,6 @@ fn draw(
         true,
         world.board_turn_pose(),
     );
-    if !world.inside() {
-        let (transform, projection) = camera.into_inner();
-        let viewport = Viewport::of(&window, transform, projection).unwrap();
-        for index in 0..world.portals.len() {
-            let portal = world.portal(index);
-            let fit = PortalView::of(&portal.sim);
-            p.commands.spawn((
-                Fill,
-                Sprite {
-                    image: kiln.portal.clone(),
-                    color: Glaze::Plum.color().with_alpha(
-                        (viewport.scale * viewport.size.min_element() / PortalView::TILE - 1.0)
-                            .clamp(0.0, 1.0),
-                    ),
-                    custom_size: Some(Vec2::splat(HEX * 2.0)),
-                    ..default()
-                },
-                Transform::from_translation(
-                    px(world.overworld.sim.portals[index]).extend(layer::GLYPHS),
-                ),
-            ));
-            p.shift = px(world.overworld.sim.portals[index]) - fit.center * fit.scale();
-            p.scale = fit.scale();
-            let frame = Frame::between(&portal.sim, &portal.sim, 1.0);
-            scene(&mut p, &frame, 1.0, &[], 1.0, false, None);
-            p.shift = Vec2::ZERO;
-            p.scale = 1.0;
-        }
-    }
     if world.down.is_none()
         && !world.holding()
         && !world.over_ui
@@ -4926,7 +4936,9 @@ fn draw(
                     p.ring(at, ATOM_RADIUS + LINE_PX);
                 }
             }
-            Id::Arm(_) | Id::Glyph(_) => p.outline(px(world.anchor(target)), HEX * 0.9),
+            Id::Portal(_) | Id::Arm(_) | Id::Glyph(_) => {
+                p.outline(px(world.anchor(target)), HEX * 0.9)
+            }
         }
     }
     for (i, g) in world.shown().glyphs.iter().enumerate() {
@@ -4957,6 +4969,7 @@ fn draw(
                     p.outline(px(cell), HEX * 0.9);
                 }
             }
+            p.portal_opacity = 1.0;
             let machines = world.facing_poses(TurnTarget::Held, pointer);
             for (i, pose) in machines.iter().enumerate() {
                 let z = layer::z(layer::HELD, i, machines.len());
@@ -4966,6 +4979,19 @@ fn draw(
                     pose.angle,
                     z,
                     (false, 1.0, sim::ActivationEnergy::default()),
+                );
+            }
+            for (portal, pose) in set
+                .portals
+                .iter()
+                .flatten()
+                .zip(machines.iter().filter(|pose| pose.item == Machine::Portal))
+            {
+                p.interior(
+                    &portal.sim,
+                    pose.at,
+                    PortalView::of(&portal.sim).scale(),
+                    layer::HELD.start + 0.001,
                 );
             }
             let at = |id: usize| grab.checked_add(set.atoms[id].unwrap().pos).map(px);
@@ -5002,10 +5028,12 @@ fn draw(
             layers: layers.clone(),
             shift: Vec2::ZERO,
             scale: 1.0,
+            portal_opacity: 1.0,
         };
         preview.bead(Vec2::ZERO, look::atom(atom.0), layer::BEAD);
     }
     let mut p = Painter {
+        portal_opacity: 1.0,
         gizmos: &mut card_gizmos,
         commands: &mut commands,
         kiln: &kiln,
@@ -5071,6 +5099,21 @@ fn scene<G: GizmoConfigGroup>(
     particles: bool,
     turn: Option<(Id, MachinePose)>,
 ) {
+    for portal in f.sim.portals.iter().flatten() {
+        p.machine(
+            Machine::Portal,
+            px(portal.at),
+            0.0,
+            layer::GLYPHS + lift,
+            (false, 1.0, sim::ActivationEnergy::default()),
+        );
+        p.interior(
+            &portal.sim,
+            px(portal.at),
+            PortalView::of(&portal.sim).scale(),
+            lift + 0.001,
+        );
+    }
     for (index, glyph) in f.sim.glyphs.iter().enumerate() {
         let Some(g) = glyph else { continue };
         let item = Machine::Glyph(g.kind);
@@ -5216,6 +5259,13 @@ fn hover_card<G: GizmoConfigGroup>(
     p.fill(&kiln.bar, &kiln.card[0], Vec2::ZERO, 0.0, card.size, z(1));
     let at = card.picture;
     match item {
+        Item::Machine(Machine::Portal) => p.machine(
+            Machine::Portal,
+            at,
+            0.0,
+            z(2),
+            (false, 1.0, sim::ActivationEnergy::default()),
+        ),
         Item::Machine(machine) => p.rig(
             machine,
             at - look::quad(machine).centre,
@@ -5233,6 +5283,42 @@ fn hover_card<G: GizmoConfigGroup>(
         return;
     };
     p.shifted(field, |p| {
+        if machine == Machine::Portal {
+            let portal = f.sim.portals[0].as_ref().unwrap();
+            let fit = PortalView::of(&portal.sim);
+            let progress = f.tick / fixture(machine).ticks as f32;
+            let scale = fit.scale().powf(1.0 - progress.clamp(0.0, 1.0));
+            let (shift, old_scale) = (p.shift, p.scale);
+            let opacity = p.portal_opacity;
+            p.portal_opacity = (1.0 - progress * 3.0).clamp(0.0, 1.0);
+            p.scale *= scale / fit.scale();
+            p.machine(
+                machine,
+                Vec2::ZERO,
+                0.0,
+                layer::LIFT + layer::GLYPHS,
+                (false, 1.0, sim::ActivationEnergy::default()),
+            );
+            p.scale = old_scale;
+            p.portal_opacity = opacity;
+            p.shift -= fit.center * scale * p.scale;
+            p.scale *= scale;
+            for h in portal.sim.ids().flat_map(|id| portal.sim.stands(id)) {
+                let (mesh, _, mut transform) = tile(p.kiln, h);
+                transform.translation = (p.shift + px(h) * p.scale).extend(layer::LIFT);
+                transform.scale *= p.scale;
+                p.commands.spawn((
+                    Fill,
+                    mesh,
+                    MeshMaterial2d(p.kiln.skin(look::ETHEREAL).clone()),
+                    transform,
+                    p.layers.clone(),
+                ));
+            }
+            (p.shift, p.scale) = (shift, old_scale);
+            p.interior(&portal.sim, Vec2::ZERO, scale, layer::LIFT);
+            return;
+        }
         for h in playfield(machine) {
             p.tile(h, layer::LIFT);
         }
@@ -5537,13 +5623,13 @@ mod shot {
                 world.pointer = None;
                 script.push((70, Act::PanBoard(px(PORTAL_CELL) - px(FOCUS))));
                 for frame in (80..=132).step_by(2) {
-                    script.push((frame, Act::ZoomBoard(0.65)));
+                    script.push((frame, Act::ZoomBoard(0.8)));
                 }
                 script.extend(tap(160, KeyG));
                 script.extend(tap(200, KeyG));
                 script.extend(tap(230, KeyS));
                 for frame in (260..=312).step_by(2) {
-                    script.push((frame, Act::ZoomBoard(-0.65)));
+                    script.push((frame, Act::ZoomBoard(-0.8)));
                 }
                 script.push((322, Act::PanBoard(px(FOCUS) - px(PORTAL_CELL))));
             }
@@ -5551,6 +5637,7 @@ mod shot {
                 world.sim = Sim::empty();
                 world.set_hover(None);
                 match machine(&name[8..]) {
+                    Machine::Portal => world.sim.portals.push(Some(sim::Portal::new(FOCUS))),
                     Machine::Glyph(kind) => world.sim.glyphs.push(Some(Glyph::new(kind, FOCUS, 0))),
                     Machine::Arm(length) => {
                         world.sim.arms.push(Arm::new(length, FOCUS, 0, Vec::new()))
@@ -6603,8 +6690,7 @@ mod shot {
         if view == "ghost" {
             let mut game = app.world_mut().resource_mut::<Game>();
             let fixture = std::mem::replace(&mut *game, Game::new(sim::start())).overworld;
-            let entity = game.portals[0];
-            game.entities.get_mut::<Portal>(entity).unwrap().sim = fixture.sim;
+            game.overworld.sim.portals[0].as_mut().unwrap().sim = fixture.sim;
             game.location = Location::Interior {
                 portal: 0,
                 viewer: Box::new(fixture.viewer),
@@ -6887,6 +6973,202 @@ mod tests {
     use sim::{Atom, AtomKind, Bond, Tier};
 
     #[test]
+    fn portal_machine_has_one_cell_one_first_tier_recipe_and_one_palette_row() {
+        let item = Item::Machine(Machine::Portal);
+        let recipe = item.recipe().expect("portal recipe");
+        assert_eq!(recipe.atoms().len(), 6);
+        assert_eq!(recipe.sim().bonds.len(), 6);
+        assert_eq!(palette().filter(|entry| *entry == item).count(), 1);
+        assert_eq!(
+            look::footprint(Machine::Portal)
+                .iter()
+                .map(|c| c.at)
+                .collect::<Vec<_>>(),
+            [ORIGIN]
+        );
+        let mut sim = Sim::empty();
+        sim.place(
+            &recipe.sim(),
+            ORIGIN.sub(recipe.centre(1).expect("first tier recipe")),
+        );
+        sim.glyphs.push(Some(Glyph::new(
+            GlyphKind::Output(sim::Tier::One),
+            ORIGIN,
+            0,
+        )));
+        sim.step();
+        assert_eq!(sim.inventory.count(item), Some(1));
+        assert_eq!(
+            fresh(item)
+                .ids()
+                .flat_map(|id| fresh(item).stands(id).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            [ORIGIN]
+        );
+    }
+
+    #[test]
+    fn portal_placement_move_save_and_entry_preserve_its_interior() {
+        let item = Item::Machine(Machine::Portal);
+        let mut game = Game::new(Sim::empty());
+        game.sim_mut().inventory.add(item);
+        game.lift_inventory(item);
+        let at = Hex::new(4, 2);
+        game.release(Some(at));
+        assert_eq!(game.sim().inventory.count(item), Some(0));
+        assert_eq!(game.sim().portals[0].as_ref().unwrap().at, at);
+        let atom = sim::Atom {
+            kind: AtomKind::Plum,
+            pos: Hex::new(9, 0),
+        };
+        game.overworld.sim.portals[0]
+            .as_mut()
+            .unwrap()
+            .sim
+            .spawn(atom);
+        game.prev = game.sim().clone();
+        game.press(Vec2::ZERO, px(at));
+        game.begin_drag();
+        game.release(Some(ORIGIN));
+        assert_eq!(game.sim().portals[0].as_ref().unwrap().at, ORIGIN);
+        let save = persist::encode_state(&game.state()).unwrap();
+        let mut restored = Game::from_state(persist::decode_state(&save).unwrap());
+        assert!(restored.enter(Some(0)));
+        assert_eq!(restored.sim().atoms, [Some(atom)]);
+        restored.lift_inventory(item);
+        assert!(!restored.holding(), "interiors cannot contain portals");
+        restored.lift(fresh(item), Back::Inventory);
+        assert!(!restored.holding(), "pasting cannot nest a portal");
+    }
+
+    #[test]
+    fn portal_card_enters_the_same_canonical_fixture() {
+        let fixture = fixture(Machine::Portal);
+        let fit = PortalView::of(&fixture.sim.portals[0].as_ref().unwrap().sim);
+        let bead = |tick| {
+            card_fills(Machine::Portal, tick)
+                .into_iter()
+                .find(|(at, _)| (at.z - (layer::BEAD + layer::LIFT)).abs() < 1e-3)
+                .expect("fixture bead")
+                .1
+        };
+        assert!((bead(0) - HEX * 0.4 * fit.scale()).abs() < 1e-3);
+        assert!((bead(fixture.ticks) - HEX * 0.4).abs() < 1e-3);
+    }
+
+    #[test]
+    fn portal_preview_fits_the_baseline_and_each_world_uses_its_own_tiles() {
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for inside in [false, true] {
+            let dir = std::env::temp_dir().join(format!(
+                "ziral-portal-surfaces-{}-{inside}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut app = shot::still("portal", dir.clone(), 2);
+            lit_plugin(&mut app);
+            if inside {
+                app.world_mut().resource_mut::<Game>().enter(Some(0));
+            }
+            app.add_systems(
+                Update,
+                (move |mut game: ResMut<Game>,
+                       camera: Single<
+                    (&mut Transform, &mut Projection),
+                    With<IsDefaultUiCamera>,
+                >| {
+                    game.camera_changes.clear();
+                    let (mut transform, mut projection) = camera.into_inner();
+                    transform.translation = Vec3::ZERO;
+                    let Projection::Orthographic(ortho) = &mut *projection else {
+                        unreachable!()
+                    };
+                    ortho.scale = if inside { 0.02 } else { 1.0 };
+                })
+                .before(view),
+            );
+            let seen = std::sync::Arc::new(std::sync::Mutex::new(false));
+            let probe = seen.clone();
+            app.add_systems(
+                Last,
+                move |world: Res<Game>,
+                      kiln: Res<Kiln>,
+                      board: Query<(&MeshMaterial2d<ColorMaterial>, &Transform), With<Board>>,
+                      fills: Query<
+                    (&MeshMaterial2d<ColorMaterial>, &Transform, &RenderLayers),
+                    With<Fill>,
+                >| {
+                    assert_eq!(world.inside(), inside);
+                    if board.is_empty() {
+                        return;
+                    }
+                    for (material, transform) in &board {
+                        let skin = if inside {
+                            look::ETHEREAL
+                        } else {
+                            look::tile(hex_at(transform.translation.truncate())).skin
+                        };
+                        assert_eq!(&material.0, kiln.skin(skin), "world tile texture");
+                    }
+                    if !inside {
+                        let portal = world.portal(0);
+                        let fit = PortalView::of(&portal.sim);
+                        let atom = portal.sim.atoms.iter().flatten().next().unwrap();
+                        let expected = px(portal.at) + (px(atom.pos) - fit.center) * fit.scale();
+                        assert!(
+                            fills.iter().any(|(material, transform, layers)| *layers
+                                == RenderLayers::default()
+                                && &material.0 == kiln.skin(look::atom(atom.kind).skin)
+                                && transform.translation.truncate().distance(expected) < 1e-3
+                                && (transform.scale.x - ATOM_RADIUS * fit.scale()).abs() < 1e-3),
+                            "preview uses the canonical fitted extent"
+                        );
+                    }
+                    *probe.lock().unwrap() = true;
+                },
+            );
+            assert_eq!(app.run(), bevy::app::AppExit::Success);
+            assert!(*seen.lock().unwrap());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn portal_recycling_preserves_contents_and_retires_empty_interior_cards() {
+        for held in [false, true] {
+            let mut game = Game::new(sim::start());
+            game.press(Vec2::ZERO, px(PORTAL_CELL));
+            if held {
+                game.begin_drag();
+            }
+            game.key(KeyCode::KeyZ, false);
+            if held {
+                game.key(KeyCode::Escape, false);
+            }
+            assert_eq!(
+                game.portal(0).sim.arms.len(),
+                1,
+                "populated portal survives recycling"
+            );
+        }
+        let mut sim = Sim::empty();
+        sim.portals.push(Some(sim::Portal::new(ORIGIN)));
+        let mut game = Game::new(sim);
+        game.enter(Some(0));
+        game.pin_world(Machine::Arm(ArmLength::One).into(), Vec2::ZERO);
+        game.enter(None);
+        game.press(Vec2::ZERO, Vec2::ZERO);
+        game.key(KeyCode::KeyZ, false);
+        assert!(game.overworld.sim.portals[0].is_none());
+        game.lift_inventory(Machine::Portal.into());
+        game.release(Some(ORIGIN));
+        game.enter(Some(0));
+        assert!(game.pinned.is_empty(), "a new portal has no old cards");
+    }
+
+    #[test]
     fn portal_focus_keeps_the_overworld_running_and_its_time_keys_unbound() {
         let mut game = Game::new(sim::start());
         let before = game.overworld.sim.clone();
@@ -6930,7 +7212,9 @@ mod tests {
         assert_eq!(game.ghosts(), 2);
         assert_eq!(game.shown(), &game.sim().replay(2));
         assert_eq!(game.sim().tick, 0);
-        assert_eq!(game.overworld.sim, Game::new(sim::start()).overworld.sim);
+        let mut outside = sim::start();
+        outside.portals = game.overworld.sim.portals.clone();
+        assert_eq!(game.overworld.sim, outside);
         let saved = game.state();
         let restored = Game::from_state(
             persist::decode_state(&persist::encode_state(&saved).unwrap()).unwrap(),
@@ -6938,6 +7222,7 @@ mod tests {
         assert_eq!(restored.portal(0).sim, *game.sim());
         game.pin_world(Machine::Arm(ArmLength::One).into(), Vec2::ZERO);
         game.enter(None);
+        assert_eq!(game.overworld.prev.portals, game.overworld.sim.portals);
         assert!(game.pinned.is_empty());
         game.enter(Some(0));
         assert_eq!(game.pinned.len(), 1);
@@ -6971,12 +7256,7 @@ mod tests {
         let mut second = Viewer::new(&baseline);
         first.running = false;
         second.running = false;
-        let sim = &mut game
-            .entities
-            .get_mut::<Portal>(game.portals[0])
-            .unwrap()
-            .into_inner()
-            .sim;
+        let sim = &mut game.overworld.sim.portals[0].as_mut().unwrap().sim;
         Editor {
             sim: &mut *sim,
             viewer: &mut first,
@@ -7005,16 +7285,12 @@ mod tests {
     fn portal_crossing_preserves_screen_positions_and_uses_uncapped_baseline_extent() {
         let mut game = Game::new(sim::start());
         for distance in [0, 10000] {
-            game.entities
-                .get_mut::<Portal>(game.portals[0])
-                .unwrap()
-                .sim
-                .arms[0]
-                .pivot = Hex::new(distance, 0);
+            game.overworld.sim.portals[0].as_mut().unwrap().sim.arms[0].pivot =
+                Hex::new(distance, 0);
             let portal = game.portal(0);
             let fit = PortalView::of(&portal.sim);
             let mut viewport = Viewport {
-                cam: px(game.overworld.sim.portals[0]),
+                cam: px(game.overworld.sim.portals[0].as_ref().unwrap().at),
                 size: Vec2::new(1280.0, 720.0),
                 scale: PortalView::TILE / 720.0,
             };
@@ -7026,7 +7302,10 @@ mod tests {
                 px(portal.sim.arms[0].hand()),
             ];
             let screens = points.map(|p| {
-                before.screen(px(game.overworld.sim.portals[0]) + (p - fit.center) * fit.scale())
+                before.screen(
+                    px(game.overworld.sim.portals[0].as_ref().unwrap().at)
+                        + (p - fit.center) * fit.scale(),
+                )
             });
             game.enter(Some(0));
             game.reframe(&mut viewport);
@@ -7146,7 +7425,12 @@ mod tests {
     fn portal_save_rejects_interior_portal_cells() {
         let mut state = Game::new(sim::start()).state();
         assert!(persist::decode_state(&persist::encode_state(&state).unwrap()).is_ok());
-        state.portals[0].portals.push(ORIGIN);
+        state.sim.portals[0]
+            .as_mut()
+            .unwrap()
+            .sim
+            .portals
+            .push(Some(sim::Portal::new(ORIGIN)));
         assert!(persist::decode_state(&persist::encode_state(&state).unwrap()).is_err());
     }
 
@@ -11019,7 +11303,9 @@ mod tests {
 
     #[test]
     fn the_hand_never_picks_lifts_or_deletes_a_source() {
-        let mut w = World::new(sim::start());
+        let mut sim = sim::start();
+        sim.portals.clear();
+        let mut w = World::new(sim);
         w.running = false;
         let glyphs = w.sim.glyphs.clone();
         let source = glyphs

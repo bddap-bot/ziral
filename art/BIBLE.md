@@ -1,6 +1,6 @@
 # ziral art bible — Fired Workshop
 
-The starting portal temporarily uses the existing source sprite, uniformly fitted to one tile and tinted plum. Its contents use the ordinary scene renderer at the baseline's fitted extent. Interior tiles carry a plum tint; machines, atoms and bonds keep their materials. The tint and ivory replay tally distinguish the interior without writing. The dedicated portal housing and tile paintings remain a separate change.
+The portal is one substantial plum ceramic housing within one tile, with a broad brass and ivory aperture and mineral depth inside. The canonical interior preview uses the ordinary scene renderer inside that opening. Interior tiles use a separately painted ethereal plum and ivory mineral surface with the same grout geometry; overworld tiles retain the clay batch. Machine materials and the ivory replay tally remain unchanged.
 
 The board is a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight and wear make each action tactile; colored glazes keep every state unmistakable. Reference images and the prompts that made them are in [`reference/`](reference/).
 
@@ -84,6 +84,7 @@ Single and double differ in hue (26° vs 267°) and shape.
 | arm, length one | dark brass, terracotta hand | radial: pivot disc and one-cell link | horseshoe hand |
 | arm, length two | dark brass, blue-green inlay, terracotta hand | radial: pivot disc and two-cell link | horseshoe hand |
 | arm, length three | dark brass, blue-green inlays, terracotta hand | radial: pivot disc and three-cell link | horseshoe hand |
+| portal | plum | one-cell housing | square ivory and brass aperture with mineral depth |
 | source | blue-green | six-cell housing open to the right | five feeds around one central outlet |
 | bonder | terracotta | two-cell compression housing | equal seats and a brass compression channel |
 | second bond | plum | three-cell manifold | two bond seats and a distinct sacrificial feed |
@@ -124,3 +125,5 @@ Asset directories, relative to this document:
 - [symbols/](symbols/) contains the vector source and generated instruction pictures described in [SYMBOLS.md](SYMBOLS.md).
 
 The three output cards play the shared fixtures in [src/sim.rs](../src/sim.rs) receiving the bonder, second-bond and amber-converter compounds respectively; their own recipes remain in the recipe panel. `../proofs/output-products-112-3823.png` shows all three cards at native size.
+
+A portal's square aperture frames the canonical extent through one uniform transform. Its housing fades as the camera fills that aperture. A body with no atom-seat marks registers by its complete silhouette with one translation and uniform scale; the silhouette is never cut to its footprint. The ethereal texture uses the grout template's square resolution as its size source. Its first painting is retained at critic score 8 in `textures/ethereal-candidates/`.

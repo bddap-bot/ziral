@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 26] = [
+pub const RECIPES: [(Item, &str); 27] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
@@ -94,6 +94,10 @@ pub const RECIPES: [(Item, &str); 26] = [
     (
         Item::Token(Instr::Move(3)),
         "B0,0 B0,1 C1,0 0,0=0,1 0,1-1,0",
+    ),
+    (
+        Item::Machine(Machine::Portal),
+        "B0,1 B0,2 B1,0 B1,2 B2,0 B2,1 0,1-0,2 0,1-1,0 0,2-1,2 1,0-2,0 1,2-2,1 2,0-2,1",
     ),
     (
         glyph(GlyphKind::SourceTwo),
@@ -351,6 +355,9 @@ fn footprint_fits(kind: GlyphKind, at: Hex, dir: usize) -> bool {
 }
 
 fn validate_fragment(sim: &Sim) -> Result<(), String> {
+    if sim.portals.iter().any(Option::is_some) {
+        return Err("a portal interior cannot be copied as a recipe fragment".to_owned());
+    }
     if sim.ids().next().is_none() {
         return Err("empty fragment".to_string());
     }

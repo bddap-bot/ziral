@@ -154,6 +154,23 @@ impl Art {
         toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
     }
 
+    fn split(&self, manifest: &Manifest, names: &[String]) -> bool {
+        let names: Vec<_> = names
+            .iter()
+            .filter(|name| {
+                manifest
+                    .machine
+                    .get(name.as_str())
+                    .is_some_and(|entry| !entry.parts.is_empty())
+            })
+            .collect();
+        names.is_empty()
+            || std::process::Command::new(self.dir.join("rig.sh"))
+                .args(names)
+                .status()
+                .is_ok_and(|status| status.success())
+    }
+
     fn write(&self, manifest: &Manifest) {
         let text = toml::to_string_pretty(manifest).expect("a manifest serialises");
         let path = self.manifest();
@@ -482,6 +499,37 @@ impl Scaffold {
                 off_centre: f32::INFINITY,
             };
         };
+        if cells.is_empty() {
+            let points: Vec<_> = candidate
+                .enumerate_pixels()
+                .filter(|(_, _, p)| pixel_opacity(p) > 0.0)
+                .map(|(x, y, _)| self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)))
+                .collect();
+            let lo = points
+                .iter()
+                .copied()
+                .fold(Vec2::splat(f32::INFINITY), Vec2::min);
+            let hi = points
+                .iter()
+                .copied()
+                .fold(Vec2::splat(f32::NEG_INFINITY), Vec2::max);
+            let center = (lo + hi) / 2.0;
+            let scale = points
+                .iter()
+                .map(|p| {
+                    let p = (*p - center) / HEX;
+                    look::hex_norm(p.x, p.y)
+                })
+                .fold(0.0, f32::max);
+            let image = RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
+                let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+                bilinear(candidate, self.pixel(center + world * scale))
+            });
+            return Capture {
+                image,
+                off_centre: 0.0,
+            };
+        }
         let n = cells.len() as f32;
         let (c0, s0) = (
             cells.iter().sum::<Vec2>() / n,
@@ -2268,10 +2316,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
         return Some(0);
     }
     let generated = landed(&remake(&art, &names, &director, &painter, &critic));
-    let split = std::process::Command::new(art.dir.join("rig.sh"))
-        .args(&names)
-        .status()
-        .is_ok_and(|status| status.success());
+    let split = art.split(&manifest, &names);
     Some(i32::from(!(generated && split)))
 }
 
@@ -2324,6 +2369,17 @@ mod tests {
     }
 
     #[test]
+    fn static_art_does_not_depend_on_part_generation() {
+        let art = studio("static-split", &["portal", "bonder"]);
+        let manifest = Art::shipped().read();
+        assert!(!art.dir.join("rig.sh").exists());
+        assert!(art.split(&manifest, &["portal".into()]));
+        assert!(art.split(&manifest, &["atom-base".into()]));
+        assert!(!art.split(&manifest, &["bonder".into()]));
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn machine_generator_manifest_round_trip_keeps_every_rig_part() {
         let manifest = Art::shipped().read();
         let text = toml::to_string_pretty(&manifest).unwrap();
@@ -2334,7 +2390,11 @@ mod tests {
                 round.machine[name].parts, manifest.machine[name].parts,
                 "{name}"
             );
-            assert!(!round.machine[name].parts.is_empty(), "{name}");
+            assert_eq!(
+                round.machine[name].parts.is_empty(),
+                machine == Machine::Portal,
+                "{name}"
+            );
         }
     }
     const KEYED: f32 = 0.01;
@@ -2362,6 +2422,28 @@ mod tests {
     }
 
     #[test]
+    fn machines_body_only_registration_uniformly_fits_the_silhouette() {
+        let scaffold = Scaffold::of(Machine::Portal);
+        let candidate = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
+            let world = scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+            rgba(
+                if look::hex_norm(world.x / HEX, world.y / HEX) < 0.9 {
+                    Glaze::Plum.rgb()
+                } else {
+                    KEY
+                },
+                1.0,
+            )
+        });
+        let capture = scaffold.register(&candidate);
+
+        assert_eq!(capture.off_centre, 0.0);
+        let score = scaffold.score(&capture);
+        assert!(score.palette.is_finite(), "body palette is measurable");
+        assert!(score.outside <= 0.05);
+    }
+
+    #[test]
     fn scaffold_cells_match_the_footprint() {
         for item in Machine::ALL {
             let scaffold = Scaffold::of(item);
@@ -2378,6 +2460,7 @@ mod tests {
                 }
             }
             let mut footprint: Vec<Hex> = match item {
+                Machine::Portal => vec![ORIGIN],
                 Machine::Arm(length) => Arm::new(length, ORIGIN, 0, Vec::new()).cells(),
                 Machine::Glyph(kind) => Glyph {
                     kind,

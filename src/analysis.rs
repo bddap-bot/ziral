@@ -462,8 +462,7 @@ mod tests {
             .arms
             .push(Arm::new(ArmLength::One, sim::ORIGIN, 0, Vec::new()));
         let mut world = World::new(sim::start());
-        let portal = world.portals[0];
-        world.entities.get_mut::<crate::Portal>(portal).unwrap().sim = initial;
+        world.overworld.sim.portals[0].as_mut().unwrap().sim = initial;
         let mut session = Session::new(&world.state());
         session.send(&mut world, Input::Focus(Some(0)));
         session.send(&mut world, Input::Key(KeyCode::KeyG, false));

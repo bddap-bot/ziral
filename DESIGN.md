@@ -1221,3 +1221,26 @@ One portal stands on the starting map. Its temporary image is the existing sourc
 The model's component store is independent of rendering resources so validation, playback and analysis instantiate the same model and use the same input reducer. Portal positions participate in the lockstep simulation's placement and movement checks; their entity components own the interior baselines. Saved state contains both. A crossing queues one camera transform, consumed by live input or replay, so neither playback nor restoration leaves the camera in the previous world's coordinates. Pinned cards stay with their world, while leaving an interior drops its replay position.
 
 Forward playback steps the existing projected simulation once. Tape edits and backward steps reconstruct it from the canonical baseline. This keeps one stepping implementation without repeatedly rebuilding the entire past during continuous play. Tape rows contain instruction pictures without numeric labels. The crossing image comparison hides tiles and controls and compares the remaining rendered pixels at 1280 by 720.
+## The portal is a machine
+
+Directive (verbatim): "some mystical theme"
+
+Directive (verbatim): "something visually interesting in the portal"
+
+The portal occupies one cell, appears in the recipe palette, and is made from a six-base-atom ring with six single bonds. That ring fits the first output tier and describes an opening without requiring a later material. One portal stands on the starting board. Its painted plum ceramic housing surrounds an ivory and brass aperture; the ordinary scene renderer fits the canonical interior extent inside it. Empty interiors retain the painted depth of the aperture. A separately painted ethereal tile has broad plum and ivory mineral veining; the overworld retains the clay batch. The fixture and its card show the camera entering the portal.
+
+The dumbest design makes a placed portal carry its own canonical simulation, just as an arm carries its tape. Placement, lifting and saving then carry the interior with the machine. This removes the temporary parallel position list and rendering component store: joining two independently edited arrays would require identity bookkeeping on every move. A portal is a machine rather than an atom-processing glyph, so it has no fake reaction or seat. Interiors cannot contain another portal. Existing replay, extent fitting and camera crossing remain the only implementations.
+
+The housing uses the existing body-first machine pipeline, with unchanged measurement and critic thresholds and keep-best selection. The texture uses the existing square texture pipeline and a fixed three-round critic with an eight-point pass threshold. A tint of the clay image was rejected because its surface still reads as the overworld; an independent interior renderer would duplicate the scene and make the preview disagree.
+
+The portal has no atom seats. Its registration therefore uses the complete keyed silhouette: one translation and one uniform scale fit that silhouette to its single-cell envelope. No pixel is clipped and no axis is stretched. Inventing an atom seat only to satisfy the registration code would make the scaffold misdescribe the machine. The existing footprint, palette and critic gates still judge the registered result.
+
+A populated portal cannot be recycled into a generic inventory item, because that item cannot carry its interior. Empty portals recycle normally, and their pinned cards retire with them. A portal moves with its interior intact. Recipe-fragment copying refuses interiors, as it already refuses sources; persistence stores the complete placed object.
+
+The retained housing is candidate 2 at score 7 after three rounds; no candidate reached the fixed taste threshold of 8. The ethereal tile reached 8 in its first round. Housing registration and relief are deterministic derivatives of the retained square painting; the tile is uniformly sized to the grout template. The proof combines native application captures without scaling them.
+
+The portal has no firing part. It draws its complete housing, so a synthetic split into a base and moving rim adds unused assets and unsupported part scores. A static machine has an empty part list; articulated machines retain the existing two-to-four-part and motion checks. The portal's entry motion belongs to the camera and its canonical interior, not to an invented activation event.
+
+Generation selects articulated entries before invoking the part splitter. A static-only or texture-only run skips the splitter entirely, because its no-argument mode selects every machine.
+
+The portal appends one craftable inventory slot; source upgrades remain excluded from inventory. The source-only selection fixture excludes the populated starting portal, whose contents prevent recycling a combined selection. Recipe text retains canonical atom and bond ordering.

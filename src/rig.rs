@@ -51,6 +51,7 @@ pub struct Part {
 pub struct Entry {
     pub emitter: crate::particles::Emitter,
     pub rig_emitter: Option<crate::particles::Emitter>,
+    #[serde(default)]
     pub parts: Vec<Part>,
 }
 
@@ -91,7 +92,7 @@ pub fn entry(machine: Machine) -> &'static Entry {
         );
     }
     assert!(
-        (2..=4).contains(&parts.len()),
+        parts.is_empty() || (2..=4).contains(&parts.len()),
         "machine {name} rig has {} parts",
         parts.len()
     );
@@ -126,9 +127,14 @@ mod tests {
     use crate::sim::ArmLength;
 
     #[test]
-    fn every_machine_has_two_to_four_parts_and_every_motion_resolves_to_a_tick_event() {
+    fn every_machine_has_static_art_or_two_to_four_parts_and_every_motion_resolves_to_a_tick_event()
+    {
         for machine in Machine::ALL {
             let parts = parts(machine);
+            assert_eq!(parts.is_empty(), machine == Machine::Portal);
+            if parts.is_empty() {
+                continue;
+            }
             assert!((2..=4).contains(&parts.len()));
             assert!(parts.iter().any(|part| part.motion.is_none()));
             for part in parts {

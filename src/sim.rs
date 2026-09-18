@@ -366,13 +366,15 @@ impl GlyphKind {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Machine {
+    Portal,
     Arm(ArmLength),
     Glyph(GlyphKind),
 }
 
 impl Machine {
-    pub const ALL: [Machine; GlyphKind::ALL.len() + ArmLength::ALL.len()] = {
-        let mut all = [Machine::Arm(ArmLength::One); GlyphKind::ALL.len() + ArmLength::ALL.len()];
+    pub const ALL: [Machine; GlyphKind::ALL.len() + ArmLength::ALL.len() + 1] = {
+        let mut all =
+            [Machine::Arm(ArmLength::One); GlyphKind::ALL.len() + ArmLength::ALL.len() + 1];
         let mut k = 0;
         while k < ArmLength::ALL.len() {
             all[k] = Machine::Arm(ArmLength::ALL[k]);
@@ -383,6 +385,7 @@ impl Machine {
             all[k + ArmLength::ALL.len()] = Machine::Glyph(GlyphKind::ALL[k]);
             k += 1;
         }
+        all[GlyphKind::ALL.len() + ArmLength::ALL.len()] = Machine::Portal;
         all
     };
 
@@ -772,9 +775,24 @@ fn snap_cap(cap: u32) -> u32 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Portal {
+    pub at: Hex,
+    pub sim: Sim,
+}
+
+impl Portal {
+    pub fn new(at: Hex) -> Self {
+        Self {
+            at,
+            sim: Sim::empty(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Sim {
     #[serde(default)]
-    pub portals: Vec<Hex>,
+    pub portals: Vec<Option<Portal>>,
     pub glyphs: Vec<Option<Glyph>>,
     pub arms: Vec<Arm>,
     pub atoms: Vec<Option<Atom>>,
@@ -785,6 +803,7 @@ pub struct Sim {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Id {
+    Portal(usize),
     Arm(usize),
     Glyph(usize),
     Atom(usize),
@@ -893,7 +912,12 @@ impl Sim {
     }
 
     pub fn ids(&self) -> impl Iterator<Item = Id> + '_ {
-        let arms = (0..self.arms.len()).map(Id::Arm);
+        let arms = (0..self.arms.len()).map(Id::Arm).chain(
+            self.portals
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| p.as_ref().map(|_| Id::Portal(i))),
+        );
         let glyphs = self.glyphs.iter().enumerate();
         let atoms = self.atoms.iter().enumerate();
         arms.chain(glyphs.filter_map(|(i, g)| g.map(|_| Id::Glyph(i))))
@@ -902,6 +926,7 @@ impl Sim {
 
     pub fn stands(&self, id: Id) -> impl Iterator<Item = Hex> + '_ {
         let (arm, glyph, atom) = match id {
+            Id::Portal(i) => (Some(self.portals[i].as_ref().unwrap().at), None, None),
             Id::Arm(i) => (Some(self.arms[i].pivot), None, None),
             Id::Glyph(i) => (None, self.glyphs[i].as_ref(), None),
             Id::Atom(i) => (None, None, self.atoms[i].map(|a| a.pos)),
@@ -933,17 +958,15 @@ impl Sim {
     }
 
     pub fn fits(&self, set: &Sim, at: Hex, picked: &[Id]) -> bool {
-        set.ids().all(|id| {
-            set.stands(id).all(|cell| {
-                cell.checked_add(at)
-                    .is_some_and(|cell| !self.portals.contains(&cell))
+        set.ids()
+            .all(|id| set.stands(id).all(|cell| cell.checked_add(at).is_some()))
+            && set.arms.iter().all(|arm| {
+                arm.pivot
+                    .checked_add(at)
+                    .and_then(|pivot| pivot.checked_add(DIRS[arm.dir].scale(arm.length.cells())))
+                    .is_some()
             })
-        }) && set.arms.iter().all(|arm| {
-            arm.pivot
-                .checked_add(at)
-                .and_then(|pivot| pivot.checked_add(DIRS[arm.dir].scale(arm.length.cells())))
-                .is_some()
-        }) && self.blocked(set, at, picked).next().is_none()
+            && self.blocked(set, at, picked).next().is_none()
     }
 
     pub fn replay(&self, ticks: u64) -> Sim {
@@ -1330,12 +1353,11 @@ impl Sim {
             .map(|id| (*id, to(self.atoms[*id].unwrap().pos)))
             .collect();
         let clear = |id: Id, at: Hex| {
-            !self.portals.contains(&at)
-                && self.on(at).all(|other| {
-                    id.may_share(other)
-                        || matches!(other, Id::Arm(j) if j == i)
-                        || matches!(other, Id::Atom(a) if comp.contains(&a))
-                })
+            self.on(at).all(|other| {
+                id.may_share(other)
+                    || matches!(other, Id::Arm(j) if j == i)
+                    || matches!(other, Id::Atom(a) if comp.contains(&a))
+            })
         };
         let stepped = pivot != self.arms[i].pivot;
         if (stepped && !clear(Id::Arm(i), pivot))
@@ -1371,22 +1393,36 @@ impl Sim {
             .iter()
             .filter(|bond| bond.kind == BondKind::Double)
             .map(|_| Item::Atom(AtomKind::Base));
-        glyphs.chain(arms).chain(atoms).chain(double).collect()
+        glyphs
+            .chain(arms)
+            .chain(
+                self.portals
+                    .iter()
+                    .flatten()
+                    .map(|_| Item::Machine(Machine::Portal)),
+            )
+            .chain(atoms)
+            .chain(double)
+            .collect()
     }
 
-    pub fn place(&mut self, other: &Sim, at: Hex) -> Vec<usize> {
-        let glyphs = other
-            .glyphs
-            .iter()
-            .flatten()
-            .map(|g| {
-                let g = Glyph {
-                    at: g.at.add(at),
-                    ..*g
-                };
-                seat(&mut self.glyphs, g)
-            })
+    pub fn place(&mut self, other: &Sim, at: Hex) -> Vec<Id> {
+        let mut placed: Vec<_> = (self.arms.len()..self.arms.len() + other.arms.len())
+            .map(Id::Arm)
             .collect();
+        for portal in other.portals.iter().flatten() {
+            let mut portal = portal.clone();
+            portal.at = portal.at.add(at);
+            placed.push(Id::Portal(seat(&mut self.portals, portal)));
+        }
+        let glyphs = other.glyphs.iter().flatten().map(|g| {
+            let g = Glyph {
+                at: g.at.add(at),
+                ..*g
+            };
+            Id::Glyph(seat(&mut self.glyphs, g))
+        });
+        placed.extend(glyphs);
         self.arms.extend(other.arms.iter().map(|a| Arm {
             pivot: a.pivot.add(at),
             ..a.clone()
@@ -1408,7 +1444,7 @@ impl Sim {
             b: ids[bond.b].unwrap(),
             ..*bond
         }));
-        glyphs
+        placed
     }
 }
 
@@ -1451,7 +1487,9 @@ pub fn layout() -> Sim {
 
 pub fn start() -> Sim {
     let mut sim = Sim::empty();
-    sim.portals.push(Hex::new(2, 1));
+    let mut portal = Portal::new(Hex::new(2, 1));
+    portal.sim = fixture(Machine::Arm(ArmLength::One)).sim;
+    sim.portals.push(Some(portal));
     sim.glyphs
         .push(Some(Glyph::new(GlyphKind::Source, Hex::new(-4, 1), 0)));
     sim.glyphs
@@ -1505,6 +1543,17 @@ pub fn fixture(machine: Machine) -> Fixture {
         pos,
     };
     match machine {
+        Machine::Portal => {
+            let mut sim = Sim::empty();
+            let mut portal = Portal::new(ORIGIN);
+            portal.sim = fixture(Machine::Arm(ArmLength::One)).sim;
+            sim.portals.push(Some(portal));
+            Fixture {
+                sim,
+                ticks: 3,
+                done: |s| s.tick == 3,
+            }
+        }
         Machine::Arm(length) => {
             let reach = DIRS[0].scale(length.cells());
             let mut sim = armed(length, vec![Grab, cw, Drop]);
@@ -1825,18 +1874,22 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_rows_do_not_change_legacy_inventory_slots() {
-        assert_eq!(CRAFT_RECIPE_COUNT, 25);
-        let count: Vec<u32> = (0..29).collect();
-        let cap = vec![32u32; 29];
-        let legacy = serde_json::json!({ "count": count, "cap": cap });
-        let inventory: Inventory = serde_json::from_value(legacy.clone()).unwrap();
-        assert_eq!(serde_json::to_value(inventory).unwrap(), legacy);
+    fn upgrade_rows_do_not_consume_inventory_slots() {
+        assert_eq!(CRAFT_RECIPE_COUNT, 26);
+        assert_eq!(
+            Inventory::EMPTY.count(Machine::Glyph(GlyphKind::SourceTwo).into()),
+            None
+        );
+        let count: Vec<u32> = (0..30).collect();
+        let cap = vec![32u32; 30];
+        let saved = serde_json::json!({ "count": count, "cap": cap });
+        let inventory: Inventory = serde_json::from_value(saved.clone()).unwrap();
+        assert_eq!(serde_json::to_value(inventory).unwrap(), saved);
         for (index, (item, _)) in recipes().iter().enumerate() {
             assert_eq!(inventory.count(*item), Some(index as u32));
         }
         for (index, kind) in AtomKind::ALL.into_iter().enumerate() {
-            assert_eq!(inventory.count(Item::Atom(kind)), Some(25 + index as u32));
+            assert_eq!(inventory.count(Item::Atom(kind)), Some(26 + index as u32));
         }
     }
 
@@ -3379,6 +3432,7 @@ mod tests {
             let f = fixture(machine);
             let kinds: Vec<GlyphKind> = f.sim.glyphs.iter().flatten().map(|g| g.kind).collect();
             match machine {
+                Machine::Portal => assert_eq!(f.sim.portals.iter().flatten().count(), 1),
                 Machine::Arm(length) => {
                     assert_eq!((kinds, f.sim.arms.len()), (vec![], 1));
                     assert_eq!(f.sim.arms[0].length, length);

@@ -10,21 +10,17 @@ pub const BUILD_TAG: &str = match option_env!("ZIRAL_BUILD_TAG") {
 struct Save {
     build: String,
     sim: Sim,
-    #[serde(default)]
-    portals: Vec<Sim>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct State {
     pub sim: Sim,
-    pub portals: Vec<Sim>,
 }
 
 pub fn encode(sim: &Sim) -> Result<String, serde_json::Error> {
     serde_json::to_string(&Save {
         build: BUILD_TAG.to_owned(),
         sim: sim.clone(),
-        portals: Vec::new(),
     })
 }
 
@@ -40,7 +36,6 @@ pub fn encode_state(state: &State) -> Result<String, serde_json::Error> {
     serde_json::to_string(&Save {
         build: BUILD_TAG.to_owned(),
         sim: state.sim.clone(),
-        portals: state.portals.clone(),
     })
 }
 
@@ -58,19 +53,13 @@ fn decode_state_for(text: &str, build: &str) -> Result<State, String> {
         return Err("The save file is not valid.".to_owned());
     }
     validate(&save.sim)?;
-    if !save.portals.is_empty() && save.portals.len() != save.sim.portals.len() {
-        return Err("The save file is not valid.".to_owned());
-    }
-    for sim in &mut save.portals {
-        if !sim.portals.is_empty() || !sim.inventory.snap_caps() {
+    for portal in save.sim.portals.iter_mut().flatten() {
+        if portal.sim.portals.iter().any(Option::is_some) || !portal.sim.inventory.snap_caps() {
             return Err("The save file is not valid.".to_owned());
         }
-        validate(sim)?;
+        validate(&portal.sim)?;
     }
-    Ok(State {
-        sim: save.sim,
-        portals: save.portals,
-    })
+    Ok(State { sim: save.sim })
 }
 
 fn validate(sim: &Sim) -> Result<(), String> {

@@ -85,10 +85,7 @@ impl Input {
                     card.scale = *scale;
                 }
             }
-            Self::Import(sim) => world.restore(persist::State {
-                sim: *sim.clone(),
-                portals: Vec::new(),
-            }),
+            Self::Import(sim) => world.restore(persist::State { sim: *sim.clone() }),
             Self::Paste(sim) => world.lift(*sim.clone(), Back::Inventory),
             Self::Focus(portal) => {
                 world.enter(*portal);
@@ -318,6 +315,7 @@ impl Input {
             Self::Press { point: at, target } => {
                 point(at)
                     && target.is_none_or(|id| match id {
+                        Id::Portal(i) => world.shown().portals.get(i).is_some_and(Option::is_some),
                         Id::Arm(i) => i < world.shown().arms.len(),
                         Id::Glyph(i) => world.shown().glyphs.get(i).is_some_and(Option::is_some),
                         Id::Atom(i) => world.shown().atoms.get(i).is_some_and(Option::is_some),
