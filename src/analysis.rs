@@ -457,11 +457,11 @@ mod tests {
         assert_eq!(result["steps_around_stalls"].as_array().unwrap().len(), 1);
         assert_eq!(result["steps_around_stalls"][0]["steps"], 0);
         let mut initial = sim::Sim::empty();
-        initial.fill_inventory();
         initial
             .arms
             .push(Arm::new(ArmLength::One, sim::ORIGIN, 0, Vec::new()));
         let mut world = World::new(sim::start());
+        world.overworld.sim.receive(sim::Item::Token(Instr::Grab));
         world.overworld.sim.portals[0].as_mut().unwrap().sim = initial;
         let mut session = Session::new(&world.state());
         session.send(&mut world, Input::Focus(Some(0)));
