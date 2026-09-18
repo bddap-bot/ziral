@@ -1142,6 +1142,8 @@ The simplest design adds a source glyph kind with two functional slots and four 
 
 Dropping that compound onto any cell of a placed tier-one source attempts one transaction. It keeps the anchor and facing, checks the next footprint while excluding the old housing, and rejects atoms on newly occupied cells as well as overlapping machines. Success consumes the held compound, replaces the glyph and emits one upgrade event. Refusal uses the existing return-to-origin path. A wrong compound follows ordinary placement and remains intact.
 
+The second-bond applicator accepts any atom kind on its two retained seats while still consuming one lone base atom. This makes the required all-plum compound with four double bonds synthesizable. Reachability proves the compound with actual bonder and second-bond ticks, then proves an upgrade of a placed source rather than inventory crafting.
+
 The upgrade event drives the existing material and rig pulse, a larger brass-and-amber spark burst and a five-note brass chord. The paint pipeline receives the body-first scaffold and the sketch together; the orange marks describe thematic housing, not an orange overlay. A second stacked source picture would split one housing across rendering paths and was rejected.
 
 Tests cover the exact six-cell footprint and two independent outlets at all turns, the exact recipe, successful consumption and one event, wrong-compound survival, blocked growth with byte-equal rollback, and the tier-two fixture and rendered card.

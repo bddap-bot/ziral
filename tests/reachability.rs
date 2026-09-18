@@ -267,6 +267,9 @@ fn compound_name(text: &'static str) -> String {
 }
 
 fn recipe_item_name(item: Item) -> String {
+    if item == Item::Machine(Machine::Glyph(GlyphKind::SourceTwo)) {
+        return "tier-two source is attainable by upgrading a placed source".to_string();
+    }
     format!("{item:?} is attainable from its recipe")
 }
 
@@ -480,6 +483,25 @@ fn prove_item(item: Item, premises: &[Fact]) -> Result<Fact, String> {
     let form: Form = text
         .parse()
         .map_err(|reason| format!("{text:?}: {reason}"))?;
+    if item == Item::Machine(Machine::Glyph(GlyphKind::SourceTwo)) {
+        require(
+            premises,
+            Fact::Item(Item::Machine(Machine::Glyph(GlyphKind::Source))),
+        )?;
+        let mut compound = Sim::empty();
+        grant_compound(&mut compound, premises, text, 0, ORIGIN)?;
+        let mut sim = Sim::empty();
+        sim.glyphs
+            .push(Some(Glyph::new(GlyphKind::Source, ORIGIN, 0)));
+        let events = sim
+            .upgrade(0, &compound)
+            .ok_or_else(|| "the placed source refused its upgrade compound".to_string())?;
+        return (sim.glyphs[0].unwrap().kind == GlyphKind::SourceTwo
+            && events.events.len() == 1
+            && sim.inventory.count(item).is_none())
+        .then_some(Fact::Item(item))
+        .ok_or_else(|| "the upgrade did not produce a placed tier-two source".to_string());
+    }
     let (tier, centre) = output_for(&form)
         .ok_or_else(|| format!("the recipe for {item:?} does not fit a shipped output"))?;
     let output = Item::Machine(Machine::Glyph(GlyphKind::Output(tier)));
@@ -624,6 +646,12 @@ fn recipe_text(item: Item) -> Result<&'static str, String> {
 }
 
 fn recipe_item_premises(item: Item, text: &'static str) -> Result<Vec<ProofId>, String> {
+    if item == Item::Machine(Machine::Glyph(GlyphKind::SourceTwo)) {
+        return Ok(vec![
+            ProofId::Compound(text),
+            ProofId::Starting(Item::Machine(Machine::Glyph(GlyphKind::Source))),
+        ]);
+    }
     let form: Form = text
         .parse()
         .map_err(|reason| format!("{text:?}: {reason}"))?;
@@ -668,6 +696,7 @@ fn proofs() -> Vec<ProofId> {
     let bonder = Item::Machine(Machine::Glyph(GlyphKind::Bonder));
     let mut proofs = vec![
         ProofId::BaseAtom,
+        ProofId::Starting(Item::Machine(Machine::Glyph(GlyphKind::Source))),
         ProofId::Starting(output),
         ProofId::Starting(bonder),
     ];

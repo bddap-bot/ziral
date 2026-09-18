@@ -469,8 +469,8 @@ const SECOND_BOND: [Slot; 3] = [
         lone: true,
         ..consumed(ORIGIN)
     },
-    base(DIRS[0]),
-    base(DIRS[1]),
+    any(DIRS[0]),
+    any(DIRS[1]),
 ];
 const BONDER: [Slot; 2] = [any(ORIGIN), any(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
@@ -2326,6 +2326,44 @@ mod tests {
 
     fn lying(sim: &Sim, ids: &[usize]) -> bool {
         ids.iter().all(|id| sim.atoms[*id].is_some())
+    }
+
+    #[test]
+    fn second_bonds_keep_atom_kinds_and_require_a_lone_base_fuel() {
+        for left in AtomKind::ALL {
+            for right in AtomKind::ALL {
+                for fuel in AtomKind::ALL {
+                    let mut sim = Sim::empty();
+                    sim.glyphs
+                        .push(Some(Glyph::new(GlyphKind::SecondBond, ORIGIN, 0)));
+                    let feed = sim.spawn(Atom {
+                        kind: fuel,
+                        pos: ORIGIN,
+                    });
+                    let a = sim.spawn(Atom {
+                        kind: left,
+                        pos: DIRS[0],
+                    });
+                    let b = sim.spawn(Atom {
+                        kind: right,
+                        pos: DIRS[1],
+                    });
+                    bond(&mut sim, a, b, BondKind::Single);
+                    sim.step();
+                    assert_eq!(sim.atoms[a].unwrap().kind, left);
+                    assert_eq!(sim.atoms[b].unwrap().kind, right);
+                    assert_eq!(sim.atoms[feed].is_none(), fuel == AtomKind::Base);
+                    assert_eq!(
+                        sim.bonds[0].kind,
+                        if fuel == AtomKind::Base {
+                            BondKind::Double
+                        } else {
+                            BondKind::Single
+                        }
+                    );
+                }
+            }
+        }
     }
 
     #[test]
