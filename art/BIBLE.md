@@ -1,5 +1,7 @@
 # ziral art bible — Fired Workshop
 
+The starting portal temporarily uses the existing source sprite, uniformly fitted to one tile and tinted plum. Its contents use the ordinary scene renderer at the baseline's fitted extent. Interior tiles carry a plum tint; machines, atoms and bonds keep their materials. The tint and ivory replay tally distinguish the interior without writing. The dedicated portal housing and tile paintings remain a separate change.
+
 The board is a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight and wear make each action tactile; colored glazes keep every state unmistakable. Reference images and the prompts that made them are in [`reference/`](reference/).
 
 [MACHINES.md](MACHINES.md) describes the current painting pipeline; [SYMBOLS.md](SYMBOLS.md) describes instruction tokens and inventory pips. [DESIGN.md](../DESIGN.md) records decisions and experiments, including superseded art. Prompt files record actual paints, not current rules. Each ends with an Image inputs section listing repository paths and SHA-256 hashes from the same verified image tool call as the caption; older records mark unrecoverable inputs unknown. The section is provenance and is excluded when reusing the caption.
@@ -39,7 +41,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 **UI.** Dark brass strips and borders frame the inventory and tape; the lit tape row is lighter brass. Each machine or atom picture sits on a circular clay field; an atom is the board’s circular bead with its brass rim. Instruction tokens sit directly on the strip. [SYMBOLS.md](SYMBOLS.md) defines their geometry and the inventory counts. Hover and pinned cards share a clay surface within one brass border, with the item, its recipe in atoms and bonds, and fixture playback on the board’s clay. Cards carry no writing apart from the key letters inside instruction pictures. Tab holds up the painted manual page with those same instruction pictures and no other writing. On the board, an ivory hover outline surrounds the target a press would take: the bead within its circular body, or the machine at the same cell outside it.
 
-**Ghost.** A ghost is a projected frame drawn alone while the canonical frame waits. The existing ivory tally is its only cue: G adds a mark, S removes one, and the canonical frame has none. Machines retain their lit material and activation response; atoms, bonds, rims and lines retain their normal opacity. The board stays unchanged.
+**Ghost.** A ghost is a projected frame drawn alone while the canonical frame waits. The existing ivory tally is its only cue: G adds a mark, S removes one, and the canonical frame has none. Machines retain their lit material and activation response; atoms, bonds, rims and lines retain their normal opacity. The projection does not alter the interior tile treatment.
 
 **Motion.** Ticks have weighted starts and soft, decisive seats. What a glyph makes or eats appears at the end of the sweep, never mid-arc. The tick is 400 ms; a stall is backpressure.
 

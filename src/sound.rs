@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
 const contexts = [];
-const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend"];
+const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend", "wheel"];
 for (const key of ["AudioContext", "webkitAudioContext"]) {
     const Context = globalThis[key];
     if (Context) {
@@ -177,12 +177,14 @@ pub fn unlock(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     touches: Res<Touches>,
+    scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
     bank: Option<ResMut<Bank>>,
 ) {
     let Some(mut bank) = bank else { return };
     let pressed = buttons.get_just_pressed().next().is_some()
         || keys.get_just_pressed().next().is_some()
-        || touches.any_just_pressed();
+        || touches.any_just_pressed()
+        || scroll.delta != Vec2::ZERO;
     if !bank.unlocked && pressed {
         bank.unlocked = true;
         commands.spawn((

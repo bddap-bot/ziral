@@ -773,6 +773,8 @@ fn snap_cap(cap: u32) -> u32 {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Sim {
+    #[serde(default)]
+    pub portals: Vec<Hex>,
     pub glyphs: Vec<Option<Glyph>>,
     pub arms: Vec<Arm>,
     pub atoms: Vec<Option<Atom>>,
@@ -804,6 +806,7 @@ impl Id {
 impl Sim {
     pub fn empty() -> Self {
         Sim {
+            portals: Vec::new(),
             glyphs: Vec::new(),
             arms: Vec::new(),
             atoms: Vec::new(),
@@ -930,15 +933,17 @@ impl Sim {
     }
 
     pub fn fits(&self, set: &Sim, at: Hex, picked: &[Id]) -> bool {
-        set.ids()
-            .all(|id| set.stands(id).all(|cell| cell.checked_add(at).is_some()))
-            && set.arms.iter().all(|arm| {
-                arm.pivot
-                    .checked_add(at)
-                    .and_then(|pivot| pivot.checked_add(DIRS[arm.dir].scale(arm.length.cells())))
-                    .is_some()
+        set.ids().all(|id| {
+            set.stands(id).all(|cell| {
+                cell.checked_add(at)
+                    .is_some_and(|cell| !self.portals.contains(&cell))
             })
-            && self.blocked(set, at, picked).next().is_none()
+        }) && set.arms.iter().all(|arm| {
+            arm.pivot
+                .checked_add(at)
+                .and_then(|pivot| pivot.checked_add(DIRS[arm.dir].scale(arm.length.cells())))
+                .is_some()
+        }) && self.blocked(set, at, picked).next().is_none()
     }
 
     pub fn replay(&self, ticks: u64) -> Sim {
@@ -1325,11 +1330,12 @@ impl Sim {
             .map(|id| (*id, to(self.atoms[*id].unwrap().pos)))
             .collect();
         let clear = |id: Id, at: Hex| {
-            self.on(at).all(|other| {
-                id.may_share(other)
-                    || matches!(other, Id::Arm(j) if j == i)
-                    || matches!(other, Id::Atom(a) if comp.contains(&a))
-            })
+            !self.portals.contains(&at)
+                && self.on(at).all(|other| {
+                    id.may_share(other)
+                        || matches!(other, Id::Arm(j) if j == i)
+                        || matches!(other, Id::Atom(a) if comp.contains(&a))
+                })
         };
         let stepped = pivot != self.arms[i].pivot;
         if (stepped && !clear(Id::Arm(i), pivot))
@@ -1445,6 +1451,7 @@ pub fn layout() -> Sim {
 
 pub fn start() -> Sim {
     let mut sim = Sim::empty();
+    sim.portals.push(Hex::new(2, 1));
     sim.glyphs
         .push(Some(Glyph::new(GlyphKind::Source, Hex::new(-4, 1), 0)));
     sim.glyphs

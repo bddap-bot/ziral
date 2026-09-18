@@ -34,6 +34,7 @@ use sim::{
 };
 
 const TICK_MS: f32 = 400.0;
+const PORTAL_CELL: Hex = Hex::new(2, 1);
 const MOTION: f32 = 1.0;
 const TURN_MOTION: f32 = 0.6;
 const MICRO_SCALE: f32 = 0.5;
@@ -401,12 +402,12 @@ impl CardDrag {
 
 #[derive(Resource)]
 struct Saved {
-    attempted: Sim,
+    attempted: persist::State,
     refused: bool,
 }
 
 impl Saved {
-    fn store(&mut self, sim: Sim) {
+    fn store(&mut self, sim: persist::State) {
         self.attempted = sim;
         match persist::store(&self.attempted) {
             Ok(()) => self.refused = false,
@@ -431,9 +432,8 @@ enum ClipboardRequest {
     Write(String),
 }
 
-#[derive(Resource, Debug)]
-struct World {
-    sim: Sim,
+#[derive(Debug)]
+struct Viewer {
     prev: Sim,
     ghost: Option<Sim>,
     since: f32,
@@ -458,11 +458,10 @@ struct World {
     clipboard: Option<ClipboardRequest>,
 }
 
-impl World {
-    fn new(sim: Sim) -> Self {
-        World {
+impl Viewer {
+    fn new(sim: &Sim) -> Self {
+        Viewer {
             prev: sim.clone(),
-            sim,
             ghost: None,
             since: 0.0,
             period: TICK_MS / 1000.0,
@@ -486,114 +485,634 @@ impl World {
             clipboard: None,
         }
     }
+}
 
-    fn advance(&mut self, dt: f32) {
-        if !self.has_machine_rollback() || self.turn.is_some() {
-            self.since = (self.since + dt).min(self.period);
+#[derive(Debug)]
+struct World {
+    sim: Sim,
+    viewer: Viewer,
+}
+
+#[derive(Component)]
+struct Portal {
+    sim: Sim,
+}
+
+#[derive(Clone, Copy)]
+struct PortalView {
+    center: Vec2,
+    side: f32,
+}
+
+impl PortalView {
+    const TILE: f32 = HEX * 1.5;
+
+    fn of(sim: &Sim) -> Self {
+        let mut lo = Vec2::splat(f32::INFINITY);
+        let mut hi = Vec2::splat(f32::NEG_INFINITY);
+        let cells = sim
+            .glyphs
+            .iter()
+            .flatten()
+            .flat_map(|g| g.cells())
+            .chain(sim.atoms.iter().flatten().map(|a| a.pos))
+            .chain(sim.arms.iter().flat_map(|a| [a.pivot, a.hand()]));
+        for cell in cells {
+            lo = lo.min(px(cell) - Vec2::splat(HEX));
+            hi = hi.max(px(cell) + Vec2::splat(HEX));
         }
-        if self.turn.is_some() && self.turn_phase() >= 1.0 {
-            self.end_turn();
+        if !lo.is_finite() {
+            lo = Vec2::splat(-HEX);
+            hi = Vec2::splat(HEX);
         }
-        if self.running && self.saveable() && self.since >= self.period {
-            self.since = 0.0;
-            self.step();
-        }
-        if let Some(play) = &mut self.play {
-            play.advance(dt, self.period);
-        }
-        for play in &mut self.pinned_play {
-            play.advance(dt, self.period);
+        Self {
+            center: (lo + hi) / 2.0,
+            side: (hi - lo).max_element().max(HEX * 2.0),
         }
     }
 
-    fn pin_world(&mut self, item: Item, anchor: Vec2) -> u64 {
-        let item = card_item(item);
-        let id = self.next_card;
-        self.next_card += 1;
-        if let Item::Machine(machine) = item
-            && self.pinned_play.iter().all(|play| play.machine != machine)
-        {
-            self.pinned_play.push(Play::at(machine, 0));
+    fn scale(&self) -> f32 {
+        Self::TILE / self.side
+    }
+
+    fn enter(&self, at: Hex, viewport: &mut Viewport) {
+        viewport.cam = self.center + (viewport.cam - px(at)) / self.scale();
+        viewport.scale /= self.scale();
+    }
+
+    fn exit(&self, at: Hex, viewport: &mut Viewport) {
+        viewport.cam = px(at) + (viewport.cam - self.center) * self.scale();
+        viewport.scale *= self.scale();
+    }
+}
+
+#[derive(Debug)]
+enum Location {
+    Overworld,
+    Interior { portal: usize, viewer: Box<Viewer> },
+}
+
+#[derive(Resource)]
+struct Game {
+    overworld: World,
+    entities: bevy::prelude::World,
+    portals: Vec<Entity>,
+    location: Location,
+    crossing: [f32; 2],
+    cue: Option<bool>,
+    camera_changes: Vec<(Hex, PortalView, bool)>,
+    pins: std::collections::BTreeMap<usize, (Vec<Pinned>, Vec<Play>, u64)>,
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for Game {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Game")
+            .field("state", &self.state())
+            .field("overworld", &self.overworld.viewer)
+            .field("location", &self.location)
+            .finish()
+    }
+}
+
+impl std::ops::Deref for Game {
+    type Target = Viewer;
+    fn deref(&self) -> &Viewer {
+        match &self.location {
+            Location::Overworld => &self.overworld.viewer,
+            Location::Interior { viewer, .. } => viewer,
         }
-        self.pinned.push(Pinned {
-            id,
-            item,
-            anchor,
-            scale: 1.0,
-        });
-        self.focus = Some(Focus::Card(id));
-        id
+    }
+}
+
+impl std::ops::DerefMut for Game {
+    fn deref_mut(&mut self) -> &mut Viewer {
+        match &mut self.location {
+            Location::Overworld => &mut self.overworld.viewer,
+            Location::Interior { viewer, .. } => viewer,
+        }
+    }
+}
+
+impl Game {
+    fn replace_with(&mut self, mut next: Game) {
+        let mut changes = std::mem::take(&mut self.camera_changes);
+        if let Location::Interior { portal, .. } = self.location {
+            changes.push((
+                self.overworld.sim.portals[portal],
+                PortalView::of(self.sim()),
+                false,
+            ));
+        }
+        changes.append(&mut next.camera_changes);
+        next.camera_changes = changes;
+        *self = next;
+    }
+    fn restore(&mut self, state: persist::State) {
+        self.replace_with(Self::from_state(state));
+    }
+    fn enter(&mut self, portal: Option<usize>) -> bool {
+        if self.holding() || self.card_drag.is_some() {
+            return false;
+        }
+        match (&self.location, portal) {
+            (Location::Overworld, Some(index)) if index < self.portals.len() => {
+                self.camera_changes.push((
+                    self.overworld.sim.portals[index],
+                    PortalView::of(&self.portal(index).sim),
+                    true,
+                ));
+                let mut viewer = Viewer::new(&self.portal(index).sim);
+                viewer.running = false;
+                if let Some((cards, play, next)) = self.pins.remove(&index) {
+                    viewer.pinned = cards;
+                    viewer.pinned_play = play;
+                    viewer.next_card = next;
+                }
+                self.location = Location::Interior {
+                    portal: index,
+                    viewer: Box::new(viewer),
+                };
+            }
+            (Location::Interior { portal, .. }, None) => {
+                self.camera_changes.push((
+                    self.overworld.sim.portals[*portal],
+                    PortalView::of(&self.portal(*portal).sim),
+                    false,
+                ));
+                let cards = (
+                    self.pinned.clone(),
+                    self.pinned_play.clone(),
+                    self.next_card,
+                );
+                self.pins.insert(*portal, cards);
+                self.location = Location::Overworld;
+                self.overworld.down = None;
+                self.overworld.pointer = None;
+            }
+            _ => return false,
+        }
+        let direction = usize::from(portal.is_some());
+        if self.crossing[direction] == 0.0 {
+            self.cue = Some(portal.is_some());
+            self.crossing[direction] = 0.25;
+        }
+        true
+    }
+
+    fn state(&self) -> persist::State {
+        persist::State {
+            sim: self.overworld.snapshot(),
+            portals: (0..self.portals.len())
+                .map(|index| {
+                    let portal = self.portal(index);
+                    if matches!(self.location, Location::Interior { portal, .. } if portal == index)
+                    {
+                        self.snapshot()
+                    } else {
+                        portal.sim.clone()
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    fn from_state(state: persist::State) -> Self {
+        let mut game = Self::new(state.sim);
+        if !state.portals.is_empty() {
+            game.entities.clear_entities();
+            game.portals = state
+                .portals
+                .into_iter()
+                .map(|sim| game.entities.spawn(Portal { sim }).id())
+                .collect();
+        }
+        game
+    }
+    fn from_world(mut overworld: World) -> Self {
+        overworld.prev.portals = overworld.sim.portals.clone();
+        let mut entities = bevy::prelude::World::new();
+        let portals = overworld
+            .sim
+            .portals
+            .iter()
+            .map(|_| {
+                entities
+                    .spawn(Portal {
+                        sim: fixture(Machine::Arm(ArmLength::One)).sim,
+                    })
+                    .id()
+            })
+            .collect();
+        Self {
+            overworld,
+            entities,
+            portals,
+            location: Location::Overworld,
+            crossing: [0.0; 2],
+            cue: None,
+            camera_changes: Vec::new(),
+            pins: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn inside(&self) -> bool {
+        matches!(self.location, Location::Interior { .. })
+    }
+
+    fn portal(&self, index: usize) -> &Portal {
+        self.entities.get::<Portal>(self.portals[index]).unwrap()
+    }
+
+    fn crossing(&self, viewport: &Viewport) -> Option<Option<usize>> {
+        if self.holding() || self.card_drag.is_some() {
+            return None;
+        }
+        match self.location {
+            Location::Overworld
+                if viewport.scale * viewport.size.min_element() <= PortalView::TILE =>
+            {
+                (0..self.portals.len())
+                    .find(|index| {
+                        (viewport.cam - px(self.overworld.sim.portals[*index]))
+                            .abs()
+                            .max_element()
+                            <= PortalView::TILE / 2.0
+                    })
+                    .map(Some)
+            }
+            Location::Interior { portal, .. } => (viewport.scale * viewport.size.min_element()
+                > PortalView::of(&self.portal(portal).sim).side)
+                .then_some(None),
+            _ => None,
+        }
+    }
+
+    fn reframe(&mut self, viewport: &mut Viewport) {
+        for (at, fit, entering) in self.camera_changes.drain(..) {
+            if entering {
+                fit.enter(at, viewport);
+            } else {
+                fit.exit(at, viewport);
+            }
+        }
+    }
+}
+
+impl WorldAccess for Game {
+    fn new(sim: Sim) -> Self {
+        Self::from_world(World::new(sim))
+    }
+
+    fn sim(&self) -> &Sim {
+        match self.location {
+            Location::Overworld => &self.overworld.sim,
+            Location::Interior { portal, .. } => &self.portal(portal).sim,
+        }
+    }
+
+    #[cfg(test)]
+    fn sim_mut(&mut self) -> &mut Sim {
+        match self.location {
+            Location::Overworld => &mut self.overworld.sim,
+            Location::Interior { portal, .. } => {
+                &mut self
+                    .entities
+                    .get_mut::<Portal>(self.portals[portal])
+                    .unwrap()
+                    .into_inner()
+                    .sim
+            }
+        }
+    }
+
+    fn view(&self) -> Editor<&Sim, &Viewer> {
+        Editor {
+            sim: self.sim(),
+            viewer: self,
+        }
+    }
+
+    fn edit(&mut self) -> Editor<&mut Sim, &mut Viewer> {
+        match &mut self.location {
+            Location::Overworld => self.overworld.edit(),
+            Location::Interior { portal, viewer } => Editor {
+                sim: &mut self
+                    .entities
+                    .get_mut::<Portal>(self.portals[*portal])
+                    .unwrap()
+                    .into_inner()
+                    .sim,
+                viewer,
+            },
+        }
+    }
+
+    fn advance(&mut self, dt: f32) {
+        for remaining in &mut self.crossing {
+            *remaining = (*remaining - dt).max(0.0);
+        }
+        self.overworld.running = true;
+        self.overworld.advance(dt);
+        if self.inside() {
+            let mut editor = self.edit();
+            editor.animate(dt);
+            if editor.running && editor.saveable() && editor.since >= editor.period {
+                editor.forward();
+            }
+        }
+    }
+
+    fn key(&mut self, key: KeyCode, shift: bool) {
+        if matches!(key, KeyCode::Space | KeyCode::KeyG | KeyCode::KeyS)
+            && (!self.inside() || self.has_machine_rollback())
+        {
+            return;
+        }
+        self.edit().key(key, shift);
+    }
+}
+
+impl std::ops::Deref for World {
+    type Target = Viewer;
+    fn deref(&self) -> &Viewer {
+        &self.viewer
+    }
+}
+
+impl std::ops::DerefMut for World {
+    fn deref_mut(&mut self) -> &mut Viewer {
+        &mut self.viewer
+    }
+}
+
+struct Editor<S, V> {
+    sim: S,
+    viewer: V,
+}
+
+impl<S, V: std::ops::Deref<Target = Viewer>> std::ops::Deref for Editor<S, V> {
+    type Target = Viewer;
+    fn deref(&self) -> &Viewer {
+        &self.viewer
+    }
+}
+
+impl<S, V: std::ops::DerefMut<Target = Viewer>> std::ops::DerefMut for Editor<S, V> {
+    fn deref_mut(&mut self) -> &mut Viewer {
+        &mut self.viewer
+    }
+}
+
+trait WorldAccess: std::ops::DerefMut<Target = Viewer> + Sized {
+    fn new(sim: Sim) -> Self;
+    fn sim(&self) -> &Sim;
+    #[cfg(test)]
+    fn sim_mut(&mut self) -> &mut Sim;
+    fn view(&self) -> Editor<&Sim, &Viewer>;
+    fn edit(&mut self) -> Editor<&mut Sim, &mut Viewer>;
+    fn shown(&self) -> &Sim {
+        self.ghost.as_ref().unwrap_or(self.sim())
+    }
+
+    fn advance(&mut self, dt: f32) {
+        self.edit().advance(dt)
+    }
+
+    fn pin_world(&mut self, item: Item, anchor: Vec2) -> u64 {
+        self.edit().pin_world(item, anchor)
     }
 
     #[cfg(any(test, not(target_arch = "wasm32")))]
     fn begin_pin(&mut self, item: Item, pointer: Vec2, viewport: &Viewport, button: MouseButton) {
-        self.pin_at(item, viewport.world(pointer), button);
+        self.edit().begin_pin(item, pointer, viewport, button)
     }
 
     fn pin_at(&mut self, item: Item, at: Vec2, button: MouseButton) {
-        if self.holding() || self.down.is_some() {
-            return;
-        }
-        let id = self.pin_world(item, at);
-        self.card_drag = Some(CardDrag::New { id, button });
+        self.edit().pin_at(item, at, button)
     }
 
     #[cfg(test)]
     fn press_inventory(&mut self, item: Item, pointer: Vec2, viewport: &Viewport) {
-        if self.sim.inventory.count(item) == Some(0) {
-            self.begin_pin(item, pointer, viewport, MouseButton::Left);
-        } else {
-            self.lift_inventory(item);
-        }
+        self.edit().press_inventory(item, pointer, viewport)
     }
 
     fn card_press(&mut self, id: u64, pointer: Vec2, button: MouseButton) {
-        if self.holding() || self.down.is_some() || self.card_drag.is_some() {
-            return;
-        }
-        if self.pinned.iter().all(|card| card.id != id) {
-            return;
-        }
-        self.focus = Some(Focus::Card(id));
-        self.card_drag = Some(CardDrag::Move {
-            id,
-            start: pointer,
-            moved: false,
-            button,
-        });
+        self.edit().card_press(id, pointer, button)
     }
 
     #[cfg(any(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     fn card_drag(&mut self, pointer: Vec2, viewport: &Viewport) {
-        let moved = !matches!(self.card_drag, Some(CardDrag::Move { start, moved: false, .. }) if start == pointer);
-        if moved {
-            self.move_card(viewport.world(pointer));
-        }
+        self.edit().card_drag(pointer, viewport)
     }
 
     fn move_card(&mut self, anchor: Vec2) {
-        let Some(drag) = self.card_drag else { return };
-        let id = match drag {
-            CardDrag::Move { id, .. } | CardDrag::New { id, .. } => id,
-        };
-        let Some(card) = self.pinned.iter_mut().find(|card| card.id == id) else {
-            self.card_drag = None;
-            return;
-        };
-        card.anchor = anchor;
-        if let Some(CardDrag::Move { moved, .. }) = &mut self.card_drag {
-            *moved = true;
-        }
+        self.edit().move_card(anchor)
     }
 
     #[cfg(any(test, not(target_arch = "wasm32")))]
     fn end_card_drag(&mut self, pointer: Option<Vec2>, viewport: &Viewport) -> Option<CardDrag> {
-        if let Some(pointer) = pointer {
-            self.card_drag(pointer, viewport);
-        }
-        self.card_drag.take()
+        self.edit().end_card_drag(pointer, viewport)
     }
 
+    fn card_at(&self, pointer: Vec2, viewport: &Viewport) -> Option<u64> {
+        self.view().card_at(pointer, viewport)
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
+    fn resize_card(&mut self, pointer: Vec2, notches: f32, viewport: &Viewport) -> bool {
+        self.edit().resize_card(pointer, notches, viewport)
+    }
+
+    fn unpin(&mut self, id: u64) {
+        self.edit().unpin(id)
+    }
+
+    fn lift_inventory(&mut self, item: Item) {
+        self.edit().lift_inventory(item)
+    }
+
+    fn set_cap(&mut self, item: Item, notches: i32) {
+        self.edit().set_cap(item, notches)
+    }
+
+    fn refill(&mut self) {
+        self.edit().refill()
+    }
+
+    fn ghosts(&self) -> u64 {
+        self.view().ghosts()
+    }
+
+    #[cfg(test)]
+    fn step(&mut self) {
+        self.edit().step()
+    }
+
+    #[cfg(test)]
+    fn resim(&mut self, n: u64) {
+        self.edit().resim(n)
+    }
+
+    fn phase(&self) -> f32 {
+        self.view().phase()
+    }
+
+    #[cfg(test)]
+    fn turn_phase(&self) -> f32 {
+        self.view().turn_phase()
+    }
+
+    fn board_phase(&self) -> f32 {
+        self.view().board_phase()
+    }
+
+    fn facing_poses(&self, target: TurnTarget, centre: Vec2) -> Vec<MachinePose> {
+        self.view().facing_poses(target, centre)
+    }
+
+    fn board_turn_pose(&self) -> Option<(Id, MachinePose)> {
+        self.view().board_turn_pose()
+    }
+
+    fn holding(&self) -> bool {
+        self.view().holding()
+    }
+
+    fn has_machine_rollback(&self) -> bool {
+        self.view().has_machine_rollback()
+    }
+
+    fn snapshot(&self) -> Sim {
+        self.view().snapshot()
+    }
+
+    fn focus_tape(&mut self, arm: usize) {
+        self.edit().focus_tape(arm)
+    }
+
+    #[cfg(test)]
+    fn pick(&mut self, ids: Vec<Id>) {
+        self.edit().pick(ids)
+    }
+
+    fn picks(&self, id: Id) -> bool {
+        self.view().picks(id)
+    }
+
+    #[cfg(test)]
+    fn dir(&self, id: Id) -> usize {
+        self.view().dir(id)
+    }
+
+    fn anchor(&self, id: Id) -> Hex {
+        self.view().anchor(id)
+    }
+
+    #[cfg(test)]
+    fn cells(&self, id: Id) -> Vec<Hex> {
+        self.view().cells(id)
+    }
+
+    fn hit(&self, point: Vec2, frame: &Frame) -> Option<Id> {
+        self.view().hit(point, frame)
+    }
+
+    fn target_item(&self, point: Vec2, frame: &Frame) -> Option<Item> {
+        self.view().target_item(point, frame)
+    }
+
+    fn set_hover(&mut self, item: Option<Item>) {
+        self.edit().set_hover(item)
+    }
+
+    #[cfg(test)]
+    fn marquee(&self, a: Vec2, b: Vec2) -> Vec<Id> {
+        self.view().marquee(a, b)
+    }
+
+    #[cfg(test)]
+    fn delete(&mut self, ids: &[Id]) {
+        self.edit().delete(ids)
+    }
+
+    #[cfg(test)]
+    fn copy(&self, ids: &[Id]) -> Option<String> {
+        self.view().copy(ids)
+    }
+
+    fn paste_text(&mut self, text: &str) -> bool {
+        self.edit().paste_text(text)
+    }
+
+    fn lift(&mut self, set: Sim, back: Back) {
+        self.edit().lift(set, back)
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
+    fn press(&mut self, screen: Vec2, point: Vec2) {
+        self.edit().press(screen, point)
+    }
+
+    fn press_target(&mut self, screen: Vec2, point: Vec2, target: Option<Id>) {
+        self.edit().press_target(screen, point, target)
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
+    fn drag(&mut self, screen: Vec2) {
+        self.edit().drag(screen)
+    }
+
+    fn begin_drag(&mut self) {
+        self.edit().begin_drag()
+    }
+
+    fn release(&mut self, at: Option<Hex>) {
+        self.edit().release(at)
+    }
+
+    #[cfg(test)]
+    fn place(&mut self, at: Option<Hex>) {
+        self.edit().place(at)
+    }
+
+    fn key(&mut self, key: KeyCode, shift: bool) {
+        self.edit().key(key, shift)
+    }
+}
+impl WorldAccess for World {
+    fn new(sim: Sim) -> Self {
+        Self {
+            viewer: Viewer::new(&sim),
+            sim,
+        }
+    }
+    fn sim(&self) -> &Sim {
+        &self.sim
+    }
+    #[cfg(test)]
+    fn sim_mut(&mut self) -> &mut Sim {
+        &mut self.sim
+    }
+    fn view(&self) -> Editor<&Sim, &Viewer> {
+        Editor {
+            sim: &self.sim,
+            viewer: &self.viewer,
+        }
+    }
+    fn edit(&mut self) -> Editor<&mut Sim, &mut Viewer> {
+        Editor {
+            sim: &mut self.sim,
+            viewer: &mut self.viewer,
+        }
+    }
+    fn shown(&self) -> &Sim {
+        self.viewer.ghost.as_ref().unwrap_or(&self.sim)
+    }
+}
+
+impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Editor<S, V> {
     fn card_at(&self, pointer: Vec2, viewport: &Viewport) -> Option<u64> {
         let covers = |card: &Pinned| {
             let (at, size) = card.screen_rect(viewport);
@@ -619,95 +1138,12 @@ impl World {
             })
     }
 
-    #[cfg(any(test, not(target_arch = "wasm32")))]
-    fn resize_card(&mut self, pointer: Vec2, notches: f32, viewport: &Viewport) -> bool {
-        let Some(id) = self.card_at(pointer, viewport) else {
-            return false;
-        };
-        let card = self.pinned.iter_mut().find(|card| card.id == id).unwrap();
-        let base = card_size(card.item);
-        let limit = (viewport.size / base).min_element().max(0.05);
-        card.scale = zoomed(card.scale, notches).clamp(0.05, limit);
-        true
-    }
-
-    fn unpin(&mut self, id: u64) {
-        self.pinned.retain(|card| card.id != id);
-        self.pinned_play.retain(|play| {
-            self.pinned
-                .iter()
-                .any(|card| card.item == Item::Machine(play.machine))
-        });
-        self.card_drag = None;
-        self.focus = None;
-    }
-
-    fn lift_inventory(&mut self, item: Item) {
-        self.refused = None;
-        if matches!(item, Item::Machine(_) | Item::Atom(_))
-            && self
-                .sim
-                .inventory
-                .count(item)
-                .is_some_and(|count| count > 0)
-        {
-            self.lift(fresh(item), Back::Inventory);
-        }
-    }
-
-    fn set_cap(&mut self, item: Item, notches: i32) {
-        if self.has_machine_rollback() {
-            return;
-        }
-        self.sim.inventory.set_cap(item, notches);
-        self.resim(self.ghosts());
-    }
-
     fn shown(&self) -> &Sim {
         self.ghost.as_ref().unwrap_or(&self.sim)
     }
 
     fn ghosts(&self) -> u64 {
         self.shown().tick - self.sim.tick
-    }
-
-    fn unpick_atoms(&mut self) {
-        if let Some(Focus::Pick(ids)) = &mut self.focus {
-            ids.retain(|id| !matches!(id, Id::Atom(_)));
-            if ids.is_empty() {
-                self.focus = None;
-            }
-        }
-    }
-
-    fn step(&mut self) {
-        if self.ghost.is_some() {
-            self.unpick_atoms();
-        }
-        self.ghost = None;
-        self.prev = self.sim.clone();
-        let tick = self.sim.step();
-        if let Some(Press::Atom { id, .. }) = self.down
-            && tick.events.iter().any(
-                |event| matches!(event, sim::TickEvent::Consumed { atoms, .. } if atoms.contains(&id)),
-            )
-        {
-            self.down = None;
-        }
-        self.score = Some(tick.clone());
-        self.events = vec![tick];
-
-        self.focus = self.focus.take().and_then(|f| f.survive(&self.sim));
-    }
-
-    fn resim(&mut self, n: u64) {
-        if n > 0 || self.ghost.is_some() {
-            self.unpick_atoms();
-        }
-        let (ghost, events) = self.sim.replayed(n);
-        self.events = events;
-        self.ghost = (n > 0).then_some(ghost);
-        self.prev = self.shown().clone();
     }
 
     fn editable(&self, moves: bool) -> bool {
@@ -727,12 +1163,6 @@ impl World {
             || self.phase(),
             |since| phase(since, self.period, self.motion),
         )
-    }
-
-    fn end_turn(&mut self) {
-        if let Some(since) = self.turn.take().and_then(|turn| turn.resume) {
-            self.since = since;
-        }
     }
 
     fn resting_poses(&self, target: TurnTarget, centre: Vec2) -> Vec<MachinePose> {
@@ -792,42 +1222,6 @@ impl World {
         })
     }
 
-    fn begin_turn(&mut self, target: TurnTarget, spin: Spin, centre: Vec2) {
-        let phase = self.turn_phase();
-        let resume = self
-            .turn
-            .as_ref()
-            .filter(|turn| turn.target == target)
-            .and_then(|turn| turn.resume)
-            .or_else(|| (target == TurnTarget::Held).then_some(self.since));
-        let (from, remaining) = match &self.turn {
-            Some(turn) if turn.target == target && phase < 1.0 => (
-                turn.poses(phase, centre),
-                turn.angle * (1.0 - turn.progress(phase)),
-            ),
-            _ => {
-                let from = self.turn_source(target, centre);
-                let remaining = from
-                    .first()
-                    .zip(self.resting_poses(target, centre).first())
-                    .map_or(0.0, |(from, rest)| {
-                        Vec2::from_angle(from.angle).angle_to(Vec2::from_angle(rest.angle))
-                    });
-                (from, remaining)
-            }
-        };
-        let angle = spin_angle(spin);
-        self.turn = Some(FacingTween {
-            target,
-            centre,
-            cell: hex_at(centre),
-            from,
-            angle: remaining + angle,
-            resume,
-        });
-        self.since = 0.0;
-    }
-
     fn board_turn_pose(&self) -> Option<(Id, MachinePose)> {
         let TurnTarget::Board(id) = self.turn.as_ref()?.target else {
             return None;
@@ -885,7 +1279,7 @@ impl World {
                 if let Some(id) = removed.atom_at(*cell) {
                     removed.consume(&removed.component(id));
                 }
-                if removed == self.sim {
+                if removed == *self.sim {
                     (**original).clone()
                 } else {
                     let mut sim = self.sim.clone();
@@ -899,19 +1293,6 @@ impl World {
             }) => (**sim).clone(),
             _ => self.sim.clone(),
         }
-    }
-
-    fn focus_tape(&mut self, arm: usize) {
-        self.refused = None;
-        if self.holding() {
-            return;
-        }
-        let cursor = self.shown().arms[arm].tape.len();
-        self.focus = Some(Focus::Tape { arm, cursor });
-    }
-
-    fn pick(&mut self, ids: Vec<Id>) {
-        self.focus = (!ids.is_empty()).then_some(Focus::Pick(ids));
     }
 
     fn picks(&self, id: Id) -> bool {
@@ -1003,19 +1384,6 @@ impl World {
         })
     }
 
-    fn set_hover(&mut self, item: Option<Item>) {
-        let item = item.map(card_item);
-        if self.hover == item {
-            return;
-        }
-        self.hover = item;
-        self.play = match item {
-            Some(Item::Machine(machine)) => Some(Play::at(machine, 0)),
-            Some(Item::Token(_)) | None => None,
-            Some(Item::Atom(_)) => unreachable!("an atom resolves to its route before hover"),
-        };
-    }
-
     fn marquee(&self, a: Vec2, b: Vec2) -> Vec<Id> {
         let (lo, hi) = (a.min(b), a.max(b));
         let inside = |c: Hex| {
@@ -1052,6 +1420,319 @@ impl World {
         set
     }
 
+    fn edits(&self, ids: &[Id]) -> bool {
+        self.editable(ids.iter().any(|id| id.moves()))
+    }
+
+    fn copy(&self, ids: &[Id]) -> Option<String> {
+        let machine_ids = machines(ids);
+        let mut set = self.lifted(&machine_ids, ORIGIN);
+        let sim = self.shown();
+        let mut seen: Vec<usize> = Vec::new();
+        for id in ids {
+            let Id::Atom(i) = id else { continue };
+            if seen.contains(i) {
+                continue;
+            }
+            let compound = sim.component(*i);
+            seen.extend(&compound);
+            set.place(&sim.fragment(&compound, ORIGIN), ORIGIN);
+        }
+        if machine_ids.is_empty() && seen.is_empty() {
+            None
+        } else {
+            Fragment::of(&set).ok().map(|fragment| fragment.to_string())
+        }
+    }
+}
+
+impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>> Editor<S, V> {
+    fn forward(&mut self) {
+        self.end_turn();
+        self.down = None;
+        self.unpick_atoms();
+        let prev = self.shown().clone();
+        let mut ghost = prev.clone();
+        let tick = ghost.step();
+        self.score = Some(tick.clone());
+        self.events.push(tick);
+        self.prev = prev;
+        self.ghost = Some(ghost);
+        self.since = 0.0;
+    }
+    fn advance(&mut self, dt: f32) {
+        self.animate(dt);
+        if self.running && self.saveable() && self.since >= self.period {
+            self.since = 0.0;
+            self.step();
+        }
+    }
+
+    fn animate(&mut self, dt: f32) {
+        if !self.has_machine_rollback() || self.turn.is_some() {
+            self.since = (self.since + dt).min(self.period);
+        }
+        if self.turn.is_some() && self.turn_phase() >= 1.0 {
+            self.end_turn();
+        }
+        let period = self.period;
+        if let Some(play) = &mut self.play {
+            play.advance(dt, period);
+        }
+        for play in &mut self.pinned_play {
+            play.advance(dt, period);
+        }
+    }
+
+    fn pin_world(&mut self, item: Item, anchor: Vec2) -> u64 {
+        let item = card_item(item);
+        let id = self.next_card;
+        self.next_card += 1;
+        if let Item::Machine(machine) = item
+            && self.pinned_play.iter().all(|play| play.machine != machine)
+        {
+            self.pinned_play.push(Play::at(machine, 0));
+        }
+        self.pinned.push(Pinned {
+            id,
+            item,
+            anchor,
+            scale: 1.0,
+        });
+        self.focus = Some(Focus::Card(id));
+        id
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
+    fn begin_pin(&mut self, item: Item, pointer: Vec2, viewport: &Viewport, button: MouseButton) {
+        self.pin_at(item, viewport.world(pointer), button);
+    }
+
+    fn pin_at(&mut self, item: Item, at: Vec2, button: MouseButton) {
+        if self.holding() || self.down.is_some() {
+            return;
+        }
+        let id = self.pin_world(item, at);
+        self.card_drag = Some(CardDrag::New { id, button });
+    }
+
+    #[cfg(test)]
+    fn press_inventory(&mut self, item: Item, pointer: Vec2, viewport: &Viewport) {
+        if self.sim.inventory.count(item) == Some(0) {
+            self.begin_pin(item, pointer, viewport, MouseButton::Left);
+        } else {
+            self.lift_inventory(item);
+        }
+    }
+
+    fn card_press(&mut self, id: u64, pointer: Vec2, button: MouseButton) {
+        if self.holding() || self.down.is_some() || self.card_drag.is_some() {
+            return;
+        }
+        if self.pinned.iter().all(|card| card.id != id) {
+            return;
+        }
+        self.focus = Some(Focus::Card(id));
+        self.card_drag = Some(CardDrag::Move {
+            id,
+            start: pointer,
+            moved: false,
+            button,
+        });
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
+    fn card_drag(&mut self, pointer: Vec2, viewport: &Viewport) {
+        let moved = !matches!(self.card_drag, Some(CardDrag::Move { start, moved: false, .. }) if start == pointer);
+        if moved {
+            self.move_card(viewport.world(pointer));
+        }
+    }
+
+    fn move_card(&mut self, anchor: Vec2) {
+        let Some(drag) = self.card_drag else { return };
+        let id = match drag {
+            CardDrag::Move { id, .. } | CardDrag::New { id, .. } => id,
+        };
+        let Some(card) = self.pinned.iter_mut().find(|card| card.id == id) else {
+            self.card_drag = None;
+            return;
+        };
+        card.anchor = anchor;
+        if let Some(CardDrag::Move { moved, .. }) = &mut self.card_drag {
+            *moved = true;
+        }
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
+    fn end_card_drag(&mut self, pointer: Option<Vec2>, viewport: &Viewport) -> Option<CardDrag> {
+        if let Some(pointer) = pointer {
+            self.card_drag(pointer, viewport);
+        }
+        self.card_drag.take()
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
+    fn resize_card(&mut self, pointer: Vec2, notches: f32, viewport: &Viewport) -> bool {
+        let Some(id) = self.card_at(pointer, viewport) else {
+            return false;
+        };
+        let card = self.pinned.iter_mut().find(|card| card.id == id).unwrap();
+        let base = card_size(card.item);
+        let limit = (viewport.size / base).min_element().max(0.05);
+        card.scale = zoomed(card.scale, notches).clamp(0.05, limit);
+        true
+    }
+
+    fn unpin(&mut self, id: u64) {
+        self.pinned.retain(|card| card.id != id);
+        let viewer = &mut *self.viewer;
+        viewer.pinned_play.retain(|play| {
+            viewer
+                .pinned
+                .iter()
+                .any(|card| card.item == Item::Machine(play.machine))
+        });
+        self.card_drag = None;
+        self.focus = None;
+    }
+
+    fn lift_inventory(&mut self, item: Item) {
+        self.refused = None;
+        if matches!(item, Item::Machine(_) | Item::Atom(_))
+            && self
+                .sim
+                .inventory
+                .count(item)
+                .is_some_and(|count| count > 0)
+        {
+            self.lift(fresh(item), Back::Inventory);
+        }
+    }
+
+    fn set_cap(&mut self, item: Item, notches: i32) {
+        if self.has_machine_rollback() {
+            return;
+        }
+        self.sim.inventory.set_cap(item, notches);
+        self.resim(self.ghosts());
+    }
+
+    fn refill(&mut self) {
+        if self.has_machine_rollback() {
+            return;
+        }
+        self.sim.inventory.fill();
+        self.resim(self.ghosts());
+    }
+
+    fn unpick_atoms(&mut self) {
+        if let Some(Focus::Pick(ids)) = &mut self.focus {
+            ids.retain(|id| !matches!(id, Id::Atom(_)));
+            if ids.is_empty() {
+                self.focus = None;
+            }
+        }
+    }
+
+    fn step(&mut self) {
+        if self.ghost.is_some() {
+            self.unpick_atoms();
+        }
+        self.ghost = None;
+        self.prev = self.sim.clone();
+        let tick = self.sim.step();
+        if let Some(Press::Atom { id, .. }) = self.down
+            && tick.events.iter().any(
+                |event| matches!(event, sim::TickEvent::Consumed { atoms, .. } if atoms.contains(&id)),
+            )
+        {
+            self.down = None;
+        }
+        self.score = Some(tick.clone());
+        self.events = vec![tick];
+
+        self.focus = self.focus.take().and_then(|f| f.survive(&self.sim));
+    }
+
+    fn resim(&mut self, n: u64) {
+        if n > 0 || self.ghost.is_some() {
+            self.unpick_atoms();
+        }
+        let (ghost, events) = self.sim.replayed(n);
+        self.events = events;
+        self.ghost = (n > 0).then_some(ghost);
+        self.prev = self.shown().clone();
+    }
+
+    fn end_turn(&mut self) {
+        if let Some(since) = self.turn.take().and_then(|turn| turn.resume) {
+            self.since = since;
+        }
+    }
+
+    fn begin_turn(&mut self, target: TurnTarget, spin: Spin, centre: Vec2) {
+        let phase = self.turn_phase();
+        let resume = self
+            .turn
+            .as_ref()
+            .filter(|turn| turn.target == target)
+            .and_then(|turn| turn.resume)
+            .or_else(|| (target == TurnTarget::Held).then_some(self.since));
+        let (from, remaining) = match &self.turn {
+            Some(turn) if turn.target == target && phase < 1.0 => (
+                turn.poses(phase, centre),
+                turn.angle * (1.0 - turn.progress(phase)),
+            ),
+            _ => {
+                let from = self.turn_source(target, centre);
+                let remaining = from
+                    .first()
+                    .zip(self.resting_poses(target, centre).first())
+                    .map_or(0.0, |(from, rest)| {
+                        Vec2::from_angle(from.angle).angle_to(Vec2::from_angle(rest.angle))
+                    });
+                (from, remaining)
+            }
+        };
+        let angle = spin_angle(spin);
+        self.turn = Some(FacingTween {
+            target,
+            centre,
+            cell: hex_at(centre),
+            from,
+            angle: remaining + angle,
+            resume,
+        });
+        self.since = 0.0;
+    }
+
+    fn focus_tape(&mut self, arm: usize) {
+        self.refused = None;
+        if self.holding() {
+            return;
+        }
+        let cursor = self.shown().arms[arm].tape.len();
+        self.focus = Some(Focus::Tape { arm, cursor });
+    }
+
+    fn pick(&mut self, ids: Vec<Id>) {
+        self.focus = (!ids.is_empty()).then_some(Focus::Pick(ids));
+    }
+
+    fn set_hover(&mut self, item: Option<Item>) {
+        let item = item.map(card_item);
+        if self.hover == item {
+            return;
+        }
+        self.hover = item;
+        self.play = match item {
+            Some(Item::Machine(machine)) => Some(Play::at(machine, 0)),
+            Some(Item::Token(_)) | None => None,
+            Some(Item::Atom(_)) => unreachable!("an atom resolves to its route before hover"),
+        };
+    }
+
     fn set_pose(&mut self, id: Id, at: Hex, dir: usize) {
         match id {
             Id::Arm(i) => {
@@ -1071,10 +1752,6 @@ impl World {
         for a in &mut self.sim.arms {
             a.stall = None;
         }
-    }
-
-    fn edits(&self, ids: &[Id]) -> bool {
-        self.editable(ids.iter().any(|id| id.moves()))
     }
 
     fn remove(&mut self, ids: &[Id]) {
@@ -1155,27 +1832,6 @@ impl World {
     fn return_to_inventory(&mut self, set: &Sim) {
         for item in set.bill() {
             self.sim.inventory.add(item);
-        }
-    }
-
-    fn copy(&self, ids: &[Id]) -> Option<String> {
-        let machine_ids = machines(ids);
-        let mut set = self.lifted(&machine_ids, ORIGIN);
-        let sim = self.shown();
-        let mut seen: Vec<usize> = Vec::new();
-        for id in ids {
-            let Id::Atom(i) = id else { continue };
-            if seen.contains(i) {
-                continue;
-            }
-            let compound = sim.component(*i);
-            seen.extend(&compound);
-            set.place(&sim.fragment(&compound, ORIGIN), ORIGIN);
-        }
-        if machine_ids.is_empty() && seen.is_empty() {
-            None
-        } else {
-            Fragment::of(&set).ok().map(|fragment| fragment.to_string())
         }
     }
 
@@ -1326,7 +1982,7 @@ impl World {
                     self.pop(*set, back);
                     return;
                 }
-                self.sim = upgraded;
+                *self.sim = upgraded;
                 self.prev = self.sim.clone();
                 self.score = Some(tick.clone());
                 self.events = vec![tick];
@@ -1353,7 +2009,7 @@ impl World {
         let ghosts = self.ghosts();
         let ids = match back {
             Back::Pick { ids, sim, .. } => {
-                self.sim = *sim;
+                *self.sim = *sim;
                 let arms = ids.iter().filter(|id| matches!(id, Id::Arm(_)));
                 for (id, a) in arms.zip(&set.arms) {
                     self.set_pose(*id, at.add(a.pivot), a.dir);
@@ -1385,7 +2041,7 @@ impl World {
                 ghost,
                 events,
             } => {
-                self.sim = *sim;
+                *self.sim = *sim;
                 self.prev = *prev;
                 self.ghost = ghost.map(|ghost| *ghost);
                 self.events = events;
@@ -1396,8 +2052,8 @@ impl World {
                 if let Some(id) = removed.atom_at(cell) {
                     removed.consume(&removed.component(id));
                 }
-                if removed == self.sim {
-                    self.sim = *sim;
+                if removed == *self.sim {
+                    *self.sim = *sim;
                     self.resim(self.ghosts());
                     return;
                 }
@@ -1433,25 +2089,13 @@ impl World {
         }
         match key {
             Space => {
+                self.down = None;
                 self.running = !self.running;
-                if self.running {
-                    self.down = None;
-                    self.resim(0);
-                }
                 return;
             }
             KeyG => {
                 if !self.running {
-                    self.end_turn();
-                    self.down = None;
-                    self.unpick_atoms();
-                    let (prev, mut events) = self.sim.replayed(self.ghosts());
-                    let mut ghost = prev.clone();
-                    events.push(ghost.step());
-                    self.prev = prev;
-                    self.ghost = Some(ghost);
-                    self.events = events;
-                    self.since = 0.0;
+                    self.forward();
                 }
                 return;
             }
@@ -1550,7 +2194,8 @@ impl World {
                     self.focus = None;
                     return;
                 }
-                let tape = &mut self.sim.arms[arm].tape;
+                let sim = &mut *self.sim;
+                let tape = &mut sim.arms[arm].tape;
                 let len = tape.len();
                 let cursor = cursor.min(len);
                 let cursor = match key {
@@ -1560,11 +2205,11 @@ impl World {
                     End => len,
                     KeyZ | Backspace if cursor > 0 => {
                         let erased = tape.remove(cursor - 1);
-                        self.sim.inventory.add(Item::Token(erased));
+                        sim.inventory.add(Item::Token(erased));
                         cursor - 1
                     }
                     _ => match instr {
-                        Some(instr) if self.sim.inventory.spend(Item::Token(instr)) => {
+                        Some(instr) if sim.inventory.spend(Item::Token(instr)) => {
                             tape.insert(cursor, instr);
                             cursor + 1
                         }
@@ -1648,7 +2293,7 @@ fn clipboard_text() {
 #[cfg(target_arch = "wasm32")]
 static PASTED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-fn clipboard_paste(mut world: ResMut<World>, mut session: ResMut<session::Session>) {
+fn clipboard_paste(mut world: ResMut<Game>, mut session: ResMut<session::Session>) {
     if session.replaying() {
         world.clipboard = None;
         return;
@@ -1710,11 +2355,11 @@ fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnO
     if fragment != INVENTORY_TOKEN {
         return;
     }
-    world.sim.inventory.fill();
+    world.refill();
     clear(fragment);
 }
 
-fn refill_inventory(mut world: ResMut<World>, mut session: ResMut<session::Session>) {
+fn refill_inventory(mut world: ResMut<Game>, mut session: ResMut<session::Session>) {
     if session.replaying() {
         return;
     }
@@ -1787,6 +2432,10 @@ impl Viewport {
         Vec2::new(self.size.x / 2.0 + d.x, self.size.y / 2.0 - d.y)
     }
 
+    fn scroll(&mut self, screen: Vec2, notches: f32) {
+        self.zoom_about(screen, zoomed(self.scale, -notches).clamp(0.000001, 1.0e12));
+    }
+
     fn zoom_about(&mut self, screen: Vec2, scale: f32) {
         let before = self.world(screen);
         self.scale = scale;
@@ -1807,10 +2456,14 @@ impl Viewport {
 }
 
 fn app(world: World) -> App {
+    game_app(Game::from_world(world))
+}
+
+fn game_app(world: Game) -> App {
     let mut app = App::new();
-    let session = session::Session::new(&world.sim);
+    let session = session::Session::new(&world.state());
     let saved = Saved {
-        attempted: world.sim.clone(),
+        attempted: world.state(),
         refused: false,
     };
     app.insert_resource(world)
@@ -1854,6 +2507,7 @@ fn app(world: World) -> App {
                 play_sound,
                 edit,
                 persistence,
+                focus_camera,
                 session::flush,
                 tapes,
                 tally,
@@ -1966,7 +2620,9 @@ fn main() {
     let mut app = match shot::parse(&args) {
         Some((world, shot)) => shot::app(world, shot),
         None => {
-            let mut app = app(World::new(persist::restore(sim::start())));
+            let mut app = game_app(Game::from_state(persist::restore(
+                Game::new(sim::start()).state(),
+            )));
             app.add_plugins(DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "ziral".into(),
@@ -1983,7 +2639,7 @@ fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(record) = replay {
         let end = args.iter().any(|arg| arg == "--shot");
-        let session = session::open(record, &mut app.world_mut().resource_mut::<World>(), end);
+        let session = session::open(record, &mut app.world_mut().resource_mut::<Game>(), end);
         app.insert_resource(session);
     }
     lit_plugin(&mut app);
@@ -1992,14 +2648,13 @@ fn main() {
 
 fn play_sound(
     mut commands: Commands,
-    mut world: ResMut<World>,
+    mut world: ResMut<Game>,
     bank: Option<Res<sound::Bank>>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
 ) {
-    let Some(tick) = world.score.take() else {
-        return;
-    };
+    let tick = world.score.take();
+    let cue = world.cue.take();
     let Some(bank) = bank.filter(|bank| bank.unlocked) else {
         return;
     };
@@ -2007,7 +2662,31 @@ fn play_sound(
     let Some(view) = Viewport::of(&window, transform, projection) else {
         return;
     };
-    sound::play(&mut commands, &bank, &sound::score(&tick), view.sound());
+    if let Some(tick) = tick {
+        sound::play(&mut commands, &bank, &sound::score(&tick), view.sound());
+    }
+    if let Some(entering) = cue {
+        let machine = Machine::Glyph(if entering {
+            GlyphKind::Source
+        } else {
+            GlyphKind::Bonder
+        });
+        sound::play(
+            &mut commands,
+            &bank,
+            &[sound::Hit {
+                machine,
+                instrument: sound::instrument(machine),
+                upgrade: false,
+                at: ORIGIN,
+            }],
+            sound::View {
+                center: Vec2::ZERO,
+                half: Vec2::ONE,
+                scale: 1.0,
+            },
+        );
+    }
 }
 
 fn spawn_camera(mut commands: Commands) {
@@ -2024,7 +2703,6 @@ fn spawn_camera(mut commands: Commands) {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TapeLine {
     arm: usize,
-    stalled: bool,
     tape: Vec<Instr>,
     pc: usize,
     cursor: Option<usize>,
@@ -2062,14 +2740,6 @@ fn row(gap: f32) -> Node {
         column_gap: Val::Px(gap),
         ..default()
     }
-}
-
-fn text(s: String) -> impl Bundle {
-    (
-        Text::new(s),
-        TextColor(IVORY),
-        TextFont::from_font_size(15.0),
-    )
 }
 
 fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
@@ -2129,7 +2799,7 @@ struct Refusal {
 fn refusal(
     mut commands: Commands,
     kiln: Res<Kiln>,
-    world: Res<World>,
+    world: Res<Game>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     line: Single<(Entity, &mut Refusal, &mut Node, &mut Visibility)>,
@@ -2309,9 +2979,9 @@ struct Tally {
     shown: Option<(u32, u32)>,
 }
 
-fn tally(mut commands: Commands, world: Res<World>, mut rows: Query<(Entity, &mut Tally)>) {
+fn tally(mut commands: Commands, world: Res<Game>, mut rows: Query<(Entity, &mut Tally)>) {
     for (entity, mut tally) in &mut rows {
-        let inventory = &world.sim.inventory;
+        let inventory = &world.sim().inventory;
         let Some(count) = inventory.count(tally.item) else {
             continue;
         };
@@ -2369,7 +3039,7 @@ fn pips(count: u32, cap: u32) -> (u32, f32) {
 }
 
 fn hover(
-    mut world: ResMut<World>,
+    mut world: ResMut<Game>,
     mut session: ResMut<session::Session>,
     window: Single<&Window, With<PrimaryWindow>>,
     rows: Query<(&PaletteRow, &Interaction)>,
@@ -2502,7 +3172,7 @@ type PinnedNodes<'w, 's> = Query<
 
 fn card(
     mut commands: Commands,
-    world: Res<World>,
+    world: Res<Game>,
     board: BoardCamera,
     column: Single<(&ComputedNode, &UiGlobalTransform), With<Palette>>,
     mut cameras: CardCameras,
@@ -2814,8 +3484,26 @@ fn save_icon(button: &mut ChildSpawnerCommands, up: bool) {
         });
 }
 
-fn run_ticks(mut world: ResMut<World>, mut session: ResMut<session::Session>, time: Res<Time>) {
+fn run_ticks(mut world: ResMut<Game>, mut session: ResMut<session::Session>, time: Res<Time>) {
     session.advance(&mut world, time.delta_secs());
+}
+
+fn focus_camera(
+    mut game: ResMut<Game>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>,
+) {
+    if game.camera_changes.is_empty() {
+        return;
+    }
+    let (mut transform, mut projection) = camera.into_inner();
+    let mut viewport = Viewport::of(&window, &transform, &projection).unwrap();
+    game.reframe(&mut viewport);
+    transform.translation = viewport.cam.extend(transform.translation.z);
+    let Projection::Orthographic(ortho) = &mut *projection else {
+        return;
+    };
+    ortho.scale = viewport.scale;
 }
 
 const HOLD: u64 = 3;
@@ -2882,24 +3570,8 @@ type ViewInput<'w> = (
     Res<'w, AccumulatedMouseMotion>,
 );
 
-#[cfg(any(test, not(target_arch = "wasm32")))]
-fn wheel(
-    world: &mut World,
-    pointer: Vec2,
-    notches: f32,
-    viewport: &Viewport,
-    board: &mut f32,
-) -> bool {
-    if world.resize_card(pointer, notches, viewport) {
-        true
-    } else {
-        *board = zoomed(*board, -notches).clamp(0.05, 40.0);
-        false
-    }
-}
-
 fn view(
-    mut world: ResMut<World>,
+    mut world: ResMut<Game>,
     mut session: ResMut<session::Session>,
     input: ViewInput,
     window: Single<&Window, With<PrimaryWindow>>,
@@ -2964,11 +3636,18 @@ fn view(
             session.send(&mut world, session::Input::ScaleCard(id, scale));
             true
         } else {
-            ortho.scale = zoomed(ortho.scale, -notches).clamp(0.05, 40.0);
             false
         };
         if !card {
-            viewport.zoom_about(c, ortho.scale);
+            viewport.scroll(c, notches);
+            ortho.scale = viewport.scale;
+            if !session.replaying()
+                && let Some(destination) = world.crossing(&viewport)
+            {
+                session.send(&mut world, session::Input::Focus(destination));
+                world.reframe(&mut viewport);
+                ortho.scale = viewport.scale;
+            }
             transform.translation = viewport.cam.extend(transform.translation.z);
         }
     }
@@ -3029,7 +3708,7 @@ type EditUi<'w, 's> = (
 );
 
 fn edit(
-    mut world: ResMut<World>,
+    mut world: ResMut<Game>,
     mut session: ResMut<session::Session>,
     mut drag_start: Local<Option<Vec2>>,
     input: (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>),
@@ -3129,7 +3808,7 @@ fn edit(
             );
         } else if let Some((Some(entry), _, _)) = pressed {
             if let Some(pointer) = screen {
-                let input = if world.sim.inventory.count(entry.0) == Some(0) {
+                let input = if world.sim().inventory.count(entry.0) == Some(0) {
                     session::Input::Pin(entry.0, viewport.world(pointer), MouseButton::Left)
                 } else {
                     session::Input::Inventory(entry.0)
@@ -3206,7 +3885,7 @@ fn edit(
 }
 
 fn persistence(
-    mut world: ResMut<World>,
+    mut world: ResMut<Game>,
     mut saved: ResMut<Saved>,
     mut session: ResMut<session::Session>,
     actions: Query<(&SaveAction, &Interaction), Changed<Interaction>>,
@@ -3216,8 +3895,7 @@ fn persistence(
             continue;
         }
         match action {
-            SaveAction::Export if world.saveable() => persist::download(&world.sim),
-            SaveAction::Export => persist::download(&world.snapshot()),
+            SaveAction::Export => persist::download(&world.state()),
             SaveAction::Import => persist::choose(),
         }
     }
@@ -3233,12 +3911,12 @@ fn persistence(
                 Err(reason) => persist::refuse(&reason),
             }
         } else {
-            match persist::decode(&text) {
-                Ok(sim) => {
+            match persist::decode_state(&text) {
+                Ok(state) => {
                     if session.replaying() {
-                        *session = session::Session::new(&sim);
+                        *session = session::Session::new(&state);
                     }
-                    session.send(&mut world, session::Input::Import(Box::new(sim)));
+                    session.send(&mut world, session::Input::Restore(Box::new(state)));
                 }
                 Err(reason) => persist::refuse(&reason),
             }
@@ -3247,17 +3925,13 @@ fn persistence(
     if session.replaying() {
         return;
     }
-    if world.saveable() && saved.attempted != world.sim {
-        saved.store(world.sim.clone());
-    } else if !world.saveable() {
-        let sim = world.snapshot();
-        if saved.attempted != sim {
-            saved.store(sim);
-        }
+    let state = world.state();
+    if saved.attempted != state {
+        saved.store(state);
     }
 }
 
-fn tape_line(world: &World, i: usize) -> TapeLine {
+fn tape_line(world: &impl WorldAccess, i: usize) -> TapeLine {
     let arm = &world.shown().arms[i];
     let cursor = match &world.focus {
         Some(Focus::Tape { arm, cursor }) if *arm == i => Some(*cursor),
@@ -3265,7 +3939,6 @@ fn tape_line(world: &World, i: usize) -> TapeLine {
     };
     TapeLine {
         arm: i,
-        stalled: arm.stall.is_some(),
         tape: arm.tape.clone(),
         pc: if arm.tape.is_empty() {
             0
@@ -3278,7 +3951,7 @@ fn tape_line(world: &World, i: usize) -> TapeLine {
 
 fn tapes(
     mut commands: Commands,
-    world: Res<World>,
+    world: Res<Game>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     mut rows: Query<(Entity, &mut TapeRow, &mut Visibility, &mut BackgroundColor)>,
@@ -3322,7 +3995,7 @@ fn tapes(
         };
         *vis = Visibility::Inherited;
         bg.0 = strip(world.picks(Id::Arm(arm)));
-        let line = tape_line(&world, arm);
+        let line = tape_line(&*world, arm);
         if row.line.as_ref() == Some(&line) {
             continue;
         }
@@ -3330,8 +4003,6 @@ fn tapes(
             .entity(entity)
             .despawn_children()
             .with_children(|strip| {
-                let stalled = if line.stalled { "!" } else { " " };
-                strip.spawn(text(format!("{arm:<3}{stalled}")));
                 for (k, instr) in line.tape.iter().enumerate() {
                     if line.cursor == Some(k) {
                         strip.spawn(cursor());
@@ -3379,13 +4050,15 @@ struct Kiln {
     bar: Handle<Mesh>,
     bond: Handle<Mesh>,
     rim: Handle<Mesh>,
-    tiled: Option<Tiling>,
+    tiled: Option<(Tiling, bool)>,
     glaze: [Handle<ColorMaterial>; 8],
     patina: Handle<ColorMaterial>,
     card: [Handle<ColorMaterial>; 2],
     atoms: [Handle<Image>; 4],
     skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
     lit: Vec<(Skin, [Handle<Lit>; 4])>,
+    portal: Handle<Image>,
+    ethereal: Vec<(Skin, Handle<ColorMaterial>)>,
 }
 
 impl Kiln {
@@ -3611,7 +4284,19 @@ fn fire_kiln(
         ));
         image
     });
+    let portal = image(look::machine(Machine::Glyph(GlyphKind::Source)).skin);
+    let ethereal = skins
+        .iter()
+        .filter(|(skin, _, _)| skin.finish == Finish::Grouted)
+        .map(|(skin, _, material)| {
+            let mut material = materials.get(material.id()).unwrap().clone();
+            material.color = Color::WHITE.mix(&Glaze::Plum.color(), 0.35);
+            (*skin, materials.add(material))
+        })
+        .collect();
     commands.insert_resource(Kiln {
+        portal,
+        ethereal,
         circle: meshes.add(Circle::new(1.0)),
         hexagon: meshes.add(RegularPolygon::new(1.0, 6)),
         bar: meshes.add(
@@ -3689,30 +4374,36 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs, G: GizmoConfigGroup = DefaultGizmoConfigG
     kiln: &'a Kiln,
     layers: RenderLayers,
     shift: Vec2,
+    scale: f32,
 }
 
 impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
     fn shifted(&mut self, by: Vec2, draw: impl FnOnce(&mut Self)) {
         let was = self.shift;
-        self.shift += by;
+        self.shift += by * self.scale;
         draw(self);
         self.shift = was;
     }
 
     fn tile(&mut self, h: Hex, z: f32) {
         let (mesh, material, mut transform) = tile(self.kiln, h);
-        transform.translation += self.shift.extend(z);
+        transform.translation =
+            (transform.translation.truncate() * self.scale + self.shift).extend(z);
+        transform.scale *= self.scale;
         self.commands
             .spawn((Fill, self.layers.clone(), mesh, material, transform));
     }
 
     fn outline(&mut self, at: Vec2, size: f32) {
-        self.gizmos
-            .linestrip_2d(corners(at + self.shift, size), IVORY);
+        self.gizmos.linestrip_2d(
+            corners(at * self.scale + self.shift, size * self.scale),
+            IVORY,
+        );
     }
 
     fn ring(&mut self, at: Vec2, r: f32) {
-        self.gizmos.circle_2d(at + self.shift, r, IVORY);
+        self.gizmos
+            .circle_2d(at * self.scale + self.shift, r * self.scale, IVORY);
     }
 
     fn fill<M: Material2d>(
@@ -3730,9 +4421,9 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
             Mesh2d(mesh.clone()),
             MeshMaterial2d(material.clone()),
             Transform {
-                translation: (at + self.shift).extend(z),
+                translation: (at * self.scale + self.shift).extend(z),
                 rotation: Quat::from_rotation_z(angle),
-                scale: scale.extend(1.0),
+                scale: (scale * self.scale).extend(1.0),
             },
         ));
     }
@@ -3743,8 +4434,8 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
             Fill,
             self.layers.clone(),
             Transform {
-                translation: (at + self.shift).extend(z),
-                scale: Vec3::splat(side),
+                translation: (at * self.scale + self.shift).extend(z),
+                scale: Vec3::splat(side * self.scale),
                 ..default()
             },
         ));
@@ -3799,9 +4490,10 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
     fn horseshoe(&mut self, at: Vec2, r: f32, toward: Vec2, glaze: Glaze) {
         use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
         let turn = toward.to_angle() - (FRAC_PI_2 + 3.0 * FRAC_PI_4);
-        let iso = Isometry2d::new(at + self.shift, Rot2::radians(turn));
+        let iso = Isometry2d::new(at * self.scale + self.shift, Rot2::radians(turn));
         let color = glaze.color();
-        self.gizmos.arc_2d(iso, 3.0 * FRAC_PI_2, r, color);
+        self.gizmos
+            .arc_2d(iso, 3.0 * FRAC_PI_2, r * self.scale, color);
     }
 
     fn rig(
@@ -4082,6 +4774,7 @@ fn board(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     laid: Query<Entity, With<Board>>,
+    world: Res<Game>,
 ) {
     let (transform, projection) = camera.into_inner();
     let Some(v) = Viewport::of(&window, transform, projection) else {
@@ -4101,7 +4794,7 @@ fn board(
     } else {
         Tiling::Slab(lo.floor().as_ivec2(), hi.ceil().as_ivec2())
     };
-    if kiln.tiled == Some(tiling) {
+    if kiln.tiled == Some((tiling, world.inside())) {
         return;
     }
     for e in &laid {
@@ -4112,7 +4805,18 @@ fn board(
             for r in r0..=r1 {
                 let (q0, q1) = (x0 - r.div_euclid(2) - 2, x1 - r.div_euclid(2) + 2);
                 for q in q0..=q1 {
-                    commands.spawn((Board, tile(&kiln, Hex::new(q, r))));
+                    let h = Hex::new(q, r);
+                    let (mesh, mut material, transform) = tile(&kiln, h);
+                    if world.inside() {
+                        material.0 = kiln
+                            .ethereal
+                            .iter()
+                            .find(|(skin, _)| *skin == look::tile(h).skin)
+                            .unwrap()
+                            .1
+                            .clone();
+                    }
+                    commands.spawn((Board, mesh, material, transform));
                 }
             }
         }
@@ -4121,7 +4825,14 @@ fn board(
             commands.spawn((
                 Board,
                 Mesh2d(kiln.bar.clone()),
-                MeshMaterial2d(kiln.material(Glaze::Clay).clone()),
+                MeshMaterial2d(
+                    kiln.material(if world.inside() {
+                        Glaze::Plum
+                    } else {
+                        Glaze::Clay
+                    })
+                    .clone(),
+                ),
                 Transform {
                     translation: ((lo + hi) / 2.0).extend(0.0),
                     scale: (hi - lo).extend(1.0),
@@ -4130,18 +4841,25 @@ fn board(
             ));
         }
     }
-    kiln.tiled = Some(tiling);
+    kiln.tiled = Some((tiling, world.inside()));
 }
 
+type SceneView<'w, 's> = (
+    Query<'w, 's, (&'static AtomPreview, &'static RenderLayers), With<Camera>>,
+    Single<'w, 's, &'static Window, With<PrimaryWindow>>,
+    Single<'w, 's, (&'static Transform, &'static Projection), With<IsDefaultUiCamera>>,
+);
+
 fn draw(
-    world: Res<World>,
+    world: Res<Game>,
     mut gizmos: Gizmos,
     mut card_gizmos: Gizmos<CardGizmos>,
     mut commands: Commands,
     kiln: Res<Kiln>,
     fills: Query<Entity, With<Fill>>,
-    previews: Query<(&AtomPreview, &RenderLayers), With<Camera>>,
+    view: SceneView,
 ) {
+    let (previews, window, camera) = view;
     for e in &fills {
         commands.entity(e).despawn();
     }
@@ -4151,6 +4869,7 @@ fn draw(
         kiln: &kiln,
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
+        scale: 1.0,
     };
     let board_phase = world.board_phase();
     let f = Frame::between(&world.prev, world.shown(), board_phase);
@@ -4167,6 +4886,35 @@ fn draw(
         true,
         world.board_turn_pose(),
     );
+    if !world.inside() {
+        let (transform, projection) = camera.into_inner();
+        let viewport = Viewport::of(&window, transform, projection).unwrap();
+        for index in 0..world.portals.len() {
+            let portal = world.portal(index);
+            let fit = PortalView::of(&portal.sim);
+            p.commands.spawn((
+                Fill,
+                Sprite {
+                    image: kiln.portal.clone(),
+                    color: Glaze::Plum.color().with_alpha(
+                        (viewport.scale * viewport.size.min_element() / PortalView::TILE - 1.0)
+                            .clamp(0.0, 1.0),
+                    ),
+                    custom_size: Some(Vec2::splat(HEX * 2.0)),
+                    ..default()
+                },
+                Transform::from_translation(
+                    px(world.overworld.sim.portals[index]).extend(layer::GLYPHS),
+                ),
+            ));
+            p.shift = px(world.overworld.sim.portals[index]) - fit.center * fit.scale();
+            p.scale = fit.scale();
+            let frame = Frame::between(&portal.sim, &portal.sim, 1.0);
+            scene(&mut p, &frame, 1.0, &[], 1.0, false, None);
+            p.shift = Vec2::ZERO;
+            p.scale = 1.0;
+        }
+    }
     if world.down.is_none()
         && !world.holding()
         && !world.over_ui
@@ -4204,8 +4952,8 @@ fn draw(
         if let Some(Focus::Hold { set, .. }) = &world.focus {
             let grab = hex_at(pointer);
             p.outline(px(grab), HEX * 0.9);
-            for id in world.sim.blocked(set, grab, &[]) {
-                for cell in world.sim.stands(id) {
+            for id in world.sim().blocked(set, grab, &[]) {
+                for cell in world.sim().stands(id) {
                     p.outline(px(cell), HEX * 0.9);
                 }
             }
@@ -4253,6 +5001,7 @@ fn draw(
             kiln: &kiln,
             layers: layers.clone(),
             shift: Vec2::ZERO,
+            scale: 1.0,
         };
         preview.bead(Vec2::ZERO, look::atom(atom.0), layer::BEAD);
     }
@@ -4262,9 +5011,10 @@ fn draw(
         kiln: &kiln,
         layers: CARD,
         shift: Vec2::ZERO,
+        scale: 1.0,
     };
     if let Some(item) = world.hover {
-        rendered_card(&mut p, item, world.play.as_ref(), HOVER_SLOT, &world);
+        rendered_card(&mut p, item, world.play.as_ref(), HOVER_SLOT, &*world);
     }
     for (index, card) in world.pinned.iter().enumerate() {
         if world.pinned[..index]
@@ -4280,7 +5030,7 @@ fn draw(
                 .find(|play| play.machine == machine),
             _ => None,
         };
-        rendered_card(&mut p, card.item, play, card_slot(card.item), &world);
+        rendered_card(&mut p, card.item, play, card_slot(card.item), &*world);
     }
 }
 
@@ -4289,7 +5039,7 @@ fn rendered_card<G: GizmoConfigGroup>(
     item: Item,
     play: Option<&Play>,
     slot: usize,
-    world: &World,
+    world: &impl WorldAccess,
 ) {
     let sims = play.map(|play| (play, play.sims()));
     let frame = sims.as_ref().map(|(play, (prev, sim))| {
@@ -4568,7 +5318,7 @@ mod shot {
     }
 
     impl Act {
-        pub(super) fn card(self, world: &mut World, viewport: &Viewport) -> bool {
+        pub(super) fn card(self, world: &mut impl WorldAccess, viewport: &Viewport) -> bool {
             match self {
                 Act::BeginPin(item, pointer) => {
                     world.begin_pin(item, pointer, viewport, MouseButton::Right)
@@ -4584,8 +5334,7 @@ mod shot {
                 Act::WheelCard(index, notches) => {
                     if let Some(card) = world.pinned.get(index) {
                         let pointer = viewport.screen(card.anchor);
-                        let mut board = 1.0;
-                        wheel(world, pointer, notches, viewport, &mut board);
+                        world.resize_card(pointer, notches, viewport);
                     }
                 }
                 Act::FocusCard(index) => {
@@ -4617,7 +5366,8 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 58] = [
+    pub const SCENES: [&str; 59] = [
+        "portal",
         "source-upgrade",
         "micro",
         "tab-held",
@@ -4775,6 +5525,28 @@ mod shot {
                 .unwrap_or_else(|| panic!("unknown machine {name}"))
         };
         match name {
+            "portal" => {
+                world.sim = sim::start();
+                world.sim.arms.push(Arm::new(
+                    ArmLength::One,
+                    Hex::new(-6, -3),
+                    0,
+                    vec![Instr::Move(0), Instr::Wait],
+                ));
+                world.running = true;
+                world.pointer = None;
+                script.push((70, Act::PanBoard(px(PORTAL_CELL) - px(FOCUS))));
+                for frame in (80..=132).step_by(2) {
+                    script.push((frame, Act::ZoomBoard(0.65)));
+                }
+                script.extend(tap(160, KeyG));
+                script.extend(tap(200, KeyG));
+                script.extend(tap(230, KeyS));
+                for frame in (260..=312).step_by(2) {
+                    script.push((frame, Act::ZoomBoard(-0.65)));
+                }
+                script.push((322, Act::PanBoard(px(FOCUS) - px(PORTAL_CELL))));
+            }
             name if name.starts_with("housing:") => {
                 world.sim = Sim::empty();
                 world.set_hover(None);
@@ -5827,7 +6599,18 @@ mod shot {
             target: None,
             moving_view: false,
         };
-        app(world, shot)
+        let mut app = app(world, shot);
+        if view == "ghost" {
+            let mut game = app.world_mut().resource_mut::<Game>();
+            let fixture = std::mem::replace(&mut *game, Game::new(sim::start())).overworld;
+            let entity = game.portals[0];
+            game.entities.get_mut::<Portal>(entity).unwrap().sim = fixture.sim;
+            game.location = Location::Interior {
+                portal: 0,
+                viewer: Box::new(fixture.viewer),
+            };
+        }
+        app
     }
 
     pub fn app(world: World, shot: Shot) -> App {
@@ -5929,7 +6712,7 @@ mod shot {
     fn capture(
         mut commands: Commands,
         mut shot: ResMut<Shot>,
-        mut world: ResMut<World>,
+        mut world: ResMut<Game>,
         window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
         cards: Query<(&CardCamera, &Camera), With<CardCamera>>,
         input: Input,
@@ -5954,7 +6737,7 @@ mod shot {
                 continue;
             }
             let viewport = Viewport::of(&primary, &board_transform, &board_projection).unwrap();
-            if act.card(&mut world, &viewport) {
+            if act.card(&mut *world, &viewport) {
                 continue;
             }
             match act {
@@ -6027,10 +6810,18 @@ mod shot {
                     board_transform.translation += delta.extend(0.0);
                 }
                 Act::ZoomBoard(notches) => {
+                    let mut viewport =
+                        Viewport::of(&primary, &board_transform, &board_projection).unwrap();
+                    viewport.scroll(viewport.size / 2.0, notches);
+                    if let Some(destination) = world.crossing(&viewport) {
+                        world.enter(destination);
+                        world.reframe(&mut viewport);
+                    }
                     let Projection::Orthographic(ortho) = &mut *board_projection else {
                         unreachable!()
                     };
-                    ortho.scale = zoomed(ortho.scale, -notches).clamp(0.05, 40.0);
+                    ortho.scale = viewport.scale;
+                    board_transform.translation = viewport.cam.extend(0.0);
                 }
                 Act::BeginPin(_, _)
                 | Act::MoveCard(_, _)
@@ -6065,7 +6856,7 @@ mod shot {
 
     fn move_sound_view(
         shot: Res<Shot>,
-        mut world: ResMut<World>,
+        mut world: ResMut<Game>,
         mut camera: Single<&mut Transform, (With<IsDefaultUiCamera>, Without<CardCamera>)>,
     ) {
         if !shot.moving_view {
@@ -6094,6 +6885,329 @@ mod shot {
 mod tests {
     use super::*;
     use sim::{Atom, AtomKind, Bond, Tier};
+
+    #[test]
+    fn portal_focus_keeps_the_overworld_running_and_its_time_keys_unbound() {
+        let mut game = Game::new(sim::start());
+        let before = game.overworld.sim.clone();
+        for key in [KeyCode::Space, KeyCode::KeyG, KeyCode::KeyS] {
+            game.key(key, false);
+            assert!(game.running);
+            assert_eq!(game.ghosts(), 0);
+            assert_eq!(game.overworld.sim, before);
+        }
+        assert!(game.enter(Some(0)));
+        let baseline = game.sim().clone();
+        game.advance(0.4);
+        assert_eq!(game.overworld.sim, before.replay(1));
+        assert_eq!(game.sim(), &baseline);
+        game.key(KeyCode::KeyG, false);
+        assert_eq!(game.ghosts(), 1);
+        assert!(game.score.is_some());
+        game.key(KeyCode::Space, false);
+        game.advance(0.4);
+        assert_eq!(game.ghosts(), 2);
+        assert_eq!(game.sim(), &baseline);
+        game.key(KeyCode::Space, false);
+        game.key(KeyCode::KeyS, false);
+        assert_eq!(game.ghosts(), 1);
+        assert_eq!(game.overworld.sim, before.replay(2));
+    }
+
+    #[test]
+    fn portal_tape_edits_replay_the_interior_baseline() {
+        let mut game = Game::new(sim::start());
+        game.enter(Some(0));
+        game.key(KeyCode::KeyG, false);
+        game.key(KeyCode::KeyG, false);
+        game.focus_tape(0);
+        game.key(KeyCode::End, false);
+        game.key(KeyCode::KeyZ, false);
+        assert_eq!(
+            game.sim().arms[0].tape,
+            vec![Instr::Grab, Instr::Rot(Spin::Cw)]
+        );
+        assert_eq!(game.ghosts(), 2);
+        assert_eq!(game.shown(), &game.sim().replay(2));
+        assert_eq!(game.sim().tick, 0);
+        assert_eq!(game.overworld.sim, Game::new(sim::start()).overworld.sim);
+        let saved = game.state();
+        let restored = Game::from_state(
+            persist::decode_state(&persist::encode_state(&saved).unwrap()).unwrap(),
+        );
+        assert_eq!(restored.portal(0).sim, *game.sim());
+        game.pin_world(Machine::Arm(ArmLength::One).into(), Vec2::ZERO);
+        game.enter(None);
+        assert!(game.pinned.is_empty());
+        game.enter(Some(0));
+        assert_eq!(game.pinned.len(), 1);
+        assert_eq!(game.ghosts(), 0);
+        assert_eq!(game.sim().arms[0].tape.len(), 2);
+    }
+
+    #[test]
+    fn portal_tile_blocks_placement_and_movement_only_in_its_world() {
+        let mut game = Game::new(sim::start());
+        let arm = fresh(Item::Machine(Machine::Arm(ArmLength::One)));
+        assert!(!game.sim().fits(&arm, PORTAL_CELL, &[]));
+        game.sim_mut().arms.push(Arm::new(
+            ArmLength::One,
+            PORTAL_CELL.sub(DIRS[0]),
+            0,
+            vec![Instr::Move(0)],
+        ));
+        game.advance(0.4);
+        assert_eq!(game.sim().arms[0].pivot, PORTAL_CELL.sub(DIRS[0]));
+        assert_eq!(game.sim().arms[0].stall, Some(Stall::Illegal));
+        game.enter(Some(0));
+        assert!(game.sim().fits(&arm, PORTAL_CELL, &[]));
+    }
+
+    #[test]
+    fn portal_viewers_have_independent_replay_positions_on_one_baseline() {
+        let mut game = Game::new(sim::start());
+        let baseline = game.portal(0).sim.clone();
+        let mut first = Viewer::new(&baseline);
+        let mut second = Viewer::new(&baseline);
+        first.running = false;
+        second.running = false;
+        let sim = &mut game
+            .entities
+            .get_mut::<Portal>(game.portals[0])
+            .unwrap()
+            .into_inner()
+            .sim;
+        Editor {
+            sim: &mut *sim,
+            viewer: &mut first,
+        }
+        .key(KeyCode::KeyG, false);
+        let mut view = Editor {
+            sim: &mut *sim,
+            viewer: &mut second,
+        };
+        for _ in 0..3 {
+            view.key(KeyCode::KeyG, false);
+        }
+        assert_eq!(view.ghosts(), 3);
+        assert_eq!(
+            Editor {
+                sim: &*sim,
+                viewer: &first
+            }
+            .ghosts(),
+            1
+        );
+        assert_eq!(*sim, baseline);
+    }
+
+    #[test]
+    fn portal_crossing_preserves_screen_positions_and_uses_uncapped_baseline_extent() {
+        let mut game = Game::new(sim::start());
+        for distance in [0, 10000] {
+            game.entities
+                .get_mut::<Portal>(game.portals[0])
+                .unwrap()
+                .sim
+                .arms[0]
+                .pivot = Hex::new(distance, 0);
+            let portal = game.portal(0);
+            let fit = PortalView::of(&portal.sim);
+            let mut viewport = Viewport {
+                cam: px(game.overworld.sim.portals[0]),
+                size: Vec2::new(1280.0, 720.0),
+                scale: PortalView::TILE / 720.0,
+            };
+            assert_eq!(game.crossing(&viewport), Some(Some(0)));
+            let before = viewport.clone();
+            let points = [
+                fit.center,
+                px(portal.sim.arms[0].pivot),
+                px(portal.sim.arms[0].hand()),
+            ];
+            let screens = points.map(|p| {
+                before.screen(px(game.overworld.sim.portals[0]) + (p - fit.center) * fit.scale())
+            });
+            game.enter(Some(0));
+            game.reframe(&mut viewport);
+            for (point, screen) in points.into_iter().zip(screens) {
+                assert!(viewport.screen(point).distance(screen) < 0.1);
+            }
+            game.key(KeyCode::KeyG, false);
+            assert_eq!(PortalView::of(game.sim()).side, fit.side);
+            viewport.scale *= 1.0001;
+            assert_eq!(game.crossing(&viewport), Some(None));
+            viewport.scale /= 1.0001;
+            game.enter(None);
+            game.reframe(&mut viewport);
+            assert!(viewport.cam.distance(before.cam) < 0.1);
+            assert!((viewport.scale - before.scale).abs() < 0.0001);
+        }
+    }
+
+    #[test]
+    fn portal_crossing_sound_fires_once_per_direction_during_a_bounce() {
+        let mut game = Game::new(sim::start());
+        assert!(game.enter(Some(0)));
+        assert_eq!(game.cue.take(), Some(true));
+        assert!(game.enter(None));
+        assert_eq!(game.cue.take(), Some(false));
+        for _ in 0..3 {
+            game.enter(Some(0));
+            assert_eq!(game.cue.take(), None);
+            game.enter(None);
+            assert_eq!(game.cue.take(), None);
+        }
+        game.advance(0.25);
+        game.enter(Some(0));
+        assert_eq!(game.cue.take(), Some(true));
+        game.enter(None);
+        assert_eq!(game.cue.take(), Some(false));
+    }
+
+    #[test]
+    fn portal_record_replays_focus_edits_and_both_clocks() {
+        let mut live = Game::new(sim::start());
+        let mut session = session::Session::new(&live.state());
+        for input in [
+            session::Input::Focus(Some(0)),
+            session::Input::Frame(0.4),
+            session::Input::Key(KeyCode::KeyG, false),
+            session::Input::Tape { arm: 0, cursor: 3 },
+            session::Input::Key(KeyCode::KeyZ, false),
+            session::Input::Focus(None),
+            session::Input::Frame(0.4),
+        ] {
+            session.send(&mut live, input);
+        }
+        let record =
+            session::Record::decode(&serde_json::to_string(&session.record).unwrap()).unwrap();
+        assert_eq!(
+            analysis::summarize(&record)["tape_edits_per_arm"][0]["edits"],
+            1
+        );
+        let mut replay = Game::new(sim::start());
+        session::open(record, &mut replay, true);
+        assert_eq!(replay.state(), live.state());
+        assert_eq!(replay.overworld.sim.tick, 2);
+        assert_eq!(replay.portal(0).sim.arms[0].tape.len(), 2);
+        assert!(!replay.inside());
+    }
+
+    #[test]
+    fn portal_restore_composes_pending_and_applied_camera_crossings() {
+        for applied in [false, true] {
+            for legacy in [false, true] {
+                let mut game = Game::new(sim::start());
+                let initial = game.state();
+                let mut viewport = Viewport {
+                    cam: px(PORTAL_CELL),
+                    size: Vec2::new(1280.0, 720.0),
+                    scale: 0.02,
+                };
+                let before = viewport.clone();
+                game.enter(Some(0));
+                if applied {
+                    game.reframe(&mut viewport);
+                }
+                let input = if legacy {
+                    session::Input::Import(Box::new(initial.sim))
+                } else {
+                    session::Input::Restore(Box::new(initial))
+                };
+                let mut session = session::Session::new(&game.state());
+                session.send(&mut game, input);
+                game.reframe(&mut viewport);
+                assert!(!game.inside());
+                assert!(viewport.cam.distance(before.cam) < 0.0001);
+                assert!((viewport.scale - before.scale).abs() < 0.0001);
+            }
+        }
+    }
+
+    #[test]
+    fn portal_refill_replays_inventory_at_the_current_position() {
+        let mut game = Game::new(sim::start());
+        game.enter(Some(0));
+        game.key(KeyCode::KeyG, false);
+        let mut session = session::Session::new(&game.state());
+        session.send(&mut game, session::Input::Refill);
+        assert_eq!(game.ghosts(), 1);
+        assert_eq!(game.shown(), &game.sim().replay(1));
+        for item in palette() {
+            assert_eq!(
+                game.sim().inventory.count(item),
+                game.sim().inventory.cap(item)
+            );
+        }
+    }
+
+    #[test]
+    fn portal_save_rejects_interior_portal_cells() {
+        let mut state = Game::new(sim::start()).state();
+        assert!(persist::decode_state(&persist::encode_state(&state).unwrap()).is_ok());
+        state.portals[0].portals.push(ORIGIN);
+        assert!(persist::decode_state(&persist::encode_state(&state).unwrap()).is_err());
+    }
+
+    #[test]
+    fn portal_crossing_renders_the_same_picture_apart_from_tiles() {
+        type Background<'w, 's> = Query<'w, 's, Entity, Or<(With<Board>, With<Node>)>>;
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir =
+            std::env::temp_dir().join(format!("ziral-portal-crossing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("portal", dir.clone(), 8);
+        lit_plugin(&mut app);
+        app.add_systems(Update, (
+            |mut game: ResMut<Game>, mut frame: Local<u32>, camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>| {
+                *frame += 1;
+                if *frame <= 28 {
+                    let mut viewport = Viewport {
+                        cam: px(PORTAL_CELL), size: Vec2::new(1280.0, 720.0), scale: PortalView::TILE / 720.0,
+                    };
+                    if *frame == 28 {
+                        assert!(game.enter(Some(0)));
+                        game.reframe(&mut viewport);
+                    }
+                    let (mut transform, mut projection) = camera.into_inner();
+                    transform.translation = viewport.cam.extend(0.0);
+                    let Projection::Orthographic(ortho) = &mut *projection else { unreachable!() };
+                    ortho.scale = viewport.scale;
+                }
+            }
+        ).before(view));
+        app.add_systems(PostUpdate, |mut commands: Commands, tiles: Background| {
+            for tile in &tiles {
+                commands.entity(tile).insert(Visibility::Hidden);
+            }
+        });
+        app.run();
+        let before = image::open(dir.join("00000.png")).unwrap().to_rgba8();
+        let after = image::open(dir.join("00007.png")).unwrap().to_rgba8();
+        assert_eq!(before.dimensions(), (1280, 720));
+        let changed = before
+            .pixels()
+            .zip(after.pixels())
+            .filter(|(a, b)| a.0.iter().zip(b.0).any(|(a, b)| a.abs_diff(b) > 2))
+            .count();
+        assert!(
+            changed < 100,
+            "{changed} non-tile pixels changed across the crossing"
+        );
+        let colors: std::collections::HashSet<_> = before
+            .enumerate_pixels()
+            .filter(|(x, y, _)| *x > 400 && *x < 900 && *y > 150 && *y < 550)
+            .map(|(_, _, pixel)| pixel.0)
+            .collect();
+        assert!(
+            colors.len() > 1000,
+            "the interior must actually be rendered"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     const SEAM_TONE: f32 = 0.05;
     const SEAM_GRAIN: f32 = 0.015;
@@ -6274,7 +7388,7 @@ mod tests {
         let probe = seen.clone();
         app.add_systems(
             Last,
-            move |world: Res<World>,
+            move |world: Res<Game>,
                   kiln: Res<Kiln>,
                   materials: Res<Assets<ColorMaterial>>,
                   rigs: Query<(&MeshMaterial2d<Lit>, &RenderLayers), With<Fill>>,
@@ -7967,7 +9081,13 @@ mod tests {
         w.set_cap(item, 1);
         w.advance(w.period);
         assert_eq!(
-            (w.sim, w.ghost, w.focus, w.running, w.since),
+            (
+                w.sim,
+                w.viewer.ghost,
+                w.viewer.focus,
+                w.viewer.running,
+                w.viewer.since
+            ),
             (sim, ghost, focus, running, since)
         );
     }
@@ -8001,26 +9121,28 @@ mod tests {
     }
 
     #[test]
-    fn unpause_restores_ghost0_exactly_and_the_ghosts_are_gone() {
-        let mut w = paused(3);
-        let ghost0 = w.sim.clone();
-        w.key(KeyCode::Space, false);
-        assert!(w.running);
-        assert_eq!(w.ghost, None);
-        assert_eq!(w.sim, ghost0);
-        assert_eq!(w.prev, ghost0);
-        assert_eq!(w.ghosts(), 0);
-        w.key(KeyCode::KeyG, false);
-        w.key(KeyCode::KeyS, false);
-        assert_eq!(w.sim, ghost0);
-        w.step();
-        assert_eq!(w.sim, ghost0.replay(1));
-        assert_eq!(w.ghost, None);
-        let mut w = paused(3);
-        w.running = true;
-        w.step();
-        assert_eq!(w.ghost, None);
-        assert_eq!(w.ghosts(), 0);
+    fn space_keeps_the_interior_projection_and_autoplay_advances_it() {
+        let mut game = Game::new(sim::start());
+        game.enter(Some(0));
+        let baseline = game.sim().clone();
+        for _ in 0..3 {
+            game.key(KeyCode::KeyG, false);
+        }
+        game.key(KeyCode::Space, false);
+        assert_eq!(game.ghosts(), 3);
+        game.advance(0.4);
+        assert_eq!(game.ghosts(), 4);
+        assert_eq!(game.sim(), &baseline);
+        game.key(KeyCode::KeyG, false);
+        game.key(KeyCode::KeyS, false);
+        assert_eq!(game.ghosts(), 4);
+        game.key(KeyCode::Space, false);
+        game.advance(0.4);
+        assert_eq!(game.ghosts(), 4);
+        game.enter(None);
+        game.advance(0.4);
+        assert_eq!(game.ghosts(), 0);
+        assert_eq!(game.overworld.sim.tick, 3);
     }
 
     #[test]
@@ -8053,7 +9175,10 @@ mod tests {
         w.key(KeyCode::KeyS, false);
         assert_eq!(w.ghosts(), 0);
         assert_eq!(w.ghost, None);
-        assert_eq!((w.sim, w.prev, w.focus, w.since), (sim, prev, focus, since));
+        assert_eq!(
+            (w.sim, w.viewer.prev, w.viewer.focus, w.viewer.since),
+            (sim, prev, focus, since)
+        );
     }
 
     fn pair(w: &mut World, at: Hex, kind: BondKind) -> [usize; 2] {
@@ -8954,7 +10079,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = shot::still(&format!("card:{name}"), dir.clone(), 1);
         lit_plugin(&mut app);
-        app.world_mut().resource_mut::<World>().play = Some(Play::at(machine, ticks));
+        app.world_mut().resource_mut::<Game>().play = Some(Play::at(machine, ticks));
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let probe = seen.clone();
         app.add_systems(
@@ -9328,44 +10453,28 @@ mod tests {
         assert_eq!(world.pinned[0].anchor, viewport.world(drop));
         let anchor = world.pinned[0].anchor;
         let base = card_size(item);
-        let mut board = 1.25;
+        let mut board = viewport.clone();
+        board.scale = 1.25;
         world.focus = Some(Focus::Hold {
             set: Box::new(Sim::empty()),
             back: Back::Ghost,
         });
-        let card = wheel(
-            &mut world,
-            viewport.screen(anchor),
-            2.0,
-            &viewport,
-            &mut board,
-        );
+        let card = world.resize_card(viewport.screen(anchor), 2.0, &viewport);
         assert!(card);
-        assert_eq!(board, 1.25);
+        assert_eq!(board.scale, 1.25);
         assert!(matches!(world.focus, Some(Focus::Hold { .. })));
         let grown = zoomed(1.0, 2.0);
         assert!((world.pinned[0].scale - grown).abs() < 1e-5);
         assert_eq!(card_size(item) * world.pinned[0].scale, base * grown);
         assert_eq!(world.pinned[0].anchor, anchor);
-        let card = wheel(
-            &mut world,
-            viewport.screen(anchor),
-            -2.0,
-            &viewport,
-            &mut board,
-        );
+        let card = world.resize_card(viewport.screen(anchor), -2.0, &viewport);
         assert!(card);
-        assert_eq!(board, 1.25);
+        assert_eq!(board.scale, 1.25);
         assert!((world.pinned[0].scale - 1.0).abs() < 1e-5);
-        let card = wheel(
-            &mut world,
-            Vec2::new(1200.0, 40.0),
-            2.0,
-            &viewport,
-            &mut board,
-        );
+        let card = world.resize_card(Vec2::new(1200.0, 40.0), 2.0, &viewport);
         assert!(!card);
-        assert!((board - zoomed(1.25, -2.0)).abs() < 1e-5);
+        board.scroll(Vec2::new(1200.0, 40.0), 2.0);
+        assert!((board.scale - zoomed(1.25, -2.0)).abs() < 1e-5);
         assert!((world.pinned[0].scale - 1.0).abs() < 1e-5);
     }
 
@@ -9391,7 +10500,7 @@ mod tests {
             let probe = seen.clone();
             app.add_systems(
                 Last,
-                move |world: Res<World>,
+                move |world: Res<Game>,
                       cameras: Query<(&CardCamera, &Camera)>,
                       board: Single<&Transform, With<IsDefaultUiCamera>>| {
                     let pins: Vec<&Camera> = cameras
@@ -9867,9 +10976,7 @@ mod tests {
                     | shot::Act::Nudge(_)
                     | shot::Act::Mouse(_, _) => {}
                     shot::Act::PanBoard(delta) => viewport.cam += delta,
-                    shot::Act::ZoomBoard(notches) => {
-                        viewport.scale = zoomed(viewport.scale, -notches).clamp(0.05, 40.0)
-                    }
+                    shot::Act::ZoomBoard(notches) => viewport.scroll(viewport.size / 2.0, notches),
                     shot::Act::BeginPin(_, _)
                     | shot::Act::MoveCard(_, _)
                     | shot::Act::WheelCard(_, _)
@@ -10440,7 +11547,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = shot::still("wide", dir.clone(), 1);
         lit_plugin(&mut app);
-        app.insert_resource(w);
+        app.insert_resource(Game::from_world(w));
         let seen = std::sync::Arc::new(std::sync::Mutex::new((0, 0, Vec::new())));
         let probe = seen.clone();
         app.add_systems(

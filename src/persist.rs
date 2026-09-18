@@ -10,12 +10,21 @@ pub const BUILD_TAG: &str = match option_env!("ZIRAL_BUILD_TAG") {
 struct Save {
     build: String,
     sim: Sim,
+    #[serde(default)]
+    portals: Vec<Sim>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct State {
+    pub sim: Sim,
+    pub portals: Vec<Sim>,
 }
 
 pub fn encode(sim: &Sim) -> Result<String, serde_json::Error> {
     serde_json::to_string(&Save {
         build: BUILD_TAG.to_owned(),
         sim: sim.clone(),
+        portals: Vec::new(),
     })
 }
 
@@ -24,6 +33,22 @@ pub fn decode(text: &str) -> Result<Sim, String> {
 }
 
 fn decode_for(text: &str, build: &str) -> Result<Sim, String> {
+    decode_state_for(text, build).map(|state| state.sim)
+}
+
+pub fn encode_state(state: &State) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&Save {
+        build: BUILD_TAG.to_owned(),
+        sim: state.sim.clone(),
+        portals: state.portals.clone(),
+    })
+}
+
+pub fn decode_state(text: &str) -> Result<State, String> {
+    decode_state_for(text, BUILD_TAG)
+}
+
+fn decode_state_for(text: &str, build: &str) -> Result<State, String> {
     let mut save: Save =
         serde_json::from_str(text).map_err(|_| "The save file is not valid.".to_owned())?;
     if save.build != build {
@@ -33,7 +58,19 @@ fn decode_for(text: &str, build: &str) -> Result<Sim, String> {
         return Err("The save file is not valid.".to_owned());
     }
     validate(&save.sim)?;
-    Ok(save.sim)
+    if !save.portals.is_empty() && save.portals.len() != save.sim.portals.len() {
+        return Err("The save file is not valid.".to_owned());
+    }
+    for sim in &mut save.portals {
+        if !sim.portals.is_empty() || !sim.inventory.snap_caps() {
+            return Err("The save file is not valid.".to_owned());
+        }
+        validate(sim)?;
+    }
+    Ok(State {
+        sim: save.sim,
+        portals: save.portals,
+    })
 }
 
 fn validate(sim: &Sim) -> Result<(), String> {
@@ -145,18 +182,18 @@ fn imported_save() -> Option<String> {
 #[cfg(not(target_arch = "wasm32"))]
 fn refuse_save(_: &str) {}
 
-pub fn restore(fallback: Sim) -> Sim {
+pub fn restore(fallback: State) -> State {
     let Some(save) = stored_save() else {
         return fallback;
     };
-    decode(&save).unwrap_or_else(|reason| {
+    decode_state(&save).unwrap_or_else(|reason| {
         refuse_save(&reason);
         fallback
     })
 }
 
-pub fn store(sim: &Sim) -> Result<(), String> {
-    let save = encode(sim).map_err(|error| error.to_string())?;
+pub fn store(state: &State) -> Result<(), String> {
+    let save = encode_state(state).map_err(|error| error.to_string())?;
     store_save(&save).map_or(Ok(()), Err)
 }
 
@@ -164,8 +201,8 @@ pub fn refuse(reason: &str) {
     refuse_save(reason);
 }
 
-pub fn download(sim: &Sim) {
-    match encode(sim) {
+pub fn download(state: &State) {
+    match encode_state(state) {
         Ok(save) => download_save(&save),
         Err(error) => refuse_save(&error.to_string()),
     }

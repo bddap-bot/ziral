@@ -41,10 +41,12 @@ pub enum Input {
     Button(MouseButton, bool),
     KeyUp(KeyCode),
     Refill,
+    Focus(Option<usize>),
+    Restore(Box<persist::State>),
 }
 
 impl Input {
-    pub fn apply(&self, world: &mut World) {
+    pub fn apply(&self, world: &mut Game) {
         match self {
             Self::Frame(dt) => {
                 world.clipboard = None;
@@ -83,9 +85,16 @@ impl Input {
                     card.scale = *scale;
                 }
             }
-            Self::Import(sim) => *world = World::new(*sim.clone()),
+            Self::Import(sim) => world.restore(persist::State {
+                sim: *sim.clone(),
+                portals: Vec::new(),
+            }),
             Self::Paste(sim) => world.lift(*sim.clone(), Back::Inventory),
-            Self::Refill => world.sim.inventory.fill(),
+            Self::Focus(portal) => {
+                world.enter(*portal);
+            }
+            Self::Restore(state) => world.restore(*state.clone()),
+            Self::Refill => world.refill(),
             Self::Wheel(..) | Self::Button(..) | Self::KeyUp(_) => {}
         }
     }
@@ -111,7 +120,7 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(initial: &Sim) -> Self {
+    pub fn new(initial: &persist::State) -> Self {
         begin_record();
         let mut record = Record {
             build: persist::BUILD_TAG.to_owned(),
@@ -119,10 +128,10 @@ impl Session {
             seed: 0,
             inputs: Vec::new(),
         };
-        if initial != &sim::start() {
+        if initial != &Game::new(sim::start()).state() {
             record
                 .inputs
-                .push((0.0, Input::Import(Box::new(initial.clone()))));
+                .push((0.0, Input::Restore(Box::new(initial.clone()))));
         }
         Self {
             record,
@@ -134,7 +143,7 @@ impl Session {
         }
     }
 
-    pub fn send(&mut self, world: &mut World, input: Input) {
+    pub fn send(&mut self, world: &mut Game, input: Input) {
         if self.replaying() {
             return;
         }
@@ -148,7 +157,7 @@ impl Session {
         self.record.inputs.push((self.elapsed, input));
     }
 
-    pub fn paste(&mut self, world: &mut World, text: &str) {
+    pub fn paste(&mut self, world: &mut Game, text: &str) {
         if !world.holding()
             && let Ok(fragment) = text.parse::<Fragment>()
         {
@@ -156,7 +165,7 @@ impl Session {
         }
     }
 
-    pub fn pointer(&mut self, world: &mut World, pointer: Pointer, force: bool) -> bool {
+    pub fn pointer(&mut self, world: &mut Game, pointer: Pointer, force: bool) -> bool {
         let resized = self
             .pointer
             .as_ref()
@@ -218,8 +227,8 @@ mod tests {
     fn record_keeps_import_targets_raw_pointer_viewport_and_clock() {
         let mut initial = sim::start();
         initial.inventory.fill();
-        let mut world = World::new(initial.clone());
-        let mut session = Session::new(&initial);
+        let mut world = Game::new(initial.clone());
+        let mut session = Session::new(&Game::new(initial.clone()).state());
         let pointer = Pointer {
             screen: Some(Vec2::new(23.0, 51.0)),
             viewport: Viewport {
@@ -244,11 +253,14 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&session.record).unwrap()).unwrap();
         assert_eq!(record.build, persist::BUILD_TAG);
         assert_eq!(record.seed, 0);
-        assert_eq!(record.inputs[0].1, Input::Import(Box::new(initial)));
+        assert_eq!(
+            record.inputs[0].1,
+            Input::Restore(Box::new(Game::new(initial).state()))
+        );
         assert_eq!(record.inputs[1].1, Input::Pointer(pointer));
         assert_eq!(record.inputs[4].1, Input::Pointer(next));
         assert_eq!(record.inputs[5], (f64::from(0.025f32) * 2.0, key));
-        assert!(!world.running);
+        assert!(world.running);
     }
 }
 impl Record {
@@ -258,7 +270,7 @@ impl Record {
             return Err("The record belongs to a different build or seed.".into());
         }
         let mut elapsed = 0.0;
-        let mut world = World::new(sim::start());
+        let mut world = Game::new(sim::start());
         for (at, input) in &mut record.inputs {
             if let Input::Frame(dt) = input {
                 if !dt.is_finite() || *dt < 0.0 {
@@ -279,8 +291,8 @@ impl Record {
         self.inputs.last().map_or(0.0, |(at, _)| *at)
     }
 
-    fn world_at(&self, end: usize) -> World {
-        let mut world = World::new(sim::start());
+    fn world_at(&self, end: usize) -> Game {
+        let mut world = Game::new(sim::start());
         for (_, input) in &self.inputs[..end] {
             input.apply(&mut world);
         }
@@ -291,7 +303,7 @@ impl Record {
 }
 
 impl Input {
-    fn valid(&self, world: &World) -> bool {
+    fn valid(&self, world: &Game) -> bool {
         let point = |point: &Vec2| point.is_finite();
         match self {
             Self::Pointer(p) => {
@@ -322,6 +334,9 @@ impl Input {
             Self::Import(sim) | Self::Paste(sim) => persist::encode(sim)
                 .ok()
                 .is_some_and(|text| persist::decode(&text).is_ok()),
+            Self::Restore(state) => persist::encode_state(state)
+                .ok()
+                .is_some_and(|text| persist::decode_state(&text).is_ok()),
             _ => true,
         }
     }
@@ -356,7 +371,7 @@ impl Session {
         matches!(self.mode, Mode::Replay { .. })
     }
 
-    pub fn advance(&mut self, world: &mut World, dt: f32) {
+    pub fn advance(&mut self, world: &mut Game, dt: f32) {
         let Mode::Replay { next, paused } = &mut self.mode else {
             self.send(world, Input::Frame(dt));
             return;
@@ -374,7 +389,7 @@ impl Session {
         }
     }
 
-    pub fn control(&mut self, world: &mut World, key: KeyCode) {
+    pub fn control(&mut self, world: &mut Game, key: KeyCode) {
         let Mode::Replay { next, paused } = &mut self.mode else {
             return;
         };
@@ -383,14 +398,20 @@ impl Session {
             KeyCode::KeyG | KeyCode::KeyS => {
                 *paused = true;
                 let current = *next;
-                let mut probe = World::new(sim::start());
+                let mut probe = Game::new(sim::start());
                 let initial = self.record.inputs.partition_point(|(at, _)| *at == 0.0);
                 let current = current.max(initial);
                 let mut stops = vec![initial];
                 for (index, (_, input)) in self.record.inputs.iter().enumerate() {
-                    let before = probe.shown().tick;
+                    let before = (probe.overworld.sim.tick, probe.shown().tick);
                     input.apply(&mut probe);
-                    if index + 1 > initial && probe.shown().tick != before {
+                    if index + 1 > initial
+                        && !matches!(
+                            input,
+                            Input::Focus(_) | Input::Import(_) | Input::Restore(_)
+                        )
+                        && (probe.overworld.sim.tick, probe.shown().tick) != before
+                    {
                         stops.push(index + 1);
                     }
                 }
@@ -412,7 +433,7 @@ impl Session {
                         .find(|stop| *stop < current_tick_start)
                         .unwrap_or(initial)
                 };
-                *world = self.record.world_at(end);
+                world.replace_with(self.record.world_at(end));
                 self.elapsed = end.checked_sub(1).map_or(0.0, |i| self.record.inputs[i].0);
                 *next = end;
             }
@@ -440,9 +461,9 @@ pub fn argument(args: &mut Vec<String>) -> Option<Record> {
     )
 }
 
-pub fn open(record: Record, world: &mut World, end: bool) -> Session {
+pub fn open(record: Record, world: &mut Game, end: bool) -> Session {
     let next = if end { record.inputs.len() } else { 0 };
-    *world = record.world_at(next);
+    world.replace_with(record.world_at(next));
     let mut session = Session::replay(record);
     if end {
         session.elapsed = session.record.duration();
@@ -459,8 +480,8 @@ mod replay_tests {
     fn recorded_actions_reproduce_world_bytes_at_every_tick() {
         let mut initial = fixture(Machine::Glyph(GlyphKind::Bonder)).sim;
         initial.inventory.fill();
-        let mut live = World::new(initial.clone());
-        let mut recording = Session::new(&initial);
+        let mut live = Game::new(initial.clone());
+        let mut recording = Session::new(&Game::new(initial.clone()).state());
         let mut frames = Vec::new();
         for frame in 0..80 {
             recording.send(&mut live, Input::Frame(0.05));
@@ -493,7 +514,7 @@ mod replay_tests {
             }
             frames.push(format!("{live:?}").into_bytes());
         }
-        assert!(live.sim.tick > 3);
+        assert!(live.sim().tick > 3);
         let text = serde_json::to_string(&recording.record).unwrap();
         let mut record = Record::decode(&text).unwrap();
         for (_, input) in &mut record.inputs {
@@ -503,7 +524,7 @@ mod replay_tests {
                 pointer.screen = Some(Vec2::new(300.0, 700.0));
             }
         }
-        let mut replayed = World::new(sim::start());
+        let mut replayed = Game::new(sim::start());
         let mut playback = Session::replay(record);
         for bytes in frames {
             playback.advance(&mut replayed, 0.025);
@@ -514,7 +535,7 @@ mod replay_tests {
 
     #[test]
     fn replay_refuses_other_builds_and_invalid_clocks() {
-        let mut record = Session::new(&sim::start()).record;
+        let mut record = Session::new(&Game::new(sim::start()).state()).record;
         record.build = "another-build".into();
         assert!(Record::decode(&serde_json::to_string(&record).unwrap()).is_err());
         record.build = persist::BUILD_TAG.into();
@@ -525,30 +546,30 @@ mod replay_tests {
     #[test]
     fn scrubbing_reconstructs_ticks_and_stays_paused() {
         let initial = fixture(Machine::Glyph(GlyphKind::Bonder)).sim;
-        let mut world = World::new(initial.clone());
-        let mut recording = Session::new(&world.sim);
+        let mut world = Game::new(initial.clone());
+        let mut recording = Session::new(&world.state());
         for _ in 0..48 {
             recording.send(&mut world, Input::Frame(0.1));
         }
         let mut playback = Session::replay(recording.record);
-        let mut viewer = World::new(sim::start());
+        let mut viewer = Game::new(sim::start());
         playback.control(&mut viewer, KeyCode::KeyG);
-        assert_eq!(viewer.sim.tick, 1);
+        assert_eq!(viewer.sim().tick, 1);
         playback.control(&mut viewer, KeyCode::KeyG);
-        assert_eq!(viewer.sim.tick, 2);
+        assert_eq!(viewer.sim().tick, 2);
         playback.control(&mut viewer, KeyCode::KeyS);
-        assert_eq!(viewer.sim.tick, 1);
-        let before = serde_json::to_vec(&viewer.sim).unwrap();
+        assert_eq!(viewer.sim().tick, 1);
+        let before = serde_json::to_vec(viewer.sim()).unwrap();
         playback.advance(&mut viewer, 9.0);
-        assert_eq!(serde_json::to_vec(&viewer.sim).unwrap(), before);
+        assert_eq!(serde_json::to_vec(viewer.sim()).unwrap(), before);
         playback.control(&mut viewer, KeyCode::KeyS);
-        assert_eq!(viewer.sim, initial);
+        assert_eq!(viewer.sim(), Game::new(initial).sim());
         playback.control(&mut viewer, KeyCode::Space);
         playback.advance(&mut viewer, 0.95);
-        assert_eq!(viewer.sim.tick, 2);
+        assert_eq!(viewer.sim().tick, 2);
         playback.control(&mut viewer, KeyCode::Space);
         playback.control(&mut viewer, KeyCode::KeyS);
-        assert_eq!(viewer.sim.tick, 1);
+        assert_eq!(viewer.sim().tick, 1);
         let before = format!("{viewer:?}");
         playback.send(&mut viewer, Input::Key(KeyCode::Space, false));
         assert_eq!(format!("{viewer:?}"), before);

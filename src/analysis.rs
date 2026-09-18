@@ -1,3 +1,4 @@
+use crate::WorldAccess;
 use crate::session::{Input, Record};
 use bevy::prelude::KeyCode;
 use serde_json::{Value, json};
@@ -49,8 +50,8 @@ struct ArmEdits {
     edits: u64,
 }
 
-fn summarize(record: &Record) -> Value {
-    use crate::{Back, Focus, World, card_item, palette, sim};
+pub(super) fn summarize(record: &Record) -> Value {
+    use crate::{Back, Focus, Game as World, Location, card_item, palette, sim};
     use sim::{GlyphKind, Id, Machine, TickEvent};
     let mut world = World::new(sim::start());
     let rows: Vec<_> = palette().collect();
@@ -58,6 +59,7 @@ fn summarize(record: &Record) -> Value {
     let mut dwell: Vec<(sim::Item, f64)> = Vec::new();
     let mut arm_ids: Vec<usize> = Vec::new();
     let mut held_ids: Option<Vec<usize>> = None;
+    let mut worlds = std::collections::BTreeMap::new();
     let mut edits: Vec<ArmEdits> = Vec::new();
     let mut first_machine = None;
     let mut first_bond = None;
@@ -69,7 +71,7 @@ fn summarize(record: &Record) -> Value {
     let mut paused = 0.0;
     for (at, input) in &record.inputs {
         if let Input::Frame(dt) = input {
-            if !world.running {
+            if world.inside() && !world.running {
                 paused += f64::from(*dt);
             }
             if let Some(item) = world.hover {
@@ -91,8 +93,8 @@ fn summarize(record: &Record) -> Value {
         {
             touched[index] = true;
         }
-        let old_count = world.sim.arms.len();
-        let old_machines = old_count + world.sim.glyphs.iter().flatten().count();
+        let old_count = world.sim().arms.len();
+        let old_machines = old_count + world.sim().glyphs.iter().flatten().count();
         let picked = world.focus.as_ref().map_or(Vec::new(), Focus::picked);
         let inventory = matches!(
             world.focus,
@@ -103,7 +105,7 @@ fn summarize(record: &Record) -> Value {
         );
         let tape = if matches!(input, Input::Key(..)) {
             if let Some(Focus::Tape { arm, .. }) = world.focus {
-                Some((arm, world.sim.arms[arm].tape.clone()))
+                Some((arm, world.sim().arms[arm].tape.clone()))
             } else {
                 None
             }
@@ -111,7 +113,11 @@ fn summarize(record: &Record) -> Value {
             None
         };
         let tick = world.shown().tick;
-        let real_tick = world.sim.tick;
+        let real_tick = world.overworld.sim.tick;
+        let location = match world.location {
+            Location::Overworld => None,
+            Location::Interior { portal, .. } => Some(portal),
+        };
         let stalled: Vec<_> = world
             .shown()
             .arms
@@ -122,8 +128,17 @@ fn summarize(record: &Record) -> Value {
             .collect();
         let held = held_ids.is_some();
         input.apply(&mut world);
-        if matches!(input, Input::Import(_)) {
+        if matches!(input, Input::Import(_) | Input::Restore(_)) {
+            worlds.clear();
             arm_ids.clear();
+            held_ids = None;
+        } else if matches!(input, Input::Focus(_)) {
+            let next = match world.location {
+                Location::Overworld => None,
+                Location::Interior { portal, .. } => Some(portal),
+            };
+            worlds.insert(location, std::mem::take(&mut arm_ids));
+            arm_ids = worlds.remove(&next).unwrap_or_default();
             held_ids = None;
         } else {
             let holding = matches!(
@@ -135,11 +150,11 @@ fn summarize(record: &Record) -> Value {
             );
             if !holding
                 && let Some(previous) = held_ids.take()
-                && previous.len() == world.sim.arms.len()
+                && previous.len() == world.sim().arms.len()
             {
                 arm_ids = previous;
             }
-            if world.sim.arms.len() < old_count {
+            if world.sim().arms.len() < old_count {
                 if holding {
                     held_ids = Some(arm_ids.clone());
                 }
@@ -151,7 +166,7 @@ fn summarize(record: &Record) -> Value {
                     .collect();
             }
         }
-        for arm in &world.sim.arms[arm_ids.len()..] {
+        for arm in &world.sim().arms[arm_ids.len()..] {
             arm_ids.push(edits.len());
             edits.push(ArmEdits {
                 arm: edits.len(),
@@ -161,20 +176,23 @@ fn summarize(record: &Record) -> Value {
             });
         }
         if let Some((arm, before)) = tape
-            && let Some(after) = world.sim.arms.get(arm)
+            && let Some(after) = world.sim().arms.get(arm)
             && before != after.tape
         {
             edits[arm_ids[arm]].edits += 1;
         }
-        if inventory
+        if !world.inside()
+            && inventory
             && matches!(input, Input::Press { .. } | Input::Release(_))
-            && old_machines < world.sim.arms.len() + world.sim.glyphs.iter().flatten().count()
+            && old_machines < world.sim().arms.len() + world.sim().glyphs.iter().flatten().count()
         {
             first_machine.get_or_insert(*at);
         }
-        if !matches!(input, Input::Import(_))
-            && world.sim.tick > real_tick
-            && let Some(events) = world.events.last()
+        if !matches!(
+            input,
+            Input::Import(_) | Input::Restore(_) | Input::Focus(_)
+        ) && world.overworld.sim.tick > real_tick
+            && let Some(events) = world.overworld.events.last()
         {
             for event in &events.events {
                 match event {
@@ -191,7 +209,12 @@ fn summarize(record: &Record) -> Value {
                 }
             }
         }
-        if !matches!(input, Input::Import(_)) && !held && held_ids.is_none() {
+        if !matches!(
+            input,
+            Input::Import(_) | Input::Restore(_) | Input::Focus(_)
+        ) && !held
+            && held_ids.is_none()
+        {
             for (index, arm) in world.shown().arms.iter().enumerate() {
                 if arm.stall.is_some() && !stalled.contains(&arm_ids[index]) {
                     stalls.push((*at, arm_ids[index]));
@@ -255,7 +278,7 @@ fn summarize(record: &Record) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Refused, World, session::Session, sim};
+    use crate::{Game as World, Refused, session::Session, sim};
 
     #[test]
     fn analysis_requires_one_record_path() {
@@ -275,7 +298,7 @@ mod tests {
     #[test]
     fn mark_preserves_world_and_reports_thirty_second_windows() {
         let mut world = World::new(sim::start());
-        let mut session = Session::new(&world.sim);
+        let mut session = Session::new(&world.state());
         session.send(&mut world, Input::Key(KeyCode::Space, false));
         session.send(&mut world, Input::Frame(5.0));
         world.refused = Some(Refused {
@@ -300,7 +323,7 @@ mod tests {
     fn metrics_recompute_placement_dwell_pause_and_hesitation() {
         use sim::{ArmLength, Item, Machine};
         let mut world = World::new(sim::start());
-        let mut session = Session::new(&world.sim);
+        let mut session = Session::new(&world.state());
         let arm = Item::Machine(Machine::Arm(ArmLength::One));
         for input in [
             Input::Key(KeyCode::Space, false),
@@ -320,7 +343,7 @@ mod tests {
         let result = summarize(&session.record);
         assert_eq!(result["token"], "a".repeat(192));
         assert_eq!(result["first_machine_placed_seconds"], 5.0);
-        assert_eq!(result["paused_seconds"], 10.0);
+        assert_eq!(result["paused_seconds"], 0.0);
         assert_eq!(
             result["hover_card_dwell_seconds"],
             json!([{"card": arm, "seconds": 3.0}])
@@ -335,7 +358,7 @@ mod tests {
         assert_eq!(result["first_bond_seconds"], Value::Null);
         assert_eq!(result["stalls_per_minute"], 0.0);
         let mut world = World::new(sim::Sim::empty());
-        let mut session = Session::new(&world.sim);
+        let mut session = Session::new(&world.state());
         session.send(&mut world, Input::Inventory(arm));
         session.send(
             &mut world,
@@ -375,7 +398,7 @@ mod tests {
         assert_eq!(acts[acts.len() - 1]["seconds"], 3.0);
 
         assert_eq!(
-            summarize(&Session::new(&sim::start()).record)["stalls_per_minute"],
+            summarize(&Session::new(&World::new(sim::start()).state()).record)["stalls_per_minute"],
             Value::Null
         );
     }
@@ -385,7 +408,7 @@ mod tests {
         use sim::{Arm, ArmLength, GlyphKind, Instr, Machine, Tier};
         let initial = sim::fixture(Machine::Glyph(GlyphKind::Bonder)).sim;
         let mut world = World::new(initial);
-        let mut session = Session::new(&world.sim);
+        let mut session = Session::new(&world.state());
         for _ in 0..13 {
             session.send(&mut world, Input::Frame(0.4));
         }
@@ -397,7 +420,7 @@ mod tests {
         assert_eq!(result["first_machine_placed_seconds"], Value::Null);
         let initial = sim::fixture(Machine::Glyph(GlyphKind::Output(Tier::One))).sim;
         let mut world = World::new(initial);
-        let mut session = Session::new(&world.sim);
+        let mut session = Session::new(&world.state());
         session.send(&mut world, Input::Key(KeyCode::Space, false));
         for _ in 0..3 {
             session.send(&mut world, Input::Key(KeyCode::KeyG, false));
@@ -423,7 +446,7 @@ mod tests {
             .arms
             .push(Arm::new(ArmLength::One, sim::ORIGIN, 0, vec![Instr::Grab]));
         let mut world = World::new(initial);
-        let mut session = Session::new(&world.sim);
+        let mut session = Session::new(&world.state());
         for _ in 0..5 {
             session.send(&mut world, Input::Frame(0.4));
         }
@@ -432,15 +455,17 @@ mod tests {
         session.send(&mut world, Input::Key(KeyCode::KeyS, false));
         let result = summarize(&session.record);
         assert_eq!(result["steps_around_stalls"].as_array().unwrap().len(), 1);
-        assert_eq!(result["steps_around_stalls"][0]["steps"], 2);
+        assert_eq!(result["steps_around_stalls"][0]["steps"], 0);
         let mut initial = sim::Sim::empty();
         initial.inventory.fill();
         initial
             .arms
             .push(Arm::new(ArmLength::One, sim::ORIGIN, 0, Vec::new()));
-        let mut world = World::new(initial);
-        let mut session = Session::new(&world.sim);
-        session.send(&mut world, Input::Key(KeyCode::Space, false));
+        let mut world = World::new(sim::start());
+        let portal = world.portals[0];
+        world.entities.get_mut::<crate::Portal>(portal).unwrap().sim = initial;
+        let mut session = Session::new(&world.state());
+        session.send(&mut world, Input::Focus(Some(0)));
         session.send(&mut world, Input::Key(KeyCode::KeyG, false));
         session.send(&mut world, Input::Tape { arm: 0, cursor: 0 });
         let grab = crate::KEYS
@@ -472,7 +497,7 @@ mod tests {
             .arms
             .push(Arm::new(ArmLength::One, Hex::new(5, 0), 0, Vec::new()));
         let mut world = World::new(initial);
-        let mut session = Session::new(&world.sim);
+        let mut session = Session::new(&world.state());
         let grab = crate::KEYS
             .iter()
             .find(|key| key.instr == Instr::Grab)
@@ -501,8 +526,8 @@ mod tests {
         ] {
             session.send(&mut world, input);
         }
-        assert_eq!(world.sim.arms.len(), 1);
-        assert_eq!(world.sim.arms[0].pivot, Hex::new(8, 0));
+        assert_eq!(world.sim().arms.len(), 1);
+        assert_eq!(world.sim().arms[0].pivot, Hex::new(8, 0));
         let result = summarize(&session.record);
         let arms = result["tape_edits_per_arm"].as_array().unwrap();
         assert_eq!(arms.len(), 2);
