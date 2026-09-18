@@ -28,7 +28,9 @@ pub enum Mask {
 impl Event {
     pub fn matches(self, event: &TickEvent, index: usize) -> bool {
         match (self, event) {
-            (Event::Fired, TickEvent::Fired { glyph, .. }) => *glyph == index,
+            (Event::Fired, TickEvent::Fired { glyph, .. } | TickEvent::Upgraded { glyph, .. }) => {
+                *glyph == index
+            }
             (Event::Rotated, TickEvent::Rotated { arm, .. }) => *arm == index,
             _ => false,
         }

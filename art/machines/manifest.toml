@@ -572,6 +572,46 @@ score = 8
 motion = "dilate"
 event = "fired"
 
+[machine.source-2]
+direction = "One substantial blue-green glazed ceramic kiln-feed housing fills the six-cell envelope of two staggered columns and three rows. Exactly two empty circular outlet apertures are bored side by side in the middle row, precisely at the scaffold dots. The four upper and lower body cells are continuous sculpted ceramic feeding these outlets, with broad shoulders and recessed dark-brass metering grooves inside the casting. The entire outer contour is inset from the grey envelope, including its deep right-hand cleft. No separate drums, pods, connecting necks, tile faces or backing plate. The sketch supplies the arrangement; its orange marks mean thematic body relief, never orange paint or writing."
+references = ["../../docs/source-tier-two-sketch.jpg"]
+kept = 11
+briefed = "9623476b4003e543"
+painted = "a113f4c956729b46"
+relit = "ddddd2a92b6e2380"
+
+[machine.source-2.instrument]
+voice = "ceramic"
+note = 79
+
+[machine.source-2.emitter]
+look = "spark"
+count = 3
+lifetime = 2
+event = "fired"
+layer = "behind"
+energy_scaled = true
+
+[[machine.source-2.parts]]
+name = "base"
+mask = "outside"
+pivot = [
+    0.0,
+    0.0,
+]
+score = 8
+
+[[machine.source-2.parts]]
+name = "rim"
+mask = "inside"
+pivot = [
+    0.0,
+    0.0,
+]
+score = 8
+motion = "dilate"
+event = "fired"
+
 [texture.atom-amber]
 source = "textures/atom-amber.png"
 

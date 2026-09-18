@@ -305,6 +305,7 @@ enum Back {
     Cell {
         cell: Hex,
         turns: usize,
+        sim: Box<Sim>,
     },
 }
 
@@ -848,15 +849,28 @@ impl World {
         match &self.focus {
             Some(Focus::Hold {
                 set,
-                back: Back::Cell { cell, turns },
+                back:
+                    Back::Cell {
+                        cell,
+                        turns,
+                        sim: original,
+                    },
             }) => {
                 let mut set = (**set).clone();
                 for _ in 0..*turns {
                     turn(&mut set, Spin::Ccw);
                 }
-                let mut sim = self.sim.clone();
-                sim.place(&set, *cell);
-                sim
+                let mut removed = (**original).clone();
+                if let Some(id) = removed.atom_at(*cell) {
+                    removed.consume(&removed.component(id));
+                }
+                if removed == self.sim {
+                    (**original).clone()
+                } else {
+                    let mut sim = self.sim.clone();
+                    sim.place(&set, *cell);
+                    sim
+                }
             }
             Some(Focus::Hold {
                 back: Back::Pick { sim, .. },
@@ -917,7 +931,7 @@ impl World {
             .glyphs
             .iter()
             .enumerate()
-            .filter(|(_, g)| g.is_some_and(|g| g.kind != GlyphKind::Source));
+            .filter(|(_, g)| g.is_some_and(|g| !g.kind.is_source()));
         arms.chain(glyphs.map(|(i, _)| Id::Glyph(i)))
     }
 
@@ -1223,9 +1237,14 @@ impl World {
                 let compound = self.shown().component(id);
                 let set = self.shown().fragment(&compound, cell);
                 let back = if self.editable(true) {
+                    let sim = Box::new(self.sim.clone());
                     self.sim.consume(&compound);
                     self.resim(0);
-                    Back::Cell { cell, turns: 0 }
+                    Back::Cell {
+                        cell,
+                        turns: 0,
+                        sim,
+                    }
                 } else {
                     Back::Ghost
                 };
@@ -1271,6 +1290,33 @@ impl World {
         else {
             return;
         };
+        if back != Back::Ghost
+            && self.ghost.is_none()
+            && let Some(at) = at
+            && let Some(glyph) = self.sim.glyphs.iter().position(|g| {
+                g.is_some_and(|g| g.kind == GlyphKind::Source && g.cells().any(|cell| cell == at))
+            })
+            && form::Form::of(&set) == *form::source_upgrade()
+        {
+            let mut upgraded = self.sim.clone();
+            if let Some(tick) = upgraded.upgrade(glyph, &set) {
+                if back == Back::Inventory
+                    && let Err(short) = upgraded.inventory.spend_all(&set.bill())
+                {
+                    self.refused = Some(Refused { at, short });
+                    self.pop(*set, back);
+                    return;
+                }
+                self.sim = upgraded;
+                self.prev = self.sim.clone();
+                self.score = Some(tick.clone());
+                self.events = vec![tick];
+                self.since = 0.0;
+            } else {
+                self.pop(*set, back);
+            }
+            return;
+        }
         let legal = |at: &Hex| {
             back != Back::Ghost && self.editable(runs(&set)) && self.sim.fits(&set, *at, &[])
         };
@@ -1326,7 +1372,16 @@ impl World {
                 self.events = events;
                 self.pick(ids);
             }
-            Back::Cell { cell, turns } => {
+            Back::Cell { cell, turns, sim } => {
+                let mut removed = (*sim).clone();
+                if let Some(id) = removed.atom_at(cell) {
+                    removed.consume(&removed.component(id));
+                }
+                if removed == self.sim {
+                    self.sim = *sim;
+                    self.resim(self.ghosts());
+                    return;
+                }
                 for _ in 0..turns {
                     turn(&mut set, Spin::Ccw);
                 }
@@ -1334,7 +1389,11 @@ impl World {
                     self.sim.place(&set, cell);
                     self.resim(self.ghosts());
                 } else {
-                    let back = Back::Cell { cell, turns: 0 };
+                    let back = Back::Cell {
+                        cell,
+                        turns: 0,
+                        sim,
+                    };
                     self.focus = Some(Focus::Hold {
                         set: Box::new(set),
                         back,
@@ -3630,11 +3689,15 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         machine: Machine,
         index: usize,
         events: &[sim::TickEvent],
-        state: (Vec2, sim::ActivationEnergy, f32, f32),
+        state: (Vec2, sim::ActivationEnergy, f32, std::ops::Range<f32>),
     ) {
         let (at, energy, phase, z) = state;
         let Some((emitter, count)) = particles::burst(machine, index, energy, events) else {
             return;
+        };
+        let z = match emitter.layer {
+            particles::Layer::Behind => z.start,
+            particles::Layer::On => z.end,
         };
         let glaze = match emitter.look {
             particles::Look::Spark => Glaze::Amber,
@@ -4087,13 +4150,17 @@ fn scene<G: GizmoConfigGroup>(
             (fired, phase, g.energy),
         );
         if particles {
-            let particle_z = match particles::response(item) {
-                particles::Response::Default(e) | particles::Response::Rig(e) => match e.layer {
-                    particles::Layer::Behind => layer::GLYPHS - 0.01,
-                    particles::Layer::On => layer::GLYPHS + 0.01,
-                },
-            } + lift;
-            p.particles(item, index, events, (px(g.at), g.energy, phase, particle_z));
+            p.particles(
+                item,
+                index,
+                events,
+                (
+                    px(g.at),
+                    g.energy,
+                    phase,
+                    (layer::GLYPHS - 0.01 + lift)..(layer::GLYPHS + 0.01 + lift),
+                ),
+            );
         }
     }
     for b in &f.sim.bonds {
@@ -4133,17 +4200,16 @@ fn scene<G: GizmoConfigGroup>(
             (fired, phase, f.sim.arms[i].energy),
         );
         if particles {
-            let particle_z = match particles::response(item) {
-                particles::Response::Default(e) | particles::Response::Rig(e) => match e.layer {
-                    particles::Layer::Behind => layer::ARMS.start - 0.01,
-                    particles::Layer::On => layer::ARMS.end + 0.01,
-                },
-            } + lift;
             p.particles(
                 item,
                 i,
                 events,
-                (arm.pivot, f.sim.arms[i].energy, phase, particle_z),
+                (
+                    arm.pivot,
+                    f.sim.arms[i].energy,
+                    phase,
+                    (layer::ARMS.start - 0.01 + lift)..(layer::ARMS.end + 0.01 + lift),
+                ),
             );
         }
         let stall = f.sim.arms[i].stall;
@@ -4358,7 +4424,8 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 57] = [
+    pub const SCENES: [&str; 58] = [
+        "source-upgrade",
         "micro",
         "tab-held",
         "tab-released",
@@ -4525,6 +4592,22 @@ mod shot {
                     }
                 }
                 world.period = f32::INFINITY;
+            }
+            "source-upgrade" => {
+                world.sim = Sim::empty();
+                let source = Hex::new(-3, 0);
+                world
+                    .sim
+                    .glyphs
+                    .push(Some(Glyph::new(GlyphKind::Source, source, 0)));
+                let home = Hex::new(3, -1);
+                world.sim.place(&form::source_upgrade().sim(), home);
+                let grab = home.add(form::source_upgrade().atoms()[0].0);
+                script.push((24, Act::Press(grab)));
+                script.push((36, Act::Drag(Hex::new(1, 0))));
+                script.push((48, Act::Drag(source)));
+                script.push((60, Act::Release(source)));
+                script.extend(tap(100, Space));
             }
             "micro" => world.focus_tape(0),
             "token-recipes" => {
@@ -5832,6 +5915,158 @@ mod tests {
             Option<&'static MeshMaterial2d<ColorMaterial>>,
         ),
     >;
+
+    #[test]
+    fn dropping_the_source_upgrade_consumes_it_once_and_refusal_pops_back_byte_equal() {
+        for blocked in [false, true] {
+            let mut w = lone(vec![Glyph::new(GlyphKind::Source, ORIGIN, 0)], vec![]);
+            let home = Hex::new(8, 0);
+            let set = form::source_upgrade().sim();
+            w.sim.place(&set, home);
+            if blocked {
+                w.sim
+                    .arms
+                    .push(Arm::new(ArmLength::One, DIRS[0], 0, vec![]));
+            }
+            let before = serde_json::to_vec(&w.sim).unwrap();
+            let id = w
+                .sim
+                .atom_at(home.add(form::source_upgrade().atoms()[0].0))
+                .unwrap();
+            let cell = w.sim.atoms[id].unwrap().pos;
+            lift_at(&mut w, cell);
+            w.release(Some(ORIGIN));
+            if blocked {
+                assert_eq!(serde_json::to_vec(&w.sim).unwrap(), before);
+                assert!(w.score.is_none());
+            } else {
+                assert_eq!(w.sim.glyphs[0].unwrap().kind, GlyphKind::SourceTwo);
+                assert_eq!(w.sim.atoms.iter().flatten().count(), 0);
+                let tick = w.score.take().unwrap();
+                assert_eq!(
+                    tick.events,
+                    vec![sim::TickEvent::Upgraded {
+                        glyph: 0,
+                        at: ORIGIN
+                    }]
+                );
+                assert_eq!(sound::score(&tick).len(), 1);
+                assert!(sound::score(&tick)[0].upgrade);
+                let (_, count) = particles::burst(
+                    Machine::Glyph(GlyphKind::SourceTwo),
+                    0,
+                    sim::ActivationEnergy::FULL,
+                    &tick.events,
+                )
+                .unwrap();
+                assert_eq!(count, 48);
+                w.release(Some(ORIGIN));
+                assert!(w.score.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn every_upgrade_grab_point_rolls_back_sparse_ids_and_unrelated_bonds_exactly() {
+        for grab in 0..5 {
+            for dir in 0..6 {
+                let source = Glyph::new(GlyphKind::Source, ORIGIN, dir);
+                for target in source.cells() {
+                    let mut w = lone(vec![source], vec![]);
+                    w.running = false;
+                    let hole = w.sim.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos: Hex::new(-8, 0),
+                    });
+                    let home = Hex::new(8, 0);
+                    w.sim.place(&form::source_upgrade().sim(), home);
+                    pair(&mut w, Hex::new(-8, 1), BondKind::Single);
+                    w.sim.consume(&[hole]);
+                    w.sim.glyphs.push(Some(bonder(DIRS[0].turned(dir), dir)));
+                    let before = serde_json::to_vec(&w.sim).unwrap();
+                    let at = home.add(form::source_upgrade().atoms()[grab].0);
+                    lift_at(&mut w, at);
+                    w.key(KeyCode::KeyD, false);
+                    w.release(Some(target));
+                    assert_eq!(serde_json::to_vec(&w.sim).unwrap(), before);
+                    assert!(w.score.is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pasted_source_upgrades_pay_inventory_only_after_growth_can_succeed() {
+        let recipe = form::source_upgrade();
+        for stocked in [0, 1, 2] {
+            for blocked in [false, true] {
+                let mut w = lone(vec![Glyph::new(GlyphKind::Source, ORIGIN, 0)], vec![]);
+                if blocked {
+                    w.sim
+                        .arms
+                        .push(Arm::new(ArmLength::One, DIRS[0], 0, vec![]));
+                }
+                if stocked > 0 {
+                    for item in recipe.sim().bill() {
+                        w.sim.inventory.add(item);
+                    }
+                    if stocked == 1 {
+                        w.sim
+                            .inventory
+                            .spend_all(&[Item::Atom(AtomKind::Plum)])
+                            .unwrap();
+                    }
+                }
+                let before = w.sim.clone();
+                assert!(w.paste_text(&recipe.to_string()));
+                w.release(Some(ORIGIN));
+                if stocked == 2 && !blocked {
+                    assert_eq!(w.sim.glyphs[0].unwrap().kind, GlyphKind::SourceTwo);
+                    assert_eq!(w.sim.inventory, sim::Inventory::EMPTY);
+                    assert!(w.score.is_some());
+                } else {
+                    assert_eq!(w.sim, before);
+                    assert!(w.score.is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_wrong_compound_dropped_on_the_source_stays_a_compound() {
+        let mut w = lone(vec![Glyph::new(GlyphKind::Source, ORIGIN, 0)], vec![]);
+        let home = Hex::new(8, 0);
+        let mut wrong = form::source_upgrade().sim();
+        wrong.atoms[0].as_mut().unwrap().kind = AtomKind::Base;
+        w.sim.place(&wrong, home);
+        let first = home.add(wrong.atoms[0].unwrap().pos);
+        lift_at(&mut w, first);
+        w.release(Some(ORIGIN));
+        assert_eq!(w.sim.glyphs[0].unwrap().kind, GlyphKind::Source);
+        assert_eq!(w.sim.atoms.iter().flatten().count(), 5);
+        assert_eq!(w.sim.bonds.len(), 4);
+        assert!(w.score.is_none());
+    }
+
+    #[test]
+    fn the_tier_two_source_card_plays_both_outlets() {
+        let source = Machine::Glyph(GlyphKind::SourceTwo);
+        let card = layout(source.into());
+        let beads = |tick| {
+            card_fills(source, tick)
+                .into_iter()
+                .filter(|(at, _)| (at.z - (layer::BEAD + layer::LIFT)).abs() < 1e-3)
+                .map(|(at, scale)| (at.truncate(), scale))
+                .collect::<Vec<_>>()
+        };
+        assert!(beads(0).is_empty());
+        assert_eq!(
+            beads(1),
+            [ORIGIN, DIRS[0]].map(|at| (card.field.unwrap() + px(at), HEX * 0.4))
+        );
+        let fixture = fixture(source);
+        assert!((fixture.done)(&fixture.sim.replay(1)));
+    }
 
     #[test]
     fn ghost_frames_keep_lit_rigs_solid_skins_and_the_step_tally() {
@@ -7653,8 +7888,8 @@ mod tests {
         (cells, set.bonds.clone(), back.clone())
     }
 
-    fn taken(cell: Hex) -> Back {
-        Back::Cell { cell, turns: 0 }
+    fn taken(back: &Back, expected: Hex) {
+        assert!(matches!(back, Back::Cell { cell, turns: 0, .. } if *cell == expected));
     }
 
     fn atoms(w: &World) -> Vec<Hex> {
@@ -7682,7 +7917,7 @@ mod tests {
                 kind: BondKind::Single
             }]
         );
-        assert_eq!(back, taken(DIRS[0]));
+        taken(&back, DIRS[0]);
         assert_eq!(atoms(&w), vec![Hex::new(3, 3)]);
         assert_eq!(w.sim.atom_at(Hex::new(3, 3)), Some(loose));
         assert!(w.sim.bonds.is_empty());
@@ -7717,13 +7952,14 @@ mod tests {
         w.key(KeyCode::KeyA, false);
         w.key(KeyCode::KeyA, false);
         assert_eq!(held(&w).0, vec![ORIGIN, DIRS[5]]);
-        assert_eq!(
+        assert!(matches!(
             held(&w).2,
             Back::Cell {
                 cell: ORIGIN,
-                turns: 5
+                turns: 5,
+                ..
             }
-        );
+        ));
         w.key(KeyCode::Escape, false);
         assert_eq!(w.sim, before);
         assert_eq!(w.focus, None);
@@ -7794,10 +8030,10 @@ mod tests {
             pos: DIRS[0],
         });
         w.release(Some(DIRS[0]));
-        assert_eq!(held(&w).2, taken(ORIGIN));
+        taken(&held(&w).2, ORIGIN);
         assert_eq!(atoms(&w), vec![DIRS[0]]);
         w.key(KeyCode::KeyZ, false);
-        assert_eq!(held(&w).2, taken(ORIGIN));
+        taken(&held(&w).2, ORIGIN);
         w.sim.consume(&[squatter]);
         w.press(px(ORIGIN), px(ORIGIN));
         assert_eq!(w.focus, None);
@@ -8276,7 +8512,7 @@ mod tests {
         let listed: Vec<Item> = palette().collect();
         let all: Vec<Item> = Machine::ALL
             .into_iter()
-            .filter(|m| *m != Machine::Glyph(GlyphKind::Source))
+            .filter(|m| !matches!(m, Machine::Glyph(kind) if kind.is_source()))
             .map(Item::Machine)
             .chain(KEYS.map(|k| Item::Token(k.instr)))
             .chain(AtomKind::ALL.map(Item::Atom))
@@ -9374,7 +9610,7 @@ mod tests {
         w.running = false;
         pair(&mut w, ORIGIN, BondKind::Single);
         lift_at(&mut w, ORIGIN);
-        assert_eq!(held(&w).2, taken(ORIGIN));
+        taken(&held(&w).2, ORIGIN);
         w.release(None);
         assert_eq!(w.focus, None);
         let beside = px(ORIGIN) + Vec2::new(ATOM_RADIUS + 4.0, 0.0);
@@ -9507,7 +9743,7 @@ mod tests {
         w.step();
         let glyphs = w.sim.glyphs.clone();
         lift_at(&mut w, source);
-        assert_eq!(held(&w).2, taken(source));
+        taken(&held(&w).2, source);
         w.release(Some(source.add(DIRS[0])));
         assert_eq!(w.sim.glyphs, glyphs);
         assert_eq!(atoms(&w), vec![source.add(DIRS[0])]);

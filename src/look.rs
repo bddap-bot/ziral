@@ -398,6 +398,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
     };
     let (glaze, (skin, normal)) = match kind {
         GlyphKind::Source => (Glaze::BlueGreen, machine!("source")),
+        GlyphKind::SourceTwo => (Glaze::BlueGreen, machine!("source-2")),
         GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
         GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
         GlyphKind::Reification => (Glaze::Amber, machine!("reification")),
@@ -426,6 +427,7 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
         Machine::Arm(ArmLength::Two) => "arm-2",
         Machine::Arm(ArmLength::Three) => "arm-3",
         Machine::Glyph(GlyphKind::Source) => "source",
+        Machine::Glyph(GlyphKind::SourceTwo) => "source-2",
         Machine::Glyph(GlyphKind::Bonder) => "bonder",
         Machine::Glyph(GlyphKind::SecondBond) => "second-bond",
         Machine::Glyph(GlyphKind::Reification) => "reification",
@@ -481,6 +483,8 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
         ("reification", "rim") => pair!("reification", "moving"),
         ("second-bond", "base") => pair!("second-bond", "base"),
         ("second-bond", "ring") => pair!("second-bond", "moving"),
+        ("source-2", "base") => pair!("source-2", "base"),
+        ("source-2", "rim") => pair!("source-2", "moving"),
         ("source", "base") => pair!("source", "base"),
         ("source", "rim") => pair!("source", "moving"),
         _ => panic!("machine {name} has no part {part}"),

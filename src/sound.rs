@@ -59,6 +59,7 @@ pub struct Instrument {
 pub struct Hit {
     pub machine: Machine,
     pub instrument: Instrument,
+    pub upgrade: bool,
     pub at: crate::sim::Hex,
 }
 
@@ -115,6 +116,9 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
         .filter_map(|event| {
             let (machine, at) = match event {
                 TickEvent::Fired { machine, at, .. } => (*machine, *at),
+                TickEvent::Upgraded { at, .. } => {
+                    (Machine::Glyph(crate::sim::GlyphKind::SourceTwo), *at)
+                }
                 TickEvent::Grabbed { length, at, .. }
                 | TickEvent::Dropped { length, at, .. }
                 | TickEvent::Rotated { length, at, .. }
@@ -128,6 +132,7 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
             Some(Hit {
                 machine,
                 instrument: instrument(machine),
+                upgrade: matches!(event, TickEvent::Upgraded { .. }),
                 at,
             })
         })
@@ -138,6 +143,7 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
 pub struct Bank {
     voices: Vec<(Machine, Handle<AudioSource>)>,
     silence: Handle<AudioSource>,
+    upgrade: Handle<AudioSource>,
     pub unlocked: bool,
 }
 
@@ -155,7 +161,11 @@ pub fn load(mut commands: Commands, mut assets: ResMut<Assets<AudioSource>>) {
     let silence = assets.add(AudioSource {
         bytes: wav_bytes(&[0; 32], 48_000).into(),
     });
+    let upgrade = assets.add(AudioSource {
+        bytes: wav_bytes(&upgrade_samples(), 48_000).into(),
+    });
     commands.insert_resource(Bank {
+        upgrade,
         voices,
         silence,
         unlocked: false,
@@ -187,13 +197,16 @@ pub fn play(commands: &mut Commands, bank: &Bank, hits: &[Hit], view: View) {
         let Some(gain) = gain(hit.at, view) else {
             continue;
         };
-        let handle = bank
-            .voices
-            .iter()
-            .find(|(machine, _)| *machine == hit.machine)
-            .expect("every machine has a loaded instrument")
-            .1
-            .clone();
+        let handle = if hit.upgrade {
+            bank.upgrade.clone()
+        } else {
+            bank.voices
+                .iter()
+                .find(|(machine, _)| *machine == hit.machine)
+                .expect("every machine has a loaded instrument")
+                .1
+                .clone()
+        };
         commands.spawn((
             AudioPlayer::new(handle),
             PlaybackSettings {
@@ -202,6 +215,21 @@ pub fn play(commands: &mut Commands, bank: &Bank, hits: &[Hit], view: View) {
             },
         ));
     }
+}
+
+fn upgrade_samples() -> Vec<i16> {
+    let tones = [48, 55, 60, 64, 67].map(|note| {
+        samples(Instrument {
+            voice: Voice::Brass,
+            note,
+        })
+    });
+    (0..tones[0].len())
+        .map(|i| {
+            (tones.iter().map(|tone| i32::from(tone[i])).sum::<i32>() / 3)
+                .clamp(i16::MIN as i32, i16::MAX as i32) as i16
+        })
+        .collect()
 }
 
 fn wav(instrument: Instrument) -> Vec<u8> {
@@ -267,7 +295,14 @@ pub fn proof(ticks: &[(TickEvents, View)]) -> (String, Vec<u8>) {
             .join(", ");
         text.push_str(&format!("tick {} -> [{}]\n", tick.tick, names));
         for (hit, gain) in heard {
-            for (at, sample) in samples(hit.instrument).into_iter().enumerate() {
+            for (at, sample) in if hit.upgrade {
+                upgrade_samples()
+            } else {
+                samples(hit.instrument)
+            }
+            .into_iter()
+            .enumerate()
+            {
                 mixed[index * beat + at] += (f32::from(sample) * gain) as i32;
             }
         }
@@ -328,11 +363,13 @@ mod tests {
             score(&tick),
             vec![
                 Hit {
+                    upgrade: false,
                     machine: source,
                     instrument: instrument(source),
                     at: crate::sim::ORIGIN,
                 },
                 Hit {
+                    upgrade: false,
                     machine: Machine::Arm(ArmLength::One),
                     instrument: instrument(Machine::Arm(ArmLength::One)),
                     at: crate::sim::ORIGIN,

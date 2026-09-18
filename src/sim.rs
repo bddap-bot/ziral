@@ -1,4 +1,4 @@
-use crate::form::{AtomRoute, Form, RECIPES, atom_route, recipes};
+use crate::form::{AtomRoute, CRAFT_RECIPE_COUNT, Form, atom_route, recipes};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -122,6 +122,10 @@ pub struct TickEvents {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TickEvent {
+    Upgraded {
+        glyph: usize,
+        at: Hex,
+    },
     Fired {
         glyph: usize,
         machine: Machine,
@@ -332,6 +336,7 @@ impl Tier {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum GlyphKind {
     Source,
+    SourceTwo,
     Bonder,
     SecondBond,
     Reification,
@@ -340,8 +345,13 @@ pub enum GlyphKind {
 }
 
 impl GlyphKind {
-    pub const ALL: [GlyphKind; 10] = [
+    pub const fn is_source(self) -> bool {
+        matches!(self, Self::Source | Self::SourceTwo)
+    }
+
+    pub const ALL: [GlyphKind; 11] = [
         GlyphKind::Source,
+        GlyphKind::SourceTwo,
         GlyphKind::Bonder,
         GlyphKind::SecondBond,
         GlyphKind::Reification,
@@ -403,7 +413,7 @@ impl Item {
                 Item::Atom(kind) => AtomKind::ALL
                     .iter()
                     .position(|other| *other == kind)
-                    .map(|i| RECIPES.len() + i),
+                    .map(|i| CRAFT_RECIPE_COUNT + i),
                 _ => None,
             })
     }
@@ -464,6 +474,13 @@ const SECOND_BOND: [Slot; 3] = [
 ];
 const BONDER: [Slot; 2] = [any(ORIGIN), any(DIRS[0])];
 const SOURCE: [Slot; 1] = [base(ORIGIN)];
+const SOURCE_TWO: [Slot; 2] = [base(ORIGIN), base(DIRS[0])];
+const SOURCE_TWO_BODY: [Hex; 4] = [
+    Hex::new(1, -1),
+    Hex::new(2, -1),
+    Hex::new(0, 1),
+    Hex::new(1, 1),
+];
 const SOURCE_BODY: [Hex; 5] = [DIRS[1], DIRS[2], DIRS[3], DIRS[4], DIRS[5]];
 const AMBER_CONVERTER: [Slot; 3] = [consumed(ORIGIN), consumed(DIRS[0]), consumed(DIRS[1])];
 const PLUM_CONVERTER: [Slot; 3] = [
@@ -530,6 +547,7 @@ impl GlyphKind {
     pub const fn rule(self) -> Rule {
         match self {
             GlyphKind::Source => plain(&SOURCE),
+            GlyphKind::SourceTwo => plain(&SOURCE_TWO),
             GlyphKind::Bonder => Rule {
                 before: &[(0, 1, None)],
                 after: &[(0, 1, BondKind::Single)],
@@ -579,6 +597,7 @@ impl GlyphKind {
     pub const fn body(self) -> &'static [Hex] {
         match self {
             GlyphKind::Source => &SOURCE_BODY,
+            GlyphKind::SourceTwo => &SOURCE_TWO_BODY,
             _ => &[],
         }
     }
@@ -649,14 +668,14 @@ pub struct Short {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Inventory {
-    count: [u32; RECIPES.len() + AtomKind::ALL.len()],
-    cap: [u32; RECIPES.len() + AtomKind::ALL.len()],
+    count: [u32; CRAFT_RECIPE_COUNT + AtomKind::ALL.len()],
+    cap: [u32; CRAFT_RECIPE_COUNT + AtomKind::ALL.len()],
 }
 
 impl Inventory {
     pub const EMPTY: Inventory = Inventory {
-        count: [0; RECIPES.len() + AtomKind::ALL.len()],
-        cap: [DEFAULT_CAP; RECIPES.len() + AtomKind::ALL.len()],
+        count: [0; CRAFT_RECIPE_COUNT + AtomKind::ALL.len()],
+        cap: [DEFAULT_CAP; CRAFT_RECIPE_COUNT + AtomKind::ALL.len()],
     };
 
     pub fn count(&self, item: Item) -> Option<u32> {
@@ -693,7 +712,7 @@ impl Inventory {
     }
 
     pub fn spend_all(&mut self, bill: &[Item]) -> Result<(), Vec<Short>> {
-        let mut need = [0; RECIPES.len() + AtomKind::ALL.len()];
+        let mut need = [0; CRAFT_RECIPE_COUNT + AtomKind::ALL.len()];
         for item in bill {
             let i = item
                 .index()
@@ -945,22 +964,27 @@ impl Sim {
         let mut events = Vec::new();
         for i in 0..self.glyphs.len() {
             let Some(g) = self.glyphs[i] else { continue };
-            if g.kind == GlyphKind::Source && self.atom_at(g.at).is_none() {
-                events.push(TickEvent::Fired {
-                    glyph: i,
-                    machine: Machine::Glyph(g.kind),
-                    at: g.at,
-                });
-                let atom = self.spawn(Atom {
-                    kind: AtomKind::Base,
-                    pos: g.at,
-                });
-                events.push(TickEvent::Spawned {
-                    glyph: i,
-                    atom,
-                    kind: AtomKind::Base,
-                    at: g.at,
-                });
+            if g.kind.is_source() {
+                let seats: Vec<_> = g.slots().filter(|at| self.atom_at(*at).is_none()).collect();
+                if !seats.is_empty() {
+                    events.push(TickEvent::Fired {
+                        glyph: i,
+                        machine: Machine::Glyph(g.kind),
+                        at: g.at,
+                    });
+                }
+                for at in seats {
+                    let atom = self.spawn(Atom {
+                        kind: AtomKind::Base,
+                        pos: at,
+                    });
+                    events.push(TickEvent::Spawned {
+                        glyph: i,
+                        atom,
+                        kind: AtomKind::Base,
+                        at,
+                    });
+                }
             }
         }
         for i in 0..self.arms.len() {
@@ -978,7 +1002,7 @@ impl Sim {
             let Some(g) = self.glyphs[i] else { continue };
             match g.kind {
                 GlyphKind::Output(tier) => self.craft(i, g.at, tier, &mut events),
-                GlyphKind::Source => {}
+                GlyphKind::Source | GlyphKind::SourceTwo => {}
                 _ => self.fire(i, g, &mut events),
             }
         }
@@ -996,6 +1020,44 @@ impl Sim {
         let tick = self.tick;
         self.tick += 1;
         TickEvents { tick, events }
+    }
+
+    pub fn upgrade(&mut self, glyph: usize, compound: &Sim) -> Option<TickEvents> {
+        let old = self.glyphs.get(glyph).copied().flatten()?;
+        if old.kind != GlyphKind::Source
+            || !compound.arms.is_empty()
+            || compound.glyphs.iter().any(Option::is_some)
+            || Form::of(compound) != *crate::form::source_upgrade()
+        {
+            return None;
+        }
+        let next = Glyph::new(GlyphKind::SourceTwo, old.at, old.dir);
+        if next
+            .kind
+            .cells()
+            .iter()
+            .any(|cell| old.at.checked_add(cell.turned(old.dir)).is_none())
+        {
+            return None;
+        }
+        let mut grown = Sim::empty();
+        grown.glyphs.push(Some(next));
+        if !self.fits(&grown, ORIGIN, &[Id::Glyph(glyph)])
+            || next
+                .cells()
+                .filter(|cell| !old.cells().any(|old| old == *cell))
+                .any(|cell| self.atom_at(cell).is_some())
+        {
+            return None;
+        }
+        self.glyphs[glyph] = Some(Glyph {
+            energy: ActivationEnergy::FULL,
+            ..next
+        });
+        Some(TickEvents {
+            tick: self.tick,
+            events: vec![TickEvent::Upgraded { glyph, at: old.at }],
+        })
     }
 
     fn craft(&mut self, glyph: usize, centre: Hex, tier: Tier, events: &mut Vec<TickEvent>) {
@@ -1446,14 +1508,18 @@ pub fn fixture(machine: Machine) -> Fixture {
                 done: arm_fixture_done,
             }
         }
-        Machine::Glyph(GlyphKind::Source) => {
+        Machine::Glyph(kind @ (GlyphKind::Source | GlyphKind::SourceTwo)) => {
             let mut sim = Sim::empty();
-            sim.glyphs
-                .push(Some(Glyph::new(GlyphKind::Source, ORIGIN, 0)));
+            sim.glyphs.push(Some(Glyph::new(kind, ORIGIN, 0)));
             Fixture {
                 sim,
                 ticks: 1,
-                done: |s| s.atom_at(ORIGIN).is_some(),
+                done: |s| {
+                    s.glyphs[0]
+                        .unwrap()
+                        .slots()
+                        .all(|at| s.atom_at(at).is_some())
+                },
             }
         }
         Machine::Glyph(GlyphKind::Bonder) => {
@@ -1662,6 +1728,167 @@ pub fn fixture(machine: Machine) -> Fixture {
 mod tests {
     use super::*;
     use crate::form::ATOM_ROUTES;
+
+    #[test]
+    fn tier_two_has_six_cells_and_two_independent_outlets_at_every_turn() {
+        for dir in 0..6 {
+            let at = Hex::new(4, -3);
+            let g = Glyph::new(GlyphKind::SourceTwo, at, dir);
+            let expected = [
+                ORIGIN,
+                DIRS[0],
+                Hex::new(1, -1),
+                Hex::new(2, -1),
+                Hex::new(0, 1),
+                Hex::new(1, 1),
+            ];
+            assert_eq!(
+                g.cells().collect::<Vec<_>>(),
+                expected.map(|h| at.add(h.turned(dir)))
+            );
+            let mut sim = Sim::empty();
+            sim.glyphs.push(Some(g));
+            let seats: Vec<_> = g.slots().collect();
+            let tick = sim.step();
+            assert_eq!(
+                tick.events
+                    .iter()
+                    .filter(|e| matches!(e, TickEvent::Spawned { .. }))
+                    .count(),
+                2
+            );
+            assert!(seats.iter().all(|at| sim.atom_at(*at).is_some()));
+            assert!(sim.step().events.is_empty());
+            let id = sim.atom_at(seats[1]).unwrap();
+            sim.consume(&[id]);
+            assert_eq!(
+                sim.step()
+                    .events
+                    .iter()
+                    .filter(|e| matches!(e, TickEvent::Spawned { .. }))
+                    .count(),
+                1
+            );
+            assert_eq!(sim.atoms.iter().flatten().count(), 2);
+        }
+    }
+
+    #[test]
+    fn tier_two_emits_once_per_free_seat_and_fires_once_for_the_machine() {
+        for dir in 0..6 {
+            for mask in 0..4 {
+                let mut sim = Sim::empty();
+                let at = Hex::new(4, -3);
+                let g = Glyph::new(GlyphKind::SourceTwo, at, dir);
+                let seats = [at, at.add(DIRS[0].turned(dir))];
+                assert_eq!(g.slots().collect::<Vec<_>>(), seats);
+                sim.glyphs.push(Some(g));
+                for (index, pos) in seats.into_iter().enumerate() {
+                    if mask & (1 << index) != 0 {
+                        sim.spawn(Atom {
+                            kind: AtomKind::Base,
+                            pos,
+                        });
+                    }
+                }
+                let tick = sim.step();
+                assert_eq!(
+                    tick.events
+                        .iter()
+                        .filter(|e| matches!(e, TickEvent::Fired { .. }))
+                        .count(),
+                    usize::from(mask != 3)
+                );
+                let actual: Vec<_> = tick
+                    .events
+                    .iter()
+                    .filter_map(|e| match e {
+                        TickEvent::Spawned { at, .. } => Some(*at),
+                        _ => None,
+                    })
+                    .collect();
+                let expected: Vec<_> = seats
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, at)| (mask & (1 << i) == 0).then_some(at))
+                    .collect();
+                assert_eq!(actual, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn upgrade_rows_do_not_change_legacy_inventory_slots() {
+        assert_eq!(CRAFT_RECIPE_COUNT, 25);
+        let count: Vec<u32> = (0..29).collect();
+        let cap = vec![32u32; 29];
+        let legacy = serde_json::json!({ "count": count, "cap": cap });
+        let inventory: Inventory = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(inventory).unwrap(), legacy);
+        for (index, (item, _)) in recipes().iter().enumerate() {
+            assert_eq!(inventory.count(*item), Some(index as u32));
+        }
+        for (index, kind) in AtomKind::ALL.into_iter().enumerate() {
+            assert_eq!(inventory.count(Item::Atom(kind)), Some(25 + index as u32));
+        }
+    }
+
+    #[test]
+    fn source_upgrade_is_exact_and_transactional_at_every_turn() {
+        let recipe = crate::form::source_upgrade();
+        assert_eq!(
+            recipe.to_string(),
+            "P0,1 P0,2 P1,0 P1,2 P2,0 0,1=0,2 0,1=1,0 0,2=1,2 1,0=2,0"
+        );
+        assert_eq!(recipe.crafts(), None);
+        assert_eq!(recipe.sim().component(0).len(), 5);
+        for dir in 0..6 {
+            let old = Glyph::new(GlyphKind::Source, Hex::new(3, 2), dir);
+            let mut sim = Sim::empty();
+            sim.glyphs.push(Some(old));
+            let mut wrong = recipe.sim();
+            wrong.atoms[0].as_mut().unwrap().kind = AtomKind::Base;
+            let before = serde_json::to_vec(&sim).unwrap();
+            assert!(sim.upgrade(0, &wrong).is_none());
+            assert_eq!(serde_json::to_vec(&sim).unwrap(), before);
+            let next = Glyph::new(GlyphKind::SourceTwo, old.at, dir);
+            for cell in next
+                .cells()
+                .filter(|cell| !old.cells().any(|at| at == *cell))
+            {
+                for atom in [true, false] {
+                    let mut blocked = sim.clone();
+                    if atom {
+                        blocked.spawn(Atom {
+                            kind: AtomKind::Base,
+                            pos: cell,
+                        });
+                    } else {
+                        blocked.arms.push(Arm::new(ArmLength::One, cell, 0, vec![]));
+                    }
+                    let before = serde_json::to_vec(&blocked).unwrap();
+                    assert!(blocked.upgrade(0, &recipe.sim()).is_none());
+                    assert_eq!(serde_json::to_vec(&blocked).unwrap(), before);
+                }
+            }
+            let event = sim.upgrade(0, &recipe.sim()).unwrap();
+            assert_eq!(
+                event.events,
+                vec![TickEvent::Upgraded {
+                    glyph: 0,
+                    at: old.at
+                }]
+            );
+            assert_eq!(sim.glyphs[0].unwrap().kind, GlyphKind::SourceTwo);
+            assert_eq!(sim.glyphs[0].unwrap().dir, dir);
+            assert!(sim.upgrade(0, &recipe.sim()).is_none());
+            assert!(
+                sim.inventory
+                    .count(Machine::Glyph(GlyphKind::SourceTwo).into())
+                    .is_none()
+            );
+        }
+    }
 
     #[test]
     fn activation_energy_is_set_by_its_tick_event_and_decays_exactly_on_the_tick_grid() {
@@ -2146,7 +2373,9 @@ mod tests {
             }
             assert!(!forms[..k].contains(&recipe), "{item:?} shares a recipe");
             assert!(
-                !RECIPES[..k].iter().any(|(other, _)| other == item),
+                !crate::form::RECIPES[..k]
+                    .iter()
+                    .any(|(other, _)| other == item),
                 "{item:?} is listed twice"
             );
             let mut world = Sim::empty();

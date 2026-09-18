@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 25] = [
+pub const RECIPES: [(Item, &str); 26] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
@@ -95,6 +95,10 @@ pub const RECIPES: [(Item, &str); 25] = [
         Item::Token(Instr::Move(3)),
         "B0,0 B0,1 C1,0 0,0=0,1 0,1-1,0",
     ),
+    (
+        glyph(GlyphKind::SourceTwo),
+        "P0,1 P0,2 P1,0 P1,2 P2,0 0,1=0,2 0,1=1,0 0,2=1,2 1,0=2,0",
+    ),
 ];
 
 #[derive(Clone, Copy)]
@@ -135,7 +139,7 @@ const fn glyph(kind: GlyphKind) -> Item {
     Item::Machine(Machine::Glyph(kind))
 }
 
-pub fn recipes() -> &'static [(Item, Form)] {
+fn all_recipes() -> &'static [(Item, Form)] {
     static FORMS: OnceLock<Vec<(Item, Form)>> = OnceLock::new();
     FORMS.get_or_init(|| {
         RECIPES
@@ -148,6 +152,33 @@ pub fn recipes() -> &'static [(Item, Form)] {
             })
             .collect()
     })
+}
+
+pub const CRAFT_RECIPE_COUNT: usize = {
+    let mut count = 0;
+    let mut i = 0;
+    while i < RECIPES.len() {
+        if !matches!(RECIPES[i].0, Item::Machine(Machine::Glyph(kind)) if kind.is_source()) {
+            count += 1;
+        }
+        i += 1;
+    }
+    count
+};
+
+pub fn recipes() -> &'static [(Item, Form)] {
+    static CRAFTS: OnceLock<Vec<(Item, Form)>> = OnceLock::new();
+    CRAFTS.get_or_init(|| all_recipes().iter()
+        .filter(|(item, _)| !matches!(item, Item::Machine(Machine::Glyph(kind)) if kind.is_source()))
+        .cloned().collect())
+}
+
+pub fn source_upgrade() -> &'static Form {
+    &all_recipes()
+        .iter()
+        .find(|(item, _)| *item == glyph(GlyphKind::SourceTwo))
+        .expect("the source upgrade row")
+        .1
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -296,7 +327,9 @@ impl fmt::Display for Form {
 
 fn machine_name(kind: GlyphKind) -> &'static str {
     match kind {
-        GlyphKind::Source => panic!("a source is world-placed and never copied"),
+        GlyphKind::Source | GlyphKind::SourceTwo => {
+            panic!("a source is world-placed and never copied")
+        }
         GlyphKind::Bonder => "bonder",
         GlyphKind::SecondBond => "second-bond",
         GlyphKind::Reification => "reification",
@@ -323,7 +356,9 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
     }
     for glyph in sim.glyphs.iter().flatten() {
         match glyph.kind {
-            GlyphKind::Source => return Err("a source cannot be copied".to_string()),
+            GlyphKind::Source | GlyphKind::SourceTwo => {
+                return Err("a source cannot be copied".to_string());
+            }
             GlyphKind::Converter(AtomKind::Base) => {
                 return Err("the base atom has no converter".to_string());
             }
@@ -932,10 +967,7 @@ mod tests {
         let empty_tape = "arm 1 0,0 0 - 23".parse::<Fragment>().unwrap();
         assert!(empty_tape.0.arms[0].tape.is_empty());
         assert_eq!(empty_tape.0.arms[0].pc, 23);
-        for kind in GlyphKind::ALL
-            .into_iter()
-            .filter(|kind| *kind != GlyphKind::Source)
-        {
+        for kind in GlyphKind::ALL.into_iter().filter(|kind| !kind.is_source()) {
             assert_eq!(glyph_kind(machine_name(kind)), Some(kind));
         }
     }

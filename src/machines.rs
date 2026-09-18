@@ -418,14 +418,14 @@ impl Scaffold {
     }
 
     fn alpha(&self, candidate: &RgbaImage) -> Vec<f32> {
-        candidate.pixels().map(|p| opacity(rgb(p))).collect()
+        candidate.pixels().map(pixel_opacity).collect()
     }
 
     fn cut(&self, candidate: &RgbaImage) -> RgbaImage {
         let (origin, side) = self.crop();
         RgbaImage::from_fn(side, side, |x, y| {
-            let c = rgb(candidate.get_pixel(x + origin, y + origin));
-            rgba(unspill(c), opacity(c))
+            let p = candidate.get_pixel(x + origin, y + origin);
+            rgba(unspill(rgb(p)), pixel_opacity(p))
         })
     }
 
@@ -459,6 +459,16 @@ impl Scaffold {
     }
 
     fn register(&self, candidate: &RgbaImage) -> Capture {
+        let keyed = RgbaImage::from_fn(candidate.width(), candidate.height(), |x, y| {
+            let pixel = candidate.get_pixel(x, y);
+            let alpha = f32::from(pixel[3]) / 255.0;
+            let color = rgb(pixel);
+            rgba(
+                [0, 1, 2].map(|i| color[i] * alpha + KEY[i] * (1.0 - alpha)),
+                1.0,
+            )
+        });
+        let candidate = &keyed;
         assert_eq!(
             (candidate.width(), candidate.height()),
             (self.canvas, self.canvas),
@@ -581,8 +591,8 @@ impl Scaffold {
         let sample = |world: Vec2| {
             let p = self.pixel(world);
             let inside = p.min_element() >= 0.0 && p.max_element() < self.canvas as f32;
-            let c = inside.then(|| rgb(candidate.get_pixel(p.x as u32, p.y as u32)))?;
-            (opacity(c) > 0.0).then(|| Vec3::from_array(c))
+            let pixel = inside.then(|| candidate.get_pixel(p.x as u32, p.y as u32))?;
+            (pixel_opacity(pixel) > 0.0).then(|| Vec3::from_array(rgb(pixel)))
         };
         let step = SEAT_STEP * HEX;
         let rings = ((SEAT_AROUND[1] - SEAT_DOT) / SEAT_STEP).ceil() as usize;
@@ -1074,6 +1084,10 @@ fn apart(a: [f32; 3], b: [f32; 3]) -> f32 {
 
 fn spill(c: [f32; 3]) -> f32 {
     c[1] - c[0].max(c[2])
+}
+
+fn pixel_opacity(p: &Rgba<u8>) -> f32 {
+    opacity(rgb(p)) * f32::from(p[3]) / 255.0
 }
 
 fn opacity(c: [f32; 3]) -> f32 {
@@ -2270,6 +2284,44 @@ mod tests {
 
     const RELIEF: f32 = 0.1;
     const ASPECT: f32 = 0.02;
+
+    #[test]
+    fn machines_register_transparent_paints_over_the_scaffold_key_before_sampling() {
+        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SourceTwo));
+        let keyed = scaffold.render();
+        let transparent = RgbaImage::from_fn(keyed.width(), keyed.height(), |x, y| {
+            let p = *keyed.get_pixel(x, y);
+            if p == rgba(KEY, 1.0) {
+                Rgba([255, 0, 255, 0])
+            } else {
+                p
+            }
+        });
+        assert_eq!(
+            scaffold.register(&keyed).image,
+            scaffold.register(&transparent).image
+        );
+    }
+
+    #[test]
+    fn machines_preserve_painted_alpha_in_footprint_measurement_and_cutting() {
+        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SourceTwo));
+        let mut candidate = scaffold.render();
+        let (origin, _) = scaffold.crop();
+        candidate.put_pixel(origin, origin, Rgba([255, 0, 0, 0]));
+        assert_eq!(scaffold.cut(&candidate).get_pixel(0, 0)[3], 0);
+        let capture = Capture {
+            image: candidate.clone(),
+            off_centre: 0.0,
+        };
+        assert!(scaffold.score(&capture).outside <= 0.05);
+        candidate.put_pixel(origin, origin, Rgba([255, 0, 0, 255]));
+        let capture = Capture {
+            image: candidate,
+            off_centre: 0.0,
+        };
+        assert!(scaffold.score(&capture).outside > 0.05);
+    }
 
     #[test]
     fn machine_generator_manifest_round_trip_keeps_every_rig_part() {

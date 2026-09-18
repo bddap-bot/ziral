@@ -1130,6 +1130,22 @@ The shipped loop leaves the right-hand neighbour clear for one arm to carry each
 
 Tests cover the exact footprint through all six turns, refusal at each occupied cell, the unchanged one-tick fixture outcome, and card playback through the same fixture. Mutation passes remove one body cell and restore it, reopen a second neighbour and restore it, and move emission off the centre and restore it. `proofs/source-six-cell-95.gif` shows the fixture playing at the shipped size.
 
+### The source grows to two outlets
+
+Directive (verbatim): "actually, the first upgrade takes a compound"
+
+Directive (verbatim): "oh except those should be plumb atoms"
+
+Tier two follows [the two-outlet sketch](docs/source-tier-two-sketch.jpg): two columns and three staggered rows, with two outlet seats in the middle and four body cells feeding them. Each free seat produces one base atom per tick independently. Supply behavior is unchanged.
+
+The simplest design adds a source glyph kind with two functional slots and four housing cells. The same footprint, renderer, emission loop, fixture and card handle both tiers. The one recipe table contains the five-plum compound with four double bonds; manufacturing and inventory exclude source rows, so an upgrade never manufactures a portable source or changes inventory save dimensions.
+
+Dropping that compound onto any cell of a placed tier-one source attempts one transaction. It keeps the anchor and facing, checks the next footprint while excluding the old housing, and rejects atoms on newly occupied cells as well as overlapping machines. Success consumes the held compound, replaces the glyph and emits one upgrade event. Refusal uses the existing return-to-origin path. A wrong compound follows ordinary placement and remains intact.
+
+The upgrade event drives the existing material and rig pulse, a larger brass-and-amber spark burst and a five-note brass chord. The paint pipeline receives the body-first scaffold and the sketch together; the orange marks describe thematic housing, not an orange overlay. A second stacked source picture would split one housing across rendering paths and was rejected.
+
+Tests cover the exact six-cell footprint and two independent outlets at all turns, the exact recipe, successful consumption and one event, wrong-compound survival, blocked growth with byte-equal rollback, and the tier-two fixture and rendered card.
+
 ### Toy 1 gives one arm three lengths
 
 Directive (verbatim): "add length 2 arm B0,1 B0,2 B1,0 B1,1 B2,1 B3,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 2,1-3,1 again, using token atoms"

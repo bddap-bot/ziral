@@ -48,9 +48,19 @@ pub fn burst(
     energy: ActivationEnergy,
     events: &[TickEvent],
 ) -> Option<(Emitter, usize)> {
-    let emitter = match response(machine) {
+    let mut emitter = match response(machine) {
         Response::Default(emitter) | Response::Rig(emitter) => emitter,
     };
+    if matches!(machine, Machine::Glyph(crate::sim::GlyphKind::SourceTwo))
+        && events
+            .iter()
+            .any(|event| matches!(event, TickEvent::Upgraded { glyph, .. } if *glyph == index))
+    {
+        emitter.count = 48;
+        emitter.lifetime = ActivationEnergy::FULL.level() as u8;
+        emitter.look = Look::Spark;
+        emitter.layer = Layer::On;
+    }
     if matches!(machine, Machine::Arm(_))
         && events
             .iter()
@@ -85,6 +95,17 @@ mod tests {
     use crate::sim::{GlyphKind, Instr, Stall};
 
     #[test]
+    fn an_upgrade_burst_does_not_belong_to_the_arm_with_the_same_index() {
+        let arm = Machine::Arm(ArmLength::One);
+        let energy = ActivationEnergy::FULL.decayed();
+        let upgrade = [TickEvent::Upgraded {
+            glyph: 0,
+            at: crate::sim::ORIGIN,
+        }];
+        assert_eq!(burst(arm, 0, energy, &upgrade), burst(arm, 0, energy, &[]));
+    }
+
+    #[test]
     fn every_machine_kind_resolves_to_exactly_one_default_emitter_or_rig_override() {
         let mut defaults = 0;
         let mut overrides = 0;
@@ -103,7 +124,7 @@ mod tests {
             assert!((1..=12).contains(&emitter.count));
             assert!((1..=ActivationEnergy::FULL.level()).contains(&(emitter.lifetime as usize)));
         }
-        assert_eq!((defaults, overrides), (7, 6));
+        assert_eq!((defaults, overrides), (8, 6));
     }
 
     #[test]
