@@ -1195,3 +1195,7 @@ Replay opens through the existing import action or `ziral --replay <record.json>
 Frame durations are the replay clock; loading checks each timestamp against that clock and reconstructs it from the durations. This removes JSON decimal parsing differences at exact frame boundaries. Wall duration uses real elapsed time, including a suspended interval, while the world retains its existing one-tick-per-frame backpressure behavior.
 
 M marks a moment through the existing key stream and leaves the world untouched. It uses an otherwise unused key and opens no form. `ziral --analyze <record.json>` lists each mark with fifteen seconds on either side, clipped to the session. A separate marker log would duplicate the input clock and could drift from replay, so the key event itself is the mark.
+
+## Playtest upload
+
+The playtest link carries a signed random token and the existing relay endpoint. The browser sends input prefixes through the voice ingress under `ziral-record/1`; the voice credential stays separate. A durable prefix acknowledgment makes retries idempotent. Local records survive reload, and each persistence attempt retries pending uploads. The private receiver stores one file per session beneath the opaque token, with private permissions and bounded storage. A signed capability avoids a token table and an additional public service. Records contain only the token, build, seed and inputs; analysis remains downstream of replay.

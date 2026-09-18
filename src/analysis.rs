@@ -42,7 +42,7 @@ fn marks(record: &Record) -> Vec<Value> {
 }
 
 fn summarize(record: &Record) -> Value {
-    json!({"marks": marks(record)})
+    json!({"token": record.token, "marks": marks(record)})
 }
 
 #[cfg(test)]
