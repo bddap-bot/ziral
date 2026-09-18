@@ -1256,3 +1256,6 @@ No new painting or sizing is needed. The existing pictures retain their shipped 
 The encountered field is required in saved simulations. The existing build check rejects saves from another build; accepting a missing field as an empty list would silently discard encounters.
 
 `proofs/portal-palette-108-3803.png` pairs two unscaled 1280 by 720 captures: the interior before overworld amber conversion at left and after it at right. Fragment admission checks actual contents; the overworld bill alone includes the extra base atom for a double bond.
+
+A completed left click copies the portal’s canonical interior through the existing Fragment writer; normal paste retains its complete inventory bill. Dragging remains movement, and no projected frame or inventory leaves the interior. Empty contents have empty notation and paste nothing.
+The simplest response is one copied event: the portal’s manifest dilates its complete housing and emits ivory steam, and its instrument sounds once; a separate serializer or painted moving part would duplicate an existing representation.

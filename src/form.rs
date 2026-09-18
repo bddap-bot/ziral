@@ -358,9 +358,6 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
     if sim.portals.iter().any(Option::is_some) {
         return Err("a portal interior cannot be copied as a recipe fragment".to_owned());
     }
-    if sim.ids().next().is_none() {
-        return Err("empty fragment".to_string());
-    }
     for glyph in sim.glyphs.iter().flatten() {
         match glyph.kind {
             GlyphKind::Source | GlyphKind::SourceTwo => {
@@ -587,8 +584,8 @@ fn posed(sim: &Sim, turn: usize) -> Result<Sim, String> {
         .map(|at| wide_turn(at, turn))
         .collect();
     let origin = (
-        positions.iter().map(|at| at.0).min().expect("a position"),
-        positions.iter().map(|at| at.1).min().expect("a position"),
+        positions.iter().map(|at| at.0).min().unwrap_or(0),
+        positions.iter().map(|at| at.1).min().unwrap_or(0),
     );
     let at = |position: Hex| {
         let position = wide_turn(position, turn);
@@ -748,9 +745,7 @@ fn parse_machine(line: &str, sim: &mut Sim) -> Result<(), String> {
 
 fn parse_fragment(text: &str) -> Result<Sim, String> {
     let mut sim = Sim::empty();
-    let mut any = false;
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-        any = true;
         let first = line.split_whitespace().next().unwrap();
         if first == "arm" || glyph_kind(first).is_some() || first == "source" {
             parse_machine(line, &mut sim)?;
@@ -761,9 +756,6 @@ fn parse_fragment(text: &str) -> Result<Sim, String> {
             return Err(format!("{line:?} overlaps the fragment"));
         }
         sim.place(&compound, Hex::new(0, 0));
-    }
-    if !any {
-        return Err("empty fragment".to_string());
     }
     Ok(sim)
 }
@@ -980,8 +972,10 @@ mod tests {
     }
 
     #[test]
-    fn fragment_construction_rejects_empty_sources_and_unrepresentable_coordinates() {
-        assert!(Fragment::of(&Sim::empty()).is_err());
+    fn fragment_construction_accepts_empty_and_rejects_sources_and_unrepresentable_coordinates() {
+        let text = Fragment::of(&Sim::empty()).unwrap().to_string();
+        assert_eq!(text, "");
+        assert_eq!(text.parse::<Fragment>().unwrap().into_sim(), Sim::empty());
         let mut source = Sim::empty();
         source
             .glyphs

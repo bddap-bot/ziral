@@ -115,6 +115,7 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
         .iter()
         .filter_map(|event| {
             let (machine, at) = match event {
+                TickEvent::Copied { at, .. } => (Machine::Portal, *at),
                 TickEvent::Fired { machine, at, .. } => (*machine, *at),
                 TickEvent::Upgraded { at, .. } => {
                     (Machine::Glyph(crate::sim::GlyphKind::SourceTwo), *at)

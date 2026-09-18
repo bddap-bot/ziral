@@ -448,6 +448,7 @@ motion = "dilate"
 event = "fired"
 
 [machine.portal]
+motion = "dilate"
 direction = 'Directive (verbatim): "some mystical theme". Directive (verbatim): "something visually interesting in the portal". One substantial plum ceramic portal housing fills the single grey hex footprint. Its broad continuous rounded hexagonal body surrounds one large central square aperture with softly rounded corners, about half the hex height and width. The aperture contains a deep plum mineral glaze with broad luminous ivory swirling mineral veins, open and visually interesting even with no contents. A restrained continuous rubbed brass lip meets ivory glazed inner edges. All four corners of the central half-width square remain unobstructed for a live interior preview. The body is one weighty casting, never beads, nodes, bonds, separate pods or a compound. No functional atom seats or extra openings, no symbols or writing. Top-down orthographic, no perspective, no directional light or shadow, green outside only; the aperture is painted depth, not green.'
 kept = 2
 briefed = "fd4f4e689f4df174"
@@ -459,12 +460,12 @@ voice = "ceramic"
 note = 74
 
 [machine.portal.emitter]
-look = "spark"
-count = 3
-lifetime = 2
-event = "fired"
-layer = "behind"
-energy_scaled = true
+look = "steam"
+count = 8
+lifetime = 1
+event = "copied"
+layer = "on"
+energy_scaled = false
 
 [machine.reification]
 direction = "One broad amber and terracotta kiln housing fills its nineteen-cell hexagonal footprint. Nineteen equal empty apertures, one centre and rings of six and twelve, are bored into one continuous ceramic casting with broad solid material between them. The central aperture has a restrained recessed brass metering collar within the housing. No channels connecting rings, lattice, separate cups or tile-shaped panels."

@@ -124,6 +124,8 @@ struct Entry {
     briefed: Option<String>,
     painted: Option<String>,
     relit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    motion: Option<crate::rig::Motion>,
     instrument: crate::sound::Instrument,
     emitter: crate::particles::Emitter,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2380,12 +2382,16 @@ mod tests {
     }
 
     #[test]
-    fn machine_generator_manifest_round_trip_keeps_every_rig_part() {
+    fn machine_generator_manifest_round_trip_keeps_every_rig_part_and_motion() {
         let manifest = Art::shipped().read();
         let text = toml::to_string_pretty(&manifest).unwrap();
         let round: Manifest = toml::from_str(&text).unwrap();
         for machine in Machine::ALL {
             let name = name(machine);
+            assert_eq!(
+                round.machine[name].motion,
+                crate::rig::entry(machine).motion
+            );
             assert_eq!(
                 round.machine[name].parts, manifest.machine[name].parts,
                 "{name}"
@@ -3013,6 +3019,7 @@ mod tests {
                             briefed: None,
                             painted: None,
                             relit: None,
+                            motion: None,
                             instrument: crate::sound::instrument(item(name)),
                             emitter: crate::rig::entry(item(name)).emitter,
                             rig_emitter: crate::rig::entry(item(name)).rig_emitter,

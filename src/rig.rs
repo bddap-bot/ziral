@@ -16,6 +16,7 @@ pub enum Motion {
 pub enum Event {
     Fired,
     Rotated,
+    Copied,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -32,6 +33,7 @@ impl Event {
                 *glyph == index
             }
             (Event::Rotated, TickEvent::Rotated { arm, .. }) => *arm == index,
+            (Event::Copied, TickEvent::Copied { portal, .. }) => *portal == index,
             _ => false,
         }
     }
@@ -49,6 +51,7 @@ pub struct Part {
 
 #[derive(Deserialize)]
 pub struct Entry {
+    pub motion: Option<Motion>,
     pub emitter: crate::particles::Emitter,
     pub rig_emitter: Option<crate::particles::Emitter>,
     #[serde(default)]
@@ -113,6 +116,16 @@ pub fn activation(machine: Machine) -> Event {
     entry(machine).emitter.event
 }
 
+impl Motion {
+    pub fn pose(self, pulse: f32) -> ([f32; 2], f32, f32) {
+        match self {
+            Self::Clamp => ([-0.16 * pulse, 0.0], 0.0, 1.0),
+            Self::Turn => ([0.0, 0.0], 0.35 * pulse, 1.0),
+            Self::Dilate => ([0.0, 0.0], 0.0, 1.0 + 0.12 * pulse),
+        }
+    }
+}
+
 pub fn pulse(fired: bool, phase: f32) -> f32 {
     if fired {
         (std::f32::consts::PI * phase.min(1.0)).sin()
@@ -142,6 +155,10 @@ mod tests {
                 assert!(part.motion.is_none() || part.event.is_some());
                 if let Some(event) = part.event {
                     let sample = match event {
+                        Event::Copied => TickEvent::Copied {
+                            portal: 7,
+                            at: crate::sim::ORIGIN,
+                        },
                         Event::Fired => TickEvent::Fired {
                             glyph: 7,
                             machine,

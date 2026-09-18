@@ -122,6 +122,10 @@ pub struct TickEvents {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TickEvent {
+    Copied {
+        portal: usize,
+        at: Hex,
+    },
     Upgraded {
         glyph: usize,
         at: Hex,

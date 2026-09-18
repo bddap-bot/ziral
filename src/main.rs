@@ -470,6 +470,7 @@ struct Viewer {
     card_drag: Option<CardDrag>,
     events: Vec<sim::TickEvents>,
     score: Option<sim::TickEvents>,
+    responses: Vec<(sim::TickEvent, f32)>,
     refused: Option<Refused>,
     turn: Option<FacingTween>,
     clipboard: Option<ClipboardRequest>,
@@ -497,6 +498,7 @@ impl Viewer {
             card_drag: None,
             events: Vec::new(),
             score: None,
+            responses: Vec::new(),
             refused: None,
             turn: None,
             clipboard: None,
@@ -793,6 +795,7 @@ impl WorldAccess for Game {
         self.overworld.running = true;
         self.overworld.advance(dt);
         if self.inside() {
+            self.overworld.score = None;
             let mut editor = self.edit();
             editor.animate(dt);
             if editor.running && editor.saveable() && editor.since >= editor.period {
@@ -1462,6 +1465,14 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
 }
 
 impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>> Editor<'_, S, V> {
+    fn score(&mut self, tick: &sim::TickEvents) {
+        if let Some(score) = &mut self.score {
+            score.events.extend(tick.events.iter().cloned());
+        } else {
+            self.score = Some(tick.clone());
+        }
+    }
+
     fn forward(&mut self) {
         self.end_turn();
         self.down = None;
@@ -1469,7 +1480,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         let prev = self.shown().clone();
         let mut ghost = prev.clone();
         let tick = ghost.step();
-        self.score = Some(tick.clone());
+        self.score(&tick);
         self.events.push(tick);
         self.prev = prev;
         self.ghost = Some(ghost);
@@ -1484,6 +1495,10 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
     }
 
     fn animate(&mut self, dt: f32) {
+        self.responses.retain_mut(|(_, elapsed)| {
+            *elapsed += dt;
+            *elapsed < TICK_MS / 1000.0
+        });
         if !self.has_machine_rollback() || self.turn.is_some() {
             self.since = (self.since + dt).min(self.period);
         }
@@ -1658,7 +1673,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         {
             self.down = None;
         }
-        self.score = Some(tick.clone());
+        self.score(&tick);
         self.events = vec![tick];
 
         self.focus = self.focus.take().and_then(|f| f.survive(&self.sim));
@@ -1867,7 +1882,8 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
     }
 
     fn lift(&mut self, set: Sim, back: Back) {
-        if self.holding()
+        if set.ids().next().is_none()
+            || self.holding()
             || (back == Back::Inventory
                 && self.encountered.is_some()
                 && set.items().any(|item| !self.available(item)))
@@ -1974,6 +1990,28 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                 self.pick(ids);
             }
             Some(Press::Ground { .. }) => self.focus = None,
+            Some(Press::Cell { cell, .. }) if at == Some(cell) && !self.holding() => {
+                if let Some((index, portal)) = self
+                    .sim
+                    .portals
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, p)| p.as_ref().filter(|p| p.at == cell).map(|p| (i, p)))
+                    && let Ok(fragment) = Fragment::of(&portal.sim)
+                {
+                    let event = sim::TickEvent::Copied {
+                        portal: index,
+                        at: cell,
+                    };
+                    let tick = sim::TickEvents {
+                        tick: self.sim.tick,
+                        events: vec![event.clone()],
+                    };
+                    self.clipboard = Some(ClipboardRequest::Write(fragment.to_string()));
+                    self.score(&tick);
+                    self.responses.push((event, 0.0));
+                }
+            }
             _ => self.place(at),
         }
     }
@@ -2005,7 +2043,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                 }
                 *self.sim = upgraded;
                 self.prev = self.sim.clone();
-                self.score = Some(tick.clone());
+                self.score(&tick);
                 self.events = vec![tick];
                 self.since = 0.0;
             } else {
@@ -4564,12 +4602,10 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         for (index, part) in rig::parts(item).iter().enumerate() {
             let (skin, _, _) = look::rig(item, &part.name);
             let pivot = Vec2::new(part.pivot[0], part.pivot[1]) * HEX;
-            let (shift, turn, scale) = match part.motion {
-                Some(rig::Motion::Clamp) => (Vec2::new(-0.16 * HEX * pulse, 0.0), 0.0, 1.0),
-                Some(rig::Motion::Turn) => (Vec2::ZERO, 0.35 * pulse, 1.0),
-                Some(rig::Motion::Dilate) => (Vec2::ZERO, 0.0, 1.0 + 0.12 * pulse),
-                None => (Vec2::ZERO, 0.0, 1.0),
-            };
+            let (shift, turn, scale) = part
+                .motion
+                .map_or(([0.0, 0.0], 0.0, 1.0), |motion| motion.pose(pulse));
+            let shift = Vec2::from(shift) * HEX;
             let local = Vec2::from_angle(turn).rotate(quad.centre - pivot) + pivot + shift;
             let at = origin + Vec2::from_angle(angle).rotate(local);
             let part_z = z + index as f32 * 0.0001;
@@ -4617,23 +4653,34 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
                 self.arm(item, at, hand, RING_OPEN, z, response);
             }
             (Machine::Portal, MachineMark::Sprite(_)) => {
-                self.commands.spawn((
-                    Fill,
-                    self.layers.clone(),
-                    Sprite {
-                        image: self.kiln.image(look.skin),
-                        color: Color::WHITE.with_alpha(self.portal_opacity),
-                        custom_size: Some(look::quad(item).size() * self.scale),
-                        ..default()
-                    },
-                    Transform::from_translation((at * self.scale + self.shift).extend(z)),
-                ));
+                self.portal(at, z, rig::pulse(response.0, response.1));
             }
             (Machine::Glyph(_), MachineMark::Sprite(_)) => {
                 self.rig(item, at, angle, z, response);
             }
             _ => unworn(look),
         }
+    }
+
+    fn portal(&mut self, at: Vec2, z: f32, pulse: f32) {
+        let look = look::machine(Machine::Portal);
+        let (shift, turn, scale) = rig::entry(Machine::Portal)
+            .motion
+            .map_or(([0.0, 0.0], 0.0, 1.0), |motion| motion.pose(pulse));
+        self.commands.spawn((
+            Fill,
+            self.layers.clone(),
+            Sprite {
+                image: self.kiln.image(look.skin),
+                color: Color::WHITE.with_alpha(self.portal_opacity),
+                custom_size: Some(look::quad(Machine::Portal).size() * self.scale * scale),
+                ..default()
+            },
+            Transform::from_translation(
+                ((at + Vec2::from(shift) * HEX) * self.scale + self.shift).extend(z),
+            )
+            .with_rotation(Quat::from_rotation_z(turn)),
+        ));
     }
 
     fn particles(
@@ -4703,6 +4750,7 @@ struct ArmPose {
 
 struct Frame<'a> {
     sim: &'a Sim,
+    responses: &'a [(sim::TickEvent, f32)],
     tick: f32,
     atoms: Vec<Option<Vec2>>,
     arms: Vec<ArmPose>,
@@ -4718,9 +4766,21 @@ fn sweep(centre: Vec2, angle: f32, e: f32) -> impl Fn(Vec2) -> Vec2 {
 }
 
 impl Frame<'_> {
+    fn responses(
+        &self,
+        machine: Machine,
+        index: usize,
+    ) -> impl Iterator<Item = (&sim::TickEvent, f32)> + Clone {
+        self.responses
+            .iter()
+            .filter(move |(event, _)| rig::activation(machine).matches(event, index))
+            .map(|(event, elapsed)| (event, elapsed / (TICK_MS / 1000.0)))
+    }
+
     fn settled(s: &Sim) -> Frame<'_> {
         Frame {
             sim: s,
+            responses: &[],
             tick: s.tick as f32,
             atoms: s.atoms.iter().map(|a| a.map(|a| px(a.pos))).collect(),
             arms: s
@@ -4940,7 +5000,8 @@ fn draw(
             .clamp(0.0, 1.0),
     };
     let board_phase = world.board_phase();
-    let f = Frame::between(&world.prev, world.shown(), board_phase);
+    let mut f = Frame::between(&world.prev, world.shown(), board_phase);
+    f.responses = &world.responses;
     let events = world
         .events
         .last()
@@ -5128,14 +5189,27 @@ fn scene<G: GizmoConfigGroup>(
     particles: bool,
     turn: Option<(Id, MachinePose)>,
 ) {
-    for portal in f.sim.portals.iter().flatten() {
-        p.machine(
-            Machine::Portal,
-            px(portal.at),
-            0.0,
-            layer::GLYPHS + lift,
-            (false, 1.0, sim::ActivationEnergy::default()),
-        );
+    for (index, portal) in f.sim.portals.iter().enumerate() {
+        let Some(portal) = portal else { continue };
+        let responses = f.responses(Machine::Portal, index);
+        let pulse = responses
+            .clone()
+            .map(|(_, phase)| rig::pulse(true, phase))
+            .sum();
+        p.portal(px(portal.at), layer::GLYPHS + lift, pulse);
+        for (event, phase) in responses.filter(|_| particles) {
+            p.particles(
+                Machine::Portal,
+                index,
+                std::slice::from_ref(event),
+                (
+                    px(portal.at),
+                    sim::ActivationEnergy::FULL,
+                    phase,
+                    layer::GLYPHS + lift..layer::LIFT + lift,
+                ),
+            );
+        }
         p.interior(
             &portal.sim,
             px(portal.at),
@@ -5481,7 +5555,8 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 59] = [
+    pub const SCENES: [&str; 60] = [
+        "portal-copy-109",
         "portal",
         "source-upgrade",
         "micro",
@@ -5640,6 +5715,23 @@ mod shot {
                 .unwrap_or_else(|| panic!("unknown machine {name}"))
         };
         match name {
+            "portal-copy-109" => {
+                world.sim = Sim::empty();
+                let mut portal = sim::Portal::new(Hex::new(-3, 0));
+                portal.sim = "B0,2 A1,2 0,2-1,2\narm 1 0,0 0 FwR 1"
+                    .parse::<Fragment>()
+                    .unwrap()
+                    .into_sim();
+                for item in portal.sim.bill() {
+                    world.sim.receive(item);
+                }
+                world.sim.portals.push(Some(portal));
+                script.push((42, Act::Press(Hex::new(-3, 0))));
+                script.push((48, Act::Release(Hex::new(-3, 0))));
+                script.extend(tap(96, KeyV));
+                script.push((108, Act::Press(Hex::new(1, 0))));
+                script.push((114, Act::Release(Hex::new(1, 0))));
+            }
             "portal-palette:108" => {
                 world.sim = fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim;
                 let mut portal = sim::Portal::new(FOCUS);
@@ -7008,6 +7100,147 @@ mod shot {
 mod tests {
     use super::*;
     use sim::{Atom, AtomKind, Bond, Tier};
+
+    fn portal_copy_game() -> Game {
+        let mut sim = Sim::empty();
+        let mut portal = sim::Portal::new(Hex::new(-4, 0));
+        portal.sim = "B0,3 A1,3 0,3-1,3\narm 1 2,0 1 FwR 1\nbonder 0,2 4"
+            .parse::<Fragment>()
+            .unwrap()
+            .into_sim();
+        portal.sim.receive(Item::Atom(AtomKind::Cobalt));
+        sim.portals.push(Some(portal));
+        Game::new(sim)
+    }
+
+    #[test]
+    fn portal_copy_uses_the_canonical_contents_and_paste_pays_the_normal_bill() {
+        let mut game = portal_copy_game();
+        let baseline = game.portal(0).sim.clone();
+        game.enter(Some(0));
+        game.edit().forward();
+        assert_ne!(game.shown(), &baseline);
+        game.enter(None);
+        let at = game.portal(0).at;
+        game.press(px(at), px(at));
+        assert!(game.clipboard.is_none());
+        game.release(Some(at));
+        let Some(ClipboardRequest::Write(text)) = game.clipboard.take() else {
+            panic!("portal click must write its contents")
+        };
+        assert_eq!(text, Fragment::of(&baseline).unwrap().to_string());
+        assert_eq!(game.portal(0).sim, baseline);
+        let fragment = text.parse::<Fragment>().unwrap().into_sim();
+        assert_eq!(fragment.arms[0].tape, baseline.arms[0].tape);
+        assert_eq!(fragment.arms[0].pc, baseline.arms[0].pc);
+        assert_eq!(fragment.inventory, sim::Inventory::EMPTY);
+        assert!(fragment.portals.is_empty());
+        let before = game.sim().clone();
+        let mut session = session::Session::new(&game.state());
+        session.paste(&mut game, &text);
+        game.press(px(ORIGIN), px(ORIGIN));
+        assert_eq!(game.sim(), &before);
+        assert!(game.refused.is_some());
+        for item in fragment.bill() {
+            game.overworld.sim.receive(item);
+        }
+        session.paste(&mut game, &text);
+        game.press(px(ORIGIN), px(ORIGIN));
+        assert!(game.refused.is_none());
+        assert_eq!(game.sim().inventory, sim::Inventory::EMPTY);
+        let mut pasted = game.sim().clone();
+        pasted.portals.clear();
+        assert_eq!(Fragment::of(&pasted).unwrap().to_string(), text);
+        assert_eq!(game.portal(0).sim, baseline);
+    }
+
+    #[test]
+    fn portal_copy_drives_its_instrument_motion_and_emitter_once_per_click_across_ticks() {
+        let mut game = portal_copy_game();
+        let at = game.portal(0).at;
+        for _ in 0..2 {
+            game.press(px(at), px(at));
+            game.release(Some(at));
+            game.release(Some(at));
+        }
+        game.advance(0.2);
+        game.overworld.edit().step();
+        let tick = game.score.take().unwrap();
+        let hits = sound::score(&tick);
+        assert_eq!(hits.len(), 2);
+        assert!(hits.iter().all(|hit| hit.machine == Machine::Portal
+            && hit.at == at
+            && hit.instrument == sound::instrument(Machine::Portal)));
+        assert_eq!(game.responses.len(), 2);
+        let mut frame = Frame::settled(game.sim());
+        frame.responses = &game.responses;
+        let responses = frame.responses(Machine::Portal, 0);
+        assert_eq!(responses.clone().count(), 2);
+        let pulse: f32 = responses.map(|(_, phase)| rig::pulse(true, phase)).sum();
+        assert!(pulse > 1.99);
+        assert_eq!(frame.responses(Machine::Portal, 1).count(), 0);
+        let (event, elapsed) = &game.responses[0];
+        assert!(rig::activation(Machine::Portal).matches(event, 0));
+        assert!(!rig::activation(Machine::Portal).matches(event, 1));
+        let phase = elapsed / (TICK_MS / 1000.0);
+        let (_, _, scale) = rig::entry(Machine::Portal)
+            .motion
+            .unwrap()
+            .pose(rig::pulse(true, phase));
+        assert!(scale > 1.1);
+        let (emitter, count) = particles::burst(
+            Machine::Portal,
+            0,
+            sim::ActivationEnergy::FULL,
+            std::slice::from_ref(event),
+        )
+        .unwrap();
+        assert_eq!(emitter.look, particles::Look::Steam);
+        assert_eq!(count, 8);
+        assert!(
+            particles::burst(
+                Machine::Portal,
+                1,
+                sim::ActivationEnergy::FULL,
+                std::slice::from_ref(event)
+            )
+            .is_none()
+        );
+        game.advance(0.21);
+        assert!(game.responses.is_empty());
+        assert!(sound::score(&game.score.take().unwrap()).is_empty());
+        game.enter(Some(0));
+        game.advance(0.4);
+        game.advance(0.4);
+        assert!(game.overworld.score.is_none());
+    }
+
+    #[test]
+    fn portal_copy_ignores_drags_and_cancelled_presses_and_empty_contents_clear_the_clipboard() {
+        let mut game = portal_copy_game();
+        let at = game.portal(0).at;
+        game.press(px(at), px(at));
+        game.release(None);
+        assert!(game.clipboard.is_none());
+        game.press(px(at), px(at));
+        game.drag(px(at) + Vec2::splat(DRAG_PX * 2.0));
+        game.release(Some(Hex::new(-3, 0)));
+        assert!(game.clipboard.is_none());
+        assert!(game.responses.is_empty());
+        assert!(game.score.is_none());
+        let at = game.portal(0).at;
+        assert_eq!(at, Hex::new(-3, 0));
+        game.overworld.sim.portals[0].as_mut().unwrap().sim = Sim::empty();
+        game.press(px(at), px(at));
+        game.release(Some(at));
+        assert!(
+            matches!(game.clipboard.take(), Some(ClipboardRequest::Write(text)) if text.is_empty())
+        );
+        assert_eq!(sound::score(&game.score.take().unwrap()).len(), 1);
+        let mut session = session::Session::new(&game.state());
+        session.paste(&mut game, "");
+        assert!(!game.holding());
+    }
 
     #[test]
     fn portal_encounter_palette_matches_receipts_and_board_atoms_and_survives_save() {
