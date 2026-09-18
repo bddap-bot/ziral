@@ -1188,7 +1188,7 @@ The dumbest design puts one serializable input enum between hit testing and the 
 
 The game opens a record as a replay, refuses another build, and scrubs by reconstructing the prefix from its beginning. G and S move between recorded ticks; Space pauses the viewer. M records a moment without opening a form. Analysis prints measurements from the replay and thirty-second windows centred on each mark, clipped to the session. A command-line reader uses the same event application as the viewer.
 
-A token in the playtest URL attributes periodic and final uploads without an account. The existing private ingress receives bounded records into a private directory outside either repository. Neither records nor a token-to-person table belong in source control. Failed uploads retain the local record for retry. Analysis contains only the opaque token.
+A random session ID attributes periodic and final uploads without an account. The standalone receiver stores bounded records in a private directory. Records stay outside source control. Failed uploads retain the local record for retry. Analysis omits credentials.
 
 Replay opens through the existing import action or `ziral --replay <record.json>`. The build SHA and fixed seed must match. The viewer runs recorded frame deltas without consulting its own viewport for input decisions. Space pauses playback; G and S reconstruct adjacent recorded ticks using the free stepping keys. A scrub reconstructs the prefix from the beginning, avoiding an additional snapshot format or retained world history. Replay suppresses live edits, clipboard effects and save writes while leaving the camera available for inspection.
 
@@ -1198,7 +1198,7 @@ M marks a moment through the existing key stream and leaves the world untouched.
 
 ## Playtest upload
 
-The playtest link carries a signed random token and the existing relay endpoint. The browser sends input prefixes through the voice ingress under `ziral-record/1`; the voice credential stays separate. A durable prefix acknowledgment makes retries idempotent. Local records survive reload, and each persistence attempt retries pending uploads. The private receiver stores one file per session beneath the opaque token, with private permissions and bounded storage. A signed capability avoids a token table and an additional public service. Records contain only the token, build, seed and inputs; analysis remains downstream of replay.
+The web page creates a random local session ID and sends input prefixes to the public receiver node fixed into its build. The `ziral-record/1` transport is built in this repository. Each connection carries one bounded request and a durable prefix acknowledgment. Local records survive reload; each persistence attempt retries pending uploads. The receiver stores one private file per session, with limits of 32 MiB per session and 1 GiB across at most 1024 files. Existing archived records count toward the global bound. Validation precedes the storage lock; busy requests and all other rejections are logged at info level. Private ban markers reject subsequent uploads for an individual ID. Records contain only session, build, seed and inputs; analysis discards legacy credentials.
 
 ## Metrics from the input stream
 

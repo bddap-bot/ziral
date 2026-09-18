@@ -2,6 +2,16 @@
   "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root; lint with `botq test-map --check`.",
   "rules": [
     {
+      "paths": ["records/**", "default.nix"],
+      "tests": [
+        "nix-shell --run 'cargo fmt --manifest-path records/Cargo.toml --check'",
+        "nix-shell --run 'cargo clippy --manifest-path records/Cargo.toml --all-targets -- --deny warnings'",
+        "nix-shell --run 'cargo test --manifest-path records/Cargo.toml -- --test-threads=2'",
+        "nix-instantiate --parse default.nix"
+      ],
+      "why": "the standalone receiver has its own lockfile, storage and relay tests"
+    },
+    {
       "paths": ["test-map.json"],
       "tests": ["botq test-map --check"],
       "why": "editing the map re-lints its own completeness"
@@ -71,7 +81,9 @@
       "tests": [
         "nix-shell --run 'shellcheck web/build.sh'",
         "nix-shell --run './web/build.sh'",
-        "node --test web/record.test.mjs"
+        "node --test web/record.test.mjs",
+        "nix-shell --run 'cargo fmt --manifest-path web/transport/Cargo.toml --check'",
+        "nix-shell --run 'CC_wasm32_unknown_unknown=clang NIX_HARDENING_ENABLE= cargo clippy --manifest-path web/transport/Cargo.toml --target wasm32-unknown-unknown -- --deny warnings'"
       ],
       "why": "running the web build is the only thing that compiles the wasm module and checks the wasm-bindgen pin"
     },

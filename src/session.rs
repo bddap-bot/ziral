@@ -100,8 +100,6 @@ impl Input {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
     pub build: String,
-    #[serde(default)]
-    pub token: Option<String>,
     pub seed: u64,
     pub inputs: Vec<(f64, Input)>,
 }
@@ -121,7 +119,6 @@ impl Session {
         begin_record();
         let mut record = Record {
             build: persist::BUILD_TAG.to_owned(),
-            token: None,
             seed: 0,
             inputs: Vec::new(),
         };

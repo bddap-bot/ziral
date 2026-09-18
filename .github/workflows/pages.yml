@@ -27,6 +27,8 @@ jobs:
         with:
           key: wasm
       - run: ./web/build.sh
+        env:
+          CC_wasm32_unknown_unknown: clang
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist

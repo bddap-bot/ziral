@@ -259,7 +259,6 @@ pub(super) fn summarize(record: &Record) -> Value {
         })
         .collect();
     json!({
-        "token": record.token,
         "duration_seconds": duration,
         "first_machine_placed_seconds": first_machine,
         "first_bond_seconds": first_bond,
@@ -339,9 +338,14 @@ mod tests {
         ] {
             session.send(&mut world, input);
         }
-        session.record.token = Some("a".repeat(192));
-        let result = summarize(&session.record);
-        assert_eq!(result["token"], "a".repeat(192));
+        let token = "a".repeat(192);
+        let mut legacy = serde_json::to_value(&session.record).unwrap();
+        legacy["token"] = json!(token);
+        let record: Record = serde_json::from_value(legacy).unwrap();
+        assert!(!serde_json::to_string(&record).unwrap().contains(&token));
+        let result = summarize(&record);
+        assert!(result.get("token").is_none());
+        assert!(!result.to_string().contains(&token));
         assert_eq!(result["first_machine_placed_seconds"], 5.0);
         assert_eq!(result["paused_seconds"], 0.0);
         assert_eq!(

@@ -35,7 +35,7 @@ export function finish_record() {
 }
 
 export function append_record(build, seed, inputs) {
-    record ??= {build, seed: Number(seed), token, endpoint, session: id, inputs: []};
+    record ??= {build, seed: Number(seed), session: id, inputs: []};
     record.inputs.push(...JSON.parse(inputs));
     if (performance.now() - attempted >= 5000) persist();
 }
@@ -45,24 +45,30 @@ document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') persist();
 });
 
-const parameters = new URLSearchParams(globalThis.location?.hash.slice(1) ?? '');
-const token = parameters.get('token');
-const endpoint = parameters.get('endpoint');
+const endpoint = globalThis.ZIRAL_RECORDS_ENDPOINT;
+let transport;
+async function request_record(bytes) {
+    transport ??= import(new URL('./ziral_records_transport.js', globalThis.location.href)).then(async module => {
+        await module.default();
+        return module;
+    }).catch(error => { transport = undefined; throw error; });
+    const module = await transport;
+    return JSON.parse(new TextDecoder().decode(await module.upload(endpoint, bytes)));
+}
+
 const queued = new Map();
 const delivered = new Map();
-let transport;
 let uploading = false;
 
-export async function send_record(snapshot, connection, start = 0) {
+export async function send_record(snapshot, request = request_record, start = 0) {
     const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
     const limit = snapshot.inputs.length;
     while (start < limit) {
         let end = Math.min(start + 512, limit);
         let bytes;
         do {
             bytes = encoder.encode(JSON.stringify({
-                token: snapshot.token, session: snapshot.session,
+                session: snapshot.session,
                 build: snapshot.build, seed: snapshot.seed,
                 start, inputs: snapshot.inputs.slice(start, end),
             }));
@@ -70,8 +76,9 @@ export async function send_record(snapshot, connection, start = 0) {
             if (end === start + 1) throw new Error('Input exceeds upload limit');
             end = start + Math.ceil((end - start) / 2);
         } while (true);
-        await connection.send_only(bytes);
-        const {next} = JSON.parse(decoder.decode(await connection.recv()));
+        const response = await request(bytes);
+        if (response.error) throw new Error(response.error);
+        const {next} = response;
         if (!Number.isSafeInteger(next) || next < end) throw new Error('Invalid upload acknowledgment');
         start = next;
     }
@@ -81,9 +88,7 @@ export async function send_record(snapshot, connection, start = 0) {
 function queue_upload(text) {
     let snapshot;
     try { snapshot = JSON.parse(text); } catch { return; }
-    if (!snapshot || !/^[a-f0-9]{192}$/.test(snapshot.token ?? '')
-        || typeof snapshot.endpoint !== 'string' || !snapshot.endpoint
-        || !/^[a-f0-9-]{36}$/.test(snapshot.session ?? '')
+    if (!snapshot || !/^[a-f0-9-]{36}$/.test(snapshot.session ?? '')
         || !/^[a-f0-9]{40}$/.test(snapshot.build ?? '')
         || snapshot.seed !== 0 || !Array.isArray(snapshot.inputs) || !snapshot.inputs.length) return;
     const previous = queued.get(snapshot.session);
@@ -95,16 +100,9 @@ async function upload() {
     if (uploading || !queued.size) return;
     uploading = true;
     try {
-        transport ??= import('https://bddap-bot.github.io/botq/botq_dash_wasm.js').then(async connection => {
-            await connection.default();
-            await connection.init();
-            return connection;
-        });
-        const connection = await transport;
         for (const [session, snapshot] of [...queued]) {
             try {
-                await connection.connect(snapshot.endpoint, 'ziral-record/1');
-                const next = await send_record(snapshot, connection, delivered.get(session) ?? 0);
+                const next = await send_record(snapshot, request_record, delivered.get(session) ?? 0);
                 delivered.set(session, next);
                 const covered = text => {
                     try { return JSON.parse(text)?.inputs.length <= next; } catch { return false; }
@@ -126,7 +124,6 @@ async function upload() {
             } catch (error) { console.error(error); }
         }
     } catch (error) {
-        transport = undefined;
         console.error(error);
     } finally {
         uploading = false;

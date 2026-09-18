@@ -9,6 +9,7 @@ pkgs.mkShell {
     cargo
     rustc
     clippy
+    clang_multi
     rustfmt
     shellcheck
     pkg-config
