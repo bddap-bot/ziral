@@ -70,7 +70,8 @@
       "paths": ["web/**"],
       "tests": [
         "nix-shell --run 'shellcheck web/build.sh'",
-        "nix-shell --run './web/build.sh'"
+        "nix-shell --run './web/build.sh'",
+        "node --test web/record.test.mjs"
       ],
       "why": "running the web build is the only thing that compiles the wasm module and checks the wasm-bindgen pin"
     },

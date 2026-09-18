@@ -1177,3 +1177,15 @@ The existing ivory tally alone distinguishes a projected frame from the canonica
 The dumbest design deletes the ghost material variants and the painter's ghost state. The simulation already selects the displayed frame and the tally already reads that selection, so rendering needs no second mode. A chalk palette or dashed rim would introduce another material or geometry path to communicate the same distinction. No painting or texture resizing is needed.
 
 `proofs/ghost-solid-69-3681.gif` shows the canonical frame, G, G, S at 1280 by 720.
+
+### Playtest sessions preserve inputs
+
+Directive (verbatim): "i like it, let's hold off on voice input but do the rest"
+
+A record contains the build SHA, seed zero for the fixed starting world, elapsed frame durations and resolved inputs. A restored save is an initial import, and later imports and accepted clipboard fragments are inputs too. These are the only world payloads; ticks, outcomes and measurements are recomputed. Pointer samples carry world coordinates, raw screen coordinates and the viewport, at twenty samples per second and on every press. Palette, card, tape, cell and key actions carry their resolved targets. Wheel and resize events retain their context. Nothing depends on the replay window's dimensions.
+
+The dumbest design puts one serializable input enum between hit testing and the existing world methods. Live input records and applies that enum; replay applies the same enum and advances the same world with recorded frame durations. This preserves the existing 400 ms tick and animation-dependent targeting without inventing a second simulation clock. Recording snapshots every tick would prevent new measurements from examining causes and would duplicate the simulation. Recording browser events alone would make a different viewport change their meaning.
+
+The game opens a record as a replay, refuses another build, and scrubs by reconstructing the prefix from its beginning. G and S move between recorded ticks; Space pauses the viewer. M records a moment without opening a form. Analysis prints measurements from the replay and thirty-second windows centred on each mark, clipped to the session. A command-line reader uses the same event application as the viewer.
+
+A token in the playtest URL attributes periodic and final uploads without an account. The existing private ingress receives bounded records into a private directory outside either repository. Neither records nor a token-to-person table belong in source control. Failed uploads retain the local record for retry. Analysis contains only the opaque token.

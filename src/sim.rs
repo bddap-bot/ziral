@@ -364,7 +364,7 @@ impl GlyphKind {
     ];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Machine {
     Arm(ArmLength),
     Glyph(GlyphKind),
@@ -391,7 +391,7 @@ impl Machine {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Item {
     Machine(Machine),
     Atom(AtomKind),
@@ -781,7 +781,7 @@ pub struct Sim {
     pub inventory: Inventory,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Id {
     Arm(usize),
     Glyph(usize),

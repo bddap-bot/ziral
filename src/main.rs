@@ -5,6 +5,7 @@ mod machines;
 mod particles;
 mod persist;
 mod rig;
+mod session;
 mod sim;
 mod sound;
 
@@ -422,6 +423,11 @@ enum SaveAction {
     Import,
 }
 
+enum ClipboardRequest {
+    Read,
+    Write(String),
+}
+
 #[derive(Resource)]
 struct World {
     sim: Sim,
@@ -446,6 +452,7 @@ struct World {
     score: Option<sim::TickEvents>,
     refused: Option<Refused>,
     turn: Option<FacingTween>,
+    clipboard: Option<ClipboardRequest>,
 }
 
 impl World {
@@ -473,6 +480,7 @@ impl World {
             score: None,
             refused: None,
             turn: None,
+            clipboard: None,
         }
     }
 
@@ -514,14 +522,20 @@ impl World {
         id
     }
 
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     fn begin_pin(&mut self, item: Item, pointer: Vec2, viewport: &Viewport, button: MouseButton) {
+        self.pin_at(item, viewport.world(pointer), button);
+    }
+
+    fn pin_at(&mut self, item: Item, at: Vec2, button: MouseButton) {
         if self.holding() || self.down.is_some() {
             return;
         }
-        let id = self.pin_world(item, viewport.world(pointer));
+        let id = self.pin_world(item, at);
         self.card_drag = Some(CardDrag::New { id, button });
     }
 
+    #[cfg(test)]
     fn press_inventory(&mut self, item: Item, pointer: Vec2, viewport: &Viewport) {
         if self.sim.inventory.count(item) == Some(0) {
             self.begin_pin(item, pointer, viewport, MouseButton::Left);
@@ -546,27 +560,30 @@ impl World {
         });
     }
 
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     fn card_drag(&mut self, pointer: Vec2, viewport: &Viewport) {
-        let Some(drag) = self.card_drag else { return };
-        let (id, moving) = match drag {
-            CardDrag::Move {
-                id, start, moved, ..
-            } => (id, moved || pointer != start),
-            CardDrag::New { id, .. } => (id, true),
-        };
-        if !moving {
-            return;
+        let moved = !matches!(self.card_drag, Some(CardDrag::Move { start, moved: false, .. }) if start == pointer);
+        if moved {
+            self.move_card(viewport.world(pointer));
         }
+    }
+
+    fn move_card(&mut self, anchor: Vec2) {
+        let Some(drag) = self.card_drag else { return };
+        let id = match drag {
+            CardDrag::Move { id, .. } | CardDrag::New { id, .. } => id,
+        };
         let Some(card) = self.pinned.iter_mut().find(|card| card.id == id) else {
             self.card_drag = None;
             return;
         };
-        card.anchor = viewport.world(pointer);
+        card.anchor = anchor;
         if let Some(CardDrag::Move { moved, .. }) = &mut self.card_drag {
             *moved = true;
         }
     }
 
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     fn end_card_drag(&mut self, pointer: Option<Vec2>, viewport: &Viewport) -> Option<CardDrag> {
         if let Some(pointer) = pointer {
             self.card_drag(pointer, viewport);
@@ -599,6 +616,7 @@ impl World {
             })
     }
 
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     fn resize_card(&mut self, pointer: Vec2, notches: f32, viewport: &Viewport) -> bool {
         let Some(id) = self.card_at(pointer, viewport) else {
             return false;
@@ -1159,15 +1177,7 @@ impl World {
     }
 
     fn paste(&mut self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Some(text) = clipboard_text() {
-                self.paste_text(&text);
-            }
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        clipboard_text();
+        self.clipboard = Some(ClipboardRequest::Read);
     }
 
     fn paste_text(&mut self, text: &str) -> bool {
@@ -1193,15 +1203,19 @@ impl World {
         self.down = None;
     }
 
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     fn press(&mut self, screen: Vec2, point: Vec2) {
+        let frame = Frame::between(&self.prev, self.shown(), self.phase());
+        self.press_target(screen, point, self.hit(point, &frame));
+    }
+
+    fn press_target(&mut self, screen: Vec2, point: Vec2, target: Option<Id>) {
         self.refused = None;
         let cell = hex_at(point);
         if self.holding() {
             self.place(Some(cell));
             return;
         }
-        let frame = Frame::between(&self.prev, self.shown(), self.phase());
-        let target = self.hit(point, &frame);
         let in_pick = target
             .is_some_and(|id| matches!(&self.focus, Some(Focus::Pick(ids)) if ids.contains(&id)));
         match target {
@@ -1220,9 +1234,17 @@ impl World {
         });
     }
 
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     fn drag(&mut self, screen: Vec2) {
+        if matches!(self.down, Some(Press::Atom { screen: start, .. } | Press::Cell { screen: start, .. } | Press::Ground { screen: start, .. }) if start.distance(screen) > DRAG_PX)
+        {
+            self.begin_drag();
+        }
+    }
+
+    fn begin_drag(&mut self) {
         match self.down {
-            Some(Press::Atom { screen: start, id }) if start.distance(screen) > DRAG_PX => {
+            Some(Press::Atom { id, .. }) => {
                 let Some(cell) = self
                     .shown()
                     .atoms
@@ -1250,10 +1272,7 @@ impl World {
                 };
                 self.lift(set, back);
             }
-            Some(Press::Cell {
-                screen: start,
-                cell,
-            }) if start.distance(screen) > DRAG_PX => {
+            Some(Press::Cell { cell, .. }) => {
                 let ids = machines(&self.focus.as_ref().map_or(Vec::new(), Focus::picked));
                 if ids.is_empty() {
                     self.down = None;
@@ -1261,10 +1280,7 @@ impl World {
                 }
                 self.begin_machine_drag(ids, cell);
             }
-            Some(Press::Ground {
-                screen: start,
-                world,
-            }) if start.distance(screen) > DRAG_PX => {
+            Some(Press::Ground { world, .. }) => {
                 self.down = Some(Press::Marquee { from: world });
             }
             _ => {}
@@ -1500,7 +1516,7 @@ impl World {
                 KeyX | KeyC if !self.edits(&machines(&ids)) => {}
                 KeyX | KeyC => {
                     if let Some(text) = self.copy(&ids) {
-                        clipboard(&text);
+                        self.clipboard = Some(ClipboardRequest::Write(text));
                         if key == KeyX {
                             self.delete(&machines(&ids));
                         }
@@ -1626,15 +1642,24 @@ fn clipboard_text() {
 #[cfg(target_arch = "wasm32")]
 static PASTED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-#[cfg(target_arch = "wasm32")]
-fn clipboard_paste(mut world: ResMut<World>) {
+fn clipboard_paste(mut world: ResMut<World>, mut session: ResMut<session::Session>) {
+    if let Some(request) = world.clipboard.take() {
+        if let ClipboardRequest::Write(text) = request {
+            clipboard(&text);
+        } else {
+            #[cfg(target_arch = "wasm32")]
+            clipboard_text();
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(text) = clipboard_text() {
+                session.paste(&mut world, &text);
+            }
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
     if let Some(text) = PASTED.lock().unwrap().take() {
-        world.paste_text(&text);
+        session.paste(&mut world, &text);
     }
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn clipboard_paste() {}
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
@@ -1670,6 +1695,7 @@ fn take_inventory_fragment() -> Option<String> {
 #[cfg(not(target_arch = "wasm32"))]
 fn clear_inventory_fragment(_: &str) {}
 
+#[cfg(test)]
 fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnOnce(&str)) {
     if fragment != INVENTORY_TOKEN {
         return;
@@ -1678,12 +1704,15 @@ fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnO
     clear(fragment);
 }
 
-fn refill_inventory(mut world: ResMut<World>) {
+fn refill_inventory(mut world: ResMut<World>, mut session: ResMut<session::Session>) {
     if world.has_machine_rollback() {
         return;
     }
     while let Some(fragment) = take_inventory_fragment() {
-        consume_inventory_fragment(&mut world, &fragment, clear_inventory_fragment);
+        if fragment == INVENTORY_TOKEN {
+            session.send(&mut world, session::Input::Refill);
+            clear_inventory_fragment(&fragment);
+        }
     }
 }
 
@@ -1708,6 +1737,7 @@ fn corners(center: Vec2, size: f32) -> [Vec2; 7] {
     })
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Viewport {
     cam: Vec2,
     size: Vec2,
@@ -1765,11 +1795,13 @@ impl Viewport {
 
 fn app(world: World) -> App {
     let mut app = App::new();
+    let session = session::Session::new(&world.sim);
     let saved = Saved {
         attempted: world.sim.clone(),
         refused: false,
     };
     app.insert_resource(world)
+        .insert_resource(session)
         .insert_resource(saved)
         .insert_resource(ClearColor(brass(0.65)))
         .insert_gizmo_config(
@@ -1809,6 +1841,7 @@ fn app(world: World) -> App {
                 play_sound,
                 edit,
                 persistence,
+                session::flush,
                 tapes,
                 tally,
                 refusal,
@@ -2308,28 +2341,23 @@ fn pips(count: u32, cap: u32) -> (u32, f32) {
 
 fn hover(
     mut world: ResMut<World>,
+    mut session: ResMut<session::Session>,
     window: Single<&Window, With<PrimaryWindow>>,
     rows: Query<(&PaletteRow, &Interaction)>,
-    scroll: Res<AccumulatedMouseScroll>,
     mut left: MessageReader<CursorLeft>,
 ) {
     if left.read().next().is_some() {
-        world.set_hover(None);
-        world.palette_hover = None;
-        world.pointer = None;
+        session.send(&mut world, session::Input::Hover(None));
+        session.send(&mut world, session::Input::Palette(None));
     }
     if window.cursor_position().is_some() {
-        world.palette_hover = rows
+        let item = rows
             .iter()
             .find(|(_, i)| **i != Interaction::None)
             .map(|(row, _)| row.0);
-    }
-    let notches = match scroll.unit {
-        MouseScrollUnit::Line => scroll.delta.y,
-        MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
-    };
-    if let (Some(item), true) = (world.palette_hover, notches.round() != 0.0) {
-        world.set_cap(item, notches.round() as i32);
+        if item != world.palette_hover {
+            session.send(&mut world, session::Input::Palette(item));
+        }
     }
 }
 
@@ -2753,8 +2781,8 @@ fn save_icon(button: &mut ChildSpawnerCommands, up: bool) {
         });
 }
 
-fn run_ticks(mut world: ResMut<World>, time: Res<Time>) {
-    world.advance(time.delta_secs());
+fn run_ticks(mut world: ResMut<World>, mut session: ResMut<session::Session>, time: Res<Time>) {
+    session.send(&mut world, session::Input::Frame(time.delta_secs()));
 }
 
 const HOLD: u64 = 3;
@@ -2821,6 +2849,7 @@ type ViewInput<'w> = (
     Res<'w, AccumulatedMouseMotion>,
 );
 
+#[cfg(any(test, not(target_arch = "wasm32")))]
 fn wheel(
     world: &mut World,
     pointer: Vec2,
@@ -2838,6 +2867,7 @@ fn wheel(
 
 fn view(
     mut world: ResMut<World>,
+    mut session: ResMut<session::Session>,
     input: ViewInput,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>,
@@ -2852,15 +2882,55 @@ fn view(
     let Projection::Orthographic(ortho) = &mut *projection else {
         return;
     };
+    if scroll.delta != Vec2::ZERO {
+        let screen = window.cursor_position();
+        let point = screen.map(|c| viewport.world(c));
+        let panel = world.palette_hover.is_some()
+            || screen.is_some_and(|c| world.card_at(c, &viewport).is_some());
+        session.pointer(
+            &mut world,
+            session::Pointer {
+                screen,
+                viewport: viewport.clone(),
+                world: point,
+                cell: point.map(hex_at),
+                panel,
+            },
+            true,
+        );
+        session.send(
+            &mut world,
+            session::Input::Wheel(scroll.delta, scroll.unit == MouseScrollUnit::Pixel),
+        );
+    }
+    let notches = match scroll.unit {
+        MouseScrollUnit::Line => scroll.delta.y,
+        MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
+    };
+    if let Some(item) = world.palette_hover
+        && notches.round() != 0.0
+    {
+        session.send(
+            &mut world,
+            session::Input::Cap(item, notches.round() as i32),
+        );
+    }
     if scroll.delta.y != 0.0
         && world.palette_hover.is_none()
         && let Some(c) = window.cursor_position()
     {
-        let notches = match scroll.unit {
-            MouseScrollUnit::Line => scroll.delta.y,
-            MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
+        let card = if let Some(id) = world.card_at(c, &viewport) {
+            let pinned = world.pinned.iter().find(|card| card.id == id).unwrap();
+            let limit = (viewport.size / card_size(pinned.item))
+                .min_element()
+                .max(0.05);
+            let scale = zoomed(pinned.scale, notches).clamp(0.05, limit);
+            session.send(&mut world, session::Input::ScaleCard(id, scale));
+            true
+        } else {
+            ortho.scale = zoomed(ortho.scale, -notches).clamp(0.05, 40.0);
+            false
         };
-        let card = wheel(&mut world, c, notches, &viewport, &mut ortho.scale);
         if !card {
             viewport.zoom_about(c, ortho.scale);
             transform.translation = viewport.cam.extend(transform.translation.z);
@@ -2924,21 +2994,20 @@ type EditUi<'w, 's> = (
 
 fn edit(
     mut world: ResMut<World>,
-    keys: Res<ButtonInput<KeyCode>>,
-    buttons: Res<ButtonInput<MouseButton>>,
+    mut session: ResMut<session::Session>,
+    mut drag_start: Local<Option<Vec2>>,
+    input: (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>),
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     edit_ui: EditUi,
 ) {
+    let (keys, buttons) = input;
     let (ui, inventory, panels, save) = edit_ui;
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
         return;
     };
     let screen = window.cursor_position();
-    if let Some(c) = screen {
-        world.pointer = Some(viewport.world(c));
-    }
     let covered = screen.is_some_and(|point| world.card_at(point, &viewport).is_some());
     let physical = screen.map(|point| point * window.scale_factor());
     let inventory_at = physical
@@ -2958,17 +3027,51 @@ fn edit(
         || ui.iter().any(|(_, _, i)| *i != Interaction::None)
         || save.iter().any(|i| *i != Interaction::None);
     let over_ui = over_panel || covered || inventory_at.is_some();
+    let force = buttons.get_just_pressed().next().is_some()
+        || buttons.get_just_released().next().is_some()
+        || keys.get_just_pressed().next().is_some();
+    let point = screen.map(|c| viewport.world(c));
+    session.pointer(
+        &mut world,
+        session::Pointer {
+            screen,
+            viewport: viewport.clone(),
+            world: point,
+            cell: point.map(hex_at),
+            panel: over_ui,
+        },
+        force,
+    );
+    world.pointer = point;
     world.over_ui = over_ui;
-    let at = world.pointer.map(hex_at);
+    let at = point.map(hex_at);
+    if buttons.get_just_pressed().next().is_some() {
+        *drag_start = screen;
+    }
+    for button in buttons.get_just_pressed() {
+        session.send(&mut world, session::Input::Button(*button, true));
+    }
+    for button in buttons.get_just_released() {
+        session.send(&mut world, session::Input::Button(*button, false));
+    }
+    for key in keys.get_just_released() {
+        session.send(&mut world, session::Input::KeyUp(*key));
+    }
 
     if buttons.just_pressed(MouseButton::Right)
         && world.card_drag.is_none()
         && let Some(pointer) = screen
     {
         if let Some(item) = inventory_at {
-            world.begin_pin(item, pointer, &viewport, MouseButton::Right);
+            session.send(
+                &mut world,
+                session::Input::Pin(item, viewport.world(pointer), MouseButton::Right),
+            );
         } else if let Some(id) = world.card_at(pointer, &viewport) {
-            world.card_press(id, pointer, MouseButton::Right);
+            session.send(
+                &mut world,
+                session::Input::Card(id, viewport.world(pointer), MouseButton::Right),
+            );
         }
     }
     if buttons.just_pressed(MouseButton::Left)
@@ -2976,46 +3079,66 @@ fn edit(
     {
         let pressed = ui.iter().find(|(_, _, i)| **i == Interaction::Pressed);
         if let Some(id) = screen.and_then(|pointer| world.card_at(pointer, &viewport)) {
-            world.card_press(id, screen.unwrap(), MouseButton::Left);
+            session.send(
+                &mut world,
+                session::Input::Card(id, viewport.world(screen.unwrap()), MouseButton::Left),
+            );
         } else if let Some((Some(entry), _, _)) = pressed {
             if let Some(pointer) = screen {
-                world.press_inventory(entry.0, pointer, &viewport);
+                let input = if world.sim.inventory.count(entry.0) == Some(0) {
+                    session::Input::Pin(entry.0, viewport.world(pointer), MouseButton::Left)
+                } else {
+                    session::Input::Inventory(entry.0)
+                };
+                session.send(&mut world, input);
             }
         } else if let Some((_, Some(row), _)) = pressed {
             if let Some(arm) = row.arm().filter(|a| *a < world.shown().arms.len()) {
-                world.focus_tape(arm);
+                let cursor = world.shown().arms[arm].tape.len();
+                session.send(&mut world, session::Input::Tape { arm, cursor });
             }
         } else if !over_ui && let (Some(c), Some(p)) = (screen, world.pointer) {
-            world.press(c, p);
+            *drag_start = Some(c);
+            let frame = Frame::between(&world.prev, world.shown(), world.phase());
+            let target = world.hit(p, &frame);
+            session.send(&mut world, session::Input::Press { point: p, target });
         }
     }
     if (buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right))
         && let Some(c) = screen
     {
         if world.card_drag.is_some() {
-            world.card_drag(c, &viewport);
-        } else {
-            world.drag(c);
+            let point = viewport.world(c);
+            if !matches!(world.card_drag, Some(CardDrag::Move { moved: false, .. }) if *drag_start == screen)
+            {
+                session.send(&mut world, session::Input::MoveCard(point));
+            }
+        } else if drag_start.is_some_and(|start| start.distance(c) > DRAG_PX) {
+            session.send(&mut world, session::Input::Drag);
+            *drag_start = None;
         }
     }
     if world
         .card_drag
         .is_some_and(|drag| buttons.just_released(drag.button()))
     {
-        let drag = world.end_card_drag(screen, &viewport).unwrap();
-        if let (CardDrag::New { id, .. }, true) = (drag, over_panel) {
-            world.unpin(id);
+        if let Some(point) = point
+            && !matches!(world.card_drag, Some(CardDrag::Move { moved: false, .. }) if *drag_start == screen)
+        {
+            session.send(&mut world, session::Input::MoveCard(point));
         }
+        session.send(&mut world, session::Input::EndCard(over_panel));
     } else if buttons.just_released(MouseButton::Left) && world.card_drag.is_none() {
         let valid = !over_ui && screen.is_some();
-        world.release(at.filter(|_| valid));
+        session.send(&mut world, session::Input::Release(at.filter(|_| valid)));
+        *drag_start = None;
     }
 
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let mut pressed: Vec<KeyCode> = keys.get_just_pressed().copied().collect();
     pressed.sort_unstable();
     for key in pressed {
-        world.key(key, shift);
+        session.send(&mut world, session::Input::Key(key, shift));
     }
     if screen.is_some() {
         let item = if let Some(item) = inventory_at {
@@ -3032,13 +3155,16 @@ fn edit(
         } else {
             None
         };
-        world.set_hover(item);
+        if world.hover != item.map(card_item) {
+            session.send(&mut world, session::Input::Hover(item));
+        }
     }
 }
 
 fn persistence(
     mut world: ResMut<World>,
     mut saved: ResMut<Saved>,
+    mut session: ResMut<session::Session>,
     actions: Query<(&SaveAction, &Interaction), Changed<Interaction>>,
 ) {
     for (action, interaction) in &actions {
@@ -3052,7 +3178,7 @@ fn persistence(
         }
     }
     if let Some(sim) = persist::take() {
-        *world = World::new(sim);
+        session.send(&mut world, session::Input::Import(Box::new(sim)));
     }
     if world.saveable() && saved.attempted != world.sim {
         saved.store(world.sim.clone());
