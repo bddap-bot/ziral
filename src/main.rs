@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "wasm32"))]
+mod analysis;
 mod form;
 mod look;
 #[cfg(not(target_arch = "wasm32"))]
@@ -1422,6 +1424,9 @@ impl World {
 
     fn key(&mut self, key: KeyCode, shift: bool) {
         use KeyCode::*;
+        if key == KeyM {
+            return;
+        }
         self.refused = None;
         if matches!(key, Space | KeyG | KeyS) && self.has_machine_rollback() {
             return;
@@ -1940,6 +1945,10 @@ fn card_camera(kind: CardCamera, target: RenderTarget) -> impl Bundle {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(status) = analysis::run(&args) {
+        std::process::exit(status);
+    }
     #[cfg(not(target_arch = "wasm32"))]
     let (args, replay) = {
         let mut args = args;
