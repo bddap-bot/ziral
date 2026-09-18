@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const source = readFileSync(new URL('./record.js', import.meta.url), 'utf8').replace('export function', 'function');
+const source = readFileSync(new URL('./record.js', import.meta.url), 'utf8').replaceAll('export function', 'function');
 
 test('sessions survive reload and pagehide preserves the final inputs without IndexedDB', async () => {
     const stored = new Map();
@@ -29,4 +29,29 @@ test('sessions survive reload and pagehide preserves the final inputs without In
         assert.equal(record.inputs[1][0], 0.2);
     }
     assert.equal(stored.size, 2);
+});
+
+test('recording reset keeps deferred database writes under their original session', async () => {
+    const stored = new Map();
+    const opening = {};
+    let next = 0;
+    const context = vm.createContext({
+        crypto: {randomUUID: () => `session-${next++}`},
+        performance: {now: () => 6000},
+        localStorage: {setItem() {}},
+        indexedDB: {open: () => opening},
+        addEventListener() {},
+        document: {addEventListener() {}},
+        console: {error() {}},
+    });
+    vm.runInContext(source, context);
+    vm.runInContext(`begin_record(); append_record('build', 0n, '[[0.1,{"f":0.1}]]'); begin_record(); append_record('build', 0n, '[[0.2,{"f":0.2}]]');`, context);
+    opening.result = {
+        transaction: () => ({objectStore: () => ({put: (text, id) => stored.set(id, text)})}),
+    };
+    opening.onsuccess();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(stored.size, 2);
+    assert.equal(JSON.parse(stored.get('session-1')).inputs[0][0], 0.1);
+    assert.equal(JSON.parse(stored.get('session-2')).inputs[0][0], 0.2);
 });

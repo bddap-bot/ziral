@@ -1,5 +1,5 @@
 let record;
-const id = crypto.randomUUID();
+let id = crypto.randomUUID();
 let attempted = 0;
 const database = new Promise((resolve, reject) => {
     const opening = indexedDB.open('ziral-records', 1);
@@ -13,12 +13,24 @@ function persist() {
     if (!record) return;
     attempted = performance.now();
     const text = JSON.stringify(record);
+    const savedId = id;
     database.then(db => {
         const transaction = db.transaction('records', 'readwrite');
-        transaction.objectStore('records').put(text, id);
+        transaction.objectStore('records').put(text, savedId);
         transaction.onerror = () => console.error(transaction.error);
     }).catch(console.error);
-    try { localStorage.setItem(`ziral-record-${id}`, text); } catch (error) { console.error(error); }
+    try { localStorage.setItem(`ziral-record-${savedId}`, text); } catch (error) { console.error(error); }
+}
+
+export function begin_record() {
+    persist();
+    record = undefined;
+    id = crypto.randomUUID();
+    attempted = 0;
+}
+
+export function finish_record() {
+    persist();
 }
 
 export function append_record(build, seed, inputs) {

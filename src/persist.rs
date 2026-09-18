@@ -175,15 +175,8 @@ pub fn choose() {
     choose_save();
 }
 
-pub fn take() -> Option<Sim> {
-    let save = imported_save()?;
-    match decode(&save) {
-        Ok(sim) => Some(sim),
-        Err(reason) => {
-            refuse_save(&reason);
-            None
-        }
-    }
+pub fn take() -> Option<String> {
+    imported_save()
 }
 
 #[cfg(test)]

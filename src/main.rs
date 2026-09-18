@@ -423,12 +423,13 @@ enum SaveAction {
     Import,
 }
 
+#[derive(Debug)]
 enum ClipboardRequest {
     Read,
     Write(String),
 }
 
-#[derive(Resource)]
+#[derive(Resource, Debug)]
 struct World {
     sim: Sim,
     prev: Sim,
@@ -1643,6 +1644,10 @@ fn clipboard_text() {
 static PASTED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 fn clipboard_paste(mut world: ResMut<World>, mut session: ResMut<session::Session>) {
+    if session.replaying() {
+        world.clipboard = None;
+        return;
+    }
     if let Some(request) = world.clipboard.take() {
         if let ClipboardRequest::Write(text) = request {
             clipboard(&text);
@@ -1705,6 +1710,9 @@ fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnO
 }
 
 fn refill_inventory(mut world: ResMut<World>, mut session: ResMut<session::Session>) {
+    if session.replaying() {
+        return;
+    }
     if world.has_machine_rollback() {
         return;
     }
@@ -1933,6 +1941,12 @@ fn card_camera(kind: CardCamera, target: RenderTarget) -> impl Bundle {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     #[cfg(not(target_arch = "wasm32"))]
+    let (args, replay) = {
+        let mut args = args;
+        let replay = session::argument(&mut args);
+        (args, replay)
+    };
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(status) = machines::configure(&args) {
         std::process::exit(status);
     }
@@ -1957,6 +1971,12 @@ fn main() {
             app
         }
     };
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(record) = replay {
+        let end = args.iter().any(|arg| arg == "--shot");
+        let session = session::open(record, &mut app.world_mut().resource_mut::<World>(), end);
+        app.insert_resource(session);
+    }
     lit_plugin(&mut app);
     app.run();
 }
@@ -2346,6 +2366,10 @@ fn hover(
     rows: Query<(&PaletteRow, &Interaction)>,
     mut left: MessageReader<CursorLeft>,
 ) {
+    if session.replaying() {
+        left.clear();
+        return;
+    }
     if left.read().next().is_some() {
         session.send(&mut world, session::Input::Hover(None));
         session.send(&mut world, session::Input::Palette(None));
@@ -2782,7 +2806,7 @@ fn save_icon(button: &mut ChildSpawnerCommands, up: bool) {
 }
 
 fn run_ticks(mut world: ResMut<World>, mut session: ResMut<session::Session>, time: Res<Time>) {
-    session.send(&mut world, session::Input::Frame(time.delta_secs()));
+    session.advance(&mut world, time.delta_secs());
 }
 
 const HOLD: u64 = 3;
@@ -2882,7 +2906,7 @@ fn view(
     let Projection::Orthographic(ortho) = &mut *projection else {
         return;
     };
-    if scroll.delta != Vec2::ZERO {
+    if !session.replaying() && scroll.delta != Vec2::ZERO {
         let screen = window.cursor_position();
         let point = screen.map(|c| viewport.world(c));
         let panel = world.palette_hover.is_some()
@@ -2907,7 +2931,8 @@ fn view(
         MouseScrollUnit::Line => scroll.delta.y,
         MouseScrollUnit::Pixel => scroll.delta.y / 40.0,
     };
-    if let Some(item) = world.palette_hover
+    if !session.replaying()
+        && let Some(item) = world.palette_hover
         && notches.round() != 0.0
     {
         session.send(
@@ -2916,10 +2941,12 @@ fn view(
         );
     }
     if scroll.delta.y != 0.0
-        && world.palette_hover.is_none()
+        && (session.replaying() || world.palette_hover.is_none())
         && let Some(c) = window.cursor_position()
     {
-        let card = if let Some(id) = world.card_at(c, &viewport) {
+        let card = if !session.replaying()
+            && let Some(id) = world.card_at(c, &viewport)
+        {
             let pinned = world.pinned.iter().find(|card| card.id == id).unwrap();
             let limit = (viewport.size / card_size(pinned.item))
                 .min_element()
@@ -3002,6 +3029,14 @@ fn edit(
     edit_ui: EditUi,
 ) {
     let (keys, buttons) = input;
+    if session.replaying() {
+        for key in [KeyCode::Space, KeyCode::KeyG, KeyCode::KeyS] {
+            if keys.just_pressed(key) {
+                session.control(&mut world, key);
+            }
+        }
+        return;
+    }
     let (ui, inventory, panels, save) = edit_ui;
     let (transform, projection) = camera.into_inner();
     let Some(viewport) = Viewport::of(&window, transform, projection) else {
@@ -3177,8 +3212,31 @@ fn persistence(
             SaveAction::Import => persist::choose(),
         }
     }
-    if let Some(sim) = persist::take() {
-        session.send(&mut world, session::Input::Import(Box::new(sim)));
+    if let Some(text) = persist::take() {
+        if serde_json::from_str::<serde_json::Value>(&text)
+            .is_ok_and(|value| value.get("inputs").is_some())
+        {
+            match session::Record::decode(&text) {
+                Ok(record) => {
+                    session.finish();
+                    *session = session::open(record, &mut world, false);
+                }
+                Err(reason) => persist::refuse(&reason),
+            }
+        } else {
+            match persist::decode(&text) {
+                Ok(sim) => {
+                    if session.replaying() {
+                        *session = session::Session::new(&sim);
+                    }
+                    session.send(&mut world, session::Input::Import(Box::new(sim)));
+                }
+                Err(reason) => persist::refuse(&reason),
+            }
+        }
+    }
+    if session.replaying() {
+        return;
     }
     if world.saveable() && saved.attempted != world.sim {
         saved.store(world.sim.clone());
