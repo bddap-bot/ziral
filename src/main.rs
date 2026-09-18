@@ -4283,6 +4283,16 @@ fn fire(mut image: Image, skin: Skin) -> Image {
     image
 }
 
+fn response(level: usize) -> Vec4 {
+    let amber = Glaze::Amber.color().to_linear();
+    Vec4::new(
+        level as f32 / sim::ActivationEnergy::FULL.level() as f32,
+        amber.red,
+        amber.green,
+        amber.blue,
+    )
+}
+
 fn fire_kiln(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -4328,14 +4338,14 @@ fn fire_kiln(
             .map(|(_, image, _)| image.clone())
             .unwrap_or_else(|| panic!("{skin:?} was never fired"))
     };
-    let dark = images.add(Image::new_fill(
+    let whole = images.add(Image::new_fill(
         Extent3d {
             width: 1,
             height: 1,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        &[0, 0, 0, 0],
+        &[255, 255, 255, 255],
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::RENDER_WORLD,
     ));
@@ -4362,13 +4372,8 @@ fn fire_kiln(
                     light: look::light().extend(look::AMBIENT),
                     albedo: image(skin),
                     relief: image(normal),
-                    emissive: emissive.map_or_else(|| dark.clone(), image),
-                    response: Vec4::new(
-                        level as f32 / sim::ActivationEnergy::FULL.level() as f32,
-                        Glaze::Amber.rgb()[0],
-                        Glaze::Amber.rgb()[1],
-                        Glaze::Amber.rgb()[2],
-                    ),
+                    emissive: emissive.map_or_else(|| whole.clone(), image),
+                    response: response(level),
                 })
             });
             (skin, lit)
@@ -5742,7 +5747,7 @@ mod shot {
     pub fn scene(name: &str, ticks: u64) -> (World, Frame, Vec<(u32, Act)>, u32) {
         use KeyCode::*;
         let mut world = World::new(sim::preloaded());
-        world.running = false;
+        world.viewer.running = false;
         world.pointer = Some(px(Hex::new(3, -3)));
         let mut keys = Vec::new();
         let mut script = Vec::new();
@@ -6790,7 +6795,7 @@ mod shot {
             other => panic!("unknown scene {other}"),
         }
         world.sim = world.sim.replay(ticks);
-        world.prev = world.sim.clone();
+        world.viewer.prev = world.sim.clone();
         let typed = typed(&keys);
         let warm = typed
             .last()
@@ -6859,7 +6864,7 @@ mod shot {
     #[cfg(test)]
     pub fn still(view: &str, dir: PathBuf, frames: u32) -> App {
         let (mut world, frame, script, warm) = scene(view, 0);
-        world.period = f32::INFINITY;
+        world.viewer.period = f32::INFINITY;
         let shot = Shot {
             path: dir,
             clip: Some(frames),
@@ -8243,6 +8248,99 @@ mod tests {
         assert_eq!(app.run(), bevy::app::AppExit::Success);
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(*seen.lock().unwrap(), [0, 1, 2, 1]);
+    }
+
+    #[test]
+    fn the_material_response_colour_is_linear_amber() {
+        let srgb = Glaze::Amber.color().to_srgba();
+        let expected =
+            [srgb.red, srgb.green, srgb.blue].map(|c| to_linear((c * 255.0).round() as u8));
+        let full = response(sim::ActivationEnergy::FULL.level());
+        assert_eq!(full.x, 1.0);
+        assert_eq!(response(0).x, 0.0);
+        for (actual, expected) in [full.y, full.z, full.w].into_iter().zip(expected) {
+            assert!(
+                (actual - expected).abs() < 0.00001,
+                "{actual} vs {expected}"
+            );
+        }
+    }
+
+    fn posed_arm(energy: sim::ActivationEnergy) -> image::RgbaImage {
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = std::env::temp_dir().join(format!(
+            "ziral-activation-{}-{}",
+            energy.level(),
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("rotation", dir.clone(), 1);
+        lit_plugin(&mut app);
+        let mut world = World::new(Sim::empty());
+        world.viewer.period = f32::INFINITY;
+        world.viewer.running = false;
+        let mut arm = Arm::new(ArmLength::One, ORIGIN, 0, Vec::new());
+        arm.energy = energy;
+        world.sim.arms.push(arm);
+        world.viewer.prev = world.sim.clone();
+        *app.world_mut().resource_mut::<Game>() = Game::from_world(world);
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        let frame = image::open(dir.join("00000.png")).unwrap().into_rgba8();
+        std::fs::remove_dir_all(&dir).unwrap();
+        frame
+    }
+
+    #[test]
+    fn activation_energy_changes_only_the_firing_feature() {
+        let rest = posed_arm(sim::ActivationEnergy::default());
+        let fired = posed_arm(sim::ActivationEnergy::FULL);
+        let item = Machine::Arm(ArmLength::One);
+        let quad = look::quad(item);
+        let mask = look::rig(item, "hand").2.decode();
+        let side = mask.width();
+        let (mut lo, mut hi) = (UVec2::MAX, UVec2::ZERO);
+        for (i, pixel) in mask.data.unwrap().chunks_exact(4).enumerate() {
+            if pixel[3] > 0 && pixel[0] > 0 {
+                let at = UVec2::new(i as u32 % side, i as u32 / side);
+                lo = lo.min(at);
+                hi = hi.max(at);
+            }
+        }
+        assert!(
+            lo.cmple(hi).all(),
+            "the firing feature has no responsive texel"
+        );
+        let screen = |texel: UVec2| {
+            let uv = texel.as_vec2() / side as f32;
+            let world = quad.centre + (uv - 0.5) * Vec2::new(1.0, -1.0) * quad.side;
+            (world - px(FOCUS)) * Vec2::new(1.0, -1.0) / MICRO_SCALE
+                + Vec2::new(rest.width() as f32, rest.height() as f32) / 2.0
+        };
+        let margin = Vec2::splat(6.0);
+        let (near, far) = (screen(lo), screen(hi));
+        let (min, max) = (near.min(far) - margin, near.max(far) + margin);
+        let mut responding = 0;
+        let mut inert = Vec::new();
+        for (x, y, before) in rest.enumerate_pixels() {
+            if before == fired.get_pixel(x, y) {
+                continue;
+            }
+            responding += 1;
+            let at = Vec2::new(x as f32, y as f32);
+            if at.cmplt(min).any() || at.cmpgt(max).any() {
+                inert.push((x, y));
+            }
+        }
+        assert!(responding > 100, "activation is invisible");
+        assert!(
+            inert.is_empty(),
+            "{} inert pixels respond to activation, first {:?}",
+            inert.len(),
+            &inert[..inert.len().min(8)]
+        );
     }
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
