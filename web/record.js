@@ -10,7 +10,7 @@ const database = new Promise((resolve, reject) => {
 database.catch(() => {});
 
 function persist() {
-    if (!record) return;
+    if (!record || (delivered.get(id) ?? 0) >= record.inputs.length) return;
     attempted = performance.now();
     const text = JSON.stringify(record);
     const savedId = id;
@@ -106,6 +106,22 @@ async function upload() {
                 await connection.connect(snapshot.endpoint, 'ziral-record/1');
                 const next = await send_record(snapshot, connection, delivered.get(session) ?? 0);
                 delivered.set(session, next);
+                const covered = text => {
+                    try { return JSON.parse(text)?.inputs.length <= next; } catch { return false; }
+                };
+                try {
+                    const key = `ziral-record-${session}`;
+                    if (covered(localStorage.getItem(key))) localStorage.removeItem(key);
+                } catch (error) { console.error(error); }
+                database.then(db => {
+                    const transaction = db.transaction('records', 'readwrite');
+                    const store = transaction.objectStore('records');
+                    const request = store.get(session);
+                    request.onsuccess = () => {
+                        if (covered(request.result)) store.delete(session);
+                    };
+                    transaction.onerror = () => console.error(transaction.error);
+                }).catch(console.error);
                 if (queued.get(session) === snapshot) queued.delete(session);
             } catch (error) { console.error(error); }
         }

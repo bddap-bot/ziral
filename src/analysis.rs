@@ -504,19 +504,38 @@ mod tests {
             .code;
         for input in [
             Input::Key(KeyCode::Space, false),
-            Input::Tape { arm: 1, cursor: 0 },
-            Input::Key(grab, false),
-            Input::Press {
-                point: crate::px(Hex::new(5, 0)),
-                target: Some(sim::Id::Arm(1)),
-            },
-            Input::Drag,
-            Input::Release(Some(Hex::new(8, 0))),
-            Input::Tape { arm: 1, cursor: 1 },
+            Input::Tape { arm: 0, cursor: 0 },
             Input::Key(grab, false),
             Input::Press {
                 point: crate::px(sim::ORIGIN),
                 target: Some(sim::Id::Arm(0)),
+            },
+            Input::Drag,
+            Input::Release(Some(Hex::new(8, 0))),
+        ] {
+            session.send(&mut world, input);
+        }
+        let moved = world
+            .sim()
+            .arms
+            .iter()
+            .position(|arm| arm.pivot == Hex::new(8, 0))
+            .unwrap();
+        let stationary = world
+            .sim()
+            .arms
+            .iter()
+            .position(|arm| arm.pivot == Hex::new(5, 0))
+            .unwrap();
+        for input in [
+            Input::Tape {
+                arm: moved,
+                cursor: 1,
+            },
+            Input::Key(grab, false),
+            Input::Press {
+                point: crate::px(Hex::new(5, 0)),
+                target: Some(sim::Id::Arm(stationary)),
             },
             Input::Drag,
             Input::Key(KeyCode::KeyZ, false),
@@ -530,7 +549,7 @@ mod tests {
         let result = summarize(&session.record);
         let arms = result["tape_edits_per_arm"].as_array().unwrap();
         assert_eq!(arms.len(), 2);
-        assert_eq!(arms[0]["edits"], 0);
-        assert_eq!(arms[1]["edits"], 3);
+        assert_eq!(arms[0]["edits"], 3);
+        assert_eq!(arms[1]["edits"], 0);
     }
 }

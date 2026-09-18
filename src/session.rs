@@ -267,7 +267,6 @@ impl Record {
             return Err("The record belongs to a different build or seed.".into());
         }
         let mut elapsed = 0.0;
-        let mut world = Game::new(sim::start());
         for (at, input) in &mut record.inputs {
             if let Input::Frame(dt) = input {
                 if !dt.is_finite() || *dt < 0.0 {
@@ -275,10 +274,16 @@ impl Record {
                 }
                 elapsed += f64::from(*dt);
             }
-            if !at.is_finite() || (*at - elapsed).abs() > 0.000001 || !input.valid(&world) {
+            if !at.is_finite() || (*at - elapsed).abs() > 0.000001 || !input.valid() {
                 return Err("Invalid input.".into());
             }
             *at = elapsed;
+        }
+        let mut world = Game::new(sim::start());
+        for (_, input) in &record.inputs {
+            if !input.valid_target(&world) {
+                return Err("Invalid target.".into());
+            }
             input.apply(&mut world);
         }
         Ok(record)
@@ -300,41 +305,66 @@ impl Record {
 }
 
 impl Input {
-    fn valid(&self, world: &Game) -> bool {
-        let point = |point: &Vec2| point.is_finite();
+    fn valid(&self) -> bool {
+        let point = |point: &Vec2| point.is_finite() && point.abs().max_element() <= 1_000_000.0;
+        fn cell(cell: Hex) -> bool {
+            cell.q.unsigned_abs() <= 1_000_000 && cell.r.unsigned_abs() <= 1_000_000
+        }
+        fn coordinates(sim: &Sim) -> bool {
+            sim.arms.iter().all(|arm| cell(arm.pivot))
+                && sim.glyphs.iter().flatten().all(|glyph| cell(glyph.at))
+                && sim.atoms.iter().flatten().all(|atom| cell(atom.pos))
+                && sim
+                    .portals
+                    .iter()
+                    .flatten()
+                    .all(|portal| cell(portal.at) && coordinates(&portal.sim))
+        }
         match self {
             Self::Pointer(p) => {
                 p.world.as_ref().is_none_or(point)
                     && p.screen.as_ref().is_none_or(point)
-                    && p.viewport.cam.is_finite()
-                    && p.viewport.size.is_finite()
+                    && p.cell.is_none_or(cell)
+                    && point(&p.viewport.cam)
+                    && point(&p.viewport.size)
                     && p.viewport.size.cmpgt(Vec2::ZERO).all()
                     && p.viewport.scale.is_finite()
                     && p.viewport.scale > 0.0
             }
-            Self::Press { point: at, target } => {
-                point(at)
-                    && target.is_none_or(|id| match id {
-                        Id::Portal(i) => world.shown().portals.get(i).is_some_and(Option::is_some),
-                        Id::Arm(i) => i < world.shown().arms.len(),
-                        Id::Glyph(i) => world.shown().glyphs.get(i).is_some_and(Option::is_some),
-                        Id::Atom(i) => world.shown().atoms.get(i).is_some_and(Option::is_some),
-                    })
+            Self::Press { point: at, .. } => point(at),
+            Self::Release(at) => at.is_none_or(cell),
+            Self::Pin(_, at, _) | Self::Card(_, at, _) | Self::MoveCard(at) => point(at),
+            Self::ScaleCard(_, scale) => scale.is_finite() && *scale > 0.0,
+            Self::Wheel(delta, _) => point(delta),
+            Self::Import(sim) | Self::Paste(sim) => {
+                coordinates(sim)
+                    && persist::encode(sim)
+                        .ok()
+                        .is_some_and(|text| persist::decode(&text).is_ok())
             }
+            Self::Restore(state) => {
+                coordinates(&state.sim)
+                    && persist::encode_state(state)
+                        .ok()
+                        .is_some_and(|text| persist::decode_state(&text).is_ok())
+            }
+            _ => true,
+        }
+    }
+
+    fn valid_target(&self, world: &Game) -> bool {
+        match self {
+            Self::Press { target, .. } => target.is_none_or(|id| match id {
+                Id::Portal(i) => world.shown().portals.get(i).is_some_and(Option::is_some),
+                Id::Arm(i) => i < world.shown().arms.len(),
+                Id::Glyph(i) => world.shown().glyphs.get(i).is_some_and(Option::is_some),
+                Id::Atom(i) => world.shown().atoms.get(i).is_some_and(Option::is_some),
+            }),
             Self::Tape { arm, cursor } => world
                 .shown()
                 .arms
                 .get(*arm)
                 .is_some_and(|a| *cursor <= a.tape.len()),
-            Self::Pin(_, at, _) | Self::Card(_, at, _) | Self::MoveCard(at) => point(at),
-            Self::ScaleCard(_, scale) => scale.is_finite() && *scale > 0.0,
-            Self::Wheel(delta, _) => point(delta),
-            Self::Import(sim) | Self::Paste(sim) => persist::encode(sim)
-                .ok()
-                .is_some_and(|text| persist::decode(&text).is_ok()),
-            Self::Restore(state) => persist::encode_state(state)
-                .ok()
-                .is_some_and(|text| persist::decode_state(&text).is_ok()),
             _ => true,
         }
     }
@@ -445,7 +475,10 @@ pub fn argument(args: &mut Vec<String>) -> Option<Record> {
     let at = args.iter().position(|arg| arg == "--replay")?;
     let path = args
         .get(at + 1)
-        .expect("--replay requires a record path")
+        .unwrap_or_else(|| {
+            eprintln!("usage: ziral --replay <record.json>");
+            std::process::exit(2);
+        })
         .clone();
     args.drain(at..=at + 1);
     Some(
@@ -529,6 +562,77 @@ mod replay_tests {
             playback.advance(&mut replayed, 0.025);
             assert_eq!(format!("{replayed:?}").into_bytes(), bytes);
         }
+    }
+
+    #[test]
+    fn decode_checks_all_inputs_before_replay_and_rejects_extreme_coordinates() {
+        let mut record = Session::new(&Game::new(sim::start()).state()).record;
+        for value in [f32::MAX, 1e30, 1_000_001.0, -1_000_001.0, -1e30, f32::MIN] {
+            for point in [Vec2::new(value, 0.0), Vec2::new(0.0, value)] {
+                let mut initial = Sim::empty();
+                initial.arms.push(Arm::new(
+                    sim::ArmLength::One,
+                    Hex::new(-10, -10),
+                    0,
+                    Vec::new(),
+                ));
+                record.inputs = vec![
+                    (
+                        0.0,
+                        Input::Restore(Box::new(persist::State { sim: initial })),
+                    ),
+                    (0.0, Input::Key(KeyCode::Space, false)),
+                    (
+                        0.0,
+                        Input::Press {
+                            point,
+                            target: Some(Id::Arm(0)),
+                        },
+                    ),
+                    (0.0, Input::Drag),
+                ];
+                assert_eq!(
+                    Record::decode(&serde_json::to_string(&record).unwrap()).unwrap_err(),
+                    "Invalid input."
+                );
+                record.inputs = vec![
+                    (
+                        0.0,
+                        Input::Tape {
+                            arm: usize::MAX,
+                            cursor: 0,
+                        },
+                    ),
+                    (
+                        0.0,
+                        Input::Press {
+                            point,
+                            target: None,
+                        },
+                    ),
+                    (0.0, Input::Drag),
+                ];
+                assert_eq!(
+                    Record::decode(&serde_json::to_string(&record).unwrap()).unwrap_err(),
+                    "Invalid input."
+                );
+            }
+        }
+        for value in [i32::MIN, i32::MAX] {
+            record.inputs = vec![(0.0, Input::Release(Some(Hex::new(value, 0))))];
+            assert!(Record::decode(&serde_json::to_string(&record).unwrap()).is_err());
+        }
+        record.inputs = vec![
+            (
+                0.0,
+                Input::Press {
+                    point: Vec2::new(1000.0, -1000.0),
+                    target: None,
+                },
+            ),
+            (0.0, Input::Drag),
+        ];
+        assert!(Record::decode(&serde_json::to_string(&record).unwrap()).is_ok());
     }
 
     #[test]
