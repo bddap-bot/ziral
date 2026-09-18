@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(result["steps_around_stalls"].as_array().unwrap().len(), 1);
         assert_eq!(result["steps_around_stalls"][0]["steps"], 0);
         let mut initial = sim::Sim::empty();
-        initial.inventory.fill();
+        initial.fill_inventory();
         initial
             .arms
             .push(Arm::new(ArmLength::One, sim::ORIGIN, 0, Vec::new()));
@@ -488,7 +488,7 @@ mod tests {
     fn tape_metrics_preserve_arm_identity_through_move_and_deletion() {
         use sim::{Arm, ArmLength, Hex, Instr};
         let mut initial = sim::Sim::empty();
-        initial.inventory.fill();
+        initial.fill_inventory();
         initial
             .arms
             .push(Arm::new(ArmLength::One, sim::ORIGIN, 0, Vec::new()));

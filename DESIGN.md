@@ -1244,3 +1244,15 @@ The portal has no firing part. It draws its complete housing, so a synthetic spl
 Generation selects articulated entries before invoking the part splitter. A static-only or texture-only run skips the splitter entirely, because its no-argument mode selects every machine.
 
 The portal appends one craftable inventory slot; source upgrades remain excluded from inventory. The source-only selection fixture excludes the populated starting portal, whose contents prevent recycling a combined selection. Recipe text retains canonical atom and bond ordering.
+
+## Free interiors remember overworld encounters
+
+An interior offers only machine and token kinds previously received in the overworld inventory and atom kinds previously received or spawned on its board. `Sim.encountered` stores those kinds once and survives spending, consumption and saving. Inventory receipt and atom spawning append to it; interior activity cannot append to the overworld's list.
+
+The dumbest design borrows that list in the existing editor. An interior placement or tape write checks membership instead of spending; erasing and recycling there return nothing. The same palette rows hide unavailable kinds and their count controls inside. Portals remain excluded from interiors. Overworld inventory still pays the existing bills. A filled interior inventory would retain artificial limits and counts; a second editor or a periodically reconstructed unlock table would duplicate rules and forget spent kinds.
+
+No new painting or sizing is needed. The existing pictures retain their shipped dimensions, with empty rows removed. A paired native-size capture shows the interior before and after an overworld converter produces amber.
+
+The encountered field is required in saved simulations. The existing build check rejects saves from another build; accepting a missing field as an empty list would silently discard encounters.
+
+`proofs/portal-palette-108-3803.png` pairs two unscaled 1280 by 720 captures: the interior before overworld amber conversion at left and after it at right. Fragment admission checks actual contents; the overworld bill alone includes the extra base atom for a double bond.

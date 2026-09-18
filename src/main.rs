@@ -746,18 +746,6 @@ impl Game {
 }
 
 impl WorldAccess for Game {
-    fn lift_inventory(&mut self, item: Item) {
-        if !self.inside() || item != Item::Machine(Machine::Portal) {
-            self.edit().lift_inventory(item);
-        }
-    }
-
-    fn lift(&mut self, set: Sim, back: Back) {
-        if !self.inside() || set.portals.iter().all(Option::is_none) {
-            self.edit().lift(set, back);
-        }
-    }
-
     fn new(sim: Sim) -> Self {
         Self::from_world(World::new(sim))
     }
@@ -779,17 +767,19 @@ impl WorldAccess for Game {
         }
     }
 
-    fn view(&self) -> Editor<&Sim, &Viewer> {
+    fn view(&self) -> Editor<'_, &Sim, &Viewer> {
         Editor {
+            encountered: self.inside().then_some(&self.overworld.sim.encountered),
             sim: self.sim(),
             viewer: self,
         }
     }
 
-    fn edit(&mut self) -> Editor<&mut Sim, &mut Viewer> {
+    fn edit(&mut self) -> Editor<'_, &mut Sim, &mut Viewer> {
         match &mut self.location {
             Location::Overworld => self.overworld.edit(),
             Location::Interior { portal, viewer } => Editor {
+                encountered: Some(&self.overworld.sim.encountered),
                 sim: &mut self.overworld.sim.portals[*portal].as_mut().unwrap().sim,
                 viewer,
             },
@@ -843,19 +833,20 @@ impl std::ops::DerefMut for World {
     }
 }
 
-struct Editor<S, V> {
+struct Editor<'a, S, V> {
+    encountered: Option<&'a [Item]>,
     sim: S,
     viewer: V,
 }
 
-impl<S, V: std::ops::Deref<Target = Viewer>> std::ops::Deref for Editor<S, V> {
+impl<S, V: std::ops::Deref<Target = Viewer>> std::ops::Deref for Editor<'_, S, V> {
     type Target = Viewer;
     fn deref(&self) -> &Viewer {
         &self.viewer
     }
 }
 
-impl<S, V: std::ops::DerefMut<Target = Viewer>> std::ops::DerefMut for Editor<S, V> {
+impl<S, V: std::ops::DerefMut<Target = Viewer>> std::ops::DerefMut for Editor<'_, S, V> {
     fn deref_mut(&mut self) -> &mut Viewer {
         &mut self.viewer
     }
@@ -866,8 +857,8 @@ trait WorldAccess: std::ops::DerefMut<Target = Viewer> + Sized {
     fn sim(&self) -> &Sim;
     #[cfg(test)]
     fn sim_mut(&mut self) -> &mut Sim;
-    fn view(&self) -> Editor<&Sim, &Viewer>;
-    fn edit(&mut self) -> Editor<&mut Sim, &mut Viewer>;
+    fn view(&self) -> Editor<'_, &Sim, &Viewer>;
+    fn edit(&mut self) -> Editor<'_, &mut Sim, &mut Viewer>;
     fn shown(&self) -> &Sim {
         self.ghost.as_ref().unwrap_or(self.sim())
     }
@@ -1092,14 +1083,16 @@ impl WorldAccess for World {
     fn sim_mut(&mut self) -> &mut Sim {
         &mut self.sim
     }
-    fn view(&self) -> Editor<&Sim, &Viewer> {
+    fn view(&self) -> Editor<'_, &Sim, &Viewer> {
         Editor {
+            encountered: None,
             sim: &self.sim,
             viewer: &self.viewer,
         }
     }
-    fn edit(&mut self) -> Editor<&mut Sim, &mut Viewer> {
+    fn edit(&mut self) -> Editor<'_, &mut Sim, &mut Viewer> {
         Editor {
+            encountered: None,
             sim: &mut self.sim,
             viewer: &mut self.viewer,
         }
@@ -1109,7 +1102,18 @@ impl WorldAccess for World {
     }
 }
 
-impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Editor<S, V> {
+impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Editor<'_, S, V> {
+    fn available(&self, item: Item) -> bool {
+        match self.encountered {
+            Some(kinds) => item != Item::Machine(Machine::Portal) && kinds.contains(&item),
+            None => self
+                .sim
+                .inventory
+                .count(item)
+                .is_some_and(|count| count > 0),
+        }
+    }
+
     fn card_at(&self, pointer: Vec2, viewport: &Viewport) -> Option<u64> {
         let covers = |card: &Pinned| {
             let (at, size) = card.screen_rect(viewport);
@@ -1457,7 +1461,7 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
     }
 }
 
-impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>> Editor<S, V> {
+impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>> Editor<'_, S, V> {
     fn forward(&mut self) {
         self.end_turn();
         self.down = None;
@@ -1529,7 +1533,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
 
     #[cfg(test)]
     fn press_inventory(&mut self, item: Item, pointer: Vec2, viewport: &Viewport) {
-        if self.sim.inventory.count(item) == Some(0) {
+        if !self.available(item) {
             self.begin_pin(item, pointer, viewport, MouseButton::Left);
         } else {
             self.lift_inventory(item);
@@ -1610,13 +1614,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
 
     fn lift_inventory(&mut self, item: Item) {
         self.refused = None;
-        if matches!(item, Item::Machine(_) | Item::Atom(_))
-            && self
-                .sim
-                .inventory
-                .count(item)
-                .is_some_and(|count| count > 0)
-        {
+        if matches!(item, Item::Machine(_) | Item::Atom(_)) && self.available(item) {
             self.lift(fresh(item), Back::Inventory);
         }
     }
@@ -1633,7 +1631,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         if self.has_machine_rollback() {
             return;
         }
-        self.sim.inventory.fill();
+        self.sim.fill_inventory();
         self.resim(self.ghosts());
     }
 
@@ -1846,8 +1844,10 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
     }
 
     fn return_to_inventory(&mut self, set: &Sim) {
-        for item in set.bill() {
-            self.sim.inventory.add(item);
+        if self.encountered.is_none() {
+            for item in set.bill() {
+                self.sim.receive(item);
+            }
         }
     }
 
@@ -1867,7 +1867,11 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
     }
 
     fn lift(&mut self, set: Sim, back: Back) {
-        if self.holding() {
+        if self.holding()
+            || (back == Back::Inventory
+                && self.encountered.is_some()
+                && set.items().any(|item| !self.available(item)))
+        {
             return;
         }
         self.end_turn();
@@ -1992,6 +1996,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             let mut upgraded = self.sim.clone();
             if let Some(tick) = upgraded.upgrade(glyph, &set) {
                 if back == Back::Inventory
+                    && self.encountered.is_none()
                     && let Err(short) = upgraded.inventory.spend_all(&set.bill())
                 {
                     self.refused = Some(Refused { at, short });
@@ -2016,6 +2021,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             return;
         };
         if back == Back::Inventory
+            && self.encountered.is_none()
             && let Err(short) = self.sim.inventory.spend_all(&set.bill())
         {
             self.refused = Some(Refused { at, short });
@@ -2216,8 +2222,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                     return;
                 }
                 let sim = &mut *self.sim;
-                let tape = &mut sim.arms[arm].tape;
-                let len = tape.len();
+                let len = sim.arms[arm].tape.len();
                 let cursor = cursor.min(len);
                 let cursor = match key {
                     ArrowLeft => cursor.saturating_sub(1),
@@ -2225,19 +2230,26 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                     Home => 0,
                     End => len,
                     KeyZ | Backspace if cursor > 0 => {
-                        let erased = tape.remove(cursor - 1);
-                        sim.inventory.add(Item::Token(erased));
+                        let erased = sim.arms[arm].tape.remove(cursor - 1);
+                        if self.encountered.is_none() {
+                            sim.receive(Item::Token(erased));
+                        }
                         cursor - 1
                     }
                     _ => match instr {
-                        Some(instr) if sim.inventory.spend(Item::Token(instr)) => {
-                            tape.insert(cursor, instr);
+                        Some(instr)
+                            if self.encountered.map_or_else(
+                                || sim.inventory.spend(Item::Token(instr)),
+                                |kinds| kinds.contains(&Item::Token(instr)),
+                            ) =>
+                        {
+                            sim.arms[arm].tape.insert(cursor, instr);
                             cursor + 1
                         }
                         _ => cursor,
                     },
                 };
-                let edited = tape.len() != len;
+                let edited = sim.arms[arm].tape.len() != len;
                 self.focus = Some(Focus::Tape { arm, cursor });
                 if edited && self.ghost.is_some() {
                     self.resim(self.ghosts());
@@ -3000,8 +3012,25 @@ struct Tally {
     shown: Option<(u32, u32)>,
 }
 
-fn tally(mut commands: Commands, world: Res<Game>, mut rows: Query<(Entity, &mut Tally)>) {
-    for (entity, mut tally) in &mut rows {
+fn tally(
+    mut commands: Commands,
+    world: Res<Game>,
+    mut rows: Query<(Entity, &mut Tally, &mut Node), Without<PaletteRow>>,
+    mut palette_rows: Query<(&PaletteRow, &mut Node)>,
+) {
+    for (row, mut node) in &mut palette_rows {
+        node.display = if !world.inside() || world.view().available(row.0) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for (entity, mut tally, mut node) in &mut rows {
+        node.display = if world.inside() {
+            Display::None
+        } else {
+            Display::Flex
+        };
         let inventory = &world.sim().inventory;
         let Some(count) = inventory.count(tally.item) else {
             continue;
@@ -3829,7 +3858,7 @@ fn edit(
             );
         } else if let Some((Some(entry), _, _)) = pressed {
             if let Some(pointer) = screen {
-                let input = if world.sim().inventory.count(entry.0) == Some(0) {
+                let input = if !world.view().available(entry.0) {
                     session::Input::Pin(entry.0, viewport.world(pointer), MouseButton::Left)
                 } else {
                     session::Input::Inventory(entry.0)
@@ -5611,6 +5640,15 @@ mod shot {
                 .unwrap_or_else(|| panic!("unknown machine {name}"))
         };
         match name {
+            "portal-palette:108" => {
+                world.sim = fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber))).sim;
+                let mut portal = sim::Portal::new(FOCUS);
+                portal.sim = fixture(Machine::Arm(ArmLength::One)).sim;
+                world.sim.portals.push(Some(portal));
+                world.period = f32::INFINITY;
+                world.pointer = None;
+                script.push((2, Act::ZoomBoard(20.0)));
+            }
             "portal" => {
                 world.sim = sim::start();
                 world.sim.arms.push(Arm::new(
@@ -5683,7 +5721,7 @@ mod shot {
                 for (item, count) in palette().zip(counts.into_iter().cycle()) {
                     world.sim.inventory.set_cap(item, -1);
                     for _ in 0..count {
-                        world.sim.inventory.add(item);
+                        world.sim.receive(item);
                     }
                 }
                 world.palette_hover = palette().nth(7);
@@ -5769,7 +5807,7 @@ mod shot {
                 let empty = Item::from(Machine::Glyph(GlyphKind::Bonder));
                 let one = Item::from(Machine::Glyph(GlyphKind::SecondBond));
                 world.sim = Sim::empty();
-                world.sim.inventory.add(one);
+                world.sim.receive(one);
                 script.push((26, Act::PressInventory(empty)));
                 for step in 1..=10 {
                     script.push((26 + step * 2, Act::Nudge(Vec2::new(45.0, -28.0))));
@@ -5877,7 +5915,7 @@ mod shot {
                     kind: AtomKind::Base,
                     pos: arm.add(DIRS[0]),
                 });
-                world.sim.inventory.add(Item::Token(Instr::Grab));
+                world.sim.receive(Item::Token(Instr::Grab));
                 script.extend(tap(30, Space));
                 script.push((54, Act::Press(arm)));
                 script.push((60, Act::Release(arm)));
@@ -5909,7 +5947,7 @@ mod shot {
                 let set = text.parse::<Fragment>().unwrap().into_sim();
                 let mut sim = Sim::empty();
                 for item in set.bill() {
-                    sim.inventory.add(item);
+                    sim.receive(item);
                 }
                 world.sim = sim;
                 world.running = false;
@@ -6389,9 +6427,8 @@ mod shot {
                     0,
                     vec![Instr::Grab],
                 ));
-                sim.inventory
-                    .add(Item::Machine(Machine::Arm(ArmLength::One)));
-                sim.inventory.add(Item::Token(Instr::Grab));
+                sim.receive(Item::Machine(Machine::Arm(ArmLength::One)));
+                sim.receive(Item::Token(Instr::Grab));
                 world.sim = sim;
                 script.extend(tap(20, Space));
                 script.push((30, Act::Press(Hex::new(-5, -3))));
@@ -6415,8 +6452,8 @@ mod shot {
                 sim.atoms[centre_atom].as_mut().unwrap().kind = AtomKind::Amber;
                 sim.glyphs
                     .push(Some(Glyph::new(GlyphKind::Reification, Hex::new(-4, 0), 0)));
-                sim.inventory.add(Item::Atom(AtomKind::Base));
-                sim.inventory.add(Item::Atom(AtomKind::Base));
+                sim.receive(Item::Atom(AtomKind::Base));
+                sim.receive(Item::Atom(AtomKind::Base));
                 world.sim = sim;
                 script.push((52, Act::Paste("B0,0 B1,0 0,0-1,0")));
                 script.push((58, Act::Press(Hex::new(3, 0))));
@@ -6973,6 +7010,198 @@ mod tests {
     use sim::{Atom, AtomKind, Bond, Tier};
 
     #[test]
+    fn portal_encounter_palette_matches_receipts_and_board_atoms_and_survives_save() {
+        let mut game = Game::new(sim::start());
+        let expected: Vec<_> = palette().filter(|item| {
+            game.sim().inventory.count(*item).is_some_and(|n| n > 0)
+                || matches!(item, Item::Atom(kind) if game.sim().atoms.iter().flatten().any(|atom| atom.kind == *kind))
+        }).collect();
+        game.enter(Some(0));
+        assert_eq!(
+            palette()
+                .filter(|item| game.view().available(*item))
+                .collect::<Vec<_>>(),
+            expected
+        );
+        game.enter(None);
+        let received = [
+            Machine::Arm(ArmLength::One).into(),
+            Item::Token(Instr::Grab),
+            Item::Atom(AtomKind::Plum),
+        ];
+        for item in received {
+            game.overworld.sim.receive(item);
+            assert!(game.overworld.sim.inventory.spend(item));
+        }
+        let id = game.overworld.sim.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(12, 0),
+        });
+        game.overworld.sim.consume(&[id]);
+        let save = persist::encode_state(&game.state()).unwrap();
+        let mut game = Game::from_state(persist::decode_state(&save).unwrap());
+        game.enter(Some(0));
+        for item in received.into_iter().chain([Item::Atom(AtomKind::Base)]) {
+            assert!(game.view().available(item), "{item:?}");
+        }
+        assert!(!game.view().available(Item::Atom(AtomKind::Amber)));
+        assert!(
+            !game
+                .view()
+                .available(Machine::Glyph(GlyphKind::Bonder).into())
+        );
+    }
+
+    #[test]
+    fn portal_encounter_amber_unlocks_from_overworld_crafting_only() {
+        let amber = Item::Atom(AtomKind::Amber);
+        let fixture = fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)));
+        let mut sim = fixture.sim.clone();
+        sim.portals.push(Some(sim::Portal::new(Hex::new(10, 0))));
+        let mut game = Game::new(sim);
+        game.enter(Some(0));
+        *game.sim_mut() = fixture.sim.clone().replay(fixture.ticks);
+        assert!(!game.view().available(amber));
+        game.lift_inventory(amber);
+        assert!(!game.holding());
+        for _ in 0..fixture.ticks {
+            game.overworld.sim.step();
+        }
+        assert!(game.view().available(amber));
+        game.lift_inventory(amber);
+        assert!(game.holding());
+    }
+
+    #[test]
+    fn portal_encounter_edits_are_free_and_locked_pastes_and_tokens_are_refused() {
+        let arm = Item::Machine(Machine::Arm(ArmLength::One));
+        let base = Item::Atom(AtomKind::Base);
+        let grab = Item::Token(Instr::Grab);
+        let mut sim = Sim::empty();
+        sim.portals.push(Some(sim::Portal::new(ORIGIN)));
+        for item in [arm, base, grab] {
+            sim.receive(item);
+            assert!(sim.inventory.spend(item));
+        }
+        let mut game = Game::new(sim);
+        let inventory = serde_json::to_vec(&game.overworld.sim.inventory).unwrap();
+        let encountered = game.overworld.sim.encountered.clone();
+        game.enter(Some(0));
+        for i in 0..3 {
+            game.lift_inventory(arm);
+            game.release(Some(Hex::new(i * 3, 0)));
+            game.lift_inventory(base);
+            game.release(Some(Hex::new(i * 3 + 1, 0)));
+        }
+        assert_eq!(game.sim().arms.len(), 3);
+        assert_eq!(game.sim().atoms.iter().flatten().count(), 3);
+        game.focus_tape(0);
+        game.key(KeyCode::KeyF, false);
+        game.key(KeyCode::KeyF, false);
+        assert_eq!(game.sim().arms[0].tape, [Instr::Grab, Instr::Grab]);
+        game.key(KeyCode::KeyR, false);
+        assert_eq!(game.sim().arms[0].tape.len(), 2);
+        game.key(KeyCode::Backspace, false);
+        game.lift(fresh(Item::Atom(AtomKind::Amber)), Back::Inventory);
+        assert!(!game.holding());
+        game.delete(&[Id::Arm(1)]);
+        assert_eq!(game.sim().arms.len(), 2);
+        assert_eq!(game.sim().inventory, sim::Inventory::EMPTY);
+        assert_eq!(
+            serde_json::to_vec(&game.overworld.sim.inventory).unwrap(),
+            inventory
+        );
+        assert_eq!(game.overworld.sim.encountered, encountered);
+    }
+
+    #[test]
+    fn portal_encounter_palette_hides_locked_rows_and_counts_and_restores_them_outside() {
+        let base = Item::Atom(AtomKind::Base);
+        let amber = Item::Atom(AtomKind::Amber);
+        let mut sim = sim::start();
+        sim.receive(base);
+        let mut game = Game::new(sim);
+        game.enter(Some(0));
+        let mut app = App::new();
+        app.insert_resource(game).add_systems(Update, tally);
+        let visible = app
+            .world_mut()
+            .spawn((PaletteRow(base), Node::default()))
+            .id();
+        let locked = app
+            .world_mut()
+            .spawn((PaletteRow(amber), Node::default()))
+            .id();
+        let count = app
+            .world_mut()
+            .spawn((
+                Tally {
+                    item: base,
+                    shown: None,
+                },
+                Node::default(),
+            ))
+            .id();
+        app.update();
+        assert_eq!(
+            app.world().get::<Node>(visible).unwrap().display,
+            Display::Flex
+        );
+        assert_eq!(
+            app.world().get::<Node>(locked).unwrap().display,
+            Display::None
+        );
+        assert_eq!(
+            app.world().get::<Node>(count).unwrap().display,
+            Display::None
+        );
+        app.world_mut()
+            .resource_mut::<Game>()
+            .overworld
+            .sim
+            .receive(amber);
+        app.update();
+        assert_eq!(
+            app.world().get::<Node>(locked).unwrap().display,
+            Display::Flex
+        );
+        app.world_mut().resource_mut::<Game>().enter(None);
+        app.update();
+        assert_eq!(
+            app.world().get::<Node>(count).unwrap().display,
+            Display::Flex
+        );
+    }
+
+    #[test]
+    fn portal_encounter_free_bonds_require_only_the_fragment_kinds() {
+        let mut sim = Sim::empty();
+        sim.portals.push(Some(sim::Portal::new(ORIGIN)));
+        sim.receive(Item::Atom(AtomKind::Amber));
+        let mut game = Game::new(sim);
+        game.enter(Some(0));
+        let mut set = Sim::empty();
+        let a = set.spawn(Atom {
+            kind: AtomKind::Amber,
+            pos: ORIGIN,
+        });
+        let b = set.spawn(Atom {
+            kind: AtomKind::Amber,
+            pos: DIRS[0],
+        });
+        set.bonds.push(Bond {
+            a,
+            b,
+            kind: BondKind::Double,
+        });
+        game.lift(set, Back::Inventory);
+        game.release(Some(ORIGIN));
+        assert_eq!(game.sim().atoms.iter().flatten().count(), 2);
+        assert_eq!(game.sim().bonds[0].kind, BondKind::Double);
+        assert_eq!(game.sim().inventory, sim::Inventory::EMPTY);
+    }
+
+    #[test]
     fn portal_machine_has_one_cell_one_first_tier_recipe_and_one_palette_row() {
         let item = Item::Machine(Machine::Portal);
         let recipe = item.recipe().expect("portal recipe");
@@ -7011,7 +7240,7 @@ mod tests {
     fn portal_placement_move_save_and_entry_preserve_its_interior() {
         let item = Item::Machine(Machine::Portal);
         let mut game = Game::new(Sim::empty());
-        game.sim_mut().inventory.add(item);
+        game.sim_mut().receive(item);
         game.lift_inventory(item);
         let at = Hex::new(4, 2);
         game.release(Some(at));
@@ -7258,11 +7487,13 @@ mod tests {
         second.running = false;
         let sim = &mut game.overworld.sim.portals[0].as_mut().unwrap().sim;
         Editor {
+            encountered: None,
             sim: &mut *sim,
             viewer: &mut first,
         }
         .key(KeyCode::KeyG, false);
         let mut view = Editor {
+            encountered: None,
             sim: &mut *sim,
             viewer: &mut second,
         };
@@ -7272,6 +7503,7 @@ mod tests {
         assert_eq!(view.ghosts(), 3);
         assert_eq!(
             Editor {
+                encountered: None,
                 sim: &*sim,
                 viewer: &first
             }
@@ -7599,7 +7831,7 @@ mod tests {
                 }
                 if stocked > 0 {
                     for item in recipe.sim().bill() {
-                        w.sim.inventory.add(item);
+                        w.sim.receive(item);
                     }
                     if stocked == 1 {
                         w.sim
@@ -9397,9 +9629,7 @@ mod tests {
         w.key(KeyCode::KeyZ, false);
         let mut cleared = ghost0.clone();
         cleared.glyphs.push(None);
-        cleared
-            .inventory
-            .add(Item::Machine(Machine::Glyph(GlyphKind::Bonder)));
+        cleared.receive(Item::Machine(Machine::Glyph(GlyphKind::Bonder)));
         assert_eq!(w.sim, cleared);
         assert_eq!(*w.shown(), cleared.replay(2));
     }
@@ -9696,7 +9926,7 @@ mod tests {
         let item = Item::Machine(Machine::Glyph(GlyphKind::Bonder));
         let mut w = lone(vec![other], vec![]);
         w.running = false;
-        w.sim.inventory.add(item);
+        w.sim.receive(item);
         w.lift_inventory(item);
         w.release(Some(Hex::new(2, 0)));
         assert_eq!(w.sim.glyphs, vec![Some(other)]);
@@ -9710,7 +9940,7 @@ mod tests {
         );
         assert_eq!(w.sim.inventory.count(item), Some(0));
         let text = "bonder 0,0 0";
-        w.sim.inventory.add(item);
+        w.sim.receive(item);
         assert!(w.paste_text(text));
         w.release(Some(Hex::new(4, 0)));
         assert_eq!(w.sim.glyphs.len(), 2);
@@ -9778,7 +10008,7 @@ mod tests {
         assert_eq!(w.sim.glyphs, vec![Some(mover)]);
         assert_eq!(w.focus, picked(&[Id::Glyph(0)]));
         let item = Item::Machine(Machine::Arm(ArmLength::One));
-        w.sim.inventory.add(item);
+        w.sim.receive(item);
         w.lift_inventory(item);
         w.release(Some(Hex::new(-2, 0)));
         assert_eq!(w.sim.arms.len(), 1);
@@ -9876,7 +10106,7 @@ mod tests {
     fn stocked(w: &mut World, item: impl Into<Item>, n: u32) {
         let item = item.into();
         for _ in 0..n {
-            w.sim.inventory.add(item);
+            w.sim.receive(item);
         }
     }
 
@@ -10081,7 +10311,7 @@ mod tests {
             sim.inventory.set_cap(item, i as i32 % 5);
             let cap = sim.inventory.cap(item).unwrap();
             for _ in 1..cap {
-                sim.inventory.add(item);
+                sim.receive(item);
             }
         }
         let before = sim.clone();
@@ -10694,7 +10924,7 @@ mod tests {
     fn a_left_drag_from_a_one_count_palette_row_lifts_the_item_and_pins_nothing() {
         let item = Item::from(Machine::Glyph(GlyphKind::Bonder));
         let mut world = World::new(Sim::empty());
-        world.sim.inventory.add(item);
+        world.sim.receive(item);
         let before = world.sim.clone();
         let drop = Hex::new(-2, 3);
         let viewport = Viewport {
@@ -11292,11 +11522,11 @@ mod tests {
         let bonder = Item::from(Machine::Glyph(GlyphKind::Bonder));
         let mut w = World::new(sim::start());
         assert_eq!(w.sim.inventory.count(source), None);
-        w.sim.inventory.add(source);
+        w.sim.receive(source);
         assert_eq!(w.sim.inventory, sim::Inventory::EMPTY);
         w.lift_inventory(source);
         assert_eq!(w.focus, None);
-        w.sim.inventory.add(bonder);
+        w.sim.receive(bonder);
         w.lift_inventory(bonder);
         assert!(w.holding());
     }
@@ -11378,7 +11608,7 @@ mod tests {
             let mut w = paused(0);
             w.sim.inventory = sim::Inventory::EMPTY;
             if full {
-                w.sim.inventory.fill();
+                w.sim.fill_inventory();
             }
             let inventory = w.sim.inventory;
             for _ in 0..8 {
@@ -11397,7 +11627,7 @@ mod tests {
             w.resim(8);
             w.sim.inventory = sim::Inventory::EMPTY;
             if full {
-                w.sim.inventory.fill();
+                w.sim.fill_inventory();
             }
             let inventory = w.sim.inventory;
             for expected in (0..8).rev() {
@@ -11652,7 +11882,7 @@ mod tests {
 
         let mut target = lone(vec![], vec![]);
         for item in fragment.bill() {
-            target.sim.inventory.add(item);
+            target.sim.receive(item);
         }
         assert!(target.paste_text(&text));
         target.key(KeyCode::KeyD, false);

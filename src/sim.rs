@@ -699,16 +699,6 @@ impl Inventory {
             .all(|cap| cap.is_power_of_two() && *cap <= MAX_CAP)
     }
 
-    pub fn add(&mut self, item: Item) {
-        if let Some(i) = item.index() {
-            self.count[i] = self.count[i].saturating_add(1);
-        }
-    }
-
-    pub fn fill(&mut self) {
-        self.count = self.cap;
-    }
-
     #[must_use]
     pub fn spend(&mut self, item: Item) -> bool {
         self.spend_all(&[item]).is_ok()
@@ -799,6 +789,7 @@ pub struct Sim {
     pub bonds: Vec<Bond>,
     pub tick: u64,
     pub inventory: Inventory,
+    pub encountered: Vec<Item>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -832,6 +823,7 @@ impl Sim {
             bonds: Vec::new(),
             tick: 0,
             inventory: Inventory::EMPTY,
+            encountered: Vec::new(),
         }
     }
 
@@ -874,7 +866,32 @@ impl Sim {
         arm.holding.then(|| self.atom_at(arm.hand())).flatten()
     }
 
+    pub fn receive(&mut self, item: Item) {
+        if let Some(i) = item.index() {
+            self.inventory.count[i] = self.inventory.count[i].saturating_add(1);
+            self.encounter(item);
+        }
+    }
+
+    pub fn fill_inventory(&mut self) {
+        self.inventory.count = self.inventory.cap;
+        for item in recipes()
+            .iter()
+            .map(|(item, _)| *item)
+            .chain(AtomKind::ALL.map(Item::Atom))
+        {
+            self.encounter(item);
+        }
+    }
+
+    fn encounter(&mut self, item: Item) {
+        if !self.encountered.contains(&item) {
+            self.encountered.push(item);
+        }
+    }
+
     pub fn spawn(&mut self, atom: Atom) -> usize {
+        self.encounter(Item::Atom(atom.kind));
         seat(&mut self.atoms, atom)
     }
 
@@ -1121,7 +1138,7 @@ impl Sim {
                 atoms: compound.clone(),
             });
             self.consume(&compound);
-            self.inventory.add(item);
+            self.receive(item);
         }
     }
 
@@ -1249,7 +1266,7 @@ impl Sim {
         }
         self.consume(&consumed);
         if let Some(kind) = made {
-            self.inventory.add(Item::Atom(kind));
+            self.receive(Item::Atom(kind));
         }
         if let GlyphKind::Converter(kind) = g.kind {
             let offset = g.kind.product().expect("a converter has an output");
@@ -1373,7 +1390,7 @@ impl Sim {
         Ok(())
     }
 
-    pub fn bill(&self) -> Vec<Item> {
+    pub fn items(&self) -> impl Iterator<Item = Item> {
         let glyphs = self
             .glyphs
             .iter()
@@ -1388,11 +1405,6 @@ impl Sim {
             .iter()
             .flatten()
             .map(|atom| Item::Atom(atom.kind));
-        let double = self
-            .bonds
-            .iter()
-            .filter(|bond| bond.kind == BondKind::Double)
-            .map(|_| Item::Atom(AtomKind::Base));
         glyphs
             .chain(arms)
             .chain(
@@ -1402,8 +1414,15 @@ impl Sim {
                     .map(|_| Item::Machine(Machine::Portal)),
             )
             .chain(atoms)
-            .chain(double)
-            .collect()
+    }
+
+    pub fn bill(&self) -> Vec<Item> {
+        let double = self
+            .bonds
+            .iter()
+            .filter(|bond| bond.kind == BondKind::Double)
+            .map(|_| Item::Atom(AtomKind::Base));
+        self.items().chain(double).collect()
     }
 
     pub fn place(&mut self, other: &Sim, at: Hex) -> Vec<Id> {
@@ -2715,7 +2734,7 @@ mod tests {
     fn a_full_atom_count_holds_the_wrap() {
         let mut sim = wrapped(AtomKind::Base);
         for _ in 0..DEFAULT_CAP {
-            sim.inventory.add(Item::Atom(AtomKind::Base));
+            sim.receive(Item::Atom(AtomKind::Base));
         }
         let before = sim.clone();
         sim.step();
@@ -2849,7 +2868,7 @@ mod tests {
         let mut sim = Sim::empty();
         sim.glyphs.push(Some(output(Tier::One, ORIGIN)));
         for _ in 1..DEFAULT_CAP {
-            sim.inventory.add(bonder.into());
+            sim.receive(bonder.into());
         }
         lay(&mut sim, recipe, 0, ORIGIN);
         sim.step();
@@ -2864,8 +2883,8 @@ mod tests {
         sim.step();
         assert!(!lying(&sim, &ids));
         assert_eq!(count(&sim, bonder), DEFAULT_CAP);
-        sim.inventory.add(bonder.into());
-        sim.inventory.add(bonder.into());
+        sim.receive(bonder.into());
+        sim.receive(bonder.into());
         let ids = lay(&mut sim, recipe, 2, ORIGIN);
         sim.step();
         assert!(lying(&sim, &ids));
@@ -3345,9 +3364,9 @@ mod tests {
             let f = fixture(Machine::Glyph(GlyphKind::Output(tier)));
             let product = Form::of(&f.sim).crafts().unwrap();
             let mut sim = f.sim.replay(f.ticks);
-            let mut inventory = Inventory::EMPTY;
-            inventory.add(product);
-            assert_eq!(sim.inventory, inventory, "{tier:?} receipt");
+            let mut received = Sim::empty();
+            received.receive(product);
+            assert_eq!(sim.inventory, received.inventory, "{tier:?} receipt");
             assert!((f.done)(&sim), "{tier:?} completes");
             sim.inventory = Inventory::EMPTY;
             assert!(!(f.done)(&sim), "{tier:?} requires receipt");

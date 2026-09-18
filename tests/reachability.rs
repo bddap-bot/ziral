@@ -282,7 +282,7 @@ fn require(premises: &[Fact], fact: Fact) -> Result<(), String> {
 
 fn grant_item(sim: &mut Sim, premises: &[Fact], item: Item) -> Result<(), String> {
     require(premises, Fact::Item(item))?;
-    sim.inventory.add(item);
+    sim.receive(item);
     Ok(())
 }
 
@@ -361,7 +361,7 @@ fn return_glyph(sim: &mut Sim, index: usize) -> Result<(), String> {
     let glyph = sim.glyphs[index]
         .take()
         .ok_or_else(|| "the placed glyph disappeared".to_string())?;
-    sim.inventory.add(Item::Machine(Machine::Glyph(glyph.kind)));
+    sim.receive(Item::Machine(Machine::Glyph(glyph.kind)));
     Ok(())
 }
 

@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn record_keeps_import_targets_raw_pointer_viewport_and_clock() {
         let mut initial = sim::start();
-        initial.inventory.fill();
+        initial.fill_inventory();
         let mut world = Game::new(initial.clone());
         let mut session = Session::new(&Game::new(initial.clone()).state());
         let pointer = Pointer {
@@ -477,7 +477,7 @@ mod replay_tests {
     #[test]
     fn recorded_actions_reproduce_world_bytes_at_every_tick() {
         let mut initial = fixture(Machine::Glyph(GlyphKind::Bonder)).sim;
-        initial.inventory.fill();
+        initial.fill_inventory();
         let mut live = Game::new(initial.clone());
         let mut recording = Session::new(&Game::new(initial.clone()).state());
         let mut frames = Vec::new();

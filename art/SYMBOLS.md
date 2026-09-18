@@ -37,3 +37,5 @@ Counts are exponential: one full pip stands for one item, two for two, three for
 [The inventory renderer](../src/main.rs) defines ring spacing, stroke widths and fractional arcs.
 
 `../proofs/concentric-rings-113.png` compares the former marks with the shipped rings at native size on the same cards, including 1, 2½, 3¾ and the cap.
+
+Inside a portal, the palette contains only kinds encountered in the overworld. Its pictures keep their ordinary size; unavailable rows and the entire count footprint disappear. Hovering adds no cap rings there. Returning to the overworld restores the complete palette and its inventory pips.
