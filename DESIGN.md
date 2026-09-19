@@ -1045,7 +1045,7 @@ The recipe leaves the painter. "Toy 1 keeps one art direction and draws each rec
 
 The critic ranks moxie above topology. The rubric judges, in order, presence, material richness and artist moxie, then treats its embedded snapshot of earlier bible wording as blemishes a strong picture carries lightly, and it says outright that seats on their marks and the footprint are code scores, not the critic's, that the scaffold is reference and not a checklist, that how the body joins its seats is never judged, and that the issues it names stay within what it judged. The rubric is its own commit; the bar stays at 8. Every kept candidate was judged again under it, since a changed rubric voids every score, and every keep stands.
 
-Directive (verbatim): "Astra has better training working with image generators. It should compose the image prompts. Git it creative freedom over art direction too. Tell it to make changes to those prompts as it sees fit and to be creative"
+Directive: the [director model](art/director-model.txt) composes the image prompts with creative freedom over art direction, changing the prompts as it sees fit.
 
 One director writes new prompts for machines, textures and the manual page. Moving its instruction and schema into `art/direct.sh` removed the separate Rust wording and kept one brief-to-caption step. [art/MACHINES.md](art/MACHINES.md#inputs-and-provenance) records current prompt provenance and regeneration; the reference concepts retain their historical log.
 

@@ -17,6 +17,11 @@
       "why": "editing the map re-lints its own completeness"
     },
     {
+      "paths": ["art/ask.sh", "art/director-model.txt", "art/tests/ask.sh"],
+      "tests": ["nix-shell --run 'shellcheck art/ask.sh art/tests/ask.sh && art/tests/ask.sh && cargo test ask_sh -- --test-threads=2 && cargo test direct_sh -- --test-threads=2'"],
+      "why": "the shared runner passes the directive model explicitly and accepts only successful calls with matching transcript models"
+    },
+    {
       "paths": ["art/paint.sh", "art/textures/gen.sh", "art/tests/**"],
       "tests": [
         "nix-shell --run 'shellcheck art/paint.sh art/textures/gen.sh art/tests/paint.sh && art/tests/paint.sh'"

@@ -3725,8 +3725,10 @@ mod tests {
              n=$((n + 1))\n\
              printf %s \"$n\" > \"$HOME/attempts\"\n\
              printf '%s\\n' \"$@\" > \"$HOME/args-$n\"\n\
-             cp \"$6\" \"$HOME/schema-$n\"\n\
+             cp \"$5\" \"$HOME/schema-$n\"\n\
              [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
+             mkdir -p \"$CODEX_HOME/sessions\"\n\
+             jq -n --arg model \"$(cat art/director-model.txt)\" '{type: \"turn_context\", payload: {model: $model}}' > \"$CODEX_HOME/sessions/rollout-test-t1.jsonl\"\n\
              echo '{\"type\":\"thread.started\",\"thread_id\":\"t1\"}'\n\
              echo '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"{\\\"score\\\":6,\\\"issues\\\":[\\\"A far wall.\\\"]}\"}}'\n",
         )
@@ -3748,6 +3750,7 @@ mod tests {
             .env("PATH", &path)
             .env("HOME", &root)
             .env("PASS_ON", "2")
+            .env("CODEX_HOME", root.join(".codex"))
             .output()
             .expect("ask.sh runs");
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -3779,6 +3782,7 @@ mod tests {
             .env("PATH", &path)
             .env("HOME", &root)
             .env("PASS_ON", "99")
+            .env("CODEX_HOME", root.join(".codex"))
             .output()
             .expect("ask.sh runs");
         assert!(!out.status.success());
@@ -3822,6 +3826,8 @@ mod tests {
             &codex,
             "#!/bin/sh\n\
              printf '%s\\n' \"$@\" > \"$HOME/args\"\n\
+             mkdir -p \"$CODEX_HOME/sessions\"\n\
+             jq -n --arg model \"$(cat art/director-model.txt)\" '{type: \"turn_context\", payload: {model: $model}}' > \"$CODEX_HOME/sessions/rollout-test-t1.jsonl\"\n\
              echo '{\"type\":\"thread.started\",\"thread_id\":\"t1\"}'\n\
              printf '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%s}}\\n' \"$REPLY\"\n",
         )
@@ -3843,6 +3849,7 @@ mod tests {
                 .env("PATH", &path)
                 .env("HOME", &root)
                 .env("REPLY", reply)
+                .env("CODEX_HOME", root.join(".codex"))
                 .output()
                 .expect("direct.sh runs")
         };
