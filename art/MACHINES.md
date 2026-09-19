@@ -4,7 +4,7 @@
 
 ## Inputs and provenance
 
-A glyph scaffold shows its footprint union in grey over green, with coloured rings and dots locating functional openings. These fills describe the envelope, not paint colours or a backing plate. The finished machine is one substantial housing with apertures cut into it. Arm scaffolds and their separate shared direction retain the pivot, link and hand treatment.
+A glyph scaffold shows its footprint union in grey over green, with coloured rings and dots locating functional openings. These fills describe the envelope, not paint colours or a backing plate. The [body envelope rule](BIBLE.md#2-language) governs how the machine occupies that guide. Arm scaffolds and their separate shared direction retain the pivot, link and hand treatment.
 
 The shared text, machine direction, scaffold and any manifest references reach `art/direct.sh`, which uses `art/ask.sh` to write a declarative image caption. No recipe image or recipe sentence reaches the painter. The shared runner passes the [director model](director-model.txt) explicitly for both direction and judging, and rejects a missing transcript or any turn reporting another model. Painting uses the configured Codex installation.
 
