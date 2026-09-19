@@ -26,6 +26,11 @@ const PAD: f32 = 1.6;
 const PAD_ALBEDO: f32 = 0.45;
 const SAMPLES: usize = 4;
 const CRITIC_PX: u32 = 512;
+const RUBBER: [f32; 3] = [
+    0x42 as f32 / 255.0,
+    0x3B as f32 / 255.0,
+    0x37 as f32 / 255.0,
+];
 
 #[derive(Serialize, Deserialize)]
 struct Manifest {
@@ -570,6 +575,8 @@ impl Scaffold {
         let n = self.canvas as usize;
         let mut outside = 0f32;
         let mut inside = Mean::default();
+        let mut hand = Mean::default();
+        let mut body = Mean::default();
         for y in origin..origin + side {
             for x in origin..origin + side {
                 let i = y as usize * n + x as usize;
@@ -578,7 +585,17 @@ impl Scaffold {
                     outside = outside.max(self.outside(world));
                 }
                 if self.mask[i] == 1.0 && alpha[i] == 1.0 {
-                    inside.add_rgb(rgb(candidate.get_pixel(x, y)));
+                    let color = rgb(candidate.get_pixel(x, y));
+                    inside.add_rgb(color);
+                    let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+                    if self
+                        .in_cell(world, HEX)
+                        .is_some_and(|c| c.role == Role::Hand)
+                    {
+                        hand.add_rgb(color);
+                    } else {
+                        body.add_rgb(color);
+                    }
                 }
             }
         }
@@ -586,14 +603,26 @@ impl Scaffold {
             .marked()
             .map(|cell| self.seat_contrast(candidate, cell, self.seat_bounds(cell)))
             .fold(f32::INFINITY, f32::min);
-        let palette = if inside.n > 0.0 {
+        let glaze_distance = |mean: &Mean| {
             Glaze::ALL
                 .iter()
-                .map(|g| apart(inside.rgb(), g.rgb()))
+                .map(|g| apart(mean.rgb(), g.rgb()))
                 .fold(f32::INFINITY, f32::min)
+        };
+        let mut palette = if inside.n > 0.0 {
+            glaze_distance(&inside)
         } else {
             f32::INFINITY
         };
+        if hand.n > 0.0 {
+            let rubber = apart(hand.rgb(), RUBBER);
+            let body = if body.n > 0.0 {
+                glaze_distance(&body)
+            } else {
+                0.0
+            };
+            palette = palette.min(rubber.max(body));
+        }
         Score {
             outside,
             seat,
@@ -1300,7 +1329,14 @@ fn brief(name: &str, style: &Style, direction: &str) -> String {
     } else {
         &style.shared
     };
-    format!("{shared} {direction}")
+    let palette = include_str!("../art/BIBLE.md")
+        .split_once("## 1. Palette\n")
+        .unwrap()
+        .1
+        .split_once("## 2. Language")
+        .unwrap()
+        .0;
+    format!("{shared} {direction}\nPalette table from art/BIBLE.md:\n{palette}")
 }
 
 fn caption(text: &str) -> &str {
@@ -2428,6 +2464,35 @@ mod tests {
     }
 
     #[test]
+    fn machines_palette_accepts_rubber_only_in_the_hand() {
+        let scaffold = Scaffold::of(Machine::Arm(crate::sim::ArmLength::Two));
+        for role in [Role::Hand, Role::Pivot, Role::Body] {
+            let image = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
+                let world = scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+                let color = if scaffold.in_cell(world, HEX).is_some_and(|c| c.role == role) {
+                    RUBBER
+                } else {
+                    KEY
+                };
+                rgba(color, 1.0)
+            });
+            let score = scaffold.score(&Capture {
+                image,
+                off_centre: 0.0,
+            });
+            if role == Role::Hand {
+                assert!(score.palette < 0.001, "rubber hand: {}", score.palette);
+            } else {
+                let expected = Glaze::ALL
+                    .iter()
+                    .map(|g| apart(RUBBER, g.rgb()))
+                    .fold(f32::INFINITY, f32::min);
+                assert!((score.palette - expected).abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
     fn machines_body_only_registration_uniformly_fits_the_silhouette() {
         let scaffold = Scaffold::of(Machine::Portal);
         let candidate = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
@@ -3131,7 +3196,7 @@ mod tests {
         assert_eq!(run(&calls), (true, 2));
         assert_eq!(
             stored(&art.prompt("source")).expect("readable").as_deref(),
-            Some(format!("{} another source", art.read().style.shared).as_str())
+            Some(brief("source", &art.read().style, "another source").trim_end())
         );
         store(&art.prompt("source"), "a hand-written caption").expect("writable");
         assert_eq!(run(&calls), (true, 2));
@@ -3439,7 +3504,7 @@ mod tests {
         let results = remake(&art, &names, &author, &painter, &critic);
         assert!(landed(&results), "{results:?}");
         let style = art.read().style;
-        let base = format!("{} {direction}", style.shared);
+        let base = brief("source", &style, direction);
         let first = format!("a caption from: {}", base.trim());
         let briefs = briefs.lock().unwrap();
         let scaffold = art.machine("source").join("scaffold.png");
@@ -3449,6 +3514,9 @@ mod tests {
             .collect();
         assert_eq!(briefs.len(), 3, "{briefs:?}");
         assert_eq!(briefs[0].1, base);
+        assert!(briefs[0].1.contains(direction));
+        assert!(briefs[0].1.contains("| cobalt |"));
+        assert!(briefs[0].1.contains("| charcoal rubber |"));
         assert_eq!(
             briefs[1].1,
             format!(
@@ -3534,7 +3602,9 @@ mod tests {
             ["Round 1 best.", "Still a plate."]
         );
         assert_eq!(scored["source-6"].1.issues(), ["Round 3 worse."]);
-        let first = format!("{} a source", art.read().style.shared);
+        let first = brief("source", &art.read().style, "a source")
+            .trim_end()
+            .to_string();
         assert_eq!(
             stored(&art.prompt("source")).expect("readable").as_deref(),
             Some(first.as_str())

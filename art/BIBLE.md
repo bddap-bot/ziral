@@ -10,20 +10,23 @@ The board is a tabletop instrument assembled from glazed ceramic, darkened brass
 
 ## 1. Palette
 
-Eight glazes. Every drawn thing takes its fill from this list; a new color is a bible change, not a code change.
+Eight state glazes and one material colour. Every drawn thing takes its fill from this table; a new color is a bible change, not a code change.
 
-| glaze | hex | hue | luminance | role |
+| colour | hex | hue | luminance | role |
 |---|---|---|---|---|
 | clay | `#D8C3A5` | 34° | 0.57 | the board; every empty cell |
 | dark brass | `#6B4F3A` | 26° | 0.09 | arm pivot and link; single bond; rims; grout; UI strips |
-| terracotta | `#C8553D` | 10° | 0.19 | the hand; the bonder glyph |
+| terracotta | `#C8553D` | 10° | 0.19 | the hand collar; the bonder glyph |
 | blue-green | `#4F8A8B` | 181° | 0.22 | the base atom; the source glyph |
 | amber | `#E0A458` | 34° | 0.43 | the amber atom; saturated gold |
 | plum | `#7D5BA6` | 267° | 0.15 | the second-bond glyph; the double bond |
 | cobalt | `#3657A7` | 220° | 0.10 | the cobalt atom; its converter path |
 | ivory | `#F4EDE4` | — | 0.85 | the output cup; the pick and stall marks; instruction letters |
+| charcoal rubber | `#423B37` | 22° | 0.05 | matte hand rubber; material colour, never state |
 
-Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth naming (chroma 0.06); it reads by value only. The amber atom loses no more than 0.15 chroma from its glaze, keeping its gold saturated through the surface variation. Structure that is neither glaze nor state (grout, wells, rims, strips, borders) is dark brass lifted toward clay by some fraction, never a new color.
+Directive: the arm brief is not authored taste and may be changed artistically; the arm and hand as painted are approved. No rigid reading of the eight-glaze rule against them.
+
+Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth naming (chroma 0.06); it reads by value only. The amber atom loses no more than 0.15 chroma from its glaze, keeping its gold saturated through the surface variation. Other structure that is neither glaze nor state (grout, wells, rims, strips, borders) is dark brass lifted toward clay by some fraction, never a new color.
 
 ## 2. Language
 
@@ -47,7 +50,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 **Motion.** Ticks have weighted starts and soft, decisive seats. What a glyph makes or eats appears at the end of the sweep, never mid-arc. The tick is 400 ms; a stall is backpressure.
 
-**Forbidden.** Exposed clockwork; grime or wear over a state glaze; tiny ornamental hardware; text or numerals on the board; pure black or white (dark brass and ivory instead); any two members of one class told apart by hue alone; a new glaze for a new thing before the existing palette is used.
+**Forbidden.** Exposed clockwork; grime or wear over a state glaze; tiny ornamental hardware; text or numerals on the board; pure black or white (dark brass or charcoal rubber, and ivory instead); any two members of one class told apart by hue alone; a new glaze for a new thing before the existing palette is used.
 
 ## 3. Distinctness
 
