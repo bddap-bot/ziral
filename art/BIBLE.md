@@ -54,7 +54,9 @@ Directive: the ornamental-hardware ban is rejected. Ornamental hardware is wante
 
 **Motion.** Ticks have weighted starts and soft, decisive seats. What a glyph makes or eats appears at the end of the sweep, never mid-arc. The tick is 400 ms; a stall is backpressure.
 
-**Forbidden.** Exposed clockwork; grime or wear over a state glaze; text or numerals on the board; pure black or white (dark brass or charcoal rubber, and ivory instead); any two members of one class told apart by hue alone; a new glaze for a new thing before the existing palette is used.
+**Forbidden.** Failure of the mechanical footprint, seat, palette or off-centre gates defined in [MACHINES.md](MACHINES.md#generate-and-select); text or numerals on the board.
+
+Directive: no hard fail on the bible’s prohibitions. The judge weighs overall visual strength and detail; the more detailed candidates are preferred. Artistic constraints inform judgment rather than impose score caps.
 
 ## 3. Distinctness
 

@@ -1381,7 +1381,7 @@ fn store(path: &Path, prompt: &str) -> Result<String, String> {
     Ok(prompt.to_string())
 }
 
-const JUDGE: &str = "Additional required glyph gate: does the machine read as atoms joined by bonds, a compound? If yes, compound is true and the candidate fails regardless of score. A glyph is one continuous built housing with seats as openings. This gate takes precedence over the rubric's exclusion of how parts connect. Arms are exempt from this glyph gate. Answer with exactly one JSON object containing score (integer 0 through 10), compound (boolean), and issues (at most five ranked strings). Do not run commands, edit anything or write files.";
+const JUDGE: &str = "Additional required glyph gate: does the machine read as atoms joined by bonds, a compound? If yes, compound is true and the candidate fails regardless of score. A glyph is one continuous built housing with seats as openings. Arms are exempt from this glyph gate. Answer with exactly one JSON object containing score (integer 0 through 10), compound (boolean), and issues (at most five ranked strings). Do not run commands, edit anything or write files.";
 const CRITIC_SCHEMA: &str = r#"{"type":"object","properties":{"compound":{"type":"boolean"},"score":{"type":"integer","minimum":0,"maximum":10},"issues":{"type":"array","maxItems":5,"items":{"type":"string"}}},"required":["score","compound","issues"],"additionalProperties":false}"#;
 
 fn relit_key(kept: &[u8], style: &Style, facings: &[Facing]) -> String {
