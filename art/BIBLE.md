@@ -60,11 +60,13 @@ Directive: the ornamental-hardware ban is rejected. Ornamental hardware is wante
 
 [The look table and its tests](../src/look.rs) define chroma, texture averaging, thumbnail comparison and tile tolerances. [The machine generator](../src/machines.rs) defines registration, alpha removal, contrast and footprint measurements. These links provide the exact metrics behind the prose.
 
-The visual requirement is two differences among hue, value, silhouette and inner drawing at gameplay scale, with hue alone insufficient. The mechanical gate in src/look.rs counts hue, value, declared shape category and painted texture difference. It does not measure the rendered silhouette or recognize a semantic marking, and passing it alone does not prove color-independent readability.
+Directive: no stricter real-silhouette gate; that is overfitting. Outputs matching each other is acceptable because they do the same thing. Soften the uniqueness promise and keep the simpler declared-category gate.
 
-Hue counts when both glazes have chroma at least 0.15 and their hues differ by at least 40°; value counts at a luminance difference of 0.15. The texture comparison uses a sixteen-pixel thumbnail over pixels painted by either sprite, excluding their shared empty surround. Every member of a class uses a different texture. Atom and bond textures average to their glaze; tiles stay within the clay-family tolerance while differing from each other; machine sprites combine the bible materials. Reconciliation of the visual requirement and its mechanical approximation remains in the [review decision list](https://github.com/bddap-bot/ziral/issues/110).
+Distinctness means at least two counted differences per pair within each class: hue, value, declared shape category and painted texture distance. The gate does not measure rendered silhouettes or recognize semantic markings, and does not guarantee outline-only or color-independent readability. Same-function members of one class may share a rendered shape; their pip or seat counts can tell them apart. The gate does not independently count rendered pips or seats.
 
-The classes: atoms, bonds, glyphs, machines. A machine is a primitive the palette can place, so the machine class is the arm plus every glyph; glyph distinctness is the machine table restricted to glyphs.
+Hue counts when both glazes have chroma at least 0.15 and their hues differ by at least 40°; value counts at a luminance difference of 0.15. Texture counts at a mean absolute RGB distance of at least 0.023 on sixteen-by-sixteen-pixel thumbnails over pixels painted by either sprite, excluding their shared empty surround. Every member of a class uses a different texture. Atom and bond textures average to their glaze; tiles stay within the clay-family tolerance while differing from each other; machine sprites combine the bible materials.
+
+The classes: atoms, bonds, glyphs, machines. A machine is a primitive the palette can place, so the machine class includes all three arm lengths, the portal and every glyph; glyph distinctness is the machine table restricted to glyphs.
 
 The tables describe painted features; the marking column is descriptive, not a fifth gate. Atom meshes remain circular even when their declared shape categories differ.
 
@@ -94,7 +96,8 @@ Single and double differ in hue (26° vs 267°) and shape.
 | arm, length two | dark brass, blue-green inlay, terracotta hand | radial: pivot disc and two-cell link | horseshoe hand |
 | arm, length three | dark brass, blue-green inlays, terracotta hand | radial: pivot disc and three-cell link | horseshoe hand |
 | portal | plum | one-cell housing | square ivory and brass aperture with mineral depth |
-| source | blue-green | six-cell housing open to the right | five feeds around one central outlet |
+| source, first tier | blue-green | six-cell housing open to the right | five feeds around one central outlet |
+| source, second tier | blue-green | six-cell housing in two staggered columns | two side-by-side outlets |
 | bonder | terracotta | two-cell compression housing | equal seats and a brass compression channel |
 | second bond | plum | three-cell manifold | two bond seats and a distinct sacrificial feed |
 | amber converter | amber | three-cell fork | three brass-ringed seats and a Y channel |
@@ -105,7 +108,7 @@ Single and double differ in hue (26° vs 267°) and shape.
 | output, second tier | ivory | nineteen-cell well, hexagon | the first tier ringed by twelve cups and a brass ring |
 | output, third tier | ivory | thirty-seven-cell well, hexagon | the second tier ringed by eighteen cups and a second brass ring |
 
-The gate counts at least two differences per pair. The near cases: the three arm lengths share hue, value and marking and differ by link length and texture; each arm vs bonder shares a hue family and value (brass 26° / 0.09 against terracotta 10° / 0.19) and is told apart by shape and texture; bonder vs second bond are told apart by hue, shape, and texture; the three output tiers share glaze and value and are told apart by size, seven, nineteen and thirty-seven cells, and by texture; the texture term is judged on a sixteen-pixel thumbnail of each sprite, since at eight the second and third tiers, whose cups differ two to one in size, read as one ivory blur.
+The arm lengths and output tiers share glaze and value. Each pair passes through different declared shape categories and texture distance. Arm length and declared output seat count distinguish their category labels; the gate does not compare their rendered outlines. The output tiers have seven, nineteen and thirty-seven seats, but rendered seat counts are not independently measured.
 
 ## 4. Reference
 
