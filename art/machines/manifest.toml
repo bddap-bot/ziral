@@ -24,10 +24,10 @@ sphere = 25.0
 
 [machine.arm]
 direction = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-rubber horseshoe (materials from the palette table in art/BIBLE.md) gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
-kept = 9
-briefed = "0ca568cef8048c40"
-painted = "bda4f773da8db5a8"
-relit = "c7f174a896c86153"
+kept = 10
+briefed = "96a68441422c03b5"
+painted = "65eeeeac105a36a4"
+relit = "937515d4d4ef82c5"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -70,10 +70,10 @@ event = "rotated"
 
 [machine.arm-2]
 direction = "The machine is a stout radial workshop arm at length two, lying flat from the brass pivot mark through the unmarked middle cell to the distant horseshoe mark. A broad circular darkened-brass pivot and a thick one-piece forged-brass spine form one solid, weighty silhouette. One broad blue-green glazed ceramic inlay fills most of the spine's face inside a substantial brass rim, separating the arm clearly from the clay board and giving it confident workshop character. At the far mark, a restrained terracotta collar carries a dominant matte-rubber horseshoe using the material colour in the palette table in art/BIBLE.md that copies the mark and leaves its throat empty. Dark brass, rubbed amber edges, blue-green glaze, terracotta and dense rubber are large, crisp material blocks under perfectly even diffuse light. The spine stays narrower than half a cell and every endpoint hugs its mark. Nothing but the arm itself; no tile outline, fist, fingers, beads, atoms, dial, emblem or exposed clockwork."
-kept = 12
-briefed = "153cd7e71bb6d48e"
-painted = "30653b532b4502a4"
-relit = "e0769d08f429bf23"
+kept = 5
+briefed = "ddd058224fc2d0b9"
+painted = "90f78b1141bb5010"
+relit = "dafc55770f440744"
 
 [machine.arm-2.instrument]
 voice = "brass"
@@ -116,10 +116,10 @@ event = "rotated"
 
 [machine.arm-3]
 direction = "The machine is a stout radial workshop arm at length three, lying flat from the brass pivot mark through both unmarked middle cells to the distant horseshoe mark. A broad circular darkened-brass pivot and a thick one-piece forged-brass spine form one solid, weighty silhouette. Two broad blue-green glazed ceramic inlays fill most of the spine's face inside a substantial brass rim, separating the arm clearly from the clay board and giving it confident workshop character. At the far mark, a restrained terracotta collar carries a dominant matte-rubber horseshoe using the material colour in the palette table in art/BIBLE.md that copies the mark and leaves its throat empty. Dark brass, rubbed amber edges, blue-green glaze, terracotta and dense rubber are large, crisp material blocks under perfectly even diffuse light. The spine stays narrower than half a cell and every endpoint hugs its mark. Nothing but the arm itself; no tile outline, fist, fingers, beads, atoms, dial, emblem or exposed clockwork."
-kept = 9
-briefed = "5c209d624c1b426d"
-painted = "c9ab37c2fd390b1b"
-relit = "b8e049db31ee937e"
+kept = 12
+briefed = "a9ed5bfe4bc23d98"
+painted = "baba93910d7ba1df"
+relit = "b2d8e8f6e86f3f54"
 
 [machine.arm-3.instrument]
 voice = "brass"
@@ -559,10 +559,10 @@ event = "fired"
 
 [machine.source]
 direction = "One substantial sculpted blue-green glazed kiln-feed housing fills the single continuous grey envelope of the centre and five adjacent cells, with the right-hand neighbouring cell left open. The grey silhouette is one unbroken body guide, not individual tiles. One circular outlet is bored exactly on the marked centre through a broad continuous ceramic shell. A recessed dark-brass metering collar and matte-rubber gate surround the empty aperture, and one broad shallow brass metering groove follows the inner curve of the shell within its solid mass. The ceramic surface flows continuously across every cell boundary as one softly domed casting, with substantial undivided shoulders. No internal hexagonal faces, tile borders, separate lobes, pods, radial nodes, extra openings or backing plate. Restrained glaze variation and localized contact-edge wear give the kiln body material character; the silhouette is slightly inset from the guide and every surface is straight-down albedo with symmetric occlusion only."
-kept = 8
-briefed = "f8b476cc62b7e1e1"
-painted = "39884ac30ce83963"
-relit = "4e808d095cb2715a"
+kept = 1
+briefed = "c9b5fc80ba5428e8"
+painted = "7aa2fdcb7a1743dc"
+relit = "41ebca6b22ce6c44"
 
 [machine.source.instrument]
 voice = "ceramic"

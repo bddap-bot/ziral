@@ -3,7 +3,7 @@ output-3-2	0.132	0.997	0.138	0.028	-	fail outside 0.132 > 0.05	[]	-	-
 output-3-3	0.129	1.053	0.068	0.028	-	fail outside 0.129 > 0.05	[]	-	-
 output-3-4	0.096	1.109	0.078	0.020	-	fail outside 0.096 > 0.05	[]	-	-
 output-3-5	0.129	1.054	0.117	0.028	-	fail outside 0.129 > 0.05	[]	-	-
-output-3-6	0.034	1.033	0.120	0.028	6	pass	["The broad ivory field reads as a perforated backing plate; its repeated sockets give it weight but little machine character or painterly moxie.","Material separation is weak: the red and teal rims look like softly stained clay, with little rubbed-brass depth or matte-rubber substance. The ivory surface offers mostly diffuse mottling rather than rewarding contact-edge detail.","The sockets have dark upper interiors and bright lower lips, suggesting recessed cup walls under directional light rather than straight-down, evenly lit openings."]	9e3933515ea9fc2f	false
+output-3-6	0.034	1.033	0.120	0.028	5	pass	["The broad ivory sheet reads as a backing plate beneath the seats, making the object feel like a perforated tray rather than a built machine.","The rings read as soft terracotta and teal stains; darkened brass, matte rubber and glossy ceramic lack distinct surface character.","Identical rounded sockets and large blank expanses make the painting feel timid and diagrammatic; it needs more confident fabrication detail and contact-edge wear."]	bc4a4335f79d3d4f	false
 output-3-7	0.121	0.898	0.155	0.028	-	fail outside 0.121 > 0.05	[]	-	-
 output-3-8	0.061	0.969	0.111	0.020	-	fail outside 0.061 > 0.05	[]	-	-
 output-3-9	0.133	0.905	0.156	0.057	-	fail outside 0.133 > 0.05	[]	-	-
