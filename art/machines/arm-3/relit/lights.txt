@@ -1,8 +1,8 @@
-upper-left	light=(-0.57,+0.48,+0.67)	ambient=0.20
-upper-right	light=(+0.54,+0.57,+0.62)	ambient=0.17
-right	light=(+0.49,+0.30,+0.82)	ambient=0.22
-lower-right	light=(+0.54,-0.04,+0.84)	ambient=0.15
-lower-left	light=(-0.64,+0.03,+0.76)	ambient=0.25
-left	light=(-0.61,+0.29,+0.74)	ambient=0.28
-sphere error 14.4 degrees
-direction error 41.4 degrees
+upper-left	requested=(-0.353553,+0.612372,+0.707107)	measured=(-0.353683,+0.612454,+0.706971)	error=0.020	ambient=0.250139
+upper-right	requested=(+0.353553,+0.612372,+0.707107)	measured=(+0.353683,+0.612454,+0.706971)	error=0.020	ambient=0.250139
+right	requested=(+0.707107,+0.000000,+0.707107)	measured=(+0.707171,+0.000000,+0.707042)	error=0.020	ambient=0.249965
+lower-right	requested=(+0.353553,-0.612372,+0.707107)	measured=(+0.353683,-0.612454,+0.706971)	error=0.020	ambient=0.250139
+lower-left	requested=(-0.353553,-0.612372,+0.707107)	measured=(-0.353683,-0.612454,+0.706971)	error=0.020	ambient=0.250139
+left	requested=(-0.707107,-0.000000,+0.707107)	measured=(-0.707171,-0.000000,+0.707042)	error=0.020	ambient=0.249965
+sphere error 7.094 degrees
+direction error 0.020 degrees

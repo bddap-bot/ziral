@@ -1,12 +1,12 @@
-reification-1	0.146	0.837	0.152	0.080	-	fail outside 0.146 > 0.05	[]	-	-
-reification-2	0.136	0.846	0.180	0.045	-	fail outside 0.136 > 0.05	[]	-	-
-reification-3	0.151	0.839	0.164	0.063	-	fail outside 0.151 > 0.05	[]	-	-
-reification-4	0.025	0.849	0.189	0.020	7	pass	["The housing has weight, but the teal collars and central brass ring share the clay’s soft, chalky finish. Give brass a richer dark patina and rubber a distinct matte density.","Pale upper-left bevels and dark lower-right rims give the housing and openings directional lighting. Model their thickness with balanced tones around the edges.","Mottled wear spreads across the yellow and red glaze. Preserve cleaner glazed fields and concentrate abrasion at the opening lips and outer contact edges."]	25d34dd9aacfc877	false
-reification-5	0.056	0.807	0.160	0.020	-	fail outside 0.056 > 0.05	[]	-	-
-reification-6	0.112	0.835	0.122	0.040	-	fail outside 0.112 > 0.05	[]	-	-
-reification-7	0.166	0.814	0.154	0.072	-	fail outside 0.166 > 0.05	[]	-	-
-reification-8	0.102	0.838	0.117	0.045	-	fail outside 0.102 > 0.05	[]	-	-
-reification-9	0.262	0.953	0.139	0.080	-	fail outside 0.262 > 0.05	[]	-	-
-reification-10	0.147	0.941	0.170	0.040	-	fail outside 0.147 > 0.05	[]	-	-
-reification-11	0.230	0.857	0.165	0.028	-	fail outside 0.230 > 0.05	[]	-	-
-reification-12	0.206	0.927	0.175	0.063	-	fail outside 0.206 > 0.05	[]	-	-
+reification-1	0.108	0.801	0.147	0.028	-	fail outside 0.108 > 0.05	[]	-	-
+reification-2	0.087	0.828	0.129	0.028	-	fail outside 0.087 > 0.05	[]	-	-
+reification-3	0.107	0.818	0.141	0.057	-	fail outside 0.107 > 0.05	[]	-	-
+reification-4	0.059	0.817	0.148	0.040	-	fail outside 0.059 > 0.05	[]	-	-
+reification-5	0.049	0.824	0.129	0.028	7	pass	["The seat rims have bright upper-left lips and dark lower-right shadows, making the lighting visibly directional; use concentric shading and remove the offset shadows.","Material separation is weak: the orange housing and blue rings share a soft, grainy finish, while the central brass looks muddy. Give ceramic a clearer glaze, rubber a matte density, and brass a rubbed metallic surface.","Mottled wear spreads across the orange glaze instead of gathering at contact edges; preserve cleaner glazed fields and concentrate abrasion around the openings."]	cec3283360d7bdaa	false
+reification-6	0.029	0.850	0.114	0.000	7	pass	["Bright upper-left rims and dark lower-right shadows give the whole housing directional lighting; use concentric, balanced shading and remove the pooled shadows beneath the collars.","The seats read as deep cups with visible inner walls. Flatten their depth cues so the openings read as viewed straight down.","The orange housing has a uniformly mottled, soft surface that blurs its material character. Give the ceramic clearer glaze variation and concentrate abrasion at the seat lips and outer contact edges."]	1c521d3d3de88893	false
+reification-7	0.037	0.830	0.122	0.020	7	pass	["The collars carry bright upper-left rims and deep lower-right shadows, giving the whole housing a fixed lighting direction that will rotate with it.","The orange housing and red collars read as uniformly sandy clay; clearer ceramic glaze and contact-edge wear would give the broad surfaces more material richness.","The central dark collar reads as a muddy brown ring rather than distinct rubbed brass or matte rubber; sharpen its material character and edge treatment."]	aee8b8aebc45b535	false
+reification-8	0.067	0.827	0.151	0.020	-	fail outside 0.067 > 0.05	[]	-	-
+reification-9	0.231	0.877	0.179	0.063	-	fail outside 0.231 > 0.05	[]	-	-
+reification-10	0.191	0.864	0.168	0.072	-	fail outside 0.191 > 0.05	[]	-	-
+reification-11	0.265	0.935	0.165	0.028	-	fail outside 0.265 > 0.05	[]	-	-
+reification-12	0.297	0.910	0.154	0.045	-	fail outside 0.297 > 0.05	[]	-	-

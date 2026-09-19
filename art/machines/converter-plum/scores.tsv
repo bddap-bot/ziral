@@ -1,12 +1,12 @@
-converter-plum-1	0.018	0.921	0.217	0.000	6	pass	["Material richness is thin: the plum housing reads as softly shaded plastic, while the brown inset between the seats reads as muddy fill rather than rubbed brass. Sharpen the material differences and concentrate wear at contact edges.","Bright upper rims and dark lower edges give the housing and seat collars directional lighting. Use symmetric tonal shaping so the object remains convincing when rotated.","The painting lacks distinctive craft: broad, blurred bevels dominate, with little purposeful surface detail to reward a closer look. Give the glaze and metal clearer, characterful finishes."]	ee17f464c6ad31c1	false
-converter-plum-2	0.136	0.905	0.223	0.000	-	fail outside 0.136 > 0.05	[]	-	-
-converter-plum-3	0.120	0.894	0.203	0.028	-	fail outside 0.120 > 0.05	[]	-	-
-converter-plum-4	0.069	0.884	0.201	0.000	-	fail outside 0.069 > 0.05	[]	-	-
-converter-plum-5	0.079	0.932	0.206	0.020	-	fail outside 0.079 > 0.05	[]	-	-
-converter-plum-6	0.076	0.905	0.182	0.028	-	fail outside 0.076 > 0.05	[]	-	-
-converter-plum-7	0.139	0.922	0.212	0.020	-	fail outside 0.139 > 0.05	[]	-	-
-converter-plum-8	0.070	0.918	0.209	0.020	-	fail outside 0.070 > 0.05	[]	-	-
-converter-plum-9	0.065	0.915	0.158	0.000	-	fail outside 0.065 > 0.05	[]	-	-
-converter-plum-10	0.086	0.936	0.213	0.020	-	fail outside 0.086 > 0.05	[]	-	-
-converter-plum-11	0.076	0.960	0.213	0.028	-	fail outside 0.076 > 0.05	[]	-	-
-converter-plum-12	0.123	0.915	0.217	0.028	-	fail outside 0.123 > 0.05	[]	-	-
+converter-plum-1	0.109	0.904	0.154	0.028	-	fail outside 0.109 > 0.05	[]	-	-
+converter-plum-2	0.130	0.938	0.210	0.020	-	fail outside 0.130 > 0.05	[]	-	-
+converter-plum-3	0.133	0.890	0.190	0.060	-	fail outside 0.133 > 0.05	[]	-	-
+converter-plum-4	0.197	0.902	0.178	0.000	-	fail outside 0.197 > 0.05	[]	-	-
+converter-plum-5	0.029	0.898	0.204	0.000	6	pass	["The plum housing has weight, but its broad, softly mottled surface feels generic; give the ceramic a more confident glaze character and purposeful edge treatment.","The orange seat rims and dark collars read as flat color bands rather than rubbed brass and matte rubber; distinguish their surfaces with richer tonal structure and contact wear.","Pale upper bevels and dark lower edges suggest directional lighting. Use symmetric curvature shading so the housing remains convincing when rotated.","The small central brass inset reads as a muddy dark recess; clarify its material and shape."]	4b45973adb42eaae	false
+converter-plum-6	0.116	0.891	0.142	0.028	-	fail outside 0.116 > 0.05	[]	-	-
+converter-plum-7	0.018	0.917	0.173	0.000	7	pass	["The plum housing has weight, but its cloudy, uniformly soft finish reads more like molded plastic than glazed ceramic; sharpen the glaze character and concentrate wear at contact edges.","The brass insert between the upper seats reads as a muddy brown block; give it clearer rubbed-metal tones and more confident surface definition.","Bright upper-left rims and dark lower-right edges imply directional lighting that will rotate with the machine; model the bevels with symmetric tonal structure."]	f990a5027dba5f79	false
+converter-plum-8	0.021	0.915	0.187	0.020	7	pass	["The plum housing feels uniformly mottled and soft; clearer ceramic glaze, rubbed brass rims, and matte rubber edges would give the materials more character.","Bright upper-left bevels and dark lower-right edges impose directional lighting that will visibly rotate with the machine.","The small square recess between the upper seats reads as a deep cup with a visible inner wall, weakening the straight-down view."]	8a66484383328858	false
+converter-plum-9	0.106	0.912	0.192	0.040	-	fail outside 0.106 > 0.05	[]	-	-
+converter-plum-10	0.133	0.920	0.210	0.020	-	fail outside 0.133 > 0.05	[]	-	-
+converter-plum-11	0.153	0.934	0.207	0.028	-	fail outside 0.153 > 0.05	[]	-	-
+converter-plum-12	0.120	0.935	0.210	0.028	-	fail outside 0.120 > 0.05	[]	-	-
