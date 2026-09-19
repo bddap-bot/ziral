@@ -1,5 +1,5 @@
-source-1	0.030	0.772	0.151	0.000	7	pass	["Bright upper-left rims and dark lower-right edges give the housing and circular seat directional lighting that will swing when rotated.","The teal housing reads as cloudy patinated metal rather than glazed ceramic; the brass crescent and seat rim look muddy, with little distinct material character.","Broad mottling across the housing softens its forms; concentrate wear at contact edges and give the glaze cleaner, more confident tonal structure."]	f579c90086118a85	false
-source-2	0.050	0.782	0.127	0.000	-	fail outside 0.050 > 0.05	[]	-	-
+source-1	0.030	0.772	0.151	0.000	6	pass	["Give the broad teal housing more worked ceramic detail: pooled glaze, fine crazing and rubbed edges would make its large surfaces rewarding to inspect.","Sharpen the brass crescent with distinct bevels, dark recesses and selective polished glints; it currently reads as a soft brown groove.","Clarify the circular opening with a firmer inner wall and layered material edges so it feels built into a thick casting.","Introduce a few characterful fittings or visible joins, with worn rubber and fastening details that make this feel like a machine somebody assembled."]	7e1375e0ff0c2ac5	false
+source-2	0.050	0.782	0.127	0.000	-	pass	[]	-	-
 source-3	0.053	0.769	0.129	0.000	-	fail outside 0.053 > 0.05	[]	-	-
 source-4	0.070	0.779	0.160	0.040	-	fail outside 0.070 > 0.05	[]	-	-
 source-5	0.084	0.788	0.074	0.000	-	fail outside 0.084 > 0.05	[]	-	-
