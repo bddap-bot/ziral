@@ -32,6 +32,10 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 **Materials and light.** Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. The shipped material lights albedo through normal maps; activation adds a ripple and flare. Machine relief is a deterministic shallow approximation from colour and silhouette. Six calibration relights use explicit light vectors and the same computed shading for machine and sphere, described in [MACHINES.md](MACHINES.md#relief). The complete arm creeps, overshoots, and rings out in one rotation about its pivot; its painted parts add no second turn.
 
+Fittings are welcome and need not do visible work: ports, plates, rivets, pipes and toothed collars.
+
+Directive: the ornamental-hardware ban is rejected. Ornamental hardware is wanted; lean into the look — ports, plates, rivets, pipes, toothed collars — and let the art be generous with it.
+
 **View.** Every machine is drawn from directly above, the camera straight down and orthographic. Visible side faces, a cup’s far inner wall and vanishing points are judged by the image critic: tonal asymmetry alone cannot distinguish a tilted cup from a shaded straight-down one.
 
 **Footprint.** No pixel left visible after removal of the green background extends beyond the union of the art footprint’s hexes by more than the manifest’s `outside` share of a hex circumradius (centre to corner). The art footprint includes an arm’s pivot, crossed cells and hand; its gameplay placement occupies only the pivot. Glyph art includes both functional seats and body cells. [MACHINES.md](MACHINES.md#inputs-and-provenance) describes the scaffold, including the source’s painted housing cells.
@@ -50,7 +54,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 **Motion.** Ticks have weighted starts and soft, decisive seats. What a glyph makes or eats appears at the end of the sweep, never mid-arc. The tick is 400 ms; a stall is backpressure.
 
-**Forbidden.** Exposed clockwork; grime or wear over a state glaze; tiny ornamental hardware; text or numerals on the board; pure black or white (dark brass or charcoal rubber, and ivory instead); any two members of one class told apart by hue alone; a new glaze for a new thing before the existing palette is used.
+**Forbidden.** Exposed clockwork; grime or wear over a state glaze; text or numerals on the board; pure black or white (dark brass or charcoal rubber, and ivory instead); any two members of one class told apart by hue alone; a new glaze for a new thing before the existing palette is used.
 
 ## 3. Distinctness
 
