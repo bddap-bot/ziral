@@ -1,12 +1,12 @@
-output-3-1	0.263	1.024	0.115	0.020	-	fail outside 0.263 > 0.05	[]	-	-
-output-3-2	0.132	0.997	0.138	0.028	-	fail outside 0.132 > 0.05	[]	-	-
-output-3-3	0.129	1.053	0.068	0.028	-	fail outside 0.129 > 0.05	[]	-	-
-output-3-4	0.096	1.109	0.078	0.020	-	fail outside 0.096 > 0.05	[]	-	-
-output-3-5	0.129	1.054	0.117	0.028	-	fail outside 0.129 > 0.05	[]	-	-
-output-3-6	0.034	1.033	0.120	0.028	6	pass	["Give the broad ivory glaze more character: pooled glaze, fine crazing and selective scuffs would enrich the largely uniform surface.","Differentiate the socket materials with sharper brass glints, dark tarnished recesses and matte rubber lips; the rings currently feel softly painted into the ceramic.","Strengthen the outer rim with a deeper underside shadow and selective chipped highlights to make the slab feel heavier.","Add a few distinctive crafted fittings or repairs to break the repeated socket treatment and give the machine an authored personality."]	e3f7c03bd7efe5d3	false
-output-3-7	0.121	0.898	0.155	0.028	-	fail outside 0.121 > 0.05	[]	-	-
-output-3-8	0.061	0.969	0.111	0.020	-	fail outside 0.061 > 0.05	[]	-	-
-output-3-9	0.133	0.905	0.156	0.057	-	fail outside 0.133 > 0.05	[]	-	-
-output-3-10	0.169	1.033	0.079	0.028	-	fail outside 0.169 > 0.05	[]	-	-
-output-3-11	0.135	0.892	0.106	0.028	-	fail outside 0.135 > 0.05	[]	-	-
-output-3-12	0.096	1.019	0.067	0.040	-	fail outside 0.096 > 0.05	[]	-	-
+output-3-1	0.039	1.143	0.062	0.020	4	pass	["Give the broad ivory housing more weight with a substantial ceramic lip, a shaded skirt and a convincing contact shadow.","Enrich the largely blank surface with pooled glaze, subtle crazing and handled wear that make the ceramic feel fired and used.","Develop the repeated reddish seat rims into tangible fittings with dark brass recesses, rubbed highlights and worn rubber edges.","Add distinctive crafted details around the openings so the machine feels individually built rather than a uniform perforated slab."]	d4a97e4614d5c682	false
+output-3-2	0.071	1.146	0.057	0.028	-	fail outside 0.071 > 0.05	[]	-	-
+output-3-3	0.060	1.117	0.052	0.028	-	fail outside 0.060 > 0.05	[]	-	-
+output-3-4	0.061	1.159	0.053	0.020	-	fail outside 0.061 > 0.05	[]	-	-
+output-3-5	0.218	0.953	0.132	0.020	-	fail outside 0.218 > 0.05	[]	-	-
+output-3-6	0.157	1.019	0.102	0.028	-	fail outside 0.157 > 0.05	[]	-	-
+output-3-7	0.181	0.995	0.098	0.072	-	fail outside 0.181 > 0.05	[]	-	-
+output-3-8	0.262	0.886	0.131	0.085	-	fail outside 0.262 > 0.05	[]	-	-
+output-3-9	0.070	1.100	0.027	0.020	-	fail outside 0.070 > 0.05	[]	-	-
+output-3-10	0.036	1.108	0.052	0.028	5	pass	["Give the broad ivory slab richer glaze variation, fine crazing and rubbed patches; its mostly blank surface feels underpainted.","Paint the seat collars with sharper brass highlights, tarnished recesses and distinct rubber lips; the soft brown rings currently blur the materials together.","Strengthen the perimeter with a substantial ceramic bevel and deeper contact shadow so the housing feels heavy against the clay.","Add a few purposeful fittings or carefully painted construction details to give the repeated openings a more characterful, handmade machine identity."]	750af0bb6eeafffc	false
+output-3-11	0.059	1.093	0.033	0.020	-	fail outside 0.059 > 0.05	[]	-	-
+output-3-12	0.065	1.100	0.052	0.020	-	fail outside 0.065 > 0.05	[]	-	-

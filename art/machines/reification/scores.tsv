@@ -1,12 +1,12 @@
-reification-1	0.108	0.801	0.147	0.028	-	fail outside 0.108 > 0.05	[]	-	-
-reification-2	0.087	0.828	0.129	0.028	-	fail outside 0.087 > 0.05	[]	-	-
-reification-3	0.107	0.818	0.141	0.057	-	fail outside 0.107 > 0.05	[]	-	-
-reification-4	0.059	0.817	0.148	0.040	-	fail outside 0.059 > 0.05	[]	-	-
-reification-5	0.049	0.824	0.129	0.028	7	pass	["The seat rims have bright upper-left lips and dark lower-right shadows, making the lighting visibly directional; use concentric shading and remove the offset shadows.","Material separation is weak: the orange housing and blue rings share a soft, grainy finish, while the central brass looks muddy. Give ceramic a clearer glaze, rubber a matte density, and brass a rubbed metallic surface.","Mottled wear spreads across the orange glaze instead of gathering at contact edges; preserve cleaner glazed fields and concentrate abrasion around the openings."]	cec3283360d7bdaa	false
-reification-6	0.029	0.850	0.114	0.000	7	pass	["Give the broad amber surface clearer fired-glaze pooling, fine crazing and occasional sharp reflections; its soft mottling currently blurs the material character.","Separate the dark central collar into readable brass edges and worn rubber, with crisp scuffs and a deeper contact shadow.","Vary the repeated red rims with selective chips, rubbed highlights and kiln-darkened creases so the housing feels individually worked and handled."]	f73cb379aa28fc17	false
-reification-7	0.037	0.830	0.122	0.020	7	pass	["The collars carry bright upper-left rims and deep lower-right shadows, giving the whole housing a fixed lighting direction that will rotate with it.","The orange housing and red collars read as uniformly sandy clay; clearer ceramic glaze and contact-edge wear would give the broad surfaces more material richness.","The central dark collar reads as a muddy brown ring rather than distinct rubbed brass or matte rubber; sharpen its material character and edge treatment."]	aee8b8aebc45b535	false
-reification-8	0.067	0.827	0.151	0.020	-	fail outside 0.067 > 0.05	[]	-	-
-reification-9	0.231	0.877	0.179	0.063	-	fail outside 0.231 > 0.05	[]	-	-
-reification-10	0.191	0.864	0.168	0.072	-	fail outside 0.191 > 0.05	[]	-	-
-reification-11	0.265	0.935	0.165	0.028	-	fail outside 0.265 > 0.05	[]	-	-
-reification-12	0.297	0.910	0.154	0.045	-	fail outside 0.297 > 0.05	[]	-	-
+reification-1	0.151	0.924	0.166	0.045	-	fail outside 0.151 > 0.05	[]	-	-
+reification-2	0.132	0.937	0.172	0.045	-	fail outside 0.132 > 0.05	[]	-	-
+reification-3	0.272	0.966	0.178	0.020	-	fail outside 0.272 > 0.05	[]	-	-
+reification-4	0.174	0.926	0.153	0.020	-	fail outside 0.174 > 0.05	[]	-	-
+reification-5	0.136	0.870	0.131	0.020	-	fail outside 0.136 > 0.05	[]	-	-
+reification-6	0.035	0.820	0.130	0.467	-	fail off_centre 0.467 > 0.1	[]	-	-
+reification-7	0.194	0.838	0.160	0.502	-	fail outside 0.194 > 0.05	[]	-	-
+reification-8	0.000	0.853	0.167	0.510	-	fail off_centre 0.510 > 0.1	[]	-	-
+reification-9	0.143	0.844	0.171	0.040	-	fail outside 0.143 > 0.05	[]	-	-
+reification-10	0.045	0.948	0.160	0.020	6	pass	["Give the broad ochre housing richer ceramic character: pooled glaze, fine crazing and rubbed edges would make its softly mottled surface more tangible.","Differentiate the reddish seat collars with dark brass recesses, polished lips and worn rubber interiors; their similar soft shading currently blurs the materials together.","Sharpen selected rim highlights and contact shadows to give the openings firmer construction and the housing greater weight.","Develop the central fitting into a deliberate crafted detail; its muddy concentric rings currently look less resolved than the surrounding seats."]	57658590a3f5a173	false
+reification-11	0.076	0.911	0.159	0.020	-	fail outside 0.076 > 0.05	[]	-	-
+reification-12	0.032	0.952	0.138	0.020	6	pass	["Give the broad ochre surface more crafted detail: pooled glaze, fine crazing and rubbed patches would make its large uninterrupted areas reward inspection.","Separate the materials more clearly; the coppery collars and golden body share a soft, mottled finish. Sharper brass glints and matte rubber lips would add tangible contrast.","Vary the repeated collars with deliberate wear and a few distinctive fittings so the housing feels individually built rather than stamped from one painted motif."]	0ab20527695b789e	false

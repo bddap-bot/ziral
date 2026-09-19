@@ -1,12 +1,12 @@
-output-2-1	0.057	1.037	0.059	0.020	-	fail outside 0.057 > 0.05	[]	-	-
-output-2-2	0.103	1.084	0.045	0.020	-	fail outside 0.103 > 0.05	[]	-	-
-output-2-3	0.064	1.063	0.064	0.020	-	fail outside 0.064 > 0.05	[]	-	-
-output-2-4	0.053	1.077	0.059	0.028	-	fail outside 0.053 > 0.05	[]	-	-
-output-2-5	0.037	1.105	0.089	0.028	5	pass	["The broad ivory slab reads as a backing plate beneath the sockets, plainly violating the no-plate rule despite its solid presence.","The repeated rust-red and grey collars feel diagrammatic; brass lacks rubbed metallic depth, rubber lacks a distinct matte character, and the ceramic glaze looks chalky.","Brown speckling drifts across the ivory surface instead of gathering at contact edges, making the body look uniformly dirty rather than purposefully worn.","Bright upper-left rims and dark lower-right edging imply directional lighting that would rotate with the sprite."]	330ab27cba559585	false
-output-2-6	0.101	1.137	0.055	0.028	-	fail outside 0.101 > 0.05	[]	-	-
-output-2-7	0.032	1.093	0.068	0.028	6	pass	["Give the broad ceramic face richer glaze pooling, hairline crazing and selective polished highlights; its pale texture currently feels chalky and uniform.","Paint the seat rims with clearer darkened brass, worn rubber lips and deeper inner shadows so the openings feel mechanically built.","Strengthen the outer bevel with a darker underside and selective edge chips to give the slab more weight.","Add a few distinctive fittings or carefully varied repairs to give the repeated sockets a maker’s character."]	c0c763596082579b	false
-output-2-8	0.002	0.997	0.106	0.028	5	pass	["The broad ivory field reads as a backing plate beneath the seats, dominating the object despite the explicit prohibition on a plate or base.","Materials are thinly differentiated: the ivory looks chalky, while the red and blue-green collars lack convincing glazed ceramic, rubbed brass or matte rubber character.","Identical softly outlined collars and largely blank ivory make the machine feel like a painted diagram. More decisive material transitions and purposeful contact-edge wear would give it a maker's character."]	acb48c988d1c51de	false
-output-2-9	0.094	0.908	0.141	0.028	-	fail outside 0.094 > 0.05	[]	-	-
-output-2-10	0.125	0.938	0.098	0.028	-	fail outside 0.125 > 0.05	[]	-	-
-output-2-11	0.116	0.986	0.106	0.020	-	fail outside 0.116 > 0.05	[]	-	-
-output-2-12	0.150	0.872	0.151	0.063	-	fail outside 0.150 > 0.05	[]	-	-
+output-2-1	0.032	1.077	0.054	0.020	5	pass	["Give the broad ivory surface richer glaze variation, fine crazing and localized abrasion; it currently reads as softly mottled plaster.","Paint the seat collars with sharper dark brass recesses, rubbed metallic edges and distinct worn rubber lips; their uniform rust-colored halos blur the materials together.","Strengthen the slab’s thickness with a more decisive lower rim and contact shadow against the clay.","Add characterful construction details such as inset fasteners, repaired chips or small fitted plates; the repeated openings currently carry nearly all the visual interest."]	8a9bc063938fe826	false
+output-2-2	0.057	1.138	0.042	0.028	-	fail outside 0.057 > 0.05	[]	-	-
+output-2-3	0.067	1.120	0.047	0.028	-	fail outside 0.067 > 0.05	[]	-	-
+output-2-4	0.045	1.109	0.038	0.020	4	pass	["The broad ivory housing feels blank and wafer-thin; richer edge shadows, a substantial ceramic lip and pooled glaze would give it kiln-floor weight.","The repeated red-brown openings lack material distinction; darkened brass collars, worn rubber liners and deeper recess shadows would make them tangible.","Surface texture reads as faint, uniform speckling; add purposeful glaze crazing, rubbed edges and localized firing stains that reward close inspection.","The mechanically repeated rings offer little makerly character; distinctive fittings and confidently painted construction details would give the machine an identity."]	5964610d96501e4b	false
+output-2-5	0.246	1.022	0.162	0.040	-	fail outside 0.246 > 0.05	[]	-	-
+output-2-6	0.164	1.070	0.109	0.028	-	fail outside 0.164 > 0.05	[]	-	-
+output-2-7	0.159	1.055	0.124	0.020	-	fail outside 0.159 > 0.05	[]	-	-
+output-2-8	0.223	1.038	0.136	0.045	-	fail outside 0.223 > 0.05	[]	-	-
+output-2-9	0.087	1.082	0.049	0.045	-	fail outside 0.087 > 0.05	[]	-	-
+output-2-10	0.065	1.117	0.043	0.040	-	fail outside 0.065 > 0.05	[]	-	-
+output-2-11	0.064	1.136	0.047	0.020	-	fail outside 0.064 > 0.05	[]	-	-
+output-2-12	0.081	1.105	0.042	0.020	-	fail outside 0.081 > 0.05	[]	-	-
