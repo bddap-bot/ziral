@@ -56,7 +56,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.arm.parts]]
 name = "hand"
@@ -65,7 +64,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 event = "rotated"
 
 [machine.arm-2]
@@ -102,7 +100,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.arm-2.parts]]
 name = "hand"
@@ -111,7 +108,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 event = "rotated"
 
 [machine.arm-3]
@@ -148,7 +144,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.arm-3.parts]]
 name = "hand"
@@ -157,7 +152,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 event = "rotated"
 
 [machine.bonder]
@@ -194,7 +188,6 @@ pivot = [
     0.5,
     0.0,
 ]
-score = 8
 
 [[machine.bonder.parts]]
 name = "bar"
@@ -203,7 +196,6 @@ pivot = [
     0.5,
     0.0,
 ]
-score = 8
 motion = "clamp"
 event = "fired"
 
@@ -233,7 +225,6 @@ pivot = [
     0.5,
     0.5,
 ]
-score = 8
 
 [[machine.converter-amber.parts]]
 name = "ring"
@@ -242,7 +233,6 @@ pivot = [
     0.5,
     0.5,
 ]
-score = 8
 motion = "turn"
 event = "fired"
 
@@ -281,7 +271,6 @@ pivot = [
     0.75,
     0.5,
 ]
-score = 8
 
 [[machine.converter-cobalt.parts]]
 name = "flow"
@@ -290,7 +279,6 @@ pivot = [
     0.75,
     0.5,
 ]
-score = 8
 motion = "dilate"
 event = "fired"
 
@@ -320,7 +308,6 @@ pivot = [
     0.5,
     0.5,
 ]
-score = 8
 
 [[machine.converter-plum.parts]]
 name = "ring"
@@ -329,7 +316,6 @@ pivot = [
     0.5,
     0.5,
 ]
-score = 8
 motion = "turn"
 event = "fired"
 
@@ -359,7 +345,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.output-1.parts]]
 name = "rim"
@@ -368,7 +353,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 motion = "dilate"
 event = "fired"
 
@@ -398,7 +382,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.output-2.parts]]
 name = "rim"
@@ -407,7 +390,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 motion = "dilate"
 event = "fired"
 
@@ -437,7 +419,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.output-3.parts]]
 name = "rim"
@@ -446,7 +427,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 motion = "dilate"
 event = "fired"
 
@@ -497,7 +477,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.reification.parts]]
 name = "rim"
@@ -506,7 +485,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 motion = "dilate"
 event = "fired"
 
@@ -544,7 +522,6 @@ pivot = [
     0.5,
     0.5,
 ]
-score = 8
 
 [[machine.second-bond.parts]]
 name = "ring"
@@ -553,7 +530,6 @@ pivot = [
     0.5,
     0.5,
 ]
-score = 8
 motion = "turn"
 event = "fired"
 
@@ -583,7 +559,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.source.parts]]
 name = "rim"
@@ -592,7 +567,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 motion = "dilate"
 event = "fired"
 
@@ -623,7 +597,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 
 [[machine.source-2.parts]]
 name = "rim"
@@ -632,7 +605,6 @@ pivot = [
     0.0,
     0.0,
 ]
-score = 8
 motion = "dilate"
 event = "fired"
 

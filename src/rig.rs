@@ -44,7 +44,6 @@ pub struct Part {
     pub name: String,
     pub mask: Mask,
     pub pivot: [f32; 2],
-    pub score: u8,
     pub motion: Option<Motion>,
     pub event: Option<Event>,
 }
@@ -151,7 +150,6 @@ mod tests {
             assert!((2..=4).contains(&parts.len()));
             assert!(parts.iter().any(|part| part.motion.is_none()));
             for part in parts {
-                assert!(part.score >= 8);
                 assert!(part.motion.is_none() || part.event.is_some());
                 if let Some(event) = part.event {
                     let sample = match event {

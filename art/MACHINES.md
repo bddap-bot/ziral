@@ -24,7 +24,7 @@ Inside `nix-shell`, use `cargo run -- --gen bonder` or name multiple entries. `-
 
 All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a glyph gate or rubric change invalidates that cache.
 
-The painter limits concurrent calls to six. Shell runners retry four times with doubling backoff and retain failure output. `art/machines/rig.sh` splits selected machines into a central circular moving part and its surrounding base, with colour, normal and emissive maps. It accepts entry names; an omitted list selects all entries. It does not interpret manifest masks or refresh per-part taste scores.
+The painter limits concurrent calls to six. Shell runners retry four times with doubling backoff and retain failure output. `art/machines/rig.sh` splits selected machines into a central circular moving part and its surrounding base, with colour, normal and emissive maps. It accepts entry names; an omitted list selects all entries. It does not interpret manifest masks.
 
 ## Relief
 
@@ -47,4 +47,4 @@ An unchanged run remeasures its keep. A hand-edited caption under an unchanged b
 
 A body without atom-seat landmarks registers from the complete keyed silhouette. Its bounding centre supplies one translation; its greatest hexagonal radius supplies one uniform scale into the single-cell envelope. No silhouette pixel is clipped, and both axes share the scale. The ordinary measured gates and fixed critic judge that result.
 
-Static housings keep an empty part list and use the complete albedo. Only articulated machines carry split maps and part judgments; the portal has neither a firing rim nor a recorded part score.
+Static housings keep an empty part list and use the complete albedo. Only articulated machines carry split maps; the portal has no firing rim.
