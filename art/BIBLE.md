@@ -30,7 +30,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 ## 2. Language
 
-**Materials and light.** Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. The shipped material lights albedo through normal maps; activation adds a ripple and flare. Machine relief is a deterministic shallow approximation from colour and silhouette. Six calibration relights use explicit light vectors and the same computed shading for machine and sphere, described in [MACHINES.md](MACHINES.md#relief). The complete arm creeps, overshoots, and rings out in one rotation about its pivot; its painted parts add no second turn.
+**Materials and light.** Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. Every machine body, including arms, has rich material: glaze variation, shading and depth are expected. Capture albedo under even, diffuse, non-directional light, with curvature expressed through symmetric tonal structure and wear at contact edges, without baked directional highlights or cast shadows. The shipped material lights albedo through normal maps; activation adds a ripple and flare. Machine relief is a deterministic shallow approximation from colour and silhouette. Six calibration relights use explicit light vectors and the same computed shading for machine and sphere, described in [MACHINES.md](MACHINES.md#relief). The complete arm creeps, overshoots, and rings out in one rotation about its pivot; its painted parts add no second turn.
 
 Fittings are welcome and need not do visible work: ports, plates, rivets, pipes and toothed collars.
 
