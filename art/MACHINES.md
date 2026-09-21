@@ -48,3 +48,7 @@ An unchanged run remeasures its keep. A hand-edited caption under an unchanged b
 A body without atom-seat landmarks registers from the complete keyed silhouette. Its bounding centre supplies one translation; its greatest hexagonal radius supplies one uniform scale into the single-cell envelope. No silhouette pixel is clipped, and both axes share the scale. The ordinary measured gates and fixed critic judge that result.
 
 Static housings keep an empty part list and use the complete albedo. Only articulated machines carry split maps; the portal has no firing rim.
+
+Directive: outputs do not need holes. An output is a space to place things — a magical acceptor, a table, or similar doodads — with Opus Magnum as the inspiration. No explicit acceptor hole for every atom.
+
+Output briefs describe continuous receiving surfaces. Their scaffold cells describe body coverage, with no per-atom seat landmarks; their simulation cells and acceptance behavior are unchanged.
