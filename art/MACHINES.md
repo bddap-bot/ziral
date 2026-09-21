@@ -6,7 +6,7 @@
 
 A glyph scaffold shows its footprint union in grey over green, with coloured rings and dots locating functional openings. These fills describe the envelope, not paint colours or a backing plate. The [body envelope guide](BIBLE.md#2-language) describes how the machine occupies that guide. Arm scaffolds and their separate shared direction retain the pivot, link and hand treatment.
 
-The shared text, machine direction, scaffold and any manifest references reach `art/direct.sh`, which uses `art/ask.sh` to write a declarative image caption. No recipe image or recipe sentence reaches the painter. The shared runner passes the [director model](director-model.txt) explicitly for both direction and judging, and rejects a missing transcript or any turn reporting another model. Painting uses the configured Codex installation.
+The shared text, machine direction, Bible sections 1 and 2, scaffold and any manifest references reach `art/direct.sh`, which uses `art/ask.sh` to write a declarative image caption. The Bible sections are read when building each brief, including the palette and material-lighting rule. No recipe image or recipe sentence reaches the painter. The shared runner passes the [director model](director-model.txt) explicitly for both direction and judging, and rejects a missing transcript or any turn reporting another model. Painting uses the configured Codex installation.
 
 Directive: “which uses `art/ask.sh` to write a declarative image caption”; “No recipe image or recipe sentence reaches the painter”.
 
@@ -43,7 +43,7 @@ One renderer shades both machine and analytic grey calibration sphere with `ambi
 
 | Record | Inputs | Effect of a change |
 |---|---|---|
-| `briefed` | applicable shared text, direction, reference bytes | author a new caption |
+| `briefed` | applicable shared text, direction, Bible sections 1 and 2, reference bytes | author a new caption |
 | `painted` | first-round caption, candidate count, scaffold pixels and width, reference bytes | replace the candidate run |
 | critic row | rubric, candidate bytes, judgment prompt | judge again |
 | `relit` | source pixels, relief algorithm, elevation, facings, ambient share | recompute relief |

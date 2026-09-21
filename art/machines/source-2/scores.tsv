@@ -1,12 +1,12 @@
-source-2-1	0.075	0.769	0.167	0.020	-	fail outside 0.075 > 0.05	[]	-	-
-source-2-2	0.077	0.763	0.166	0.000	-	fail outside 0.077 > 0.05	[]	-	-
-source-2-3	0.089	0.763	0.178	0.020	-	fail outside 0.089 > 0.05	[]	-	-
-source-2-4	0.229	0.784	0.185	0.000	-	fail outside 0.229 > 0.05	[]	-	-
-source-2-5	0.028	0.767	0.175	0.000	7	pass	["Give the broad teal surfaces richer glaze variation, pooled color and selective chips; their even mottling leaves the housing feeling underworked.","Distinguish the brass fittings and rubber seat rims with sharper metallic glints, tarnished recesses and matte worn edges.","Develop the four curved channels with more purposeful mechanical fittings and deeper recess shadows; they currently read as repeated decorative strokes."]	bece85182231c4c3	false
-source-2-6	0.057	0.786	0.166	0.000	-	fail outside 0.057 > 0.05	[]	-	-
-source-2-7	0.139	0.791	0.157	0.000	-	fail outside 0.139 > 0.05	[]	-	-
-source-2-8	0.177	0.789	0.183	0.028	-	fail outside 0.177 > 0.05	[]	-	-
-source-2-9	0.224	0.790	0.138	0.020	-	fail outside 0.224 > 0.05	[]	-	-
-source-2-10	0.126	0.800	0.190	0.000	-	fail outside 0.126 > 0.05	[]	-	-
-source-2-11	0.255	0.800	0.188	0.000	-	fail outside 0.255 > 0.05	[]	-	-
-source-2-12	0.227	0.771	0.179	0.000	-	fail outside 0.227 > 0.05	[]	-	-
+source-2-1	0.048	0.767	0.193	0.020	7	pass	["Give the broad teal housing richer glaze variation and sharper chips; its cloudy shading currently softens the ceramic's weight.","Deepen the brass channels with darker recesses and distinct worn highlights so the fittings feel embedded and individually crafted.","Clarify the seat rims with firmer material transitions; brass, ceramic and dark lining currently merge into mottled rings.","Add a few distinctive construction details to the broad lower lobes, giving their generous surfaces more character and close-looking reward."]	1dc397b6f35277e7	false
+source-2-2	0.052	0.751	0.194	0.057	-	fail outside 0.052 > 0.05	[]	-	-
+source-2-3	0.031	0.751	0.183	0.020	7	pass	["Give the broad teal surfaces more specific glaze character: pooled dark edges, fine crazing and scattered sharp reflections.","Develop the brass channels with distinct fasteners, rubbed highlights and grime gathered around joints so they feel assembled.","Sharpen selected seat rims and housing edges; the uniformly soft shading blurs the distinction between ceramic, brass and rubber."]	9a0f176bea74f537	false
+source-2-4	0.041	0.762	0.160	0.000	7	pass	["Give the broad teal lobes more deliberate surface detail: chipped glaze, fine crazing and pooled color around fittings would make the ceramic feel handled and fired.","Sharpen the brass channels with distinct tarnished recesses, worn edges and recognizable fasteners; their soft brown shading currently obscures the construction.","Differentiate the seat rims with darker rubber, compressed edges and selective abrasion so they feel fitted into the ceramic rather than painted in the same material."]	8a06b1d450790cd6	false
+source-2-5	0.193	0.795	0.174	0.020	-	fail outside 0.193 > 0.05	[]	-	-
+source-2-6	0.037	0.785	0.206	0.000	7	pass	["Give the teal glaze sharper pooled highlights and deeper chips; its mottled surface currently feels uniformly soft.","Develop the brass recesses with distinct fasteners, layered edges and localized polish so they feel constructed rather than broadly shaded.","Separate the rubber collars from the ceramic with matte wear, compressed edges and stronger contact shadows.","Add a few asymmetrical repair marks or distinctive fittings to give the symmetrical housing more makerly character."]	f2391fa07917bed6	false
+source-2-7	0.169	0.818	0.187	0.020	-	fail outside 0.169 > 0.05	[]	-	-
+source-2-8	0.118	0.787	0.165	0.000	-	fail outside 0.118 > 0.05	[]	-	-
+source-2-9	0.137	0.769	0.145	0.020	-	fail outside 0.137 > 0.05	[]	-	-
+source-2-10	0.394	0.753	0.129	0.000	-	fail outside 0.394 > 0.05	[]	-	-
+source-2-11	0.421	0.754	0.150	0.000	-	fail outside 0.421 > 0.05	[]	-	-
+source-2-12	0.199	0.783	0.130	0.020	-	fail outside 0.199 > 0.05	[]	-	-

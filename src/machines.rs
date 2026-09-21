@@ -1329,14 +1329,17 @@ fn brief(name: &str, style: &Style, direction: &str) -> String {
     } else {
         &style.shared
     };
-    let palette = include_str!("../art/BIBLE.md")
-        .split_once("## 1. Palette\n")
-        .unwrap()
-        .1
-        .split_once("## 2. Language")
-        .unwrap()
-        .0;
-    format!("{shared} {direction}\nPalette table from art/BIBLE.md:\n{palette}")
+    let bible = std::fs::read_to_string("art/BIBLE.md").expect("read the art bible at brief time");
+    let sections: Vec<_> = bible
+        .split("\n## ")
+        .skip(1)
+        .filter(|section| section.starts_with("1. ") || section.starts_with("2. "))
+        .collect();
+    assert_eq!(sections.len(), 2, "the bible must supply sections 1 and 2");
+    format!(
+        "{shared} {direction}\nFrom art/BIBLE.md:\n## {}",
+        sections.join("\n## ")
+    )
 }
 
 fn caption(text: &str) -> &str {
@@ -3500,6 +3503,11 @@ mod tests {
         assert_eq!(briefs.len(), 3, "{briefs:?}");
         assert_eq!(briefs[0].1, base);
         assert!(briefs[0].1.contains(direction));
+        assert!(
+            briefs
+                .iter()
+                .all(|(_, text)| text.contains("Every machine body, including arms"))
+        );
         assert!(briefs[0].1.contains("| cobalt |"));
         assert!(briefs[0].1.contains("| charcoal rubber |"));
         assert_eq!(

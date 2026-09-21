@@ -1,12 +1,12 @@
-reification-1	0.134	0.857	0.142	0.040	-	fail outside 0.134 > 0.05	[]	-	-
-reification-2	0.126	0.927	0.128	0.040	-	fail outside 0.126 > 0.05	[]	-	-
-reification-3	0.087	0.887	0.161	0.040	-	fail outside 0.087 > 0.05	[]	-	-
-reification-4	0.196	0.917	0.150	0.057	-	fail outside 0.196 > 0.05	[]	-	-
-reification-5	0.066	0.845	0.154	0.028	-	fail outside 0.066 > 0.05	[]	-	-
-reification-6	0.126	0.845	0.174	0.060	-	fail outside 0.126 > 0.05	[]	-	-
-reification-7	0.059	0.849	0.173	0.020	-	fail outside 0.059 > 0.05	[]	-	-
-reification-8	0.045	0.856	0.160	0.000	6	pass	["Give the broad amber face more crafted detail: glaze pooling, fine crazing and rubbed edges would make its mottling feel like fired ceramic.","Differentiate the reddish socket collars with dark brass recesses, polished contact edges and restrained rubber lips; their materials currently blend together.","Resolve the central dark ring into a convincing fitted mechanism with a crisp inner lip and purposeful wear; it currently reads as a muddy scorch.","Strengthen the perimeter's thickness with a more decisive lower edge and localized contact shadow so the housing feels heavier on the clay."]	6b9c855eb7397271	false
-reification-9	0.174	0.849	0.154	0.063	-	fail outside 0.174 > 0.05	[]	-	-
-reification-10	0.228	0.840	0.174	0.040	-	fail outside 0.228 > 0.05	[]	-	-
-reification-11	0.214	0.865	0.169	0.028	-	fail outside 0.214 > 0.05	[]	-	-
-reification-12	0.215	0.859	0.171	0.060	-	fail outside 0.215 > 0.05	[]	-	-
+reification-1	0.121	0.859	0.145	0.020	-	fail outside 0.121 > 0.05	[]	-	-
+reification-2	0.032	0.825	0.175	0.045	7	pass	["Give the broad golden face more ceramic depth: pooled amber glaze, bright glassy edges and patches of exposed fired clay would enrich its sandy surface.","Differentiate the red seat collars with compressed rubber lips, rubbed edges and darker inner recesses; their repeated soft shading currently feels uniform.","Strengthen the outer brass rim with a heavier underside shadow and selective polished corners so the housing feels thick and weighty.","Make the central fitting a more confident crafted focal point with crisp layered metalwork and distinct fasteners; its muddy concentric shading loses definition."]	885e6aa24f34ac8f	false
+reification-3	0.208	0.820	0.183	0.040	-	fail outside 0.208 > 0.05	[]	-	-
+reification-4	0.030	0.842	0.147	0.045	7	pass	["Give the broad golden glaze more character: pooled amber, fine crazing and a few sharp surviving highlights would deepen its ceramic richness.","Differentiate the fittings through touch: sharper brass edges, darker tarnished recesses and matte, compressed rubber would make the materials more convincing.","Break the repeated soft shading around the red collars with distinctive chips, rubbed lips and accumulated grime so the machine feels individually made and used."]	6049e8d2ddc54c3a	false
+reification-5	0.069	0.826	0.171	0.028	-	fail outside 0.069 > 0.05	[]	-	-
+reification-6	0.149	0.838	0.147	0.089	-	fail outside 0.149 > 0.05	[]	-	-
+reification-7	0.096	0.840	0.160	0.040	-	fail outside 0.096 > 0.05	[]	-	-
+reification-8	0.116	0.837	0.162	0.082	-	fail outside 0.116 > 0.05	[]	-	-
+reification-9	0.128	0.825	0.172	0.045	-	fail outside 0.128 > 0.05	[]	-	-
+reification-10	0.069	0.853	0.182	0.028	-	fail outside 0.069 > 0.05	[]	-	-
+reification-11	0.152	0.858	0.161	0.028	-	fail outside 0.152 > 0.05	[]	-	-
+reification-12	0.197	0.849	0.155	0.020	-	fail outside 0.197 > 0.05	[]	-	-
