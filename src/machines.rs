@@ -521,16 +521,28 @@ impl Scaffold {
                 .copied()
                 .fold(Vec2::splat(f32::NEG_INFINITY), Vec2::max);
             let center = (lo + hi) / 2.0;
+            let extent = self
+                .cells
+                .iter()
+                .map(|cell| {
+                    let p = (px(cell.at) - self.quad.centre) / HEX;
+                    look::hex_norm(p.x, p.y) + 1.0
+                })
+                .fold(0.0, f32::max);
             let scale = points
                 .iter()
                 .map(|p| {
                     let p = (*p - center) / HEX;
                     look::hex_norm(p.x, p.y)
                 })
-                .fold(0.0, f32::max);
+                .fold(0.0, f32::max)
+                / extent;
             let image = RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
                 let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-                bilinear(candidate, self.pixel(center + world * scale))
+                bilinear(
+                    candidate,
+                    self.pixel(center + (world - self.quad.centre) * scale),
+                )
             });
             return Capture {
                 image,
@@ -2515,6 +2527,29 @@ mod tests {
     }
 
     #[test]
+    fn machines_output_surfaces_keep_their_full_footprints_without_seats() {
+        use crate::sim::{GlyphKind, Tier};
+
+        let thresholds = Art::shipped().read().thresholds;
+        for tier in [Tier::One, Tier::Two, Tier::Three] {
+            let kind = GlyphKind::Output(tier);
+            let scaffold = Scaffold::of(Machine::Glyph(kind));
+            assert_eq!(scaffold.marked().count(), 0);
+            assert_eq!(
+                scaffold.cells.iter().map(|c| c.at).collect::<Vec<_>>(),
+                kind.cells()
+            );
+            let clean = fired(&scaffold, &|w| w);
+            let painted = fired(&scaffold, &|w| (w - Vec2::new(0.1, -0.1) * HEX) / 0.8);
+            let capture = scaffold.register(&painted);
+            let score = scaffold.score(&capture);
+            assert!(score.measured(&thresholds).is_none(), "{tier:?}: {score:?}");
+            let area = |image: &RgbaImage| image.pixels().map(pixel_opacity).sum::<f32>();
+            assert!((area(&capture.image) / area(&clean) - 1.0).abs() < REGISTERED);
+        }
+    }
+
+    #[test]
     fn scaffold_cells_match_the_footprint() {
         for item in Machine::ALL {
             let scaffold = Scaffold::of(item);
@@ -2980,21 +3015,24 @@ mod tests {
 
     #[test]
     fn bounded_measurement_matches_the_exhaustive_pixel_and_hex_walks_bit_for_bit() {
-        for name in ["arm", "bonder", "source", "output-3"] {
+        for name in ["arm", "bonder", "source", "reification", "output-3"] {
             let scaffold = Scaffold::of(item(name));
             let candidate = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
                 Rgba([(x % 251) as u8, (y % 241) as u8, ((x + y) % 239) as u8, 255])
             });
-            let marks: Vec<_> = scaffold.marked().collect();
-            for index in [0, marks.len() / 2, marks.len() - 1] {
-                let cell = marks[index];
+            for cell in scaffold.marked() {
                 let bounded = scaffold.seat_contrast(&candidate, cell, scaffold.seat_bounds(cell));
                 let exhaustive = scaffold.seat_contrast(
                     &candidate,
                     cell,
                     [0, 0, scaffold.canvas, scaffold.canvas],
                 );
-                assert_eq!(bounded.to_bits(), exhaustive.to_bits(), "{name}/{index}");
+                assert_eq!(
+                    bounded.to_bits(),
+                    exhaustive.to_bits(),
+                    "{name}/{:?}",
+                    cell.at
+                );
             }
             for x in -20..=20 {
                 for y in -20..=20 {

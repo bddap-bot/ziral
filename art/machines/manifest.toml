@@ -321,10 +321,10 @@ event = "fired"
 
 [machine.output-1]
 direction = "One substantial pale-ivory ceramic receiving plinth fills its seven-cell honeycomb footprint, slightly inset from the guide. A continuous glazed tabletop offers an open space to place things, with a softly luminous blue-green inlay and a broad darkened-brass rim. Ornamental rivets and scalloped brass fittings enrich the perimeter. The radial shoulders point inward around one unbroken receiving field. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself. Its materials follow art/BIBLE.md section 2, Materials and light."
-kept = 5
-briefed = "de64ecf13e97a785"
-painted = "92d617c8c871e979"
-relit = "45030bb058ca56c8"
+kept = 6
+briefed = "3da0ce3971720da0"
+painted = "a7a191db2b0ed333"
+relit = "77c597d9570451e8"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -358,10 +358,10 @@ event = "fired"
 
 [machine.output-2]
 direction = "One substantial pale-ivory ceramic receiving tray fills its nineteen-cell hexagonal footprint, slightly inset from the guide. A broad uninterrupted glazed surface carries a flowing blue-green mineral inlay within an ornate darkened-brass perimeter, a magical acceptor field spacious enough for a whole arrangement. Recessed brass scrollwork, riveted corner fittings and inward-pointing sculpted shoulders belong to one continuous body. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself. Its materials follow art/BIBLE.md section 2, Materials and light."
-kept = 6
-briefed = "2b43f16fddf24e8a"
-painted = "f29d0bca14e1ba9f"
-relit = "59c748dc5c8499ea"
+kept = 7
+briefed = "77977cf7be4d6e15"
+painted = "110c079a6582fb7e"
+relit = "3c13f36369909b99"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -395,10 +395,10 @@ event = "fired"
 
 [machine.output-3]
 direction = "One monumental pale-ivory ceramic receiving table fills its thirty-seven-cell hexagonal footprint, slightly inset from the guide. Its expansive uninterrupted glazed face is a magical acceptor field, with flowing blue-green mineral veins and generous darkened-brass inlay. A substantial scalloped perimeter, ornamental service plates and rivets give the table workshop character; the radial shoulders point toward the broad open centre. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself. Its materials follow art/BIBLE.md section 2, Materials and light."
-kept = 3
-briefed = "0e31ed25f512fde9"
-painted = "821f753ec4eb9fcf"
-relit = "f2d1a0418b30e7e8"
+kept = 2
+briefed = "5baf5425256fd6e2"
+painted = "a13a02743695decd"
+relit = "174053ed9f2f1c71"
 
 [machine.output-3.instrument]
 voice = "brass"

@@ -45,7 +45,7 @@ One renderer shades both machine and analytic grey calibration sphere with `ambi
 
 An unchanged run remeasures its keep. A hand-edited caption under an unchanged brief is input to the next paint, not rewritten provenance. Atom, bond, tile and manual-page prompts remain adjacent to their assets; texture-generation reference conventions remain in their scripts and the bible.
 
-A body without atom-seat landmarks registers from the complete keyed silhouette. Its bounding centre supplies one translation; its greatest hexagonal radius supplies one uniform scale into the single-cell envelope. No silhouette pixel is clipped, and both axes share the scale. The ordinary measured gates and fixed critic judge that result.
+A body without atom-seat landmarks registers from the complete keyed silhouette. Its bounding centre supplies one translation; its greatest hexagonal radius supplies one uniform scale into the complete footprint envelope. No silhouette pixel is clipped, and both axes share the scale. The ordinary measured gates and fixed critic judge that result.
 
 Static housings keep an empty part list and use the complete albedo. Only articulated machines carry split maps; the portal has no firing rim.
 

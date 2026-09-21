@@ -106,6 +106,14 @@ pub fn footprint(item: Machine) -> Vec<Cell> {
                 },
             })
             .collect(),
+        Machine::Glyph(kind @ GlyphKind::Output(_)) => kind
+            .cells()
+            .into_iter()
+            .map(|at| Cell {
+                at,
+                role: Role::Body,
+            })
+            .collect(),
         Machine::Glyph(kind @ GlyphKind::Converter(AtomKind::Cobalt)) => {
             let input = kind.rule().slots[0];
             let output = kind.product().expect("a converter has an output");

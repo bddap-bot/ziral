@@ -1,12 +1,12 @@
-output-2-1	0.154	1.146	0.049	0.028	-	fail outside 0.154 > 0.05	[]	-	-
-output-2-2	0.081	1.107	0.031	0.040	-	fail outside 0.081 > 0.05	[]	-	-
-output-2-3	0.128	1.121	0.043	0.045	-	fail outside 0.128 > 0.05	[]	-	-
-output-2-4	0.194	1.124	0.047	0.072	-	fail outside 0.194 > 0.05	[]	-	-
-output-2-5	0.026	1.097	0.056	0.028	5	pass	["Give the broad ivory face richer ceramic character: pooled glaze, subtle crazing and rubbed patches would reward a closer look.","Develop the repeated rust-colored rims into tangible fittings with dark brass recesses, worn edges and distinct rubber lips.","Strengthen the housing’s thickness with a more substantial lower edge and deeper contact shadows against the clay.","Add a few purposeful construction details or asymmetric repairs so the machine feels individually made rather than uniformly stamped."]	5c9f4f4ed1e40e41	false
-output-2-6	0.021	1.132	0.058	0.020	6	pass	["The broad ivory face feels underworked; add pooled glaze, fine crazing and localized scuffs to give the ceramic a richer history.","The orange collars need more convincing darkened brass: deepen crevices and pick out worn edges with restrained metallic glints.","The repeated openings feel shallow and uniform; richer inner-wall shadows and worn rubber lips would give them tangible depth.","The housing needs a few distinctive crafted details—small fasteners, inset fittings or purposeful repairs—to develop character beyond a perforated slab."]	f86611baa245d28b	false
-output-2-7	0.060	1.087	0.093	0.000	-	fail outside 0.060 > 0.05	[]	-	-
-output-2-8	0.039	1.073	0.063	0.020	6	pass	["Give the broad ivory face richer glaze variation: pooled edges, fine crazing and rubbed patches would reward a closer look.","Develop the reddish seat rims into tangible aged fittings with dark recesses, brass glints and worn rubber lips; they currently read as soft painted rings.","Strengthen the housing’s weight with a more substantial lower edge and deeper contact shadows against the clay.","Add a few distinctive crafted details, such as inset fasteners or repaired chips, to give the repeated openings individual character."]	405f0c6070e0fbb3	false
-output-2-9	0.052	1.158	0.047	0.028	-	fail outside 0.052 > 0.05	[]	-	-
-output-2-10	0.052	1.146	0.043	0.000	-	fail outside 0.052 > 0.05	[]	-	-
-output-2-11	0.073	1.136	0.040	0.028	-	fail outside 0.073 > 0.05	[]	-	-
-output-2-12	0.093	1.097	0.034	0.020	-	fail outside 0.093 > 0.05	[]	-	-
+output-2-1	0.115	inf	0.097	0.000	-	fail outside 0.115 > 0.05	[]	-	-
+output-2-2	0.176	inf	0.095	0.000	-	fail outside 0.176 > 0.05	[]	-	-
+output-2-3	0.033	inf	0.078	0.000	6	pass	["The broad ivory center reads as a cracked slab; add built ceramic recesses and purposeful fittings to give it a stronger machine identity.","The teal fissures dominate the interior; paint sharper glazed edges, varied depths and pooled reflections to make them feel materially convincing.","The brass perimeter has appealing ornament but soft tonal separation; deepen crevices and sharpen selective worn highlights to give the frame more weight.","Introduce distinct dark rubber collars or gaskets around fittings so the materials offer richer contrast."]	e36ead7bbd527fa9	false
+output-2-4	0.056	inf	0.074	0.000	-	fail outside 0.056 > 0.05	[]	-	-
+output-2-5	0.097	inf	0.189	0.000	-	fail outside 0.097 > 0.05	[]	-	-
+output-2-6	0.181	inf	0.165	0.000	-	fail outside 0.181 > 0.05	[]	-	-
+output-2-7	0.049	inf	0.207	0.000	7	pass	["The broad ivory center feels underworked; richer glaze pooling, subtle crazing and rubbed patches would give it more character.","The teal sweeps read as soft painted marks; sharper glaze edges and varied translucency would make them feel fired into the ceramic.","The brass fittings and dark seat linings blur together; clearer metal highlights, recessed shadows and worn rubber edges would reward close inspection."]	c8086b8f4a5a5bea	false
+output-2-8	0.061	inf	0.177	0.000	-	fail outside 0.061 > 0.05	[]	-	-
+output-2-9	0.068	inf	0.093	0.000	-	fail outside 0.068 > 0.05	[]	-	-
+output-2-10	0.046	inf	0.079	0.000	5	pass	["The broad ivory center feels unfinished; add purposeful ceramic relief, inset fittings, or worked surface detail to give it a machine's identity.","The blue-gray swirls look cloudy and soft; sharpen selected glaze veins, pooled edges, and chips into tangible surface events.","The brass perimeter repeats at one visual intensity; deepen recesses and distinguish polished high points from darkened joints.","Strengthen the rim's thickness and contact shadows so the pale body feels heavy and firmly seated on the clay."]	ee299b512b5c3c32	false
+output-2-11	0.069	inf	0.087	0.000	-	fail outside 0.069 > 0.05	[]	-	-
+output-2-12	0.068	inf	0.092	0.000	-	fail outside 0.068 > 0.05	[]	-	-
