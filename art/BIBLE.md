@@ -4,7 +4,7 @@ The portal is one substantial plum ceramic housing within one tile, with a broad
 
 A completed portal click briefly dilates the complete housing uniformly and releases ivory steam above its aperture, accompanied by its ceramic instrument. The canonical preview remains still; the response lasts one 400 ms tick independently of the overworld tick boundary.
 
-The board is a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight and wear make each action tactile; colored glazes keep every state unmistakable. Reference images and the prompts that made them are in [`reference/`](reference/).
+The board is a tabletop instrument assembled from glazed ceramic, darkened brass, and soft rubber. Weight and wear make each action tactile. Reference images and the prompts that made them are in [`reference/`](reference/).
 
 [MACHINES.md](MACHINES.md) describes the current painting pipeline; [SYMBOLS.md](SYMBOLS.md) describes instruction tokens and inventory pips. [DESIGN.md](../DESIGN.md) records decisions and experiments, including superseded art. Prompt files record actual paints, not current rules. Each ends with an Image inputs section listing repository paths and SHA-256 hashes from the same verified image tool call as the caption; older records mark unrecoverable inputs unknown. The section is provenance and is excluded when reusing the caption.
 
@@ -42,7 +42,7 @@ Directive: the ornamental-hardware ban is rejected. Ornamental hardware is wante
 
 **Body envelope.** The authoritative envelope rule is the Directive passage in [the manifest’s `style.shared`](machines/manifest.toml). It defines body coverage, the source reference, radial orientation and functional exceptions. Computed housing geometry remains unchanged; changed paint briefs are remade through the normal pipeline.
 
-**Silhouette.** Stout circular pivots, one-piece links, an open horseshoe for the hand, and complete machine housings around glyph seats. Every state is readable from the outline alone: a closed hand is a small horseshoe on the atom, an open hand a wide one; a stalled arm wears an ivory ring on its pivot, and when another hand is the cause that hand wears a wider one.
+**Silhouette.** Stout circular pivots, one-piece links, an open horseshoe for the hand, and complete machine housings around glyph seats.
 
 **Line.** Fills carry identity; lines carry structure. Grout and rims are thin dark brass. Glyph channels are the glyph's own glaze. Ivory board outlines mark selection, placement and stalls.
 
@@ -63,8 +63,6 @@ Directive: no hard fail on the bible’s prohibitions. The judge weighs overall 
 ## 3. Distinctness
 
 [The look table and its tests](../src/look.rs) define chroma, texture averaging, thumbnail comparison and tile tolerances. [The machine generator](../src/machines.rs) defines registration, alpha removal, contrast and footprint measurements. These links provide the exact metrics behind the prose.
-
-Directive: no stricter real-silhouette gate; that is overfitting. Outputs matching each other is acceptable because they do the same thing. Soften the uniqueness promise and keep the simpler declared-category gate.
 
 Distinctness means at least two counted differences per pair within each class: hue, value, declared shape category and painted texture distance. The gate does not measure rendered silhouettes or recognize semantic markings, and does not guarantee outline-only or color-independent readability. Same-function members of one class may share a rendered shape; their pip or seat counts can tell them apart. The gate does not independently count rendered pips or seats.
 
