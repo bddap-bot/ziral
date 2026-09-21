@@ -1,12 +1,12 @@
-reification-1	0.151	0.924	0.166	0.045	-	fail outside 0.151 > 0.05	[]	-	-
-reification-2	0.132	0.937	0.172	0.045	-	fail outside 0.132 > 0.05	[]	-	-
-reification-3	0.272	0.966	0.178	0.020	-	fail outside 0.272 > 0.05	[]	-	-
-reification-4	0.174	0.926	0.153	0.020	-	fail outside 0.174 > 0.05	[]	-	-
-reification-5	0.136	0.870	0.131	0.020	-	fail outside 0.136 > 0.05	[]	-	-
-reification-6	0.035	0.820	0.130	0.467	-	fail off_centre 0.467 > 0.1	[]	-	-
-reification-7	0.194	0.838	0.160	0.502	-	fail outside 0.194 > 0.05	[]	-	-
-reification-8	0.000	0.853	0.167	0.510	-	fail off_centre 0.510 > 0.1	[]	-	-
-reification-9	0.143	0.844	0.171	0.040	-	fail outside 0.143 > 0.05	[]	-	-
-reification-10	0.045	0.948	0.160	0.020	6	pass	["Give the broad ochre housing richer ceramic character: pooled glaze, fine crazing and rubbed edges would make its softly mottled surface more tangible.","Differentiate the reddish seat collars with dark brass recesses, polished lips and worn rubber interiors; their similar soft shading currently blurs the materials together.","Sharpen selected rim highlights and contact shadows to give the openings firmer construction and the housing greater weight.","Develop the central fitting into a deliberate crafted detail; its muddy concentric rings currently look less resolved than the surrounding seats."]	57658590a3f5a173	false
-reification-11	0.076	0.911	0.159	0.020	-	fail outside 0.076 > 0.05	[]	-	-
-reification-12	0.032	0.952	0.138	0.020	6	pass	["Give the broad ochre surface more crafted detail: pooled glaze, fine crazing and rubbed patches would make its large uninterrupted areas reward inspection.","Separate the materials more clearly; the coppery collars and golden body share a soft, mottled finish. Sharper brass glints and matte rubber lips would add tangible contrast.","Vary the repeated collars with deliberate wear and a few distinctive fittings so the housing feels individually built rather than stamped from one painted motif."]	0ab20527695b789e	false
+reification-1	0.134	0.857	0.142	0.040	-	fail outside 0.134 > 0.05	[]	-	-
+reification-2	0.126	0.927	0.128	0.040	-	fail outside 0.126 > 0.05	[]	-	-
+reification-3	0.087	0.887	0.161	0.040	-	fail outside 0.087 > 0.05	[]	-	-
+reification-4	0.196	0.917	0.150	0.057	-	fail outside 0.196 > 0.05	[]	-	-
+reification-5	0.066	0.845	0.154	0.028	-	fail outside 0.066 > 0.05	[]	-	-
+reification-6	0.126	0.845	0.174	0.060	-	fail outside 0.126 > 0.05	[]	-	-
+reification-7	0.059	0.849	0.173	0.020	-	fail outside 0.059 > 0.05	[]	-	-
+reification-8	0.045	0.856	0.160	0.000	6	pass	["Give the broad amber face more crafted detail: glaze pooling, fine crazing and rubbed edges would make its mottling feel like fired ceramic.","Differentiate the reddish socket collars with dark brass recesses, polished contact edges and restrained rubber lips; their materials currently blend together.","Resolve the central dark ring into a convincing fitted mechanism with a crisp inner lip and purposeful wear; it currently reads as a muddy scorch.","Strengthen the perimeter's thickness with a more decisive lower edge and localized contact shadow so the housing feels heavier on the clay."]	6b9c855eb7397271	false
+reification-9	0.174	0.849	0.154	0.063	-	fail outside 0.174 > 0.05	[]	-	-
+reification-10	0.228	0.840	0.174	0.040	-	fail outside 0.228 > 0.05	[]	-	-
+reification-11	0.214	0.865	0.169	0.028	-	fail outside 0.214 > 0.05	[]	-	-
+reification-12	0.215	0.859	0.171	0.060	-	fail outside 0.215 > 0.05	[]	-	-

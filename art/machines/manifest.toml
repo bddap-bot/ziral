@@ -24,10 +24,10 @@ sphere = 25.0
 
 [machine.arm]
 direction = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-rubber horseshoe (materials from the palette table in art/BIBLE.md) gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
-kept = 11
-briefed = "0f505e68bde73aed"
-painted = "9ee318291d9dd098"
-relit = "3b58d9d4f08bd908"
+kept = 6
+briefed = "5f2cf303f3ddb4b7"
+painted = "7175dbac427e09f0"
+relit = "1df48d9e6da9ee4b"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -68,10 +68,10 @@ event = "rotated"
 
 [machine.arm-2]
 direction = "The machine is a stout radial workshop arm at length two, lying flat from the brass pivot mark through the unmarked middle cell to the distant horseshoe mark. A broad circular darkened-brass pivot and a thick one-piece forged-brass spine form one solid, weighty silhouette. One broad blue-green glazed ceramic inlay fills most of the spine's face inside a substantial brass rim, separating the arm clearly from the clay board and giving it confident workshop character. At the far mark, a restrained terracotta collar carries a dominant matte-rubber horseshoe using the material colour in the palette table in art/BIBLE.md that copies the mark and leaves its throat empty. Dark brass, rubbed amber edges, blue-green glaze, terracotta and dense rubber form large material areas. Follow art/BIBLE.md section 2, Materials and light. The spine stays narrower than half a cell and every endpoint hugs its mark. Nothing but the arm itself; no tile outline, fist, fingers, beads, atoms, dial, emblem or exposed clockwork."
-kept = 5
-briefed = "2b0cf4d09c23f051"
-painted = "e35e25e0027f1664"
-relit = "8ae43dfb5f9147ab"
+kept = 8
+briefed = "064237de274db393"
+painted = "36f6c2a472671fa3"
+relit = "20258545a1d28a8b"
 
 [machine.arm-2.instrument]
 voice = "brass"
@@ -112,10 +112,10 @@ event = "rotated"
 
 [machine.arm-3]
 direction = "The machine is a stout radial workshop arm at length three, lying flat from the brass pivot mark through both unmarked middle cells to the distant horseshoe mark. A broad circular darkened-brass pivot and a thick one-piece forged-brass spine form one solid, weighty silhouette. Two broad blue-green glazed ceramic inlays fill most of the spine's face inside a substantial brass rim, separating the arm clearly from the clay board and giving it confident workshop character. At the far mark, a restrained terracotta collar carries a dominant matte-rubber horseshoe using the material colour in the palette table in art/BIBLE.md that copies the mark and leaves its throat empty. Dark brass, rubbed amber edges, blue-green glaze, terracotta and dense rubber form large material areas. Follow art/BIBLE.md section 2, Materials and light. The spine stays narrower than half a cell and every endpoint hugs its mark. Nothing but the arm itself; no tile outline, fist, fingers, beads, atoms, dial, emblem or exposed clockwork."
-kept = 1
-briefed = "755a05e2f74349b0"
-painted = "c87029ebd1d6f03f"
-relit = "cf1a92276749a120"
+kept = 7
+briefed = "95b5832e7cde671e"
+painted = "14162772c856fd32"
+relit = "f160b51ae0f221a7"
 
 [machine.arm-3.instrument]
 voice = "brass"
@@ -156,10 +156,10 @@ event = "rotated"
 
 [machine.bonder]
 direction = "A single terracotta compression housing spanning two footprint cells, with two equal blue-green circular apertures bored into one broad cast body. A wide recessed brass pressure chamber is contained inside the solid material between the openings. The purpose is to clamp two seated atoms together. No separate connecting bar."
-kept = 6
-briefed = "d23be087de8a7238"
-painted = "25852da5c3f5e552"
-relit = "6eaf9a3f13cf755f"
+kept = 7
+briefed = "f6ecee808b0e4543"
+painted = "c4e6652378ec9b87"
+relit = "33613b252b3c72d0"
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -201,10 +201,10 @@ event = "fired"
 
 [machine.converter-amber]
 direction = "A single amber-glazed casting fills the three-cell footprint as one broad rounded triangular kiln housing. Three equal circular apertures sit exactly on the marked centres, bored into the continuous material. Broad sculpted ceramic shoulders and one recessed dark-brass flow chamber make the housing recognisable without connecting pods or pipes."
-kept = 11
-briefed = "61d33de9fe3dde95"
-painted = "7df53a44175ab96d"
-relit = "7f67f2103c5bf55f"
+kept = 12
+briefed = "660e86b44aa24e10"
+painted = "f6f2cb015c14809b"
+relit = "9637e80b562d725a"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -239,10 +239,10 @@ event = "fired"
 [machine.converter-cobalt]
 direction = "A single cobalt-glazed sculpted kiln housing fills the four-cell rhombus envelope. The reference sketch supplies geometry only. Two apertures at the marked opposite ends are cut into its broad continuous body; the terracotta input and cobalt output are separated by a broad recessed sinuous brass heat chamber within the housing. No narrow waist, tube joining pods, backing plate or extra openings."
 references = ["../../docs/converter-cobalt-sketch.jpg"]
-kept = 5
-briefed = "5729c66747a262d7"
-painted = "b8825d6ff73cd1c3"
-relit = "a961032f3c8fdd46"
+kept = 3
+briefed = "7565193a99d59f62"
+painted = "b85ae312f8b77bdf"
+relit = "061a19799552ce35"
 
 [machine.converter-cobalt.instrument]
 voice = "ceramic"
@@ -284,10 +284,10 @@ event = "fired"
 
 [machine.converter-plum]
 direction = "A single plum-glazed casting fills the three-cell footprint as one broad rounded angular kiln housing. The marked circular apertures are bored into the continuous material. Broad sculpted ceramic shoulders and one recessed dark-brass flow chamber make the housing recognisable without connecting pods or rails."
-kept = 2
-briefed = "d26c277bbc42e6d2"
-painted = "f9635794231236c9"
-relit = "04d25185acbd4b0d"
+kept = 11
+briefed = "43663a3d40ef700f"
+painted = "9589b8fbbadc6947"
+relit = "43634b6d578adf06"
 
 [machine.converter-plum.instrument]
 voice = "ceramic"
@@ -321,10 +321,10 @@ event = "fired"
 
 [machine.output-1]
 direction = "One heavy pale-ivory ceramic receiving housing fills its seven-cell honeycomb footprint. Seven equal circular apertures are bored through its continuous sculpted body: one central and six surrounding. Broad ivory material completely occupies the spaces between the apertures, with thin recessed brass liners inside the holes. It is one industrial receiving die, not cups connected by spokes; no connecting lines or separate tiles."
-kept = 8
-briefed = "ffcd9c622a36e4dc"
-painted = "a440a2957fe1d733"
-relit = "9a76a7ecf1e1a563"
+kept = 5
+briefed = "de64ecf13e97a785"
+painted = "92d617c8c871e979"
+relit = "45030bb058ca56c8"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -358,10 +358,10 @@ event = "fired"
 
 [machine.output-2]
 direction = "One heavy pale-ivory ceramic receiving housing fills its nineteen-cell hexagonal footprint. Nineteen equal circular apertures are bored through its continuous sculpted body: one centre, six inner and twelve outer. Broad ivory material completely occupies the spaces between the apertures, with thin recessed brass liners inside the holes. It is one industrial receiving die, not a lattice of connected cups; no connecting lines or separate tiles."
-kept = 1
-briefed = "a172ad56eae6abb3"
-painted = "7dcf158d4cdb0541"
-relit = "009078fe422001dd"
+kept = 6
+briefed = "2b43f16fddf24e8a"
+painted = "f29d0bca14e1ba9f"
+relit = "59c748dc5c8499ea"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -395,10 +395,10 @@ event = "fired"
 
 [machine.output-3]
 direction = "One heavy pale-ivory ceramic receiving housing fills its thirty-seven-cell hexagonal footprint. Thirty-seven equal circular apertures are bored through the continuous sculpted body in rows of four, five, six, seven, six, five and four, exactly on the scaffold marks. Broad ivory material occupies all spaces between holes, with thin recessed brass liners. One industrial receiving die with a substantial coherent perimeter, never a network of nodes, connecting lines, cups or separate tiles."
-kept = 10
-briefed = "eb0c4748283aa049"
-painted = "3b72aaad3a39969b"
-relit = "86f8557788e9bc59"
+kept = 3
+briefed = "0e31ed25f512fde9"
+painted = "821f753ec4eb9fcf"
+relit = "f2d1a0418b30e7e8"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -432,10 +432,10 @@ event = "fired"
 
 [machine.portal]
 direction = 'Directive (verbatim): "some mystical theme". Directive (verbatim): "something visually interesting in the portal". One substantial plum ceramic portal housing fills the single grey hex footprint. Its broad continuous rounded hexagonal body surrounds one large central square aperture with softly rounded corners, about half the hex height and width. The aperture contains a deep plum mineral glaze with broad luminous ivory swirling mineral veins, open and visually interesting even with no contents. A restrained continuous rubbed brass lip meets ivory glazed inner edges. All four corners of the central half-width square remain unobstructed for a live interior preview. The body is one weighty casting, never beads, nodes, bonds, separate pods or a compound. No functional atom seats or extra openings, no symbols or writing. Follow art/BIBLE.md section 2, Materials and light. Top-down orthographic, no perspective, green outside only; the aperture is painted depth, not green.'
-kept = 5
-briefed = "cff9cb7a02c3f47e"
-painted = "d7904d879ab5abc2"
-relit = "c2a161d76d372b13"
+kept = 8
+briefed = "85a172331c167a6f"
+painted = "0a2273439383b761"
+relit = "339b3aebe5368a98"
 motion = "dilate"
 parts = []
 
@@ -453,10 +453,10 @@ energy_scaled = false
 
 [machine.reification]
 direction = "One broad amber and terracotta kiln housing fills its nineteen-cell hexagonal footprint. Nineteen equal empty apertures, one centre and rings of six and twelve, are bored into one continuous ceramic casting with broad solid material between them. The central aperture has a restrained recessed brass metering collar within the housing. No channels connecting rings, lattice, separate cups or tile-shaped panels."
-kept = 12
-briefed = "e5fe7e8a1dddbf97"
-painted = "4ec44e8f1d81103d"
-relit = "9ab67851dd0efd7d"
+kept = 8
+briefed = "c1692f442954a1b0"
+painted = "8dc78f7dc474082e"
+relit = "75ced44a784f9c44"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -490,10 +490,10 @@ event = "fired"
 
 [machine.second-bond]
 direction = "A single sculpted plum compression manifold fills its three-cell footprint as one broad triangular housing. Two blue-green retaining apertures and one terracotta consumed-feed aperture are bored into the same continuous casting. A broad recessed brass pressure channel remains internal to the housing. No triangular network of separate rings or rails."
-kept = 7
-briefed = "5891fac37fa1b929"
-painted = "d33eb3df2104b5e2"
-relit = "2d810993879058e9"
+kept = 12
+briefed = "f5a9adfb5765aafa"
+painted = "03a2052f1acccde8"
+relit = "04a2803de276b53d"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -535,10 +535,10 @@ event = "fired"
 
 [machine.source]
 direction = "One substantial sculpted blue-green glazed kiln-feed housing fills the single continuous grey envelope of the centre and five adjacent cells, with the right-hand neighbouring cell left open. The grey silhouette is one unbroken body guide, not individual tiles. One circular outlet is bored exactly on the marked centre through a broad continuous ceramic shell. A recessed dark-brass metering collar and matte-rubber gate surround the empty aperture, and one broad shallow brass metering groove follows the inner curve of the shell within its solid mass. The ceramic surface flows continuously across every cell boundary as one softly domed casting, with substantial shoulders and integrated hexagonal forms following the shared envelope rule. No separate hexagonal panels, tile borders, detached lobes, pods, radial nodes, extra openings or backing plate. Follow art/BIBLE.md section 2, Materials and light. The silhouette is slightly inset from the guide and every surface is seen straight down."
-kept = 4
-briefed = "5ef0cb98c0c49aa7"
-painted = "5f1cc579b95de567"
-relit = "4842561d9749bac4"
+kept = 8
+briefed = "8e82feb5f98ede0c"
+painted = "54a271a41801dba1"
+relit = "3b1ddb2b210e4deb"
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -573,10 +573,10 @@ event = "fired"
 [machine.source-2]
 direction = "One substantial blue-green glazed ceramic kiln-feed housing fills the six-cell envelope of two staggered columns and three rows. Exactly two empty circular outlet apertures are bored side by side in the middle row, precisely at the scaffold dots. The four upper and lower body cells are continuous sculpted ceramic feeding these outlets, with broad shoulders and recessed dark-brass metering grooves inside the casting. The entire outer contour is inset from the grey envelope, including its deep right-hand cleft. No separate drums, pods, connecting necks, tile faces or backing plate. The sketch supplies the arrangement; its orange marks mean thematic body relief, never orange paint or writing."
 references = ["../../docs/source-tier-two-sketch.jpg"]
-kept = 8
-briefed = "b5f4710c47c53df3"
-painted = "f46ace9fbf286e26"
-relit = "57595ec3456b39f6"
+kept = 5
+briefed = "edd585ef7fbcefa0"
+painted = "851353051e08357d"
+relit = "b4d3aae7ecacfb9a"
 
 [machine.source-2.instrument]
 voice = "ceramic"

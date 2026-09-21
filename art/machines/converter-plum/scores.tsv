@@ -1,12 +1,12 @@
-converter-plum-1	0.063	0.894	0.199	0.000	-	fail outside 0.063 > 0.05	[]	-	-
-converter-plum-2	0.034	0.908	0.215	0.000	6	pass	["Give the broad plum casing richer glaze variation, sharper lip highlights and selective edge wear so it feels like heavy fired ceramic.","Develop the dark brass connection into a convincing fitted mechanism; its muddy shading currently obscures joints, overlaps and construction.","Differentiate the seat rims with dark rubber inset lips and worn metal collars; the three orange rings feel uniformly painted.","Add a few distinctive fasteners, seams or crafted fittings to give the housing more character and reward close inspection."]	032e11c5210d7bc4	false
-converter-plum-3	0.065	0.922	0.195	0.000	-	fail outside 0.065 > 0.05	[]	-	-
-converter-plum-4	0.035	0.898	0.207	0.000	6	pass	["Give the broad plum housing richer glaze variation, chipped edges and sharper pooled highlights so it feels fired and handled.","Develop the brown connecting hardware with distinct brass edges, joints and fasteners; it currently reads as a soft brown strip.","Differentiate the seat materials with burnished metal rims and matte, compressed rubber collars.","Strengthen selective contact shadows beneath the rims and housing to give the machine more weight."]	6a659627e0f4294f	false
-converter-plum-5	0.144	0.919	0.164	0.082	-	fail outside 0.144 > 0.05	[]	-	-
-converter-plum-6	0.116	0.942	0.192	0.020	-	fail outside 0.116 > 0.05	[]	-	-
-converter-plum-7	0.109	0.934	0.213	0.100	-	fail outside 0.109 > 0.05	[]	-	-
-converter-plum-8	0.095	0.942	0.210	0.020	-	fail outside 0.095 > 0.05	[]	-	-
-converter-plum-9	0.126	0.913	0.214	0.020	-	fail outside 0.126 > 0.05	[]	-	-
-converter-plum-10	0.101	0.882	0.191	0.020	-	fail outside 0.101 > 0.05	[]	-	-
-converter-plum-11	0.147	0.920	0.200	0.000	-	fail outside 0.147 > 0.05	[]	-	-
-converter-plum-12	0.184	0.933	0.203	0.028	-	fail outside 0.184 > 0.05	[]	-	-
+converter-plum-1	0.080	0.920	0.198	0.045	-	fail outside 0.080 > 0.05	[]	-	-
+converter-plum-2	0.128	0.903	0.197	0.020	-	fail outside 0.128 > 0.05	[]	-	-
+converter-plum-3	0.071	0.923	0.193	0.020	-	fail outside 0.071 > 0.05	[]	-	-
+converter-plum-4	0.035	0.904	0.175	0.028	6	pass	["Give the broad plum surfaces richer glaze pooling, chips and sharper reflected highlights; the soft mottling leaves the ceramic feeling indistinct.","Resolve the central brass fitting with a clear rim, fasteners and rubbed edges so it reads as purposeful machinery.","Vary the orange seat rims with dark inner lips and worn highlights to make the openings feel deep and tangible.","Strengthen the base with a distinct compressed rubber edge and contact shadow to give the housing more weight."]	ba29479f8edbe006	false
+converter-plum-5	0.237	0.923	0.140	0.045	-	fail outside 0.237 > 0.05	[]	-	-
+converter-plum-6	0.201	0.939	0.196	0.000	-	fail outside 0.201 > 0.05	[]	-	-
+converter-plum-7	0.073	0.931	0.175	0.020	-	fail outside 0.073 > 0.05	[]	-	-
+converter-plum-8	0.189	0.920	0.138	0.045	-	fail outside 0.189 > 0.05	[]	-	-
+converter-plum-9	0.055	0.938	0.191	0.028	-	fail outside 0.055 > 0.05	[]	-	-
+converter-plum-10	0.055	0.957	0.169	0.000	-	fail outside 0.055 > 0.05	[]	-	-
+converter-plum-11	0.029	0.904	0.161	0.000	6	pass	["Give the broad plum surfaces richer glaze variation, pooled darks and selective sharp highlights; they currently feel softly shaded rather than fired ceramic.","Develop the central brass inset with distinct edges, tarnish and crafted fittings so it reads as purposeful machinery.","Differentiate the orange seat rims and dark base with clearer material textures, contact shadows and localized wear.","Add a few crisp, characterful construction details to reward close inspection and break up the repeated smooth bevels."]	83ea49d16ca04dc9	false
+converter-plum-12	0.096	0.928	0.215	0.020	-	fail outside 0.096 > 0.05	[]	-	-

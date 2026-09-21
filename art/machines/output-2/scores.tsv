@@ -1,12 +1,12 @@
-output-2-1	0.032	1.077	0.054	0.020	5	pass	["Give the broad ivory surface richer glaze variation, fine crazing and localized abrasion; it currently reads as softly mottled plaster.","Paint the seat collars with sharper dark brass recesses, rubbed metallic edges and distinct worn rubber lips; their uniform rust-colored halos blur the materials together.","Strengthen the slab’s thickness with a more decisive lower rim and contact shadow against the clay.","Add characterful construction details such as inset fasteners, repaired chips or small fitted plates; the repeated openings currently carry nearly all the visual interest."]	8a9bc063938fe826	false
-output-2-2	0.057	1.138	0.042	0.028	-	fail outside 0.057 > 0.05	[]	-	-
-output-2-3	0.067	1.120	0.047	0.028	-	fail outside 0.067 > 0.05	[]	-	-
-output-2-4	0.045	1.109	0.038	0.020	4	pass	["The broad ivory housing feels blank and wafer-thin; richer edge shadows, a substantial ceramic lip and pooled glaze would give it kiln-floor weight.","The repeated red-brown openings lack material distinction; darkened brass collars, worn rubber liners and deeper recess shadows would make them tangible.","Surface texture reads as faint, uniform speckling; add purposeful glaze crazing, rubbed edges and localized firing stains that reward close inspection.","The mechanically repeated rings offer little makerly character; distinctive fittings and confidently painted construction details would give the machine an identity."]	5964610d96501e4b	false
-output-2-5	0.246	1.022	0.162	0.040	-	fail outside 0.246 > 0.05	[]	-	-
-output-2-6	0.164	1.070	0.109	0.028	-	fail outside 0.164 > 0.05	[]	-	-
-output-2-7	0.159	1.055	0.124	0.020	-	fail outside 0.159 > 0.05	[]	-	-
-output-2-8	0.223	1.038	0.136	0.045	-	fail outside 0.223 > 0.05	[]	-	-
-output-2-9	0.087	1.082	0.049	0.045	-	fail outside 0.087 > 0.05	[]	-	-
-output-2-10	0.065	1.117	0.043	0.040	-	fail outside 0.065 > 0.05	[]	-	-
-output-2-11	0.064	1.136	0.047	0.020	-	fail outside 0.064 > 0.05	[]	-	-
-output-2-12	0.081	1.105	0.042	0.020	-	fail outside 0.081 > 0.05	[]	-	-
+output-2-1	0.154	1.146	0.049	0.028	-	fail outside 0.154 > 0.05	[]	-	-
+output-2-2	0.081	1.107	0.031	0.040	-	fail outside 0.081 > 0.05	[]	-	-
+output-2-3	0.128	1.121	0.043	0.045	-	fail outside 0.128 > 0.05	[]	-	-
+output-2-4	0.194	1.124	0.047	0.072	-	fail outside 0.194 > 0.05	[]	-	-
+output-2-5	0.026	1.097	0.056	0.028	5	pass	["Give the broad ivory face richer ceramic character: pooled glaze, subtle crazing and rubbed patches would reward a closer look.","Develop the repeated rust-colored rims into tangible fittings with dark brass recesses, worn edges and distinct rubber lips.","Strengthen the housing’s thickness with a more substantial lower edge and deeper contact shadows against the clay.","Add a few purposeful construction details or asymmetric repairs so the machine feels individually made rather than uniformly stamped."]	5c9f4f4ed1e40e41	false
+output-2-6	0.021	1.132	0.058	0.020	6	pass	["The broad ivory face feels underworked; add pooled glaze, fine crazing and localized scuffs to give the ceramic a richer history.","The orange collars need more convincing darkened brass: deepen crevices and pick out worn edges with restrained metallic glints.","The repeated openings feel shallow and uniform; richer inner-wall shadows and worn rubber lips would give them tangible depth.","The housing needs a few distinctive crafted details—small fasteners, inset fittings or purposeful repairs—to develop character beyond a perforated slab."]	f86611baa245d28b	false
+output-2-7	0.060	1.087	0.093	0.000	-	fail outside 0.060 > 0.05	[]	-	-
+output-2-8	0.039	1.073	0.063	0.020	6	pass	["Give the broad ivory face richer glaze variation: pooled edges, fine crazing and rubbed patches would reward a closer look.","Develop the reddish seat rims into tangible aged fittings with dark recesses, brass glints and worn rubber lips; they currently read as soft painted rings.","Strengthen the housing’s weight with a more substantial lower edge and deeper contact shadows against the clay.","Add a few distinctive crafted details, such as inset fasteners or repaired chips, to give the repeated openings individual character."]	405f0c6070e0fbb3	false
+output-2-9	0.052	1.158	0.047	0.028	-	fail outside 0.052 > 0.05	[]	-	-
+output-2-10	0.052	1.146	0.043	0.000	-	fail outside 0.052 > 0.05	[]	-	-
+output-2-11	0.073	1.136	0.040	0.028	-	fail outside 0.073 > 0.05	[]	-	-
+output-2-12	0.093	1.097	0.034	0.020	-	fail outside 0.093 > 0.05	[]	-	-

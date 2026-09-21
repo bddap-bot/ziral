@@ -1,12 +1,12 @@
-converter-cobalt-1	0.121	0.816	0.232	0.063	-	fail outside 0.121 > 0.05	[]	-	-
-converter-cobalt-2	0.123	0.808	0.243	0.045	-	fail outside 0.123 > 0.05	[]	-	-
-converter-cobalt-3	0.312	0.788	0.224	0.028	-	fail outside 0.312 > 0.05	[]	-	-
-converter-cobalt-4	0.125	0.834	0.231	0.028	-	fail outside 0.125 > 0.05	[]	-	-
-converter-cobalt-5	0.022	0.821	0.237	0.020	7	pass	["Give the central brass mechanism clearer joints, sharper overlapping edges and deeper recesses; its rounded forms currently merge into a soft lump.","Enrich the broad lower cobalt panel with purposeful fittings and localized glaze wear that reward a closer look.","Differentiate the materials further: crisp brass glints, glassy ceramic highlights and matte, compressed rubber edges."]	599ca52f14f07a4f	false
-converter-cobalt-6	0.015	0.843	0.237	0.000	6	pass	["Give the brass channel more constructed detail: a defined lip, fitted joints and small tooling marks would make its soft, pooled shape feel engineered.","Enrich the cobalt glaze with sharper chips, pooled color and selective bright reflections; the broad blue areas currently feel uniformly mottled.","Differentiate the seat materials with crisp brass edges and compressed, worn rubber liners; both rims currently read as simple colored rings.","Strengthen a few contact shadows beneath the housing and inside the seats to give the machine more weight and depth."]	beeb60a5e5fb33bc	false
-converter-cobalt-7	0.101	0.827	0.228	0.020	-	fail outside 0.101 > 0.05	[]	-	-
-converter-cobalt-8	0.045	0.857	0.213	0.028	5	pass	["Give the broad cobalt housing more painted substance: glaze pooling, chipped edges and small fired variations would enrich its mostly uniform surface.","Resolve the central brass curve into convincing machinery with sharper rims, joints and selective highlights; its soft brown shading currently reads as a shallow smear.","Distinguish worn rubber from ceramic and brass around the openings through darker collars, compressed edges and fine abrasion.","Add a few purposeful fittings or crafted details to give the machine an individual maker's character."]	ce0ea530eef0e28d	false
-converter-cobalt-9	1.199	0.084	0.247	0.481	-	fail outside 1.199 > 0.05	[]	-	-
-converter-cobalt-10	0.126	0.873	0.219	0.045	-	fail outside 0.126 > 0.05	[]	-	-
-converter-cobalt-11	0.101	0.876	0.206	0.028	-	fail outside 0.101 > 0.05	[]	-	-
-converter-cobalt-12	0.140	0.841	0.237	0.020	-	fail outside 0.140 > 0.05	[]	-	-
+converter-cobalt-1	0.066	0.842	0.236	0.028	-	fail outside 0.066 > 0.05	[]	-	-
+converter-cobalt-2	0.034	0.847	0.227	0.028	5	pass	["Give the brass centre a more deliberate mechanism: its soft, swollen shape needs crisp collars, seams or worked edges to feel constructed.","Build richer cobalt glaze with sharp reflected highlights, darker pooled recesses and selective chips that expose the ceramic beneath.","Make the port rims feel thick and fitted, with distinct brass lips, compressed rubber gaskets and stronger inner shadows.","Vary the broad blue panels with purposeful fittings and localized wear; their mottling currently offers little detail to discover."]	c4e3af7f9c5cb3ae	false
+converter-cobalt-3	0.011	0.852	0.195	0.000	6	pass	["Give the brass passage a clearer mechanism: collars, overlapping plates or a worked joint would turn the soft golden bend into something deliberately built.","Enrich the broad cobalt surfaces with pooled glaze, selective chips and sharper reflections; their mottling currently offers little distinct detail.","Differentiate the seat rims with compressed rubber edges and darkened metal fittings so they feel substantial and tactile.","Strengthen contact shadows and selective crisp edges where brass meets ceramic; the soft transitions blur the construction."]	eb14690c7b779752	false
+converter-cobalt-4	0.176	0.823	0.240	0.028	-	fail outside 0.176 > 0.05	[]	-	-
+converter-cobalt-5	0.067	0.818	0.224	0.028	-	fail outside 0.067 > 0.05	[]	-	-
+converter-cobalt-6	0.140	0.796	0.234	0.020	-	fail outside 0.140 > 0.05	[]	-	-
+converter-cobalt-7	0.294	0.782	0.197	0.063	-	fail outside 0.294 > 0.05	[]	-	-
+converter-cobalt-8	0.422	0.794	0.163	0.072	-	fail outside 0.422 > 0.05	[]	-	-
+converter-cobalt-9	0.130	0.782	0.209	0.072	-	fail outside 0.130 > 0.05	[]	-	-
+converter-cobalt-10	0.031	0.849	0.223	0.020	6	pass	["Give the central brass mechanism a clearer construction: distinct fitted parts, crisp overlaps and deep contact shadows would replace the soft brown bulges.","Enrich the cobalt glaze with selective sharp reflections, pooled dark edges and small chips that reveal the ceramic beneath.","Differentiate the seat rims with brass edge glints, worn rubber lips and stronger inner shadows so the openings feel physically built into the housing."]	7220972bb18d8016	false
+converter-cobalt-11	0.056	0.799	0.225	0.028	-	fail outside 0.056 > 0.05	[]	-	-
+converter-cobalt-12	0.105	0.813	0.220	0.040	-	fail outside 0.105 > 0.05	[]	-	-
