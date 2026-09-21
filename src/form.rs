@@ -37,8 +37,8 @@ pub const RECIPES: [(Item, &str); 27] = [
         "B0,1 B1,1 B1,2 B2,0 0,1-1,1 1,1-1,2 1,1-2,0",
     ),
     (
-        glyph(GlyphKind::Converter(AtomKind::Plum)),
-        "B0,0 B0,1 B0,2 A0,3 0,0-0,1 0,1=0,2 0,2-0,3",
+        glyph(GlyphKind::Resonator),
+        "B0,0 A0,1 A1,0 0,0-0,1 0,0-1,0",
     ),
     (
         glyph(GlyphKind::Converter(AtomKind::Cobalt)),
@@ -108,6 +108,7 @@ pub const RECIPES: [(Item, &str); 27] = [
 #[derive(Clone, Copy)]
 pub enum AtomRoute {
     Source,
+    Resonator,
     Converter(&'static str),
 }
 
@@ -117,10 +118,7 @@ pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 4] = [
         AtomKind::Amber,
         AtomRoute::Converter("B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0"),
     ),
-    (
-        AtomKind::Plum,
-        AtomRoute::Converter("A0,0 B0,1 B1,1 0,0-0,1 0,1=1,1"),
-    ),
+    (AtomKind::Plum, AtomRoute::Resonator),
     (AtomKind::Cobalt, AtomRoute::Converter("B0,0")),
 ];
 
@@ -135,6 +133,7 @@ pub fn atom_route(kind: AtomKind) -> AtomRoute {
 pub fn atom_machine(kind: AtomKind) -> Machine {
     match atom_route(kind) {
         AtomRoute::Source => Machine::Glyph(GlyphKind::Source),
+        AtomRoute::Resonator => Machine::Glyph(GlyphKind::Resonator),
         AtomRoute::Converter(_) => Machine::Glyph(GlyphKind::Converter(kind)),
     }
 }
@@ -337,9 +336,11 @@ fn machine_name(kind: GlyphKind) -> &'static str {
         GlyphKind::Bonder => "bonder",
         GlyphKind::SecondBond => "second-bond",
         GlyphKind::Reification => "reification",
-        GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
+        GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+            panic!("only amber and cobalt have converters")
+        }
         GlyphKind::Converter(AtomKind::Amber) => "amber-converter",
-        GlyphKind::Converter(AtomKind::Plum) => "plum-converter",
+        GlyphKind::Resonator => "resonator",
         GlyphKind::Converter(AtomKind::Cobalt) => "cobalt-converter",
         GlyphKind::Output(Tier::One) => "output-1",
         GlyphKind::Output(Tier::Two) => "output-2",
@@ -363,8 +364,8 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
             GlyphKind::Source | GlyphKind::SourceTwo => {
                 return Err("a source cannot be copied".to_string());
             }
-            GlyphKind::Converter(AtomKind::Base) => {
-                return Err("the base atom has no converter".to_string());
+            GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+                return Err("only amber and cobalt have converters".to_string());
             }
             _ => {}
         }
@@ -434,7 +435,7 @@ fn glyph_kind(name: &str) -> Option<GlyphKind> {
         "second-bond" => Some(GlyphKind::SecondBond),
         "reification" => Some(GlyphKind::Reification),
         "amber-converter" => Some(GlyphKind::Converter(AtomKind::Amber)),
-        "plum-converter" => Some(GlyphKind::Converter(AtomKind::Plum)),
+        "resonator" => Some(GlyphKind::Resonator),
         "cobalt-converter" => Some(GlyphKind::Converter(AtomKind::Cobalt)),
         "output-1" => Some(GlyphKind::Output(Tier::One)),
         "output-2" => Some(GlyphKind::Output(Tier::Two)),

@@ -143,7 +143,13 @@ mod tests {
     {
         for machine in Machine::ALL {
             let parts = parts(machine);
-            assert_eq!(parts.is_empty(), machine == Machine::Portal);
+            assert_eq!(
+                parts.is_empty(),
+                matches!(
+                    machine,
+                    Machine::Portal | Machine::Glyph(crate::sim::GlyphKind::Resonator)
+                )
+            );
             if parts.is_empty() {
                 continue;
             }

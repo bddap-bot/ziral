@@ -55,3 +55,10 @@ for ASK_TEST_MODE in wrong mixed empty missing failed; do
   esac
   printf 'PASS rejects_%s\n' "$ASK_TEST_MODE"
 done
+
+mv "$work/codex/sessions" "$work/codex/actual-sessions"
+ln -s actual-sessions "$work/codex/sessions"
+export ASK_TEST_MODE=matching
+art/ask.sh '{}' 'Write a caption.' > "$work/stdout" 2> "$work/stderr"
+[ "$(cat "$work/stdout")" = accepted ]
+printf '%s\n' 'PASS follows_sessions_directory_symlink'

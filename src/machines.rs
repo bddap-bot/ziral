@@ -2446,7 +2446,10 @@ mod tests {
             );
             assert_eq!(
                 round.machine[name].parts.is_empty(),
-                machine == Machine::Portal,
+                matches!(
+                    machine,
+                    Machine::Portal | Machine::Glyph(crate::sim::GlyphKind::Resonator)
+                ),
                 "{name}"
             );
         }

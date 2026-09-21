@@ -345,6 +345,7 @@ pub enum GlyphKind {
     SecondBond,
     Reification,
     Converter(AtomKind),
+    Resonator,
     Output(Tier),
 }
 
@@ -360,7 +361,7 @@ impl GlyphKind {
         GlyphKind::SecondBond,
         GlyphKind::Reification,
         GlyphKind::Converter(AtomKind::Amber),
-        GlyphKind::Converter(AtomKind::Plum),
+        GlyphKind::Resonator,
         GlyphKind::Converter(AtomKind::Cobalt),
         GlyphKind::Output(Tier::One),
         GlyphKind::Output(Tier::Two),
@@ -490,13 +491,17 @@ const SOURCE_TWO_BODY: [Hex; 4] = [
 ];
 const SOURCE_BODY: [Hex; 5] = [DIRS[1], DIRS[2], DIRS[3], DIRS[4], DIRS[5]];
 const AMBER_CONVERTER: [Slot; 3] = [consumed(ORIGIN), consumed(DIRS[0]), consumed(DIRS[1])];
-const PLUM_CONVERTER: [Slot; 3] = [
+const RESONATOR: [Slot; 2] = [
     Slot {
         kind: Some(AtomKind::Amber),
-        ..consumed(ORIGIN)
+        lone: true,
+        ..base(ORIGIN)
     },
-    consumed(DIRS[0]),
-    consumed(Hex::new(2, -1)),
+    Slot {
+        kind: Some(AtomKind::Amber),
+        lone: true,
+        ..base(DIRS[0])
+    },
 ];
 const COBALT_CONVERTER: [Slot; 1] = [Slot {
     lone: true,
@@ -573,15 +578,11 @@ impl GlyphKind {
                 ],
                 ..plain(&AMBER_CONVERTER)
             },
-            GlyphKind::Converter(AtomKind::Plum) => Rule {
-                before: &[
-                    (0, 1, Some(BondKind::Single)),
-                    (1, 2, Some(BondKind::Double)),
-                ],
-                ..plain(&PLUM_CONVERTER)
-            },
+            GlyphKind::Resonator => plain(&RESONATOR),
             GlyphKind::Converter(AtomKind::Cobalt) => plain(&COBALT_CONVERTER),
-            GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
+            GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+                panic!("only amber and cobalt have converters")
+            }
             GlyphKind::Output(Tier::One) => plain(&OUTPUT_1),
             GlyphKind::Output(Tier::Two) => plain(&OUTPUT_2),
             GlyphKind::Output(Tier::Three) => plain(&OUTPUT_3),
@@ -618,7 +619,7 @@ impl GlyphKind {
 
     pub const fn product(self) -> Option<Hex> {
         match self {
-            GlyphKind::Converter(AtomKind::Amber | AtomKind::Plum) => Some(ORIGIN),
+            GlyphKind::Converter(AtomKind::Amber) => Some(ORIGIN),
             GlyphKind::Converter(AtomKind::Cobalt) => Some(COBALT_OUTPUT[0]),
             _ => None,
         }
@@ -1272,6 +1273,12 @@ impl Sim {
         if let Some(kind) = made {
             self.receive(Item::Atom(kind));
         }
+        if g.kind == GlyphKind::Resonator {
+            for id in ids {
+                self.atoms[id].as_mut().unwrap().kind = AtomKind::Plum;
+            }
+            self.encounter(Item::Atom(AtomKind::Plum));
+        }
         if let GlyphKind::Converter(kind) = g.kind {
             let offset = g.kind.product().expect("a converter has an output");
             let at = g.at.add(offset.turned(g.dir));
@@ -1708,37 +1715,26 @@ pub fn fixture(machine: Machine) -> Fixture {
                 },
             }
         }
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)) => {
-            let glyph = Glyph::new(GlyphKind::Converter(AtomKind::Plum), ORIGIN, 0);
+        Machine::Glyph(GlyphKind::Resonator) => {
+            let glyph = Glyph::new(GlyphKind::Resonator, ORIGIN, 0);
             let mut sim = Sim::empty();
-            let slots: Vec<Hex> = glyph.slots().collect();
-            let ids = [
+            for pos in glyph.slots() {
                 sim.spawn(Atom {
                     kind: AtomKind::Amber,
-                    pos: slots[0],
-                }),
-                sim.spawn(base(slots[1])),
-                sim.spawn(base(slots[2])),
-            ];
-            sim.bonds.push(Bond {
-                a: ids[0],
-                b: ids[1],
-                kind: BondKind::Single,
-            });
-            sim.bonds.push(Bond {
-                a: ids[1],
-                b: ids[2],
-                kind: BondKind::Double,
-            });
+                    pos,
+                });
+            }
             sim.glyphs.push(Some(glyph));
             Fixture {
                 sim,
                 ticks: 1,
                 done: |s| {
-                    s.atoms.iter().flatten().eq([&Atom {
-                        kind: AtomKind::Plum,
-                        pos: ORIGIN,
-                    }])
+                    s.atoms.iter().flatten().count() == 2
+                        && s.atoms
+                            .iter()
+                            .flatten()
+                            .all(|atom| atom.kind == AtomKind::Plum)
+                        && s.bonds.is_empty()
                 },
             }
         }
@@ -1758,8 +1754,8 @@ pub fn fixture(machine: Machine) -> Fixture {
                 },
             }
         }
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Base)) => {
-            panic!("the base atom has a source")
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Base | AtomKind::Plum)) => {
+            panic!("only amber and cobalt have converters")
         }
         Machine::Glyph(GlyphKind::Output(tier)) => {
             let product = match tier {
@@ -2459,8 +2455,7 @@ mod tests {
                 Item::Machine(
                     Machine::Arm(ArmLength::Two | ArmLength::Three)
                         | Machine::Glyph(
-                            GlyphKind::Reification
-                                | GlyphKind::Converter(AtomKind::Plum | AtomKind::Cobalt),
+                            GlyphKind::Reification | GlyphKind::Converter(AtomKind::Cobalt),
                         ),
                 )
             ) {
@@ -2517,7 +2512,7 @@ mod tests {
     fn converter_inputs_and_every_recipe_are_distinct_under_every_turn() {
         let mut forms: Vec<Form> = recipes().iter().map(|(_, form)| form.clone()).collect();
         forms.extend(ATOM_ROUTES.iter().filter_map(|(_, route)| match route {
-            AtomRoute::Source => None,
+            AtomRoute::Source | AtomRoute::Resonator => None,
             AtomRoute::Converter(text) => Some(text.parse().unwrap()),
         }));
         for a in 0..forms.len() {
@@ -2538,40 +2533,126 @@ mod tests {
     }
 
     #[test]
-    fn converters_leave_a_wrong_bond_or_turn_untouched() {
-        for kind in [AtomKind::Amber, AtomKind::Plum] {
-            let f = fixture(Machine::Glyph(GlyphKind::Converter(kind)));
-            let mut wrong = f.sim.clone();
-            wrong.bonds[0].kind = BondKind::Double;
-            let before = wrong.clone();
-            wrong.step();
-            assert_eq!(wrong.atoms, before.atoms, "{kind:?} wrong bond");
-            assert_eq!(wrong.bonds, before.bonds, "{kind:?} wrong bond");
+    fn amber_leaves_a_wrong_bond_turn_or_extra_atom_untouched() {
+        let kind = AtomKind::Amber;
+        let f = fixture(Machine::Glyph(GlyphKind::Converter(kind)));
+        let mut wrong = f.sim.clone();
+        wrong.bonds[0].kind = BondKind::Double;
+        let before = wrong.clone();
+        wrong.step();
+        assert_eq!(wrong.atoms, before.atoms, "{kind:?} wrong bond");
+        assert_eq!(wrong.bonds, before.bonds, "{kind:?} wrong bond");
 
-            let mut turned = f.sim;
-            for atom in turned.atoms.iter_mut().flatten() {
-                atom.pos = atom.pos.turned(1);
-            }
-            let before = turned.clone();
-            turned.step();
-            assert_eq!(turned.atoms, before.atoms, "{kind:?} wrong turn");
-            assert_eq!(turned.bonds, before.bonds, "{kind:?} wrong turn");
-
-            let mut attached = fixture(Machine::Glyph(GlyphKind::Converter(kind))).sim;
-            let tail = attached.spawn(Atom {
-                kind: AtomKind::Base,
-                pos: Hex::new(-1, 0),
-            });
-            attached.bonds.push(Bond {
-                a: 0,
-                b: tail,
-                kind: BondKind::Single,
-            });
-            let before = attached.clone();
-            attached.step();
-            assert_eq!(attached.atoms, before.atoms, "{kind:?} attached atom");
-            assert_eq!(attached.bonds, before.bonds, "{kind:?} attached atom");
+        let mut turned = f.sim;
+        for atom in turned.atoms.iter_mut().flatten() {
+            atom.pos = atom.pos.turned(1);
         }
+        let before = turned.clone();
+        turned.step();
+        assert_eq!(turned.atoms, before.atoms, "{kind:?} wrong turn");
+        assert_eq!(turned.bonds, before.bonds, "{kind:?} wrong turn");
+
+        let mut attached = fixture(Machine::Glyph(GlyphKind::Converter(kind))).sim;
+        let tail = attached.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(-1, 0),
+        });
+        attached.bonds.push(Bond {
+            a: 0,
+            b: tail,
+            kind: BondKind::Single,
+        });
+        let before = attached.clone();
+        attached.step();
+        assert_eq!(attached.atoms, before.atoms, "{kind:?} attached atom");
+        assert_eq!(attached.bonds, before.bonds, "{kind:?} attached atom");
+    }
+
+    #[test]
+    fn resonance_changes_both_lone_ambers_in_place_at_every_turn_once() {
+        for dir in 0..6 {
+            let mut sim = Sim::empty();
+            let glyph = Glyph::new(GlyphKind::Resonator, Hex::new(3, -2), dir);
+            let positions: Vec<_> = glyph.slots().collect();
+            let ids: Vec<_> = positions
+                .iter()
+                .map(|pos| {
+                    sim.spawn(Atom {
+                        kind: AtomKind::Amber,
+                        pos: *pos,
+                    })
+                })
+                .collect();
+            sim.glyphs.push(Some(glyph));
+            let before = sim.clone();
+            let events = sim.step();
+            assert_eq!(sim.atoms.len(), before.atoms.len());
+            for (id, pos) in ids.iter().zip(positions) {
+                assert_eq!(
+                    sim.atoms[*id],
+                    Some(Atom {
+                        kind: AtomKind::Plum,
+                        pos
+                    })
+                );
+            }
+            assert_eq!(sim.bonds, before.bonds);
+            assert_eq!(sim.inventory, before.inventory);
+            assert!(sim.encountered.contains(&Item::Atom(AtomKind::Plum)));
+            assert_eq!(events.events.len(), 1);
+            assert!(matches!(
+                events.events[0],
+                TickEvent::Fired {
+                    machine: Machine::Glyph(GlyphKind::Resonator),
+                    ..
+                }
+            ));
+            let after = sim.atoms.clone();
+            assert!(sim.step().events.is_empty());
+            assert_eq!(sim.atoms, after);
+        }
+    }
+
+    #[test]
+    fn resonance_refuses_either_missing_wrong_or_bonded_feed_atomically() {
+        for seat in 0..2 {
+            for wrong in [
+                None,
+                Some(AtomKind::Base),
+                Some(AtomKind::Plum),
+                Some(AtomKind::Cobalt),
+            ] {
+                let mut sim = fixture(Machine::Glyph(GlyphKind::Resonator)).sim;
+                sim.atoms[seat] = wrong.map(|kind| Atom {
+                    kind,
+                    pos: sim.atoms[seat].unwrap().pos,
+                });
+                let before = sim.clone();
+                assert!(sim.step().events.is_empty());
+                assert_eq!(sim.atoms, before.atoms);
+                assert_eq!(sim.bonds, before.bonds);
+                assert_eq!(sim.encountered, before.encountered);
+            }
+            for kind in [BondKind::Single, BondKind::Double] {
+                let mut sim = fixture(Machine::Glyph(GlyphKind::Resonator)).sim;
+                let pos = sim.atoms[seat].unwrap().pos.add(DIRS[1]);
+                let tail = sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos,
+                });
+                bond(&mut sim, seat, tail, kind);
+                let before = sim.clone();
+                assert!(sim.step().events.is_empty());
+                assert_eq!(sim.atoms, before.atoms);
+                assert_eq!(sim.bonds, before.bonds);
+            }
+        }
+        let mut sim = fixture(Machine::Glyph(GlyphKind::Resonator)).sim;
+        bond(&mut sim, 0, 1, BondKind::Single);
+        let before = sim.clone();
+        assert!(sim.step().events.is_empty());
+        assert_eq!(sim.atoms, before.atoms);
+        assert_eq!(sim.bonds, before.bonds);
     }
 
     #[test]

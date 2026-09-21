@@ -282,43 +282,6 @@ pivot = [
 motion = "dilate"
 event = "fired"
 
-[machine.converter-plum]
-direction = "A single plum-glazed casting fills the three-cell footprint as one broad rounded angular kiln housing. The marked circular apertures are bored into the continuous material. Broad sculpted ceramic shoulders and one recessed dark-brass flow chamber make the housing recognisable without connecting pods or rails."
-kept = 11
-briefed = "43663a3d40ef700f"
-painted = "9589b8fbbadc6947"
-relit = "43634b6d578adf06"
-
-[machine.converter-plum.instrument]
-voice = "ceramic"
-note = 65
-
-[machine.converter-plum.emitter]
-look = "steam"
-count = 5
-lifetime = 3
-event = "fired"
-layer = "behind"
-energy_scaled = true
-
-[[machine.converter-plum.parts]]
-name = "base"
-mask = "outside"
-pivot = [
-    0.5,
-    0.5,
-]
-
-[[machine.converter-plum.parts]]
-name = "ring"
-mask = "inside"
-pivot = [
-    0.5,
-    0.5,
-]
-motion = "turn"
-event = "fired"
-
 [machine.output-1]
 direction = "One substantial pale-ivory ceramic receiving plinth fills its seven-cell honeycomb footprint, slightly inset from the guide. A continuous glazed tabletop offers an open space to place things, with a softly luminous blue-green inlay and a broad darkened-brass rim. Ornamental rivets and scalloped brass fittings enrich the perimeter. The radial shoulders point inward around one unbroken receiving field. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself. Its materials follow art/BIBLE.md section 2, Materials and light."
 kept = 6
@@ -487,6 +450,27 @@ pivot = [
 ]
 motion = "dilate"
 event = "fired"
+
+[machine.resonator]
+direction = "A broad twin-seat resonance instrument fills its two adjacent hexagons as one continuous plum-glazed ceramic housing. Two equal amber-lined circular apertures sit side by side in the marked seats. A substantial sculpted brass resonant crest rises between them inside the continuous body, with paired concentric ivory inlays suggesting a shared vibration. The shoulders fill both cells generously. No separate output opening, kiln, thin connecting rail, independent pods, symbols or writing."
+kept = 6
+briefed = "e6752bb579010a48"
+painted = "6dc40359dac51274"
+relit = "d6932fc5bbc9b895"
+motion = "dilate"
+parts = []
+
+[machine.resonator.instrument]
+voice = "ceramic"
+note = 65
+
+[machine.resonator.emitter]
+look = "spark"
+count = 10
+lifetime = 3
+event = "fired"
+layer = "on"
+energy_scaled = true
 
 [machine.second-bond]
 direction = "A single sculpted plum compression manifold fills its three-cell footprint as one broad triangular housing. Two blue-green retaining apertures and one terracotta consumed-feed aperture are bored into the same continuous casting. A broad recessed brass pressure channel remains internal to the housing. No triangular network of separate rings or rails."

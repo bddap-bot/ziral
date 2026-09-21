@@ -103,7 +103,7 @@ Single and double differ in hue (26° vs 267°) and shape.
 | bonder | terracotta | two-cell compression housing | equal seats and a brass compression channel |
 | second bond | plum | three-cell manifold | two bond seats and a distinct sacrificial feed |
 | amber converter | amber | three-cell fork | three brass-ringed seats and a Y channel |
-| plum converter | plum | three-cell bend | one amber seat, two plum seats and paired rails |
+| resonator | plum | two-cell housing | equal amber-lined seats and a shared brass resonant crest |
 | cobalt converter | cobalt | four-cell rhombus | opposite input and output openings; a cobalt path through two body cells |
 | reification | amber | nineteen-cell hexagon | two rings of seats and channels around a central receiving cup |
 | output, first tier | ivory | seven-cell well, hexagon | seven cups with brass rims, rails from the centre cup |

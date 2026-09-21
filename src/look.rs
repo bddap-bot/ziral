@@ -426,9 +426,11 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
         GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
         GlyphKind::Reification => (Glaze::Amber, machine!("reification")),
         GlyphKind::Converter(AtomKind::Amber) => (Glaze::Amber, machine!("converter-amber")),
-        GlyphKind::Converter(AtomKind::Plum) => (Glaze::Plum, machine!("converter-plum")),
+        GlyphKind::Resonator => (Glaze::Plum, machine!("resonator")),
         GlyphKind::Converter(AtomKind::Cobalt) => (Glaze::Cobalt, machine!("converter-cobalt")),
-        GlyphKind::Converter(AtomKind::Base) => panic!("the base atom has a source"),
+        GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+            panic!("only amber and cobalt have converters")
+        }
         GlyphKind::Output(Tier::One) => (Glaze::Ivory, machine!("output-1")),
         GlyphKind::Output(Tier::Two) => (Glaze::Ivory, machine!("output-2")),
         GlyphKind::Output(Tier::Three) => (Glaze::Ivory, machine!("output-3")),
@@ -474,8 +476,6 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
         ("bonder", "bar") => pair!("bonder", "moving"),
         ("converter-amber", "base") => pair!("converter-amber", "base"),
         ("converter-amber", "ring") => pair!("converter-amber", "moving"),
-        ("converter-plum", "base") => pair!("converter-plum", "base"),
-        ("converter-plum", "ring") => pair!("converter-plum", "moving"),
         ("converter-cobalt", "base") => pair!("converter-cobalt", "base"),
         ("converter-cobalt", "flow") => pair!("converter-cobalt", "moving"),
         ("output-1", "base") => pair!("output-1", "base"),

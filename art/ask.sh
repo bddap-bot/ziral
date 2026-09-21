@@ -24,7 +24,7 @@ one() {
   events=$(codex exec --skip-git-repo-check --json --output-schema "$schema" --model "$director_model" "$prompt" "${attach[@]}" </dev/null) || return 1
   thread=$(printf '%s\n' "$events" | jq -r 'select(.type == "thread.started") | .thread_id' | head -1)
   [ -n "$thread" ] || { printf '%s\n' "$events" >&2; return 1; }
-  rollout=$(find "${CODEX_HOME:-$HOME/.codex}/sessions" -name "rollout-*-$thread.jsonl" -print -quit 2>/dev/null)
+  rollout=$(find -H "${CODEX_HOME:-$HOME/.codex}/sessions" -name "rollout-*-$thread.jsonl" -print -quit 2>/dev/null)
   [ -s "$rollout" ] || { echo "thread $thread has no rollout" >&2; return 1; }
   jq -se --arg model "$director_model" '
     [.[] | select(.type == "turn_context") | .payload.model]

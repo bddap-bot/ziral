@@ -21,7 +21,7 @@ use bevy::math::Affine2;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
-use bevy::render::render_resource::TextureFormat;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
@@ -4328,17 +4328,41 @@ fn fire_kiln(
             .map(|(_, image, _)| image.clone())
             .unwrap_or_else(|| panic!("{skin:?} was never fired"))
     };
+    let dark = images.add(Image::new_fill(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0, 0, 0, 0],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    ));
     let lit = Machine::ALL
         .into_iter()
-        .flat_map(|item| rig::parts(item).iter().map(move |part| (item, part)))
-        .map(|(item, part)| {
-            let (skin, normal, emissive) = look::rig(item, &part.name);
+        .flat_map(|item| {
+            let parts = rig::parts(item);
+            if parts.is_empty() {
+                let look = look::machine(item);
+                vec![(look.skin, look.marking.normal(), None)]
+            } else {
+                parts
+                    .iter()
+                    .map(|part| {
+                        let (skin, normal, emissive) = look::rig(item, &part.name);
+                        (skin, normal, Some(emissive))
+                    })
+                    .collect()
+            }
+        })
+        .map(|(skin, normal, emissive)| {
             let lit = std::array::from_fn(|level| {
                 lits.add(Lit {
                     light: look::light().extend(look::AMBIENT),
                     albedo: image(skin),
                     relief: image(normal),
-                    emissive: image(emissive),
+                    emissive: emissive.map_or_else(|| dark.clone(), image),
                     response: Vec4::new(
                         level as f32 / sim::ActivationEnergy::FULL.level() as f32,
                         Glaze::Amber.rgb()[0],
@@ -4599,6 +4623,23 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         let quad = look::quad(item);
         let kiln = self.kiln;
         let pulse = rig::pulse(response.0, response.1);
+        if rig::parts(item).is_empty() {
+            let look = look::machine(item);
+            let (shift, turn, scale) = rig::entry(item)
+                .motion
+                .map_or(([0.0, 0.0], 0.0, 1.0), |motion| motion.pose(pulse));
+            let centre =
+                origin + Vec2::from_angle(angle).rotate(quad.centre + Vec2::from(shift) * HEX);
+            self.fill(
+                &kiln.bar,
+                kiln.lit(look.skin, response.2),
+                centre,
+                angle + turn,
+                quad.size() * scale,
+                z,
+            );
+            return;
+        }
         for (index, part) in rig::parts(item).iter().enumerate() {
             let (skin, _, _) = look::rig(item, &part.name);
             let pivot = Vec2::new(part.pivot[0], part.pivot[1]) * HEX;
@@ -5555,7 +5596,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 60] = [
+    pub const SCENES: [&str; 62] = [
         "portal-copy-109",
         "portal",
         "source-upgrade",
@@ -5596,6 +5637,8 @@ mod shot {
         "grabfirst",
         "base",
         "converters",
+        "resonator",
+        "resonator-sheet",
         "converter-sheet",
         "reification",
         "rig",
@@ -6046,6 +6089,21 @@ mod shot {
                 script.push((2, Act::Paste(text)));
                 script.push((4, Act::Press(Hex::new(-1, -1))));
             }
+            "resonator" => {
+                world.sim = sim::fixture(Machine::Glyph(GlyphKind::Resonator)).sim;
+                world.sim.atoms[1].as_mut().unwrap().pos = Hex::new(3, 0);
+                script.extend(carry(48, &[(3, 0), (2, 0), (1, 0)], None));
+            }
+            "resonator-sheet" => {
+                let mut sim = Sim::empty();
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Resonator, Hex::new(-3, 0), 0)));
+                let input = sim::fixture(Machine::Glyph(GlyphKind::Resonator)).sim;
+                sim.place(&input, ORIGIN);
+                sim.place(&input.replay(1), Hex::new(3, 0));
+                world.sim = sim;
+                world.period = f32::INFINITY;
+            }
             "converters" => {
                 let mut sim = Sim::empty();
                 sim.place(
@@ -6053,7 +6111,7 @@ mod shot {
                     Hex::new(-4, 0),
                 );
                 sim.place(
-                    &sim::fixture(Machine::Glyph(GlyphKind::Converter(AtomKind::Plum))).sim,
+                    &sim::fixture(Machine::Glyph(GlyphKind::Resonator)).sim,
                     Hex::new(0, 0),
                 );
                 sim.place(
@@ -6133,11 +6191,8 @@ mod shot {
                     Hex::new(-1, 1),
                     0,
                 )));
-                sim.glyphs.push(Some(Glyph::new(
-                    GlyphKind::Converter(AtomKind::Plum),
-                    Hex::new(1, 1),
-                    0,
-                )));
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Resonator, Hex::new(1, 1), 0)));
                 sim.glyphs.push(Some(Glyph::new(
                     GlyphKind::Converter(AtomKind::Cobalt),
                     Hex::new(4, 1),
@@ -10891,6 +10946,8 @@ mod tests {
             (bonder, 0),
             (bonder, 4),
             (bonder, 9),
+            (Machine::Glyph(GlyphKind::Resonator), 0),
+            (Machine::Glyph(GlyphKind::Resonator), 1),
             (Machine::Arm(ArmLength::One), 2),
             (Machine::Arm(ArmLength::Two), 2),
             (Machine::Arm(ArmLength::Three), 2),
@@ -10918,7 +10975,7 @@ mod tests {
                 sim.glyphs
                     .iter()
                     .flatten()
-                    .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len())
+                    .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len().max(1))
                     .sum::<usize>(),
                 "{name} glyphs"
             );
@@ -10985,7 +11042,7 @@ mod tests {
             );
             assert_eq!(
                 fills.len(),
-                2 + rig::parts(machine).len()
+                2 + rig::parts(machine).len().max(1)
                     + bars(&recipe)
                     + 2 * recipe.atoms.len()
                     + playfield(machine).len()
@@ -10993,7 +11050,7 @@ mod tests {
                         .glyphs
                         .iter()
                         .flatten()
-                        .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len())
+                        .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len().max(1))
                         .sum::<usize>()
                     + bars(&sim)
                     + 2 * atoms.len()
@@ -11059,10 +11116,7 @@ mod tests {
                 AtomKind::Amber,
                 Machine::Glyph(GlyphKind::Converter(AtomKind::Amber)),
             ),
-            (
-                AtomKind::Plum,
-                Machine::Glyph(GlyphKind::Converter(AtomKind::Plum)),
-            ),
+            (AtomKind::Plum, Machine::Glyph(GlyphKind::Resonator)),
             (
                 AtomKind::Cobalt,
                 Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt)),

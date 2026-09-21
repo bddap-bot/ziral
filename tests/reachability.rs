@@ -39,7 +39,7 @@ enum ProofId {
     Starting(Item),
     Compound(&'static str),
     RecipeItem(Item),
-    ConverterAtom(AtomKind),
+    RoutedAtom(AtomKind),
     ReifiedAtom(AtomKind),
     Broken,
     BrokenDependent,
@@ -56,7 +56,7 @@ impl ProofId {
                 recipe_text(Item::Machine(Machine::Arm(ArmLength::One)))
                     .expect("the arm has a recipe"),
             ),
-            ProofId::ConverterAtom(kind) => Fact::Atom(kind),
+            ProofId::RoutedAtom(kind) => Fact::Atom(kind),
             ProofId::ReifiedAtom(kind) => Fact::Item(Item::Atom(kind)),
             ProofId::BrokenTransitive => Fact::Item(Item::Machine(Machine::Arm(ArmLength::One))),
         }
@@ -68,7 +68,7 @@ impl ProofId {
             ProofId::Starting(item) => root_item_name(item),
             ProofId::Compound(text) => compound_name(text),
             ProofId::RecipeItem(item) => recipe_item_name(item),
-            ProofId::ConverterAtom(kind) => atom_name(kind),
+            ProofId::RoutedAtom(kind) => atom_name(kind),
             ProofId::ReifiedAtom(kind) => {
                 format!("atom {kind:?} is attainable through reification")
             }
@@ -89,7 +89,7 @@ impl ProofId {
             ProofId::Starting(item) => prove_start_item(item, premises),
             ProofId::Compound(text) => prove_compound(text, premises),
             ProofId::RecipeItem(item) => prove_item(item, premises),
-            ProofId::ConverterAtom(kind) => prove_atom(kind, premises),
+            ProofId::RoutedAtom(kind) => prove_atom(kind, premises),
             ProofId::ReifiedAtom(kind) => prove_reified(kind, premises),
             ProofId::Broken => Err("deliberate break".to_string()),
             ProofId::BrokenDependent | ProofId::BrokenTransitive => {
@@ -106,7 +106,13 @@ impl ProofId {
                 let text = recipe_text(item)?;
                 recipe_item_premises(item, text)
             }
-            ProofId::ConverterAtom(kind) => {
+            ProofId::RoutedAtom(kind) => {
+                if matches!(atom_route(kind), AtomRoute::Resonator) {
+                    return Ok(vec![
+                        ProofId::RecipeItem(Item::Machine(Machine::Glyph(GlyphKind::Resonator))),
+                        ProofId::RoutedAtom(AtomKind::Amber),
+                    ]);
+                }
                 let AtomRoute::Converter(text) = atom_route(kind) else {
                     return Err("the base atom uses the source proof".to_string());
                 };
@@ -517,6 +523,34 @@ fn prove_item(item: Item, premises: &[Fact]) -> Result<Fact, String> {
 }
 
 fn prove_atom(kind: AtomKind, premises: &[Fact]) -> Result<Fact, String> {
+    if matches!(atom_route(kind), AtomRoute::Resonator) {
+        let machine = Item::Machine(Machine::Glyph(GlyphKind::Resonator));
+        let mut sim = Sim::empty();
+        grant_item(&mut sim, premises, machine)?;
+        take_glyph(&mut sim, GlyphKind::Resonator, ORIGIN, 0)?;
+        let mut ids = Vec::new();
+        for pos in [ORIGIN, DIRS[0]] {
+            ids.push(grant_atom(
+                &mut sim,
+                premises,
+                Atom {
+                    kind: AtomKind::Amber,
+                    pos,
+                },
+            )?);
+        }
+        sim.step();
+        return (ids.iter().zip([ORIGIN, DIRS[0]]).all(|(id, pos)| {
+            sim.atoms[*id]
+                == Some(Atom {
+                    kind: AtomKind::Plum,
+                    pos,
+                })
+        }) && sim.atoms.iter().flatten().count() == 2
+            && sim.bonds.is_empty())
+        .then_some(Fact::Atom(kind))
+        .ok_or_else(|| "the resonator did not change both loose amber atoms in place".to_string());
+    }
     let AtomRoute::Converter(text) = atom_route(kind) else {
         return Err("the base atom uses the source proof".to_string());
     };
@@ -624,7 +658,7 @@ fn construction_premises(target: &Sim) -> Vec<ProofId> {
         if kind == AtomKind::Base {
             ProofId::BaseAtom
         } else {
-            ProofId::ConverterAtom(kind)
+            ProofId::RoutedAtom(kind)
         }
     }));
     premises
@@ -718,10 +752,10 @@ fn proofs() -> Vec<ProofId> {
         add(ProofId::RecipeItem(item));
     }
     for (kind, route) in ATOM_ROUTES {
-        let AtomRoute::Converter(_) = route else {
+        if matches!(route, AtomRoute::Source) {
             continue;
-        };
-        add(ProofId::ConverterAtom(kind));
+        }
+        add(ProofId::RoutedAtom(kind));
     }
     for kind in AtomKind::ALL {
         add(ProofId::ReifiedAtom(kind));
@@ -770,7 +804,7 @@ fn every_item_compound_and_atom_kind_is_reachable_in_world() {
         let id = if kind == AtomKind::Base {
             ProofId::BaseAtom
         } else {
-            ProofId::ConverterAtom(kind)
+            ProofId::RoutedAtom(kind)
         };
         assert!(
             run.proofs
