@@ -1,6 +1,10 @@
 # ziral art bible — Fired Workshop
 
+Directive: “Fired Workshop”.
+
 The portal is one substantial plum ceramic housing within one tile, with a broad brass and ivory aperture and mineral depth inside. The canonical interior preview uses the ordinary scene renderer inside that opening. Interior tiles use a separately painted ethereal plum and ivory mineral surface with the same grout geometry; overworld tiles retain the clay batch. Machine materials and the ivory replay tally remain unchanged.
+
+Directive: “within one tile”.
 
 A completed portal click briefly dilates the complete housing uniformly and releases ivory steam above its aperture, accompanied by its ceramic instrument. The canonical preview remains still; the response lasts one 400 ms tick independently of the overworld tick boundary.
 
@@ -32,31 +36,49 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory has no hue worth 
 
 **Materials and light.** Glazed clay for the board and atoms, rubbed brass for arms and bonds, matte rubber for hands. Every machine body, including arms, has rich material: glaze variation, shading and depth are expected. Capture albedo under even, diffuse, non-directional light, with curvature expressed through symmetric tonal structure and wear at contact edges, without baked directional highlights or cast shadows. The shipped material lights albedo through normal maps; activation warms, ripples and flares the event-responsive feature alone, through its emissive map, and leaves inert parts at rest. Machine relief is a deterministic shallow approximation from colour and silhouette. Six calibration relights use explicit light vectors and the same computed shading for machine and sphere, described in [MACHINES.md](MACHINES.md#relief). The complete arm creeps, overshoots, and rings out in one rotation about its pivot; its painted parts add no second turn.
 
+Directive: “Every machine body, including arms, has rich material: glaze variation, shading and depth are expected”; “The complete arm creeps, overshoots, and rings out”.
+
 Fittings are welcome and need not do visible work: ports, plates, rivets, pipes and toothed collars.
 
 Directive: the ornamental-hardware ban is rejected. Ornamental hardware is wanted; lean into the look — ports, plates, rivets, pipes, toothed collars — and let the art be generous with it.
 
 **View.** Every machine is drawn from directly above, the camera straight down and orthographic. Visible side faces, a cup’s far inner wall and vanishing points are judged by the image critic: tonal asymmetry alone cannot distinguish a tilted cup from a shaded straight-down one.
 
+Directive: “Every machine is drawn from directly above, the camera straight down and orthographic”.
+
 **Footprint.** No pixel left visible after removal of the green background extends beyond the union of the art footprint’s hexes by more than the manifest’s `outside` share of a hex circumradius (centre to corner). The art footprint includes an arm’s pivot, crossed cells and hand; its gameplay placement occupies only the pivot. Glyph art includes both functional seats and body cells. [MACHINES.md](MACHINES.md#inputs-and-provenance) describes the scaffold, including the source’s painted housing cells.
+
+Directive: “No pixel left visible after removal of the green background extends beyond the union of the art footprint’s hexes”.
 
 **Body envelope.** The authoritative envelope rule is the Directive passage in [the manifest’s `style.shared`](machines/manifest.toml). It defines body coverage, the source reference, radial orientation and functional exceptions. Computed housing geometry remains unchanged; changed paint briefs are remade through the normal pipeline.
 
 **Silhouette.** Stout circular pivots, one-piece links, an open horseshoe for the hand, and complete machine housings around glyph seats.
 
+Directive: “complete machine housings around glyph seats”.
+
 **Line.** Fills carry identity; lines carry structure. Grout and rims are thin dark brass. Glyph channels are the glyph's own glaze. Ivory board outlines mark selection, placement and stalls.
 
 **Texture.** Every atom and bond wears a diffusion-generated macro of its material, while every machine is one complete top-down object sprite painted over a scaffold marking its functional seats and kept in [`machines/`](machines/) with the manifest that remakes it (MACHINES.md). Atoms, bonds and tiles are kept in [`textures/`](textures/), each with the prompt that painted it beside it. The board draws from twenty-four scaffolded clay hexes generated from one prompt, each cell's tile fixed by a hash of its coordinate, so one clay family carries handmade batch variation while its generated grout remains visible and its captured light stays fixed. Grout is one image, `textures/grout.png`: the scaffold every tile is painted over, its surround generated once as coarse sanded grout to the image edge. At texture loading, the renderer lays the template's pixels over everything beyond the scaffold stroke's inner edge and crops at the stroke's outer edge, so every tile's ring is the same pixels and a seam is one grout meeting itself; a new tile is painted over the template so its clay reaches the ring, it is never judged on its border, and a template must keep its grain on every edge at the shipped size. Static seats, rims, markings, channels, and the open hand belong to the machine sprite rather than a second drawing over it; the live terracotta grip cue alone contracts over the open hand to show held state.
 
+Directive: “Every atom and bond wears a diffusion-generated macro of its material”; “Atoms, bonds and tiles are kept in [`textures/`](textures/), each with the prompt that painted it beside it”; “one clay family carries handmade batch variation”; “its generated grout remains visible”; “Grout is one image, `textures/grout.png`: the scaffold every tile is painted over”.
+
 **Glyphs.** Circular seats remain broad and unobstructed beneath atoms. A glyph never reads as a compound: separate round nodes joined by bonds, narrow necks or rails fail regardless of numeric critic score. Arms retain their distinct pivot, link and hand silhouette.
 
+Directive: “A glyph never reads as a compound”; “Arms retain their distinct pivot, link and hand silhouette”.
+
 **UI.** Dark brass strips and borders frame the inventory and tape; the lit tape row is lighter brass. Each machine or atom picture sits on a circular clay field; an atom is the board’s circular bead with its brass rim. Instruction tokens sit directly on the strip. [SYMBOLS.md](SYMBOLS.md) defines their geometry and the inventory counts. Hover and pinned cards share a clay surface within one brass border, with the item, its recipe in atoms and bonds, and fixture playback on the board’s clay. Cards carry no writing apart from the key letters inside instruction pictures. Tab holds up the painted manual page with those same instruction pictures and no other writing. On the board, an ivory hover outline surrounds the target a press would take: the bead within its circular body, or the machine at the same cell outside it.
+
+Directive: “an atom is the board’s circular bead with its brass rim”; “the item, its recipe in atoms and bonds, and fixture playback on the board’s clay”; “Cards carry no writing apart from the key letters inside instruction pictures”; “Tab holds up the painted manual page with those same instruction pictures and no other writing”; “the bead within its circular body, or the machine at the same cell outside it”.
 
 **Ghost.** A ghost is a projected frame drawn alone while the canonical frame waits. The existing ivory tally is its only cue: G adds a mark, S removes one, and the canonical frame has none. Machines retain their lit material and activation response; atoms, bonds, rims and lines retain their normal opacity. The projection does not alter the interior tile treatment.
 
 **Motion.** Ticks have weighted starts and soft, decisive seats. What a glyph makes or eats appears at the end of the sweep, never mid-arc. The tick is 400 ms; a stall is backpressure.
 
+Directive: “a stall is backpressure”.
+
 **Forbidden.** Failure of the mechanical footprint, seat, palette or off-centre gates defined in [MACHINES.md](MACHINES.md#generate-and-select); text or numerals on the board.
+
+Directive: “text or numerals on the board”.
 
 Directive: no hard fail on the bible’s prohibitions. The judge weighs overall visual strength and detail; the more detailed candidates are preferred. Artistic constraints inform judgment rather than impose score caps.
 
@@ -69,6 +91,8 @@ Distinctness means at least two counted differences per pair within each class: 
 Hue counts when both glazes have chroma at least 0.15 and their hues differ by at least 40°; value counts at a luminance difference of 0.15. Texture counts at a mean absolute RGB distance of at least 0.023 on sixteen-by-sixteen-pixel thumbnails over pixels painted by either sprite, excluding their shared empty surround. Every member of a class uses a different texture. Atom and bond textures average to their glaze; tiles stay within the clay-family tolerance while differing from each other; machine sprites combine the bible materials.
 
 The classes: atoms, bonds, glyphs, machines. A machine is a primitive the palette can place, so the machine class includes all three arm lengths, the portal and every glyph; glyph distinctness is the machine table restricted to glyphs.
+
+Directive: “The classes: atoms, bonds, glyphs, machines”.
 
 The tables describe painted features; the marking column is descriptive, not a fifth gate. Atom meshes remain circular even when their declared shape categories differ.
 
@@ -112,6 +136,8 @@ Single and double differ in hue (26° vs 267°) and shape.
 
 The arm lengths and output tiers share glaze and value. Each pair passes through different declared shape categories and texture distance. Arm length and declared output seat count distinguish their category labels; the gate does not compare their rendered outlines. The output tiers have seven, nineteen and thirty-seven seats, but rendered seat counts are not independently measured.
 
+Directive: “The output tiers have seven, nineteen and thirty-seven seats”.
+
 ## 4. Reference
 
 `../proofs/amber-63.png` places the base, amber, and plum atoms side by side in the world at shipped size after the amber texture's saturation regrade.
@@ -139,5 +165,7 @@ Asset directories, relative to this document:
 - [symbols/](symbols/) contains the vector source and generated instruction pictures described in [SYMBOLS.md](SYMBOLS.md).
 
 The three output cards play the shared fixtures in [src/sim.rs](../src/sim.rs) receiving the bonder, second-bond and amber-converter compounds respectively; their own recipes remain in the recipe panel. `../proofs/output-products-112-3823.png` shows all three cards at native size.
+
+Directive: “their own recipes remain in the recipe panel”.
 
 A portal's square aperture frames the canonical extent through one uniform transform. Its housing fades as the camera fills that aperture. A body with no atom-seat marks registers by its complete silhouette with one translation and uniform scale; the silhouette is never cut to its footprint. The ethereal texture uses the grout template's square resolution as its size source. Its first painting is retained at critic score 8 in `textures/ethereal-candidates/`.

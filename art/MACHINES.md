@@ -8,6 +8,8 @@ A glyph scaffold shows its footprint union in grey over green, with coloured rin
 
 The shared text, machine direction, scaffold and any manifest references reach `art/direct.sh`, which uses `art/ask.sh` to write a declarative image caption. No recipe image or recipe sentence reaches the painter. The shared runner passes the [director model](director-model.txt) explicitly for both direction and judging, and rejects a missing transcript or any turn reporting another model. Painting uses the configured Codex installation.
 
+Directive: “which uses `art/ask.sh` to write a declarative image caption”; “No recipe image or recipe sentence reaches the painter”.
+
 `art/paint.sh` passes the caption unchanged to the image tool and verifies its actual call against that caption and the attached paths and SHA-256 hashes. Each prompt ends with an **Image inputs** section containing those verified inputs. Historical unrecoverable inputs remain explicit as `unknown`. A mismatched caption or attachment, implicit conversation-image reference or non-square return fails the paint. A square return is resized uniformly and quantised. Machine candidates' returned transparency is composited over the green key before measurement; this neither clips nor reshapes the object.
 
 `prompt.txt` records the first round; `candidates/round-N.txt` records round N. These are evidence of their paints, not instructions to restore historical inputs. Shared-brief changes require newly authored captions and newly painted candidates; refreshing a hash alone is not repainting.
@@ -19,7 +21,9 @@ Inside `nix-shell`, use `cargo run -- --gen bonder` or name multiple entries. `-
 1. **Register.** Seat rims supply one translation and one uniform scale. No stretch or rotation is applied.
 2. **Measure.** `outside`, `seat`, `palette` and `off_centre` are hard gates. Distances use hex circumradii. The footprint measures the sprite; it never cuts its silhouette.
 3. **Judge.** The critic sees the cut sprite on board tiles at gameplay scale, magnified without smoothing, beside its scaffold. The fixed rubric weighs overall visual strength, presence, material richness, detail and confidence. Detail counts in favour; bible prohibitions impose no automatic deductions, hard failures or score caps. A separate required boolean rejects any glyph that reads as a compound, regardless of score. This separate housing gate remains independent of the holistic score. Arms are exempt. Missing required reply fields fail judgment. Critic calls run sequentially.
+   Directive: “Detail counts in favour”; “rejects any glyph that reads as a compound, regardless of score”.
 4. **Repeat and keep.** A passing score of 8 ends painting early. Round two addresses the best candidate's measured or visual issues; round three starts from the brief again. At the three-round cap, keep the best measured, judged, non-compound candidate, even below 8. A tie uses measured rank, then the earliest candidate. With none passing, generation fails. A critic that reads no measured passing candidate stops the run without another paint round.
+   Directive: “A passing score of 8 ends painting early”; “At the three-round cap, keep the best”.
 5. **Cut and light.** Remove the key into `albedo.png`, derive `normal.png`, compute the six calibration relights, and split only the requested machines into rig parts.
 
 All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a glyph gate or rubric change invalidates that cache.

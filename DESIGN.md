@@ -12,24 +12,30 @@ The art documents mix current direction, abandoned experiments and the exact pro
 
 One sentence: who the player is, what they do, why that is fun.
 
-Zoomed in, its a automation puzzle game, as the game progresses, as the player zooms out, it turns into an engineering game.
+Directive: Zoomed in, its a automation puzzle game, as the game progresses, as the player zooms out, it turns into an engineering game.
 
 ## Core loop
 
-Zoomed loop: similar to Opus Magnum.
-Wide loop: similar to Factorio.
+Directive: Zoomed loop: similar to Opus Magnum.
+Directive: Wide loop: similar to Factorio.
 
 The world is one continuous hex grid at every zoom level: every cell, pivot, and pad is a hex coordinate on it, and no machine has a boundary or a definition of its own; the wide view is nothing but zooming out. Each actuator gets a tape. A machine is only a primitive, an arm or a bonder or an applicator, the things later built as compounds and dropped on an output pad; there is no assembly-level machine, no group entity, and no group tape. Start with length 1 arms. We might copy opus magnum later or get creative. Every atom comes from a source the world placed, one atom per tick; the map bounds the atoms per tick. Zoom is continuous; there is no boundary between micro and macro. Zoomed in, the puzzles are Opus Magnum-like; zooming out raises the level of abstraction. A group of machines can be copied and placed, as Factorio blueprints. There is no wrapping of a group into a new kind of entity. Mistakes at the micro level cause macro problems, and vice versa. The hard problems, as in Factorio, are planning, robustness, and managing complexity.
+
+Directive: “The world is one continuous hex grid”; “Each actuator gets a tape”; “Start with length 1 arms. We might copy opus magnum later or get creative”; “one atom per tick”; “Zoom is continuous; there is no boundary between micro and macro”; “Zoomed in, the puzzles are Opus Magnum-like; zooming out raises the level of abstraction”; “A group of machines can be copied and placed, as Factorio blueprints”; “Mistakes at the micro level cause macro problems, and vice versa”; “The hard problems, as in Factorio, are planning, robustness, and managing complexity”.
 
 ## Progression
 
 Factorio's model. Progression unlocks mechanics and reveals the next challenge, each to be received with dismay. Science compounds are combined, then consumed to advance research. Each research tier demands new molecules, which demands new machines: that is what pulls the player back into the micro loop.
 
+Directive: “Factorio's model. Progression unlocks mechanics and reveals the next challenge, each to be received with dismay”; “Science compounds are combined, then consumed to advance research”.
+
 Each primitive machine is itself built as a compound and dropped on an output pad before it can be placed. Part of progression may fall out of the need to bootstrap, with no science at all. Open: how the first machine reaches the player's inventory. I guess science might not need to exist if we cleverly arrange dependencies. There is not first machine yet. Decided: the pointer is the first hand, and the first machine is built by hand (Toy 1 lifts atoms by hand, below).
+
+Directive: “Each primitive machine is itself built as a compound and dropped on an output pad before it can be placed”; “Part of progression may fall out of the need to bootstrap, with no science at all”; “I guess science might not need to exist if we cleverly arrange dependencies”; “Decided: the pointer is the first hand, and the first machine is built by hand (Toy 1 lifts atoms by hand, below)”.
 
 ## Feel
 
-Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included. Mouse and keyboard only.
+Directive: Minute editing comes from Opus Magnum. Zoomed out editing comes from factorio, copy-paste included. Mouse and keyboard only.
 
 ### Rotatable light
 
@@ -85,6 +91,8 @@ The stages land in dependency order: the typed stream with replay and card playb
 ## First playable
 
 One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by whatever transport the player builds from the same primitives. No readout. We might not ever need to provide an explicit goal. Graybox, circles and lines, until the art bible (art/BIBLE.md) replaced it.
+
+Directive: “No readout”; “We might not ever need to provide an explicit goal”.
 
 Status: Toy 1 (issue #1) exists to look at and play with while the design is imagined; the design is rewritten after it.
 
@@ -196,6 +204,8 @@ Directive (verbatim): "separately, get me some mockups for a pip design with mor
 
 One static comparison places four candidates on the real board and palette at the shipped pixel size. Every candidate shows the same three rows: caps 4, 8 and 16 with counts 3, 5 and 13. The whole marks carry 1, 2, 4, 8 and 16 in order; ivory shows the current whole marks and the fractional next mark, while clay outlines show the remaining cap. The letters A through D distinguish proposals only. This sheet is historical; candidate B became the concentric inventory rings described below.
 
+Directive: “candidate B became the concentric inventory rings described below”.
+
 This is the dumbest design satisfying the directive because one reproducible sheet can answer the taste question without adding a runtime branch, temporary setting or second pip renderer. Changing the shipped equal circles before comparing them was rejected because it would turn a proposal into an unchosen implementation.
 
 Candidate A grows each successive circular mark with its magnitude. Its trade-off is the clearest direct link between area and exponential weight, at the cost of an uneven baseline and little room at larger caps.
@@ -210,9 +220,13 @@ Candidate D sweeps successive arc marks around one brass centre. Its trade-off i
 
 Each glyph is one substantial housing, with functional seats cut into its body. The ten current glyph entries include the second-bond applicator; all three arm lengths retain their existing art. Broad ceramic castings replace the separate seat pods and connecting bars. The footprint remains a measurement boundary, never a mask that clips the generated silhouette.
 
+Directive: “all three arm lengths retain their existing art”.
+
 The shared glyph scaffold supplies one grey envelope. The source's separate housing role and orange guide are deleted because its body cells have the same meaning as every other body cell. Its older sketch is no longer a paint input: the first treatment reproduced separate tile panels, so the replacement direction requires a continuous casting with a recessed metering groove. Exact captions and attachment hashes accompany the replacement candidates.
 
 The critic keeps its original rubric and threshold. An additional required compound judgment rejects a glyph regardless of taste score. Painting still stops after three rounds and retains the best measured, judged, non-compound candidate; a missing acceptable candidate fails the run. Computed lighting follows the single renderer described above.
+
+Directive: “Painting still stops after three rounds”.
 
 [The native-size before/after sheet](proofs/machine-housings-computed-67.png) compares the unchanged main assets with the new housings in the same board scene. [The coverage and calibration table](proofs/machine-housings-calibration-67.md) records the baseline commit, actual selections, coverage and measured directions. The arm is the unchanged visual control.
 
@@ -261,6 +275,8 @@ The first-output proposal is: paint one monolithic cast pale-ivory receiving hou
 
 The proposal paints used the scaffold alone and are separate from the A/B/C winners. The fixed 8-point target remained unchanged. None reached it within three rounds, so the sheet keeps the strongest measured-pass body-first capture for each footprint: arm round two at 0.000, 0.764, 0.085, 0.000 and critic 6; bonder round three at 0.000, 0.928, 0.096, 0.000 and critic 6; first output round three at 0.000, 0.873, 0.222, 0.020 and critic 6. This follows the established three-round stop rather than changing the rubric to fit the proposal. `proofs/machine-body-first-67.png` places those three captures, in that order, on the real board at shipped size without scaling their aspect. The sheet contains no caption because board art carries no writing; this paragraph makes its proposal status explicit.
 
+Directive: “The fixed 8-point target remained unchanged”.
+
 - Creating a bond requires an atom: the atom becomes the bond between two other atoms.
 - A jam element: a bane in the early game, until the player learns they need it and builds machines to manufacture it on purpose.
 - Metals become transferable over long distances via a reaction resembling electroplating. Make it extra complicated, perhaps consuming a consumable on the receiving end.
@@ -275,15 +291,23 @@ Proposal: a finished machine is deterministic and periodic, so it compiles to a 
 How do we let player actively design and recover from mistakes. Debug step forward and back? Localized debug step?
 Proposal: determinism gives step forward for free and step back by replay from a checkpoint. Localized step is the same on one machine with its recorded input stream. Decided for the world: step forward is one tick of the sim on a copy, step back is replay from the paused frame, no state log (Toy 1 steps through ghost frames). Localized step stays open.
 
+Directive: “Decided for the world: step forward is one tick of the sim on a copy, step back is replay from the paused frame, no state log (Toy 1 steps through ghost frames)”.
+
 Are placed instances linked to one definition (edit once, all update) or independent copies? Linked gives blueprints plus an upgrade path.
 
 Are belts provided at all, or engineered from the primitives: grabbers moving a polymer, a corner meaning cut and re-bond after the turn, a favourite belt design copied? If engineered, two things follow. Copy-paste must make the fiftieth belt free, or transport becomes chores, so blueprints are core rather than a feature. And a hand-built belt costs far more to simulate than a provided one, so compiling blueprinted groups to a throughput function stops being an optimization and becomes the architecture. A third option: launchers. Single atoms can be launched; compounds need more involved transport. Transport cost then scales with what is moved, which is a decision in itself: move atoms and bond locally, or engineer compound transport.
 
 Does the world run while you edit? Factorio's always-running world is fun: things go wrong while you think, and progress happens while you think. Opus Magnum would be unplayable in real time. Decided: entire world runs in lockstep.
 
+Directive: “Factorio's always-running world is fun: things go wrong while you think, and progress happens while you think. Opus Magnum would be unplayable in real time”; “Decided: entire world runs in lockstep”.
+
 What does a mistake look like in the world? Options: a local jam that persists until something clears it; no mistakes at all; the jam element from the parking lot; backpressure absorbing part of the problem. Decided: the world never halts; an illegal instruction stalls. On a tick, an instruction whose effect would be illegal does not execute: a grab over an empty cell; a rotate, pivot or move that would carry a held atom onto a cell holding an atom outside its compound, or onto any arm's base; a rotate, pivot or move of a molecule under two hands; a move whose base would land on a glyph, another arm's base or an atom. That actuator's tape freezes on the instruction and retries every tick until it is legal, and everything else keeps running, so upstream backs up. Nothing is ever destroyed; deadlock is the failure mode and stays visible, with a marker on the stalled actuator. Conflicts between two actuators in the same tick resolve deterministically, in fixed actuator order.
 
+Directive: “a move whose base would land on a glyph, another arm's base or an atom”.
+
 Substrate: decided, vertical slice. One source atom type, two bond types, exercising the data model. What makes a compound valuable is still open.
+
+Directive: “Substrate: decided, vertical slice. One source atom type, two bond types, exercising the data model”.
 
 What if arms could grab and move arms? Actuators as ordinary matter would make placement a machine act and give the bootstrap a path; not in the toy.
 
@@ -299,23 +323,23 @@ The bonder is a two-slot glyph on two adjacent cells. When both slots hold an at
 ## Toy 1, first run (2026-09-04)
 
 first run of ziral toy 1:
-- selecting a machine give it focus, with focus asdf keys can be used for programming, use same shortcuts as opus magnum
-- I am suprized glyphs can occupy the same hex, was that intentional? could be fun
-- output glyphs will be similar to processing glyphs like the bonders (you may even be able to use the same abstraction/data-model for output,input, and processing.)
-- where an atom goes on the glyph matters, glyph also cares about bond presence
-- our single output glyph sucks up the entire compound despite it being two atoms double bonded together, any output glyphs should need to match the compounds shape in order to accept that compound. atom and bond identities must match too, though that may change for future output-style machines
-- editing: quality of life: when holding a machine, we'll need to preview it visually
-- when holding a machine keyboard keys should rotate it (copy opus magnum de re metalica controls)
-- botom of screen should show all the tapes of machines currently on screen (up to a limit). click one tape to edit
-- click and hold drags the machine, similarly click and drag from the bottom left array drags the machine, while dragging a preview is visible
+- Directive: selecting a machine give it focus, with focus asdf keys can be used for programming, use same shortcuts as opus magnum
+- Directive: I am suprized glyphs can occupy the same hex, was that intentional? could be fun
+- Directive: output glyphs will be similar to processing glyphs like the bonders (you may even be able to use the same abstraction/data-model for output,input, and processing.)
+- Directive: where an atom goes on the glyph matters, glyph also cares about bond presence
+- Directive: our single output glyph sucks up the entire compound despite it being two atoms double bonded together, any output glyphs should need to match the compounds shape in order to accept that compound. atom and bond identities must match too, though that may change for future output-style machines
+- Directive: editing: quality of life: when holding a machine, we'll need to preview it visually
+- Directive: when holding a machine keyboard keys should rotate it (copy opus magnum de re metalica controls)
+- Directive: botom of screen should show all the tapes of machines currently on screen (up to a limit). click one tape to edit
+- Directive: click and hold drags the machine, similarly click and drag from the bottom left array drags the machine, while dragging a preview is visible
 
 
-oh, ziral needs a delete, lift a machine and hit a key to delete, same key as delete in opus magnum
+Directive: oh, ziral needs a delete, lift a machine and hit a key to delete, same key as delete in opus magnum
 
-in ziral, if a machine is dropped in an invalid location, it pops back to where it was picked up, if that's not possible it pops pack into users inventory. if we don't have inventory yet that just means it disappears
+Directive: in ziral, if a machine is dropped in an invalid location, it pops back to where it was picked up, if that's not possible it pops pack into users inventory. if we don't have inventory yet that just means it disappears
 
-A1: it is the player's job to put the molecule in the correct orientation.
-A2: some processesors need release, outputs need release. Bond makers need release of the sacrificial atom but not of the atoms to be bonded (assuming the math works out)
+Directive: A1: it is the player's job to put the molecule in the correct orientation.
+Directive: A2: some processesors need release, outputs need release. Bond makers need release of the sacrificial atom but not of the atoms to be bonded (assuming the math works out)
 
 ### Round 2, what Toy 1 now does
 
@@ -323,7 +347,11 @@ Machines never collide; only atoms do. Two glyphs on one hex was an accident of 
 
 Input, output, and processing glyphs are one model: a glyph is a list of slots, each an offset from its cell plus the atom type it wants, a list of every slot pair with the bond that must be present or absent there before it fires, the bonds it writes, and the slots it consumes. The source is a one-slot glyph that spawns when empty. The bonder is a two-slot glyph that consumes nothing. The second-bond applicator is a three-slot glyph whose slot zero is sacrificial and consumed, and whose slots one and two must already share a single bond. The output is a two-slot glyph that fires only when the atoms on its slots are exactly one compound, with the double bond it asks for and no other bond; a compound of the right atoms turned the wrong way, or with anything else attached, sits on the glyph untouched.
 
+Directive: “The bonder is a two-slot glyph that consumes nothing”; “The second-bond applicator is a three-slot glyph whose slot zero is sacrificial and consumed, and whose slots one and two must already share a single bond”.
+
 Editing: a click on a machine focuses it; Z deletes it; A and D turn a glyph. An arm with focus acts now: F grab, R drop, A counterclockwise, D clockwise, Q pivot counterclockwise, E pivot clockwise, X wait run on the arm at once and write nothing, so A and D on a focused arm are the rotate instructions, hand and all, Q and E the pivots, with the stalls the tape would meet. The strip along the bottom lists the tapes of the arms on screen, eight at most, each instruction as its symbol token (art/SYMBOLS.md) with the running one outlined; a click on one focuses that tape and shows a cursor. With a tape focused the same keys insert at the cursor, left and right move it, home and end jump, Z is backspace, and escape or a click elsewhere leaves; nothing runs. Nothing on screen is written in any language: holding Tab holds up a page of the workshop's own manual (art/overlay/), the seven tokens woven into its flourishes, each beside a picture of what it does; letting go takes it away. Dragging a machine, or dragging from the palette, carries a preview under the pointer; A and D turn it, Z deletes it, and a release over the panels returns it to where it was lifted, or, from the palette, discards it. Pan is right or middle drag.
+
+Directive: “The strip along the bottom lists the tapes of the arms on screen”; “a click on one focuses that tape and shows a cursor”; “Z is backspace”; “holding Tab holds up a page of the workshop's own manual (art/overlay/), the seven tokens woven into its flourishes, each beside a picture of what it does; letting go takes it away”; “Dragging a machine, or dragging from the palette, carries a preview under the pointer”.
 
 ### Toy 1 lifts a dragged machine
 
@@ -341,9 +369,11 @@ Checks: a drag across three cells draws one sprite at each raw pointer position;
 
 Round 2 asked two questions. Q1: an output's slots fix an orientation; is fitting the compound to the glyph's turn the player's job, or should an output take any of its shape's six turns? Q2: bonders fire on atoms an arm still holds or that sit inside a bigger molecule; only the output waits for a released, isolated compound; should processing glyphs also wait for release? The answers above decide both.
 
-Decided: an output takes one orientation, its own. Turning the compound to fit is the player's job.
+Directive: Decided: an output takes one orientation, its own. Turning the compound to fit is the player's job.
 
 Decided: release is asked slot by slot. Each slot of a glyph says whether it demands that no hand be on the molecule its atom belongs to, and whether the atom is consumed. The source demands nothing. The bonder and the second-bond applicator demand release of the sacrificial slot only, so they fire on atoms an arm still holds or that sit inside a bigger molecule, and the arm that held a lone atom now holds the compound it became part of. The output demands it of every slot, and still asks for the exact shape and nothing attached. So far every consumed slot is also a released one.
+
+Directive: “The output demands it of every slot, and still asks for the exact shape and nothing attached”.
 
 The hand-held case balances: three atoms in, two atoms and a bond out, whatever hands are on the two survivors. If two arms hold the two atoms being bonded, both now hold one molecule and neither can rotate until one drops. If the sacrificial atom is itself bonded into a molecule nobody holds, it is consumed out of that molecule and its bonds go with it; a sacrificial atom bonded into a held molecule waits.
 
@@ -355,14 +385,16 @@ Q2: A bonder consumes a sacrificial atom out of the side of a molecule, severing
 
 ### Round 4 answers
 
-A1: stall is good in that situation
-A2: let's let it tear the sacrificial atom off of compounds, could be fun
+Directive: A1: stall is good in that situation
+Directive: A2: let's let it tear the sacrificial atom off of compounds, could be fun
 
 ### Round 4, what Toy 1 now does
 
 Decided: a molecule under two hands stalls every rotate until a tape drops it. The bond and the grab that put the second hand on it do not wait. The stall is shown: the stalled arm's pivot carries its white ring as before, and when the stall is another hand on the molecule, that hand carries a wider white ring, so the player can read which arm must drop. An arm records why it stalled, and only a stall caused by a hand names one.
 
 Decided: a bonder or second-bond glyph tears its sacrificial atom out of an unheld compound. The atom's bonds are severed in the same tick the new bond is written, and what remains lies where it was, as one smaller compound or two. The tear is shown for that one tick: each severed bond stays drawn as a dim grey stub from its surviving atom toward the emptied slot. A sacrificial atom in a held compound still waits for release.
+
+Directive: “Decided: a bonder or second-bond glyph tears its sacrificial atom out of an unheld compound”.
 
 No code hedged either rule; nothing was deleted for them.
 
@@ -374,12 +406,12 @@ Q2: Within a tick, arms act before glyphs. A grab that lands on a compound the s
 
 ### Round 5 answers
 
-A1: Sacrificial slot destroys as many bonds as are connected to the sacrificial atom.
-A2: maybe I don't fully follow. If an arm grabs the sacrificial atom in the same tick another arm drops it then it makes sense that it doesn't get dropped. Are the drop requirements for the bonders getting too complicated? We can simplify it would make the system more workable.
+Directive: A1: Sacrificial slot destroys as many bonds as are connected to the sacrificial atom.
+Directive: A2: maybe I don't fully follow. If an arm grabs the sacrificial atom in the same tick another arm drops it then it makes sense that it doesn't get dropped. Are the drop requirements for the bonders getting too complicated? We can simplify it would make the system more workable.
 
 ### Round 5, what Toy 1 now does
 
-Decided: the sacrificial slot severs every bond on the sacrificial atom, wherever it sits. An atom eaten out of the middle of a chain leaves two compounds where one lay.
+Directive: Decided: the sacrificial slot severs every bond on the sacrificial atom, wherever it sits. An atom eaten out of the middle of a chain leaves two compounds where one lay.
 
 Round 4's Q2 in plainer terms. Each tick the source spawns, then the arms move one after another in a fixed order, then the glyphs fire. One arm is holding the sacrificial atom on a bonder and its tape says drop; another arm's tape says grab that same atom, same tick. If the dropper moves first: it drops, the other arm grabs, the bonder sees a held atom and does nothing. The atom is kept, as the answer expects. If the grabber moves first: the atom is still in the first arm's hand, so the grab stalls, and its ring names that hand. Then the first arm drops. The atom is now loose, and the bonder eats it. The grabber is left reaching at an empty cell forever.
 
@@ -396,6 +428,8 @@ New rule:
 
 Consumed is the only thing a slot says now. Rounds 1 to 4 still hold: the atoms to be bonded may be held, an output takes only an exact compound with no hand on it since it consumes both atoms, a molecule under two hands still stalls its rotates. The one scene that changed is the old rule's last line. Also from this round: a grab stalled by another hand names that hand with the wider ring, as a rotate did since round 4.
 
+Directive: “Rounds 1 to 4 still hold: the atoms to be bonded may be held”; “an output takes only an exact compound with no hand on it since it consumes both atoms”.
+
 Questions for round 6:
 
 Q1: The simplified rule tears the sacrificial atom out of a compound an arm is holding, and the arm keeps what is left; before, that bonder waited for the drop. Is that the rule, or should a hand anywhere on the compound still keep its sacrificial atom from being eaten?
@@ -405,7 +439,7 @@ Q2: Your same-tick example comes out by arm order in the toy, dropper first keep
 ### Round 6 answers
 
 A1: that's fine
-A2: two grabbers can hold a compound at the same time, even by the same atom
+Directive: A2: two grabbers can hold a compound at the same time, even by the same atom
 
 Should we stop letting glyphs care whether an atom/compound is dropped or held? I could see a fun game either way so what's simpler?
 
@@ -435,12 +469,14 @@ Q2: An output now eats a compound an arm is holding, and the arm is left closed 
 
 ### Round 7 answers
 
-A1: oh a close hand should catch whatever lands under it, Unlike opus magnum
+Directive: A1: oh a close hand should catch whatever lands under it, Unlike opus magnum
 A2: that should be fine, players learn game mechanics
 
 ### Round 7, what Toy 1 now does
 
 Decided: a closed hand catches whatever lands under it. Unlike Opus Magnum, an arm does not remember which atom it took; its hand is open or closed, and a closed hand holds whatever is at its cell. Round 6 built exactly that, so nothing changed and nothing needed deleting: no hand opens itself, no arm checks for the atom it grabbed, and the ring on a closed hand is the same ring on an atom or on nothing.
+
+Directive: “Decided: a closed hand catches whatever lands under it”.
 
 Decided: an output eats a compound an arm is holding, and the arm is left closed on the pad. Nothing changed.
 
@@ -457,6 +493,8 @@ Q2: A grab over nothing stalls until an atom arrives, then closes on it, so the 
 ### Toy 1 shows motion between ticks
 
 The sim is still one discrete tick after another; only the drawing changed. Between ticks the toy draws the way from the last pose to the next: an arm's rotate sweeps its 60° the way the instruction turns, the atoms in its hand ride the sweep, a grab shrinks the hand shut and a drop lets it open wide, and what a glyph made or ate shows at the end of the sweep, so nothing changes hands mid-arc. One ease drives the sweep and the grip: the arm creeps a little as if pushing against a stop, the stop lets go, the arm runs to its target, overshoots, and rings out through the final frame. The reference sketch is art/reference/arm-swing-curve.jpg; art/reference/arm-swing-curve-fit.png lays the curve over it.
+
+Directive: “the arm creeps a little as if pushing against a stop, the stop lets go, the arm runs to its target, overshoots, and rings out through the final frame”.
 
 One knob: the tick period. An instruction's duration is its animation, as in Opus Magnum. Default 400 ms; the old 167 ms was too fast to read a sweep. Videos at 0 (hard cut), 120, 250, 400, 650 and 1000 ms, and 400 ms moving for the first 60% then holding, are for choosing it.
 
@@ -475,6 +513,8 @@ This is the dumbest design satisfying the directive because facing becomes one m
 Checks cover a placed machine between rest angles, a held machine whose simulation facing changes before its drawing settles, and six turns returning to the exact starting angle. `proofs/machine-turn-89.gif` (`art/gif.sh proofs/machine-turn-89.gif machine-turn-89 4 1280:720:0:0`) shows a picked machine turning six times at the shipped size.
 
 ### Toy 1 wears the Fired Workshop look
+
+Directive: “Toy 1 wears the Fired Workshop look”.
 
 The original flat wells and geometric glyph marks were replaced by complete machine sprites. [art/BIBLE.md](art/BIBLE.md) records the current material language and distinctness gate; the earlier two-cup output and single-cell source are historical forms.
 
@@ -765,6 +805,8 @@ The one-format rule. The recipe table, `form::RECIPES`, is the machines and thei
 | output, second tier | `B0,1 B1,1 B1,2 B2,0 0,1-1,1 1,1-1,2 1,1-2,0` |
 | output, third tier | `B0,1 B0,2 B1,0 B1,1 B1,2 B2,0 B2,1 0,1-1,1 0,2-1,1 1,0-1,1 1,1-1,2 1,1-2,0 1,1-2,1` |
 
+Directive: the rows “arm, length one”, “arm, length two” and “arm, length three”.
+
 The canvas. The world is where a recipe is designed: build the compound by hand, drag a marquee over any part of it, press C. The marquee takes atoms as it takes machines, `Id::Atom`, and a picked atom is ringed as a picked machine is; C and X write every whole compound that any picked atom belongs to, one line each, sorted, to the system clipboard, and the machines in the same pick go to the toy's own clipboard as before, so copy and paste of machines are as they were. A press on an atom still lifts its compound, so a marquee starts on bare ground. Z, X, a drag and a turn leave a picked atom where it is; the pick is read-only for atoms, and a picked atom belongs to the frame it was picked in, so a step into or out of a ghost frame drops the atoms from the pick and keeps the machines. A refused clipboard write is a panic that names the reason, on the desktop from `arboard` over X11 or Wayland, on the web from the browser's promise awaited through `web-sys`; nothing is written silently.
 
 The parser is also the input of compound paste; the reification glyph and inventory rule below decide where its atoms come from.
@@ -859,6 +901,8 @@ Directive (verbatim): "in inventory, keycodes should be arranged as they are on 
 
 The keyboard-position change was reverted; retaining the palette's prior token rows is the smallest implementation, while another layout would introduce a new design.
 
+Directive: “The keyboard-position change was reverted”.
+
 ### Toy 1 deletes an atom by hand
 
 Directive (verbatim): "deleting an atom in edit mode does not add it back to inventory. it disappears. the destroy-atom rune is no longer needed"
@@ -948,6 +992,8 @@ The directive is the one quoted under Toy 1 crafts its machines: keep the text r
 
 The rule. The hover card shows and never tells: picture, recipe, playback, and nothing written. Beside the recipe the machine's test case plays on its own patch of clay: the smallest world in which the machine does its one thing, ticking at the world's rate, holding its last frame three ticks, then starting over. Names are deferred, as the directive says; the card had none and gets none.
 
+Directive: “The hover card shows and never tells: picture, recipe, playback, and nothing written”.
+
 The fixture. Detailed staging in this entry records the original playback. The current exhaustive fixture table is in [src/sim.rs](src/sim.rs), including the six-cell source and distinct output products. `sim::fixture` is one table keyed by `Machine`, a `match` the compiler holds exhaustive, so a machine kind without a fixture does not compile. Each entry is a `Sim` at t=0, a tick count, and the outcome as a predicate on the sim. The arm: an atom at its hand, a tape of grab, turn, drop; after three ticks the atom lies one cell round and the hand is open. The source: alone; after one tick an atom stands on it. The bonder: a source, an arm, the bonder's two cells on the arm's ring; the arm carries one atom to the far cell, comes back, carries a second to the near cell, and lets go; after nine ticks the two are single-bonded and the hand is open. The second-bond applicator: a single-bonded pair already on its bonded cells, a source, an arm that carries one atom to the sacrificial cell; after three ticks the pair is double-bonded, the third atom is gone, the hand open. The output fixtures now receive the bonder, second-bond and amber-converter compounds respectively; their recipe panels still show their own construction recipes. Every glyph fires the tick the last atom lands, before the drop; the drop is in every fixture so the last frame held shows the machine's work with the hand open, not a closed hand over the result, and the outcome asks for both. The pad's centre stands `radius + 1` cells from the arm's pivot along the drop direction, so the held recipe swings onto the pad's near edge and the base stands off it, the rule #52 keeps.
 
 One implementation. The cargo test runs every fixture through `Sim::step` to its count and asks the predicate, and asks it again a tick early to hold the count tight; the card's playback is a counter `World::advance` steps on the world's clock, its frames replayed from the fixture through the same `Sim::step` when drawn, the hover read before the clock advances so a newly hovered machine never draws the last one's frame, and the frame is drawn with `scene`, the one function that draws the board's glyphs, bonds, atoms and arms, on the card's render layer under the card's camera, shifted by the painter into the card's third column. The card grows to its playback: the playfield is every cell the fixture stands on or an arm sweeps, ringed once, tiled with the board's own tiles, and the card's width and height take it, so the third tier's card is wide and the arm's is not; the picture, the recipe and the playback are laid out by one function, `layout`, that the card's viewport and the card's painter both read.
@@ -962,15 +1008,23 @@ Tests: every fixture reaches its outcome on its last tick and not the tick befor
 
 Only base atoms have a source. The amber converter consumes the exact three-base fork `B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0` and spawns one amber atom at its origin. Its tier-one recipe is `B0,0 B0,1 B1,0 B1,1 0,0-0,1 0,0=1,0 0,1-1,1`. Wrong bonds, extra attached atoms and a mismatched orientation refuse conversion. Plum's former compound converter is removed; its route is described in Plum through paired resonance.
 
+Directive: “Only base atoms have a source”.
+
 ### Toy 1 reifies atoms and pastes compounds
 
 Atoms are inventory items, counted by kind under the same per-item cap and drawn in the palette beside the machines. A palette drag holds one atom and its drop goes through the same placement and inventory spend as a machine. Deleting an atom still consumes it without a refund: inventory is ingress, not an undo buffer.
 
+Directive: “Atoms are inventory items”; “Deleting an atom still consumes it without a refund: inventory is ingress, not an undo buffer”.
+
 The reification glyph moves from the parking lot into the model. It is a machine with a tier-two recipe and a nineteen-cell well: the centre, its six neighbours and their twelve neighbours. The centre accepts either atom kind; every outer cell demands a base atom; every adjacent pair in the radius-two hexagon must have a single or double bond. On a complete match the whole wrap is consumed and one atom of the centre's kind enters the inventory. A missing bond or a wrong outer kind leaves the wrap untouched.
+
+Directive: “The reification glyph moves from the parking lot into the model”; “a nineteen-cell well: the centre, its six neighbours and their twelve neighbours”.
 
 The glyph ships with candidate four, the best of its three paint rounds, at critic score 5 with the judgement recorded beside the candidates; the rubric and threshold are unchanged.
 
 V first reads the system clipboard through `Form::from_str`, the one compound parser. A parsed compound becomes the held `Sim` used by machine paste and its drop goes through `Sim::fits`, `Inventory::spend_all` and `Sim::place`, the one placement path. Its bill is every atom plus one base atom for every double bond; single bonds cost nothing. The check spends the whole bill together or refuses with #44's picture-and-beads line, leaving both board and inventory unchanged. An atom or arm base under any pasted atom refuses the placement before spending, and a compound cannot be placed beyond ghost zero. Machine copy and paste keep their own buffer when the system clipboard is not a compound.
+
+Directive: “Its bill is every atom plus one base atom for every double bond”.
 
 Three alternatives are disposed. Refunding deleted atoms makes deletion a second ingress beside the glyph. A cheaper wrap weakens the decided radius-two, fully bonded cost into another recipe. Letting paste create atoms from nothing bypasses both the glyph and the inventory check.
 
@@ -1038,6 +1092,8 @@ The T is withdrawn. Neither scaffold nor direction requires a rail from the sacr
 The recipe leaves the painter. "Toy 1 keeps one art direction and draws each recipe for the painter" rendered a machine's compound, beads and bars, into `NAME/recipe.png` and handed it to the image tool as a second reference with a sentence asking the form to echo it. An earlier entry ran the ablation of this input and kept it pending a threshold; this removal is the directive's, the suspected pull of every second-bond candidate toward a diagram of three beads, and the measurement is repeated below for the record. The render, the `recipe:` shot scene and its frame, the manifest's `recipe` sentence, the second `-i` hand-off, the `--plan` listing that existed to say which machine had one, and the test that proved the render reached the painter are deleted; the recipe is absent from both paint inputs and their cache key. The source and cobalt converter subsequently gained reference sketches; the current input and key definitions are in [art/MACHINES.md](art/MACHINES.md). Every machine painted before this change carries its prompt and candidates unchanged: `briefed` and `painted` were recomputed against the shorter brief and key, so nothing was repainted for the deletion.
 
 The critic ranks moxie above topology. The rubric judges, in order, presence, material richness and artist moxie, then treats its embedded snapshot of earlier bible wording as blemishes a strong picture carries lightly, and it says outright that seats on their marks and the footprint are code scores, not the critic's, that the scaffold is reference and not a checklist, that how the body joins its seats is never judged, and that the issues it names stay within what it judged. The rubric is its own commit; the bar stays at 8. Every kept candidate was judged again under it, since a changed rubric voids every score, and every keep stands.
+
+Directive: “the bar stays at 8”.
 
 Directive: the [director model](art/director-model.txt) composes the image prompts with creative freedom over art direction, changing the prompts as it sees fit.
 
@@ -1132,6 +1188,8 @@ Directive (verbatim): "oh except those should be plumb atoms"
 
 Tier two follows [the two-outlet sketch](docs/source-tier-two-sketch.jpg): two columns and three staggered rows, with two outlet seats in the middle and four body cells feeding them. Each free seat produces one base atom per tick independently. Supply behavior is unchanged.
 
+Directive: “Supply behavior is unchanged”.
+
 The simplest design adds a source glyph kind with two functional slots and four housing cells. The same footprint, renderer, emission loop, fixture and card handle both tiers. The one recipe table contains the five-plum compound with four double bonds; manufacturing and inventory exclude source rows, so an upgrade never manufactures a portable source or changes inventory save dimensions.
 
 Dropping that compound onto any cell of a placed tier-one source attempts one transaction. It keeps the anchor and facing, checks the next footprint while excluding the old housing, and rejects atoms on newly occupied cells as well as overlapping machines. Success consumes the held compound, replaces the glyph and emits one upgrade event. Refusal uses the existing return-to-origin path. A wrong compound follows ordinary placement and remains intact.
@@ -1210,6 +1268,8 @@ The dumbest design separates simulation ownership from the existing viewer and b
 
 The built extent comes from the baseline, including machine bodies and atoms, with one empty tile as its minimum. A uniform transform fits that extent within the portal tile. The crossing applies the inverse transform to the camera position and scale; the same scene renderer supplies the preview and the interior. Zooming out beyond the framed extent applies the forward transform. Neither replay motion nor a fixed cap changes this boundary. Each crossing direction has its own short sound cooldown.
 
+Directive: “A uniform transform fits that extent within the portal tile”; “Zooming out beyond the framed extent applies the forward transform”.
+
 One portal stands on the starting map. Its temporary image is the existing source sprite, uniformly fitted and tinted plum; its preview supplies the visible contents. Inside, the existing tiles receive a plum tint while machines retain their material. The dedicated machine art is a separate change. No text or extra entry control is introduced.
 
 The model's component store is independent of rendering resources so validation, playback and analysis instantiate the same model and use the same input reducer. Portal positions participate in the lockstep simulation's placement and movement checks; their entity components own the interior baselines. Saved state contains both. A crossing queues one camera transform, consumed by live input or replay, so neither playback nor restoration leaves the camera in the previous world's coordinates. Pinned cards stay with their world, while leaving an interior drops its replay position.
@@ -1241,6 +1301,8 @@ The portal appends one craftable inventory slot; source upgrades remain excluded
 
 ## Free interiors remember overworld encounters
 
+Directive: “Free interiors remember overworld encounters”.
+
 An interior offers only machine and token kinds previously received in the overworld inventory and atom kinds previously received or spawned on its board. `Sim.encountered` stores those kinds once and survives spending, consumption and saving. Inventory receipt and atom spawning append to it; interior activity cannot append to the overworld's list.
 
 The dumbest design borrows that list in the existing editor. An interior placement or tape write checks membership instead of spending; erasing and recycling there return nothing. The same palette rows hide unavailable kinds and their count controls inside. Portals remain excluded from interiors. Overworld inventory still pays the existing bills. A filled interior inventory would retain artificial limits and counts; a second editor or a periodically reconstructed unlock table would duplicate rules and forget spent kinds.
@@ -1263,6 +1325,8 @@ Contract: delete the plum converter and its compound recipe, fixture, housing, p
 The dumbest design adds one two-seat glyph with two lone-amber slot predicates and one atomic kind update. It uses existing tick, encounter, fixture, card and firing machinery. There is no consumed compound, replacement atom, separate output or stored countdown. Amber still collapses a compound into one atom; cobalt still transports a lone base atom into one cobalt. The resonator couples two independent feeds and produces two usable loose plum atoms. Later recipes can use those atoms without adding an unbonder.
 
 Alternatives disposed: changing a bonded atom in place preserves a compound but makes loose plum depend on extracting it, entrenching a new separation dependency. A timed chamber adds per-machine storage and partially completed states before timing is needed elsewhere. A second compound recipe would preserve the redundant converter. Paired resonance supplies a visibly different two-input interaction with no new persistent state; more elaborate or efficient routes belong to later progression.
+
+Directive: “more elaborate or efficient routes belong to later progression”.
 
 Tests: all six orientations fire only with two lone amber inputs; identity, position, bond, inventory and atom count stay unchanged; plum is encountered; one missing input, wrong kinds and externally bonded inputs leave both seats untouched; a completed pair cannot refire. Reachability constructs the resonator and both amber feeds from the starting world, uses its plum in every dependent recipe, and verifies the resulting products. Cards and palette resolve plum to the resonator. A shipped-size firing GIF and a native-size machine sheet under proofs accompany the generated housing and its unchanged critic gates.
 
