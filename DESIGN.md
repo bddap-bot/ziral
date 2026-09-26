@@ -1316,6 +1316,20 @@ The encountered field is required in saved simulations. The existing build check
 A completed left click copies the portal’s canonical interior through the existing Fragment writer; normal paste retains its complete inventory bill. Dragging remains movement, and no projected frame or inventory leaves the interior. Empty contents have empty notation and paste nothing.
 The simplest response is one copied event: the portal’s manifest dilates its complete housing and emits ivory steam, and its instrument sounds once; a separate serializer or painted moving part would duplicate an existing representation.
 
+## The portal hop comes two clicks sooner
+
+Directive (verbatim): "after trying it out, i can tell the the zoom level required to hop through a portal should be two less than it is now."
+
+Directive (verbatim): "too much zoom should be disallowed. textures don't look coot that zoomed in. unless zooming through a portal, zoom past the portal transition threshold should be disallowed"
+
+A zoom level is a wheel click. A notch scales the view by e^0.15, the board reads 40 pixels of wheel travel as one notch, and a click reaches the page as 120 pixels, so two clicks are six notches. A zoom now hops into a portal once the view's short side is six notches wider than the portal tile, the hop view; before, it hopped once the tile filled that side. Leaving moves with it: the forward transform applies once the interior view, carried back through it, is wider than the hop view, no longer as soon as it passes the framed extent.
+
+No view is closer than the hop view, in the overworld or in any interior. An inward wheel step that would reach it is refused, unless the pointer is over a portal's cell in the overworld, where the step hops through. Outward steps are never refused; only an inward step enters and only an outward step leaves. A replay takes its crossings from the recorded session, so there the inward step over a portal is refused too. A crossing that would land closer than the hop view, such as loading a save from inside an interior, lands on it instead.
+
+The dumbest design is one threshold, checked where a wheel step moves the camera and where a crossing transforms it. The whole step is refused, not clamped: a clamped view would rest exactly on the threshold, where the next step in or out would turn on rounding. The cost is that the closest view reached varies by up to one step. The pointer's cell picks the portal: a zoom carries the camera toward the pointer only while it continues, so with the zoom stopped at the threshold a portal away from the screen's centre could never be entered.
+
+Tests: a step that ends half a notch outside the six-notch threshold stays out and the next hops in; a step past the threshold is refused with the pointer off the portal and during replay, and hops with the pointer on the portal though the camera is off it; inside, the zoom stops within one notch of the threshold; an outward step closer than the threshold is taken and enters nothing, and an inward step inside leaves nothing; a restore from inside and a round trip entered just inside the threshold land on the hop view; a crossing at the threshold keeps every object's screen position and renders the same picture apart from tiles.
+
 ## Plum through paired resonance
 
 Directive (verbatim): "each conversion should look and behave differently. Keep plum if its mechanics differ from amber; if plum is technically similar or redundant, remove plum and create another path to plum."
