@@ -75,14 +75,18 @@ async function settle(deadline) {
 function cargo(args, limit = Infinity) {
     return new Promise((resolve, reject) => {
         const child = spawn('cargo', args, {stdio: ['ignore', 'pipe', 'inherit']});
-        const stuck = Number.isFinite(limit) && setTimeout(() => child.kill('SIGKILL'), limit * 1000);
+        let expired = false;
+        const stuck = Number.isFinite(limit) && setTimeout(() => {
+            expired = true;
+            child.kill('SIGKILL');
+        }, limit * 1000);
         let output = '';
         child.stdout.setEncoding('utf8').on('data', chunk => output += chunk);
         child.once('error', reject);
         child.once('close', (code, signal) => {
             clearTimeout(stuck);
             if (code === 0) resolve(output);
-            else reject(new Error(`cargo ${args.join(' ')} ${signal ? `killed after ${limit} s` : `exited with ${code}`}`));
+            else reject(new Error(`cargo ${args.join(' ')} ${expired ? `killed after ${limit} s` : signal ? `killed by ${signal}` : `exited with ${code}`}`));
         });
     });
 }
@@ -218,7 +222,7 @@ async function holds(target, measure) {
             console.log(`${target}: still over budget with other work on more than ${BUSY} CPUs after ${PATIENCE / 60} minutes`);
             return false;
         }
-        console.log(`${target} run ${run} went over budget only while other work held more than ${BUSY} CPUs; measuring again once it holds fewer`);
+        console.log(`${target} run ${run} went over budget only while other work held more than ${BUSY} CPUs; measuring again`);
         await settle(Math.min(deadline, performance.now() + 60 * 1000));
     }
 }
