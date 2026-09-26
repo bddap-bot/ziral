@@ -143,8 +143,19 @@ async function upload() {
     }
 }
 
-export async function saved() {
+function kept() {
     const stored = new Map();
+    try {
+        for (let index = 0; index < localStorage.length; index++) {
+            const key = localStorage.key(index);
+            if (key?.startsWith('ziral-record-')) stored.set(key, localStorage.getItem(key));
+        }
+    } catch (error) { console.error(error); }
+    return stored;
+}
+
+export async function saved() {
+    const stored = kept();
     try {
         const db = await database;
         await new Promise((resolve, reject) => {
@@ -158,15 +169,10 @@ export async function saved() {
             request.onerror = () => reject(request.error);
         });
     } catch (error) { console.error(error); }
-    try {
-        for (let index = 0; index < localStorage.length; index++) {
-            const key = localStorage.key(index);
-            if (key?.startsWith('ziral-record-')) stored.set(key, localStorage.getItem(key));
-        }
-    } catch (error) { console.error(error); }
     return stored;
 }
 
+for (const [key, text] of kept()) restore(key, text);
 saved().then(stored => {
     for (const [key, text] of stored) restore(key, text);
     upload();

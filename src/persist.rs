@@ -113,6 +113,9 @@ export function stored_save(slot) {
 export function store_save(slot, save) {
     try { localStorage.setItem(slot, save); return null; } catch (error) { return String(error); }
 }
+export function forget_save(slot) {
+    try { localStorage.removeItem(slot); } catch (_) {}
+}
 export function download_save(save) {
     const url = URL.createObjectURL(new Blob([save], {type: "application/json"}));
     const link = document.createElement("a");
@@ -144,6 +147,7 @@ export function refuse_save(reason) {
 extern "C" {
     fn stored_save(slot: &str) -> Option<String>;
     fn store_save(slot: &str, save: &str) -> Option<String>;
+    fn forget_save(slot: &str);
     fn download_save(save: &str);
     fn choose_save();
     fn imported_save() -> Option<String>;
@@ -161,6 +165,9 @@ fn store_save(_: &str, _: &str) -> Option<String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn forget_save(_: &str) {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn download_save(_: &str) {}
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -175,6 +182,7 @@ fn imported_save() -> Option<String> {
 fn refuse_save(_: &str) {}
 
 pub fn restore(fallback: State) -> State {
+    forget_save(BENCH_SLOT);
     let Some(save) = stored_save(SLOT) else {
         return fallback;
     };

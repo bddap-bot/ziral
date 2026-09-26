@@ -254,6 +254,22 @@ test('restored chunks upload from the earliest whatever order storage lists them
     assert.equal(saved.size, 0);
 });
 
+test('localStorage chunks restore even when IndexedDB never opens', async () => {
+    const {saved, localStorage} = storage();
+    saved.set(`ziral-record-${session}-0`, JSON.stringify({session, build, seed: 0, start: 0, inputs: [[0, 'Refill']]}));
+    let retry;
+    const starts = [];
+    const context = page({localStorage, indexedDB: {open: () => ({})}, setInterval(callback) { retry = callback; }});
+    context.request_record = async bytes => {
+        const batch = JSON.parse(new TextDecoder().decode(bytes));
+        starts.push(batch.start);
+        return {next: batch.start + batch.inputs.length};
+    };
+    await retry();
+    assert.deepEqual(starts, [0]);
+    assert.equal(saved.size, 0);
+});
+
 test('the public page records and uploads without a fragment or credential', async () => {
     const sent = [];
     const context = page({
