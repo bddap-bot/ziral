@@ -72,15 +72,22 @@ async function settle(deadline) {
     }
 }
 
-function ziral(...args) {
+function cargo(args, limit = Infinity) {
     return new Promise((resolve, reject) => {
-        const child = spawn('cargo', ['run', '--release', '--quiet', '--', ...args], {stdio: ['ignore', 'pipe', 'inherit']});
+        const child = spawn('cargo', args, {stdio: ['ignore', 'pipe', 'inherit']});
+        const stuck = Number.isFinite(limit) && setTimeout(() => child.kill('SIGKILL'), limit * 1000);
         let output = '';
         child.stdout.setEncoding('utf8').on('data', chunk => output += chunk);
         child.once('error', reject);
-        child.once('close', code => code === 0 ? resolve(output) : reject(new Error(`ziral ${args[0]} exited with ${code}`)));
+        child.once('close', (code, signal) => {
+            clearTimeout(stuck);
+            if (code === 0) resolve(output);
+            else reject(new Error(`cargo ${args.join(' ')} ${signal ? `killed after ${limit} s` : `exited with ${code}`}`));
+        });
     });
 }
+
+const ziral = (...args) => cargo(['run', '--release', '--quiet', '--', ...args], END + 120);
 
 async function serve(directory) {
     const types = {'.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm'};
@@ -217,6 +224,7 @@ async function holds(target, measure) {
 }
 
 try {
+    await cargo(['build', '--release', '--quiet']);
     const native = await holds('native', async path => {
         const start = performance.now();
         await ziral('--bench', path, String(END), ...MARKS.map(String));
