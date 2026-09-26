@@ -212,7 +212,7 @@ async function holds(target, measure) {
             return false;
         }
         console.log(`${target} run ${run} went over budget only while other work held more than ${BUSY} CPUs; measuring again once it holds fewer`);
-        await settle(deadline);
+        await settle(Math.min(deadline, performance.now() + 60 * 1000));
     }
 }
 
