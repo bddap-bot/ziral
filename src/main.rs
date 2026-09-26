@@ -535,6 +535,10 @@ struct PortalView {
 impl PortalView {
     const TILE: f32 = HEX * 0.9;
 
+    fn hop() -> f32 {
+        zoomed(Self::TILE, 6.0)
+    }
+
     fn extent(sim: &Sim) -> (Vec2, Vec2) {
         let mut lo = Vec2::splat(f32::INFINITY);
         let mut hi = Vec2::splat(f32::NEG_INFINITY);
@@ -780,29 +784,43 @@ impl Game {
         self.overworld.sim.portals[index].as_ref().unwrap()
     }
 
-    fn crossing(&self, viewport: &Viewport) -> Option<Option<usize>> {
+    fn crossing(&self, viewport: &Viewport, focus: Vec2) -> Option<Option<usize>> {
         if self.holding() || self.card_drag.is_some() {
             return None;
         }
         match self.location {
-            Location::Overworld
-                if viewport.scale * viewport.size.min_element() <= PortalView::TILE =>
-            {
-                (0..self.overworld.sim.portals.len())
-                    .filter(|index| self.overworld.sim.portals[*index].is_some())
-                    .find(|index| {
-                        (viewport.cam - px(self.overworld.sim.portals[*index].as_ref().unwrap().at))
-                            .abs()
-                            .max_element()
-                            <= PortalView::TILE / 2.0
-                    })
-                    .map(Some)
-            }
-            Location::Interior { portal, .. } => (viewport.scale * viewport.size.min_element()
-                > PortalView::of(&self.portal(portal).sim).side)
-                .then_some(None),
+            Location::Overworld if viewport.span() <= PortalView::hop() => self
+                .overworld
+                .sim
+                .portals
+                .iter()
+                .position(|portal| portal.as_ref().is_some_and(|p| p.at == hex_at(focus)))
+                .map(Some),
+            Location::Interior { portal, .. } => (viewport.span()
+                * PortalView::of(&self.portal(portal).sim).scale()
+                > PortalView::hop())
+            .then_some(None),
             _ => None,
         }
+    }
+
+    fn zoom(
+        &self,
+        viewport: &mut Viewport,
+        screen: Vec2,
+        notches: f32,
+        crossable: bool,
+    ) -> Option<Option<usize>> {
+        let mut next = viewport.clone();
+        next.scroll(screen, notches);
+        let inward = notches > 0.0;
+        let crossing = self
+            .crossing(&next, next.world(screen))
+            .filter(|to| crossable && to.is_some() == inward);
+        if crossing.is_some() || !inward || next.span() > PortalView::hop() {
+            *viewport = next;
+        }
+        crossing
     }
 
     fn reframe(&mut self, viewport: &mut Viewport) {
@@ -813,6 +831,9 @@ impl Game {
                 fit.exit(at, viewport);
             }
         }
+        viewport.scale = viewport
+            .scale
+            .max(PortalView::hop() / viewport.size.min_element());
     }
 }
 
@@ -2513,6 +2534,10 @@ impl Viewport {
         self.size * self.scale / 2.0
     }
 
+    fn span(&self) -> f32 {
+        self.scale * self.size.min_element()
+    }
+
     fn world(&self, screen: Vec2) -> Vec2 {
         self.cam
             + Vec2::new(screen.x - self.size.x / 2.0, self.size.y / 2.0 - screen.y) * self.scale
@@ -3744,15 +3769,11 @@ fn view(
             false
         };
         if !card {
-            viewport.scroll(c, notches);
-            ortho.scale = viewport.scale;
-            if !session.replaying()
-                && let Some(destination) = world.crossing(&viewport)
-            {
+            if let Some(destination) = world.zoom(&mut viewport, c, notches, !session.replaying()) {
                 session.send(&mut world, session::Input::Focus(destination));
                 world.reframe(&mut viewport);
-                ortho.scale = viewport.scale;
             }
+            ortho.scale = viewport.scale;
             transform.translation = viewport.cam.extend(transform.translation.z);
         }
     }
@@ -7321,8 +7342,8 @@ mod shot {
                 Act::ZoomBoard(notches) => {
                     let mut viewport =
                         Viewport::of(&primary, &board_transform, &board_projection).unwrap();
-                    viewport.scroll(viewport.size / 2.0, notches);
-                    if let Some(destination) = world.crossing(&viewport) {
+                    let centre = viewport.size / 2.0;
+                    if let Some(destination) = world.zoom(&mut viewport, centre, notches, true) {
                         world.enter(destination);
                         world.reframe(&mut viewport);
                     }
@@ -8282,9 +8303,9 @@ mod tests {
             let mut viewport = Viewport {
                 cam: px(game.overworld.sim.portals[0].as_ref().unwrap().at),
                 size: Vec2::new(1280.0, 720.0),
-                scale: PortalView::TILE / 720.0,
+                scale: PortalView::hop() / 720.0 * 0.9999,
             };
-            assert_eq!(game.crossing(&viewport), Some(Some(0)));
+            assert_eq!(game.crossing(&viewport, viewport.cam), Some(Some(0)));
             let before = viewport.clone();
             let points = [
                 fit.center,
@@ -8304,14 +8325,105 @@ mod tests {
             }
             game.key(KeyCode::KeyG, false);
             assert_eq!(PortalView::of(game.sim()).side, fit.side);
-            viewport.scale *= 1.0001;
-            assert_eq!(game.crossing(&viewport), Some(None));
-            viewport.scale /= 1.0001;
+            assert_eq!(game.crossing(&viewport, viewport.cam), None);
+            viewport.scale *= 1.0002;
+            assert_eq!(game.crossing(&viewport, viewport.cam), Some(None));
+            viewport.scale /= 1.0002;
             game.enter(None);
             game.reframe(&mut viewport);
             assert!(viewport.cam.distance(before.cam) < 0.1);
-            assert!((viewport.scale - before.scale).abs() < 0.0001);
+            assert_eq!(viewport.scale, PortalView::hop() / 720.0);
         }
+    }
+
+    #[test]
+    fn a_wheel_step_hops_into_the_portal_six_notches_wider_than_its_tile() {
+        let game = Game::new(sim::start());
+        let size = Vec2::new(1280.0, 720.0);
+        let mut viewport = Viewport {
+            cam: px(game.portal(0).at),
+            size,
+            scale: zoomed(PortalView::TILE, 7.0) / size.min_element(),
+        };
+        assert_eq!(game.zoom(&mut viewport, size / 2.0, 0.5, true), None);
+        assert_eq!(
+            game.zoom(&mut viewport, size / 2.0, 1.0, true),
+            Some(Some(0))
+        );
+    }
+
+    #[test]
+    fn a_wheel_step_past_the_hop_is_refused_unless_it_crosses_the_portal_under_the_pointer() {
+        let mut game = Game::new(sim::start());
+        let size = Vec2::new(1280.0, 720.0);
+        let portal = px(game.portal(0).at);
+        let near = Viewport {
+            cam: portal + Vec2::new(HEX * 2.0, 0.0),
+            size,
+            scale: zoomed(PortalView::hop(), 0.5) / size.min_element(),
+        };
+        let mut viewport = near.clone();
+        for (screen, crossable) in [(size / 2.0, true), (near.screen(portal), false)] {
+            assert_eq!(game.zoom(&mut viewport, screen, 1.0, crossable), None);
+            assert_eq!(viewport, near);
+        }
+        assert_eq!(
+            game.zoom(&mut viewport, near.screen(portal), 1.0, true),
+            Some(Some(0))
+        );
+        game.enter(Some(0));
+        game.reframe(&mut viewport);
+        let mut steps = 0;
+        loop {
+            let before = viewport.clone();
+            assert_eq!(game.zoom(&mut viewport, size / 2.0, 1.0, true), None);
+            if viewport == before {
+                break;
+            }
+            steps += 1;
+        }
+        assert!(steps > 0);
+        assert!(viewport.span() > PortalView::hop());
+        assert!(zoomed(viewport.span(), -1.0) <= PortalView::hop());
+    }
+
+    #[test]
+    fn a_wheel_step_outward_is_never_refused_and_crosses_only_its_own_way() {
+        let mut game = Game::new(sim::start());
+        let size = Vec2::new(1280.0, 720.0);
+        let mut viewport = Viewport {
+            cam: px(game.portal(0).at),
+            size,
+            scale: PortalView::hop() / 2.0 / size.min_element(),
+        };
+        let before = viewport.span();
+        assert_eq!(game.zoom(&mut viewport, size / 2.0, -1.0, true), None);
+        assert!(viewport.span() > before);
+        game.enter(Some(0));
+        viewport.scale =
+            PortalView::hop() * 2.0 / PortalView::of(game.sim()).scale() / size.min_element();
+        let before = viewport.span();
+        assert_eq!(game.zoom(&mut viewport, size / 2.0, 1.0, true), None);
+        assert!(viewport.span() < before);
+    }
+
+    #[test]
+    fn a_restore_from_inside_lands_the_overworld_no_closer_than_the_hop_view() {
+        let mut game = Game::new(sim::start());
+        let size = Vec2::new(1280.0, 720.0);
+        let floor = PortalView::hop() / size.min_element();
+        let mut viewport = Viewport {
+            cam: px(PORTAL_CELL),
+            size,
+            scale: floor * 1.5,
+        };
+        game.enter(Some(0));
+        game.reframe(&mut viewport);
+        viewport.scale = floor * 1.01;
+        game.restore(game.state());
+        game.reframe(&mut viewport);
+        assert!(!game.inside());
+        assert_eq!(viewport.scale, floor);
     }
 
     #[test]
@@ -8372,7 +8484,7 @@ mod tests {
                 let mut viewport = Viewport {
                     cam: px(PORTAL_CELL),
                     size: Vec2::new(1280.0, 720.0),
-                    scale: 0.02,
+                    scale: 0.1,
                 };
                 let before = viewport.clone();
                 game.enter(Some(0));
@@ -8439,7 +8551,7 @@ mod tests {
                 *frame += 1;
                 if *frame <= 28 {
                     let mut viewport = Viewport {
-                        cam: px(PORTAL_CELL), size: Vec2::new(1280.0, 720.0), scale: PortalView::TILE / 720.0,
+                        cam: px(PORTAL_CELL), size: Vec2::new(1280.0, 720.0), scale: PortalView::hop() / 720.0,
                     };
                     if *frame == 28 {
                         assert!(game.enter(Some(0)));
@@ -8464,7 +8576,9 @@ mod tests {
         let before = image::open(dir.join("00000.png")).unwrap().to_rgba8();
         let after = image::open(dir.join("00007.png")).unwrap().to_rgba8();
         assert_eq!(before.dimensions(), (1280, 720));
-        let window = |x: u32, y: u32| (282..998).contains(&x) && (2..718).contains(&y);
+        let half = PortalView::TILE / 2.0 * 720.0 / PortalView::hop() - 2.0;
+        let window =
+            |x: u32, y: u32| (x as f32 - 640.0).abs() < half && (y as f32 - 360.0).abs() < half;
         let changed = before
             .enumerate_pixels()
             .zip(after.pixels())
@@ -8478,7 +8592,7 @@ mod tests {
         );
         let colors: std::collections::HashSet<_> = before
             .enumerate_pixels()
-            .filter(|(x, y, _)| *x > 400 && *x < 900 && *y > 150 && *y < 550)
+            .filter(|(x, y, _)| window(*x, *y))
             .map(|(_, _, pixel)| pixel.0)
             .collect();
         assert!(
