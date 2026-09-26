@@ -425,9 +425,9 @@ struct Saved {
 }
 
 impl Saved {
-    fn store(&mut self, sim: persist::State) {
+    fn store(&mut self, sim: persist::State, slot: &str) {
         self.attempted = sim;
-        match persist::store(&self.attempted) {
+        match persist::store(&self.attempted, slot) {
             Ok(()) => self.refused = false,
             Err(reason) if !self.refused => {
                 persist::refuse(&reason);
@@ -2461,7 +2461,7 @@ fn fragments(
             let (cam, scale) = bench::load(&mut world, &mut session, window.size());
             transform.translation = cam.extend(transform.translation.z);
             ortho.scale = scale;
-            commands.insert_resource(bench::Bench(cam));
+            commands.insert_resource(bench::Bench { cam, scale });
             clear_fragment(&fragment);
         }
     }
@@ -4001,6 +4001,7 @@ fn persistence(
     mut saved: ResMut<Saved>,
     mut session: ResMut<session::Session>,
     actions: Query<(&SaveAction, &Interaction), Changed<Interaction>>,
+    bench: Option<Res<bench::Bench>>,
 ) {
     for (action, interaction) in &actions {
         if *interaction != Interaction::Pressed {
@@ -4039,7 +4040,14 @@ fn persistence(
     }
     let state = world.state();
     if saved.attempted != state {
-        saved.store(state);
+        saved.store(
+            state,
+            if bench.is_some() {
+                persist::BENCH_SLOT
+            } else {
+                persist::SLOT
+            },
+        );
     }
 }
 
@@ -4145,7 +4153,10 @@ fn tapes(
 struct Fill;
 
 #[derive(Component)]
-struct Board(Option<Hex>);
+enum Board {
+    Cell(Hex),
+    Slab,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tiling {
@@ -4542,6 +4553,19 @@ enum Ink {
     Lit(Handle<Mesh>, Handle<Lit>),
     Sprite(Sprite),
     Symbol(Instr),
+}
+
+impl Ink {
+    const POOLS: usize = 4;
+
+    fn pool(&self) -> usize {
+        match self {
+            Ink::Color(..) => 0,
+            Ink::Lit(..) => 1,
+            Ink::Sprite(_) => 2,
+            Ink::Symbol(_) => 3,
+        }
+    }
 }
 
 struct Stroke {
@@ -5072,7 +5096,11 @@ fn board(
         .tiled
         .filter(|(_, was)| *was == inside)
         .map(|(old, _)| old);
-    let (gone, new) = tiling.relay(kept, laid.iter().map(|(e, laid)| (e, laid.0)));
+    let cells = laid.iter().map(|(e, laid)| match laid {
+        Board::Cell(h) => (e, Some(*h)),
+        Board::Slab => (e, None),
+    });
+    let (gone, new) = tiling.relay(kept, cells);
     for e in gone {
         commands.entity(e).despawn();
     }
@@ -5081,12 +5109,12 @@ fn board(
         if inside {
             material.0 = kiln.skin(look::ETHEREAL).clone();
         }
-        commands.spawn((Board(Some(h)), mesh, material, transform));
+        commands.spawn((Board::Cell(h), mesh, material, transform));
     }
     if let Tiling::Slab(lo, hi) = tiling {
         let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
         commands.spawn((
-            Board(None),
+            Board::Slab,
             Mesh2d(kiln.bar.clone()),
             MeshMaterial2d(
                 kiln.material(if inside { Glaze::Plum } else { Glaze::Clay })
@@ -5145,24 +5173,19 @@ type Placed<'w, 's> = (
 );
 
 #[derive(Default)]
-struct Canvas([Vec<Entity>; 4]);
+struct Canvas([Vec<Entity>; Ink::POOLS]);
 
 impl Canvas {
     fn commit(strokes: Vec<Stroke>, commands: &mut Commands, placed: &mut Placed) {
         let (canvas, spots, colors, lits, sprites, symbols) = placed;
-        let mut used = [0; 4];
+        let mut used = [0; Ink::POOLS];
         for Stroke {
             ink,
             layers,
             transform,
         } in strokes
         {
-            let kind = match ink {
-                Ink::Color(..) => 0,
-                Ink::Lit(..) => 1,
-                Ink::Sprite(_) => 2,
-                Ink::Symbol(_) => 3,
-            };
+            let kind = ink.pool();
             let pool = &mut canvas.0[kind];
             while pool.get(used[kind]).is_some_and(|e| !spots.contains(*e)) {
                 pool.remove(used[kind]);
@@ -5211,15 +5234,7 @@ impl Canvas {
                         paint.0 = material;
                     }
                 }
-                Ink::Sprite(sprite) => {
-                    let mut shown = sprites.get_mut(e).unwrap();
-                    if shown.image != sprite.image
-                        || shown.color != sprite.color
-                        || shown.custom_size != sprite.custom_size
-                    {
-                        *shown = sprite;
-                    }
-                }
+                Ink::Sprite(sprite) => *sprites.get_mut(e).unwrap() = sprite,
                 Ink::Symbol(instr) => {
                     symbols
                         .get_mut(e)
@@ -5897,7 +5912,7 @@ mod shot {
         script
     }
 
-    const SHOT_PX: UVec2 = UVec2::new(1280, 720);
+    pub(crate) const SHOT_PX: UVec2 = UVec2::new(1280, 720);
 
     #[derive(Clone, Copy)]
     pub enum Frame {
@@ -7106,28 +7121,32 @@ mod shot {
         if shot.clip.is_some() {
             app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
         }
+        headless(&mut app, true);
         app.insert_resource(shot)
-            .add_plugins(
-                DefaultPlugins
-                    .set(RenderPlugin {
-                        synchronous_pipeline_compilation: true,
-                        ..default()
-                    })
-                    .set(WindowPlugin {
-                        primary_window: Some(Window {
-                            resolution: (1280, 720).into(),
-                            ..default()
-                        }),
-                        exit_condition: bevy::window::ExitCondition::DontExit,
-                        ..default()
-                    })
-                    .disable::<bevy::winit::WinitPlugin>(),
-            )
-            .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
             .add_systems(Startup, spawn_offscreen_camera)
             .add_systems(Update, move_sound_view.before(view))
             .add_systems(Update, capture.after(run_ticks).before(edit));
         app
+    }
+
+    pub(crate) fn headless(app: &mut App, synchronous_pipeline_compilation: bool) {
+        app.add_plugins(
+            DefaultPlugins
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation,
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        resolution: (SHOT_PX.x, SHOT_PX.y).into(),
+                        ..default()
+                    }),
+                    exit_condition: bevy::window::ExitCondition::DontExit,
+                    ..default()
+                })
+                .disable::<bevy::winit::WinitPlugin>(),
+        )
+        .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO));
     }
 
     fn spawn_offscreen_camera(

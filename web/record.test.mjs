@@ -235,6 +235,25 @@ test('a whole record saved before chunking uploads from its first input and is f
     assert.equal(saved.size, 0);
 });
 
+test('restored chunks upload from the earliest whatever order storage lists them in', async () => {
+    const {saved, localStorage} = storage();
+    for (const start of [3121, 0]) {
+        saved.set(`ziral-record-${session}-${start}`, JSON.stringify({session, build, seed: 0, start, inputs: Array.from({length: start ? 1 : 3121}, () => [0, 'Refill'])}));
+    }
+    const starts = [];
+    const context = page({localStorage});
+    context.request_record = async bytes => {
+        const batch = JSON.parse(new TextDecoder().decode(bytes));
+        starts.push(batch.start);
+        return {next: batch.start + batch.inputs.length};
+    };
+    await settle();
+    await settle();
+    assert.equal(starts[0], 0);
+    assert.equal(starts.at(-1), 3121);
+    assert.equal(saved.size, 0);
+});
+
 test('the public page records and uploads without a fragment or credential', async () => {
     const sent = [];
     const context = page({

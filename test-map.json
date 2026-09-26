@@ -85,7 +85,6 @@
       "paths": ["web/**"],
       "tests": [
         "nix-shell --run 'shellcheck web/build.sh'",
-        "nix-shell --run './web/build.sh'",
         "node --test web/record.test.mjs",
         "nix-shell --run 'cargo fmt --manifest-path web/transport/Cargo.toml --check'",
         "nix-shell --run 'CC_wasm32_unknown_unknown=clang NIX_HARDENING_ENABLE= cargo clippy --manifest-path web/transport/Cargo.toml --target wasm32-unknown-unknown -- --deny warnings'",

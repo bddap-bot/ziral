@@ -34,6 +34,7 @@ function seal() {
         transaction.onerror = () => console.error(transaction.error);
     }).catch(console.error);
     queue(key, chunk);
+    upload();
 }
 
 export function begin_record() {
@@ -106,7 +107,6 @@ function queue(key, chunk) {
         || chunk.seed !== 0 || !Number.isSafeInteger(chunk.start) || chunk.start < 0
         || !Array.isArray(chunk.inputs) || !chunk.inputs.length) return;
     pending.set(key, chunk);
-    upload();
 }
 
 function forget(key) {
@@ -143,21 +143,33 @@ async function upload() {
     }
 }
 
-database.then(db => {
-    const request = db.transaction('records', 'readonly').objectStore('records').openCursor();
-    request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) return;
-        restore(String(cursor.key), cursor.value);
-        cursor.continue();
-    };
-    request.onerror = () => console.error(request.error);
-}).catch(console.error);
-try {
-    for (let index = 0; index < localStorage.length; index++) {
-        const key = localStorage.key(index);
-        if (key?.startsWith('ziral-record-')) restore(key, localStorage.getItem(key));
-    }
-} catch (error) { console.error(error); }
+export async function saved() {
+    const stored = new Map();
+    try {
+        const db = await database;
+        await new Promise((resolve, reject) => {
+            const request = db.transaction('records', 'readonly').objectStore('records').openCursor();
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (!cursor) return resolve();
+                stored.set(String(cursor.key), cursor.value);
+                cursor.continue();
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) { console.error(error); }
+    try {
+        for (let index = 0; index < localStorage.length; index++) {
+            const key = localStorage.key(index);
+            if (key?.startsWith('ziral-record-')) stored.set(key, localStorage.getItem(key));
+        }
+    } catch (error) { console.error(error); }
+    return stored;
+}
+
+saved().then(stored => {
+    for (const [key, text] of stored) restore(key, text);
+    upload();
+});
 
 setInterval(upload, 5000);

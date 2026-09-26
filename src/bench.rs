@@ -182,70 +182,61 @@ pub fn load(world: &mut Game, session: &mut session::Session, size: Vec2) -> (Ve
 }
 
 #[derive(Resource)]
-pub struct Bench(pub Vec2);
+pub struct Bench {
+    pub cam: Vec2,
+    pub scale: f32,
+}
 
-const PAN_TILES: f32 = 4.0;
+const PAN_TILES: i32 = 4;
+const ZOOM: f32 = 0.2;
 const PAN_SECONDS: f32 = 4.0;
 
 pub fn pan(
     bench: Option<Res<Bench>>,
     time: Res<Time>,
-    mut camera: Single<&mut Transform, With<IsDefaultUiCamera>>,
+    camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>,
 ) {
-    if let Some(bench) = bench {
-        let turn = std::f32::consts::TAU * time.elapsed_secs() / PAN_SECONDS;
-        camera.translation.x = bench.0.x + PAN_TILES * HEX * 3f32.sqrt() * turn.sin();
+    let Some(bench) = bench else { return };
+    let (mut transform, mut projection) = camera.into_inner();
+    let turn = std::f32::consts::TAU * time.elapsed_secs() / PAN_SECONDS;
+    transform.translation.x = bench.cam.x + px(Hex::new(PAN_TILES, 0)).x * turn.sin();
+    if let Projection::Orthographic(ortho) = &mut *projection {
+        ortho.scale = bench.scale * (1.0 + ZOOM * (turn / 2.0).sin());
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::*;
-    use bevy::app::{AppExit, ScheduleRunnerPlugin};
+    use bevy::app::AppExit;
     use bevy::render::render_resource::TextureFormat;
-    use std::time::Duration;
-
-    const SIZE: UVec2 = UVec2::new(1280, 720);
+    use shot::SHOT_PX as SIZE;
 
     #[derive(Resource)]
     struct Run {
         path: String,
-        mark: f64,
         end: f64,
-        marked: bool,
+        marks: Vec<f64>,
     }
 
     pub fn run(args: &[String]) -> Option<i32> {
         if args.get(1).is_none_or(|flag| flag != "--bench") {
             return None;
         }
-        let (Some(path), Some(Ok(mark)), Some(Ok(end))) = (
-            args.get(2),
-            args.get(3).map(|s| s.parse::<f64>()),
-            args.get(4).map(|s| s.parse::<f64>()),
-        ) else {
-            eprintln!("usage: ziral --bench <record.json> <mark_seconds> <end_seconds>");
+        let marks: Result<Vec<f64>, _> = args.iter().skip(4).map(|s| s.parse()).collect();
+        let (Some(path), Some(Ok(end)), Ok(mut marks)) =
+            (args.get(2), args.get(3).map(|s| s.parse::<f64>()), marks)
+        else {
+            eprintln!("usage: ziral --bench <record.json> <end_seconds> <mark_seconds>...");
             return Some(2);
         };
+        marks.sort_by(|a, b| b.total_cmp(a));
         let mut app = game_app(Game::new(sim::start()));
-        app.add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        resolution: (SIZE.x, SIZE.y).into(),
-                        ..default()
-                    }),
-                    exit_condition: bevy::window::ExitCondition::DontExit,
-                    ..default()
-                })
-                .disable::<bevy::winit::WinitPlugin>(),
-        )
-        .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
-        .insert_resource(Run {
+        shot::headless(&mut app, false);
+        app.insert_resource(Run {
             path: path.clone(),
-            mark,
             end,
-            marked: false,
+            marks,
         })
         .add_systems(Startup, start)
         .add_systems(Last, drive);
@@ -273,7 +264,7 @@ mod native {
             RenderTarget::Image(images.add(image).into()),
             IsDefaultUiCamera,
         ));
-        commands.insert_resource(Bench(cam));
+        commands.insert_resource(Bench { cam, scale });
     }
 
     fn drive(
@@ -282,9 +273,13 @@ mod native {
         mut session: ResMut<session::Session>,
         mut exit: MessageWriter<AppExit>,
     ) {
-        if !run.marked && session.elapsed >= run.mark {
+        while run
+            .marks
+            .last()
+            .is_some_and(|mark| session.elapsed >= *mark)
+        {
+            run.marks.pop();
             session.send(&mut world, session::Input::Key(KeyCode::KeyM, false));
-            run.marked = true;
         }
         if session.elapsed >= run.end {
             let text = serde_json::to_string(&session.record).expect("a record serializes");

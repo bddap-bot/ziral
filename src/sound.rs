@@ -206,7 +206,7 @@ pub fn unlock(
     let Some(mut bank) = bank else { return };
     let pressed = buttons.get_just_pressed().next().is_some()
         || keys.get_just_pressed().any(|key| activates(*key))
-        || touches.any_just_pressed();
+        || touches.any_just_released();
     if !bank.unlocked && pressed {
         bank.unlocked = true;
         commands.spawn((
@@ -371,6 +371,32 @@ mod tests {
                 app.world().resource::<Bank>().unlocked,
                 key == KeyCode::KeyM,
                 "{key:?}"
+            );
+        }
+        app.world_mut().resource_mut::<Bank>().unlocked = false;
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
+        app.add_message::<TouchInput>()
+            .add_systems(PreUpdate, bevy::input::touch::touch_screen_input_system);
+        let window = app.world_mut().spawn_empty().id();
+        for (phase, unlocked) in [
+            (bevy::input::touch::TouchPhase::Started, false),
+            (bevy::input::touch::TouchPhase::Moved, false),
+            (bevy::input::touch::TouchPhase::Ended, true),
+        ] {
+            app.world_mut().write_message(TouchInput {
+                phase,
+                position: Vec2::ZERO,
+                window,
+                force: None,
+                id: 0,
+            });
+            app.update();
+            assert_eq!(
+                app.world().resource::<Bank>().unlocked,
+                unlocked,
+                "{phase:?}"
             );
         }
     }

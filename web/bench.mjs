@@ -4,9 +4,10 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {extname, join} from 'node:path';
 
-const MARK = 30;
-const END = MARK + 17;
-const ATTEMPTS = 3;
+const MARKS = [30, 60];
+const WINDOW = 30;
+const END = MARKS.at(-1) + WINDOW / 2 + 2;
+const RUNS = 2;
 const SIZE = {width: 1280, height: 720};
 
 const [page = 'web/dist', kept] = process.argv.slice(2);
@@ -46,6 +47,10 @@ function browse(host) {
     let id = 0;
     let buffer = '';
     const pending = new Map();
+    const exited = new Promise(resolve => chrome.once('exit', resolve)).then(code => {
+        for (const {reject} of pending.values()) reject(new Error(`chromium exited with ${code}`));
+        pending.clear();
+    });
     chrome.stdio[4].on('data', chunk => {
         buffer += chunk;
         for (let end; (end = buffer.indexOf('\0')) >= 0; buffer = buffer.slice(end + 1)) {
@@ -58,37 +63,31 @@ function browse(host) {
         }
     });
     const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+        if (chrome.exitCode !== null || chrome.signalCode !== null) return reject(new Error('chromium exited'));
         pending.set(++id, {resolve, reject});
         chrome.stdio[3].write(JSON.stringify({id, method, params, sessionId}) + '\0');
     });
-    return {chrome, send};
+    const close = async () => {
+        chrome.kill();
+        await exited;
+    };
+    return {send, close};
 }
 
 async function record(url) {
-    const {chrome, send} = browse(new URL(url).hostname);
+    const {send, close} = browse(new URL(url).hostname);
     try {
         const {targetId} = await send('Target.createTarget', {url: 'about:blank'});
         const {sessionId} = await send('Target.attachToTarget', {targetId, flatten: true});
         const evaluate = async expression => (await send('Runtime.evaluate', {expression, returnByValue: true, awaitPromise: true}, sessionId)).result.value;
         await send('Emulation.setDeviceMetricsOverride', {...SIZE, deviceScaleFactor: 1, mobile: false}, sessionId);
         await send('Page.navigate', {url: `${url}#bench`}, sessionId);
-        const chunks = `new Promise((resolve, reject) => {
-            const opening = indexedDB.open('ziral-records', 1);
-            opening.onupgradeneeded = () => opening.result.createObjectStore('records');
-            opening.onerror = () => reject(opening.error);
-            opening.onsuccess = () => {
-                const store = opening.result.transaction('records', 'readonly').objectStore('records');
-                const keys = store.getAllKeys();
-                const values = store.getAll();
-                values.onsuccess = () => {
-                    const saved = new Map(keys.result.map((key, index) => [key, values.result[index]]));
-                    for (const key of Object.keys(localStorage).filter(key => key.startsWith('ziral-record-'))) {
-                        saved.set(key, localStorage.getItem(key));
-                    }
-                    resolve([...saved.values()].map(text => JSON.parse(text)));
-                };
-            };
-        })`;
+        const chunks = `(async () => {
+            const url = performance.getEntriesByType('resource').map(entry => entry.name).find(name => name.endsWith('/web/record.js'));
+            if (!url) return [];
+            const {saved} = await import(url);
+            return [...(await saved()).values()].map(text => JSON.parse(text));
+        })()`;
         for (let waited = 0; !(await evaluate(chunks)).length; waited++) {
             if (waited > 600) throw new Error(`${url} recorded nothing`);
             await sleep(0.5);
@@ -100,9 +99,13 @@ async function record(url) {
         };
         await evaluate(`document.querySelector('canvas').focus()`);
         await press(' ', 'Space', 32);
-        await sleep(MARK);
-        await press('m', 'KeyM', 77);
-        await sleep(END - MARK);
+        let now = 0;
+        for (const mark of MARKS) {
+            await sleep(mark - now);
+            now = mark;
+            await press('m', 'KeyM', 77);
+        }
+        await sleep(END - now);
         if (kept) {
             const {data} = await send('Page.captureScreenshot', {format: 'png'}, sessionId);
             writeFileSync(join(scratch, 'web.png'), Buffer.from(data, 'base64'));
@@ -114,32 +117,32 @@ async function record(url) {
         saved.sort((a, b) => a.start - b.start);
         return {build: saved[0].build, seed: saved[0].seed, inputs: saved.flatMap(chunk => chunk.inputs)};
     } finally {
-        const exited = new Promise(resolve => chrome.once('exit', resolve));
-        chrome.kill();
-        await exited;
+        await close();
         rmSync(join(scratch, 'profile'), {recursive: true, force: true});
     }
 }
 
-function steady(target, attempt, path) {
-    const {frames, marks} = JSON.parse(ziral('--analyze', path));
-    if (marks.length !== 1) throw new Error(`${target}: expected one mark, found ${marks.length}`);
-    const window = marks[0].frames;
-    console.log(`${target} window ${attempt}: ${window.count} frames, p50 ${window.p50_ms} ms, p90 ${window.p90_ms} ms, p99 ${window.p99_ms} ms, max ${window.max_ms} ms, ${window.over_budget} over budget (whole run: ${frames.count} frames, max ${frames.max_ms} ms)`);
-    return window.over_budget === 0;
+function steady(target, run, path) {
+    const {marks} = JSON.parse(ziral('--analyze', path));
+    if (marks.length !== MARKS.length) throw new Error(`${target}: expected ${MARKS.length} marks, found ${marks.length}`);
+    for (const {window: [from, to], frames} of marks) {
+        if (Math.abs(to - from - WINDOW) > 0.5) throw new Error(`${target}: window ${from}-${to} is not ${WINDOW} s`);
+        console.log(`${target} run ${run}, ${from.toFixed(0)}-${to.toFixed(0)} s: ${frames.count} frames, p50 ${frames.p50_ms} ms, p90 ${frames.p90_ms} ms, p99 ${frames.p99_ms} ms, max ${frames.max_ms} ms, ${frames.over_budget} over budget`);
+    }
+    return marks.every(({frames}) => frames.over_budget === 0);
 }
 
 async function holds(target, measure) {
-    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
-        const path = join(scratch, `${target}-${attempt}.json`);
+    for (let run = 1; run <= RUNS; run++) {
+        const path = join(scratch, `${target}-${run}.json`);
         await measure(path);
-        if (steady(target, attempt, path)) return true;
+        if (steady(target, run, path)) return true;
     }
     return false;
 }
 
 try {
-    const native = await holds('native', async path => ziral('--bench', path, String(MARK), String(END)));
+    const native = await holds('native', async path => ziral('--bench', path, String(END), ...MARKS.map(String)));
     let url = page;
     let server;
     if (!/^https?:/.test(page)) {

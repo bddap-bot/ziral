@@ -51,6 +51,7 @@ fn frames<'a>(inputs: impl Iterator<Item = &'a (f64, Input)>) -> Value {
         "p99_ms": rank(0.99),
         "max_ms": seconds.last().copied().map(ms),
         "over_budget": seconds.iter().filter(|dt| **dt > FRAME_BUDGET).count(),
+        "dropped_at_60_hz": seconds.iter().filter(|dt| **dt > FRAME_BUDGET * 1.5).count(),
     })
 }
 
@@ -342,10 +343,10 @@ mod tests {
             marks(&session.record),
             vec![
                 json!({"at": 5.0, "window": [0.0, 20.0], "frames": {
-                    "count": 1, "p50_ms": 5000.0, "p90_ms": 5000.0, "p99_ms": 5000.0, "max_ms": 5000.0, "over_budget": 1,
+                    "count": 1, "p50_ms": 5000.0, "p90_ms": 5000.0, "p99_ms": 5000.0, "max_ms": 5000.0, "over_budget": 1, "dropped_at_60_hz": 1,
                 }}),
                 json!({"at": 45.0, "window": [30.0, 50.0], "frames": {
-                    "count": 2, "p50_ms": 5000.0, "p90_ms": 40000.0, "p99_ms": 40000.0, "max_ms": 40000.0, "over_budget": 2,
+                    "count": 2, "p50_ms": 5000.0, "p90_ms": 40000.0, "p99_ms": 40000.0, "max_ms": 40000.0, "over_budget": 2, "dropped_at_60_hz": 2,
                 }}),
             ]
         );
@@ -356,14 +357,14 @@ mod tests {
         let mut session = Session::new(&world.state());
         assert_eq!(
             summarize(&session.record)["frames"],
-            json!({"count": 0, "p50_ms": null, "p90_ms": null, "p99_ms": null, "max_ms": null, "over_budget": 0})
+            json!({"count": 0, "p50_ms": null, "p90_ms": null, "p99_ms": null, "max_ms": null, "over_budget": 0, "dropped_at_60_hz": 0})
         );
         for dt in std::iter::repeat_n(1.0 / 60.0, 97).chain([0.25, 0.02, 0.02]) {
             session.send(&mut world, Input::Frame(dt));
         }
         assert_eq!(
             summarize(&session.record)["frames"],
-            json!({"count": 100, "p50_ms": 16.667, "p90_ms": 16.667, "p99_ms": 20.0, "max_ms": 250.0, "over_budget": 3})
+            json!({"count": 100, "p50_ms": 16.667, "p90_ms": 16.667, "p99_ms": 20.0, "max_ms": 250.0, "over_budget": 3, "dropped_at_60_hz": 1})
         );
     }
 

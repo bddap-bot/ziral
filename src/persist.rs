@@ -1,6 +1,9 @@
 use crate::sim::Sim;
 use serde::{Deserialize, Serialize};
 
+pub const SLOT: &str = "ziral-save";
+pub const BENCH_SLOT: &str = "ziral-bench-save";
+
 pub const BUILD_TAG: &str = match option_env!("ZIRAL_BUILD_TAG") {
     Some(tag) => tag,
     None => env!("CARGO_PKG_VERSION"),
@@ -104,11 +107,11 @@ fn validate(sim: &Sim) -> Result<(), String> {
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
-export function stored_save() {
-    try { return localStorage.getItem("ziral-save"); } catch (_) { return null; }
+export function stored_save(slot) {
+    try { return localStorage.getItem(slot); } catch (_) { return null; }
 }
-export function store_save(save) {
-    try { localStorage.setItem("ziral-save", save); return null; } catch (error) { return String(error); }
+export function store_save(slot, save) {
+    try { localStorage.setItem(slot, save); return null; } catch (error) { return String(error); }
 }
 export function download_save(save) {
     const url = URL.createObjectURL(new Blob([save], {type: "application/json"}));
@@ -139,8 +142,8 @@ export function refuse_save(reason) {
 }
 "#)]
 extern "C" {
-    fn stored_save() -> Option<String>;
-    fn store_save(save: &str) -> Option<String>;
+    fn stored_save(slot: &str) -> Option<String>;
+    fn store_save(slot: &str, save: &str) -> Option<String>;
     fn download_save(save: &str);
     fn choose_save();
     fn imported_save() -> Option<String>;
@@ -148,12 +151,12 @@ extern "C" {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn stored_save() -> Option<String> {
+fn stored_save(_: &str) -> Option<String> {
     None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn store_save(_: &str) -> Option<String> {
+fn store_save(_: &str, _: &str) -> Option<String> {
     None
 }
 
@@ -172,7 +175,7 @@ fn imported_save() -> Option<String> {
 fn refuse_save(_: &str) {}
 
 pub fn restore(fallback: State) -> State {
-    let Some(save) = stored_save() else {
+    let Some(save) = stored_save(SLOT) else {
         return fallback;
     };
     decode_state(&save).unwrap_or_else(|reason| {
@@ -181,9 +184,9 @@ pub fn restore(fallback: State) -> State {
     })
 }
 
-pub fn store(state: &State) -> Result<(), String> {
+pub fn store(state: &State, slot: &str) -> Result<(), String> {
     let save = encode_state(state).map_err(|error| error.to_string())?;
-    store_save(&save).map_or(Ok(()), Err)
+    store_save(slot, &save).map_or(Ok(()), Err)
 }
 
 pub fn refuse(reason: &str) {
