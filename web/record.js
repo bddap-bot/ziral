@@ -1,4 +1,4 @@
-let record;
+let live;
 let id = crypto.randomUUID();
 let attempted = 0;
 const database = new Promise((resolve, reject) => {
@@ -9,40 +9,53 @@ const database = new Promise((resolve, reject) => {
 });
 database.catch(() => {});
 
-function persist() {
-    if (!record || (delivered.get(id) ?? 0) >= record.inputs.length) return;
+const pending = new Map();
+const delivered = new Map();
+let uploading = false;
+
+function name(chunk) {
+    return `ziral-record-${chunk.session}-${chunk.start}`;
+}
+
+function seal() {
+    if (!live?.inputs.length) return;
     attempted = performance.now();
-    const text = JSON.stringify(record);
-    const savedId = id;
-    queue_upload(text);
+    const chunk = live;
+    live = {...chunk, start: chunk.start + chunk.inputs.length, inputs: []};
+    const text = JSON.stringify(chunk);
+    const key = name(chunk);
+    try { localStorage.setItem(key, text); } catch (error) { console.error(error); }
     database.then(db => {
         const transaction = db.transaction('records', 'readwrite');
-        transaction.objectStore('records').put(text, savedId);
+        transaction.objectStore('records').put(text, key);
+        transaction.oncomplete = () => {
+            try { localStorage.removeItem(key); } catch (error) { console.error(error); }
+        };
         transaction.onerror = () => console.error(transaction.error);
     }).catch(console.error);
-    try { localStorage.setItem(`ziral-record-${savedId}`, text); } catch (error) { console.error(error); }
+    queue(key, chunk);
 }
 
 export function begin_record() {
-    persist();
-    record = undefined;
+    seal();
+    live = undefined;
     id = crypto.randomUUID();
     attempted = 0;
 }
 
 export function finish_record() {
-    persist();
+    seal();
 }
 
 export function append_record(build, seed, inputs) {
-    record ??= {build, seed: Number(seed), session: id, inputs: []};
-    record.inputs.push(...JSON.parse(inputs));
-    if (performance.now() - attempted >= 5000) persist();
+    live ??= {build, seed: Number(seed), session: id, start: 0, inputs: []};
+    live.inputs.push(...JSON.parse(inputs));
+    if (performance.now() - attempted >= 5000) seal();
 }
 
-addEventListener('pagehide', persist);
+addEventListener('pagehide', seal);
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') persist();
+    if (document.visibilityState === 'hidden') seal();
 });
 
 const endpoint = globalThis.ZIRAL_RECORDS_ENDPOINT;
@@ -56,21 +69,17 @@ async function request_record(bytes) {
     return JSON.parse(new TextDecoder().decode(await module.upload(endpoint, bytes)));
 }
 
-const queued = new Map();
-const delivered = new Map();
-let uploading = false;
-
-export async function send_record(snapshot, request = request_record, start = 0) {
+export async function send_record(chunk, request = request_record, start = chunk.start) {
     const encoder = new TextEncoder();
-    const limit = snapshot.inputs.length;
+    const limit = chunk.start + chunk.inputs.length;
     while (start < limit) {
         let end = Math.min(start + 512, limit);
         let bytes;
         do {
             bytes = encoder.encode(JSON.stringify({
-                session: snapshot.session,
-                build: snapshot.build, seed: snapshot.seed,
-                start, inputs: snapshot.inputs.slice(start, end),
+                session: chunk.session,
+                build: chunk.build, seed: chunk.seed,
+                start, inputs: chunk.inputs.slice(start - chunk.start, end - chunk.start),
             }));
             if (bytes.length <= 900000) break;
             if (end === start + 1) throw new Error('Input exceeds upload limit');
@@ -85,60 +94,69 @@ export async function send_record(snapshot, request = request_record, start = 0)
     return start;
 }
 
-function queue_upload(text) {
-    let snapshot;
-    try { snapshot = JSON.parse(text); } catch { return; }
-    if (!snapshot || !/^[a-f0-9-]{36}$/.test(snapshot.session ?? '')
-        || !/^[a-f0-9]{40}$/.test(snapshot.build ?? '')
-        || snapshot.seed !== 0 || !Array.isArray(snapshot.inputs) || !snapshot.inputs.length) return;
-    const previous = queued.get(snapshot.session);
-    if (!previous || previous.inputs.length < snapshot.inputs.length) queued.set(snapshot.session, snapshot);
+function restore(key, text) {
+    let chunk;
+    try { chunk = JSON.parse(text); } catch { return; }
+    queue(key, {start: 0, ...chunk});
+}
+
+function queue(key, chunk) {
+    if (!chunk || !/^[a-f0-9-]{36}$/.test(chunk.session ?? '')
+        || !/^[a-f0-9]{40}$/.test(chunk.build ?? '')
+        || chunk.seed !== 0 || !Number.isSafeInteger(chunk.start) || chunk.start < 0
+        || !Array.isArray(chunk.inputs) || !chunk.inputs.length) return;
+    pending.set(key, chunk);
     upload();
 }
 
+function forget(key) {
+    pending.delete(key);
+    try { localStorage.removeItem(key); } catch (error) { console.error(error); }
+    database.then(db => {
+        const transaction = db.transaction('records', 'readwrite');
+        transaction.objectStore('records').delete(key);
+        transaction.onerror = () => console.error(transaction.error);
+    }).catch(console.error);
+}
+
 async function upload() {
-    if (uploading || !queued.size) return;
+    if (uploading || !pending.size) return;
     uploading = true;
     try {
-        for (const [session, snapshot] of [...queued]) {
+        const blocked = new Set();
+        const ordered = [...pending].sort(([, a], [, b]) => a.session.localeCompare(b.session) || a.start - b.start);
+        for (const [key, chunk] of ordered) {
+            if (blocked.has(chunk.session)) continue;
             try {
-                const next = await send_record(snapshot, request_record, delivered.get(session) ?? 0);
-                delivered.set(session, next);
-                const covered = text => {
-                    try { return JSON.parse(text)?.inputs.length <= next; } catch { return false; }
-                };
-                try {
-                    const key = `ziral-record-${session}`;
-                    if (covered(localStorage.getItem(key))) localStorage.removeItem(key);
-                } catch (error) { console.error(error); }
-                database.then(db => {
-                    const transaction = db.transaction('records', 'readwrite');
-                    const store = transaction.objectStore('records');
-                    const request = store.get(session);
-                    request.onsuccess = () => {
-                        if (covered(request.result)) store.delete(session);
-                    };
-                    transaction.onerror = () => console.error(transaction.error);
-                }).catch(console.error);
-                if (queued.get(session) === snapshot) queued.delete(session);
-            } catch (error) { console.error(error); }
+                const from = Math.max(chunk.start, delivered.get(chunk.session) ?? 0);
+                if (from < chunk.start + chunk.inputs.length) {
+                    delivered.set(chunk.session, await send_record(chunk, request_record, from));
+                }
+                if (pending.get(key) === chunk) forget(key);
+            } catch (error) {
+                blocked.add(chunk.session);
+                console.error(error);
+            }
         }
-    } catch (error) {
-        console.error(error);
     } finally {
         uploading = false;
     }
 }
 
 database.then(db => {
-    const request = db.transaction('records', 'readonly').objectStore('records').getAll();
-    request.onsuccess = () => request.result.forEach(queue_upload);
+    const request = db.transaction('records', 'readonly').objectStore('records').openCursor();
+    request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        restore(String(cursor.key), cursor.value);
+        cursor.continue();
+    };
     request.onerror = () => console.error(request.error);
 }).catch(console.error);
 try {
     for (let index = 0; index < localStorage.length; index++) {
         const key = localStorage.key(index);
-        if (key?.startsWith('ziral-record-')) queue_upload(localStorage.getItem(key));
+        if (key?.startsWith('ziral-record-')) restore(key, localStorage.getItem(key));
     }
 } catch (error) { console.error(error); }
 

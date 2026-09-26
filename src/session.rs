@@ -189,6 +189,11 @@ impl Session {
         if let Ok(text) = serde_json::to_string(&self.record.inputs[self.sent..]) {
             append_record(&self.record.build, self.record.seed, &text);
             self.sent = self.record.inputs.len();
+            #[cfg(target_arch = "wasm32")]
+            {
+                self.record.inputs.clear();
+                self.sent = 0;
+            }
         }
     }
 

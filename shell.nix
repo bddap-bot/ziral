@@ -30,6 +30,7 @@ pkgs.mkShell {
     xclip
     xvfb
     ffmpeg
+    chromium
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [

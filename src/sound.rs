@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
 const contexts = [];
-const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend", "wheel"];
+const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend"];
 for (const key of ["AudioContext", "webkitAudioContext"]) {
     const Context = globalThis[key];
     if (Context) {
@@ -173,19 +173,40 @@ pub fn load(mut commands: Commands, mut assets: ResMut<Assets<AudioSource>>) {
     });
 }
 
+fn activates(key: KeyCode) -> bool {
+    use KeyCode::*;
+    !matches!(
+        key,
+        ShiftLeft
+            | ShiftRight
+            | ControlLeft
+            | ControlRight
+            | AltLeft
+            | AltRight
+            | SuperLeft
+            | SuperRight
+            | Meta
+            | Hyper
+            | Fn
+            | FnLock
+            | CapsLock
+            | NumLock
+            | ScrollLock
+            | Escape
+    )
+}
+
 pub fn unlock(
     mut commands: Commands,
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     touches: Res<Touches>,
-    scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
     bank: Option<ResMut<Bank>>,
 ) {
     let Some(mut bank) = bank else { return };
     let pressed = buttons.get_just_pressed().next().is_some()
-        || keys.get_just_pressed().next().is_some()
-        || touches.any_just_pressed()
-        || scroll.delta != Vec2::ZERO;
+        || keys.get_just_pressed().any(|key| activates(*key))
+        || touches.any_just_pressed();
     if !bank.unlocked && pressed {
         bank.unlocked = true;
         commands.spawn((
@@ -322,6 +343,37 @@ mod tests {
     use super::*;
     use crate::sim::ArmLength;
     use crate::sim::{GlyphKind, Instr, Stall};
+
+    #[test]
+    fn sound_begins_only_on_a_press_the_page_counts_as_activation() {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<Touches>()
+            .insert_resource(Bank {
+                voices: Vec::new(),
+                silence: Handle::default(),
+                upgrade: Handle::default(),
+                unlocked: false,
+            })
+            .add_systems(Update, unlock);
+        for key in [
+            KeyCode::ShiftLeft,
+            KeyCode::ControlLeft,
+            KeyCode::Escape,
+            KeyCode::KeyM,
+        ] {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear();
+            keys.press(key);
+            app.update();
+            assert_eq!(
+                app.world().resource::<Bank>().unlocked,
+                key == KeyCode::KeyM,
+                "{key:?}"
+            );
+        }
+    }
 
     #[test]
     fn every_machine_kind_resolves_to_one_typed_instrument() {

@@ -88,9 +88,10 @@
         "nix-shell --run './web/build.sh'",
         "node --test web/record.test.mjs",
         "nix-shell --run 'cargo fmt --manifest-path web/transport/Cargo.toml --check'",
-        "nix-shell --run 'CC_wasm32_unknown_unknown=clang NIX_HARDENING_ENABLE= cargo clippy --manifest-path web/transport/Cargo.toml --target wasm32-unknown-unknown -- --deny warnings'"
+        "nix-shell --run 'CC_wasm32_unknown_unknown=clang NIX_HARDENING_ENABLE= cargo clippy --manifest-path web/transport/Cargo.toml --target wasm32-unknown-unknown -- --deny warnings'",
+        "nix-shell --run './web/build.sh && node web/bench.mjs'"
       ],
-      "why": "running the web build is the only thing that compiles the wasm module and checks the wasm-bindgen pin"
+      "why": "running the web build is the only thing that compiles the wasm module and checks the wasm-bindgen pin; the frame-budget benchmark runs the busy scene on every target"
     },
     {
       "paths": [".github/workflows/**"],
@@ -99,22 +100,30 @@
     },
     {
       "paths": ["shell.nix"],
-      "tests": ["nix-instantiate --parse shell.nix", "nix-shell --run 'cargo build --tests'"],
-      "why": "a parse catches syntax; a build inside the shell catches a missing package"
+      "tests": [
+        "nix-instantiate --parse shell.nix",
+        "nix-shell --run 'cargo build --tests'",
+        "nix-shell --run './web/build.sh && node web/bench.mjs'"
+      ],
+      "why": "a parse catches syntax; a build inside the shell catches a missing package; the compiler and browser it pins move frame times, so the frame-budget benchmark runs too"
     },
     {
       "paths": ["src/*.wgsl"],
-      "tests": ["nix-shell --run 'shellcheck art/machines/proof.sh && art/machines/proof.sh'"],
-      "why": "a shader only compiles when a scene is drawn; the proof shot draws lit machines at two turns and fails on a shader error"
+      "tests": [
+        "nix-shell --run 'shellcheck art/machines/proof.sh && art/machines/proof.sh'",
+        "nix-shell --run './web/build.sh && node web/bench.mjs'"
+      ],
+      "why": "a shader only compiles when a scene is drawn; the proof shot draws lit machines at two turns and fails on a shader error; the frame-budget benchmark runs the busy scene on every target"
     },
     {
       "paths": ["**/*.rs", "Cargo.toml", "Cargo.lock"],
       "tests": [
         "nix-shell --run 'cargo fmt --check'",
         "nix-shell --run 'cargo clippy --all-targets -- --deny warnings'",
-        "nix-shell --run 'cargo test -- --test-threads=2'"
+        "nix-shell --run 'cargo test -- --test-threads=2'",
+        "nix-shell --run './web/build.sh && node web/bench.mjs'"
       ],
-      "why": "one crate, one suite; two test threads because the box hangs cargo test under contention"
+      "why": "one crate, one suite; two test threads because the box hangs cargo test under contention; the frame-budget benchmark runs the busy scene on every target"
     }
   ]
 }

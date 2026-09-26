@@ -1,5 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod analysis;
+mod bench;
 mod form;
 mod look;
 #[cfg(not(target_arch = "wasm32"))]
@@ -521,7 +522,7 @@ struct PortalView {
 impl PortalView {
     const TILE: f32 = HEX * 0.9;
 
-    fn of(sim: &Sim) -> Self {
+    fn extent(sim: &Sim) -> (Vec2, Vec2) {
         let mut lo = Vec2::splat(f32::INFINITY);
         let mut hi = Vec2::splat(f32::NEG_INFINITY);
         let cells = sim
@@ -530,7 +531,8 @@ impl PortalView {
             .flatten()
             .flat_map(|g| g.cells())
             .chain(sim.atoms.iter().flatten().map(|a| a.pos))
-            .chain(sim.arms.iter().flat_map(|a| [a.pivot, a.hand()]));
+            .chain(sim.arms.iter().flat_map(|a| [a.pivot, a.hand()]))
+            .chain(sim.portals.iter().flatten().map(|p| p.at));
         for cell in cells {
             lo = lo.min(px(cell) - Vec2::splat(HEX));
             hi = hi.max(px(cell) + Vec2::splat(HEX));
@@ -539,6 +541,11 @@ impl PortalView {
             lo = Vec2::splat(-HEX);
             hi = Vec2::splat(HEX);
         }
+        (lo, hi)
+    }
+
+    fn of(sim: &Sim) -> Self {
+        let (lo, hi) = Self::extent(sim);
         Self {
             center: (lo + hi) / 2.0,
             side: (hi - lo).max_element().max(HEX * 2.0),
@@ -2389,37 +2396,37 @@ fn clipboard_paste(mut world: ResMut<Game>, mut session: ResMut<session::Session
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
-const inventoryFragments = [];
-export function listen_inventory_fragment() {
+const fragments = [];
+export function listen_fragment() {
     addEventListener("hashchange", event => {
-        inventoryFragments.push(new URL(event.newURL).hash.slice(1));
+        fragments.push(new URL(event.newURL).hash.slice(1));
     });
-    inventoryFragments.push(location.hash.slice(1));
+    fragments.push(location.hash.slice(1));
 }
-export function take_inventory_fragment() {
-    return inventoryFragments.shift();
+export function take_fragment() {
+    return fragments.shift();
 }
-export function clear_inventory_fragment(fragment) {
+export function clear_fragment(fragment) {
     if (location.hash.slice(1) === fragment)
         history.replaceState(null, "", location.pathname + location.search);
 }
 "#)]
 extern "C" {
-    fn listen_inventory_fragment();
-    fn take_inventory_fragment() -> Option<String>;
-    fn clear_inventory_fragment(fragment: &str);
+    fn listen_fragment();
+    fn take_fragment() -> Option<String>;
+    fn clear_fragment(fragment: &str);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn listen_inventory_fragment() {}
+fn listen_fragment() {}
 
 #[cfg(not(target_arch = "wasm32"))]
-fn take_inventory_fragment() -> Option<String> {
+fn take_fragment() -> Option<String> {
     None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn clear_inventory_fragment(_: &str) {}
+fn clear_fragment(_: &str) {}
 
 #[cfg(test)]
 fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnOnce(&str)) {
@@ -2430,17 +2437,32 @@ fn consume_inventory_fragment(world: &mut World, fragment: &str, clear: impl FnO
     clear(fragment);
 }
 
-fn refill_inventory(mut world: ResMut<Game>, mut session: ResMut<session::Session>) {
+fn fragments(
+    mut commands: Commands,
+    mut world: ResMut<Game>,
+    mut session: ResMut<session::Session>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>,
+) {
     if session.replaying() {
         return;
     }
     if world.has_machine_rollback() {
         return;
     }
-    while let Some(fragment) = take_inventory_fragment() {
+    let (mut transform, mut projection) = camera.into_inner();
+    while let Some(fragment) = take_fragment() {
         if fragment == INVENTORY_TOKEN {
             session.send(&mut world, session::Input::Refill);
-            clear_inventory_fragment(&fragment);
+            clear_fragment(&fragment);
+        } else if fragment == bench::TOKEN
+            && let Projection::Orthographic(ortho) = &mut *projection
+        {
+            let (cam, scale) = bench::load(&mut world, &mut session, window.size());
+            transform.translation = cam.extend(transform.translation.z);
+            ortho.scale = scale;
+            commands.insert_resource(bench::Bench(cam));
+            clear_fragment(&fragment);
         }
     }
 }
@@ -2562,18 +2584,16 @@ fn game_app(world: Game) -> App {
                 ..default()
             },
         )
-        .add_systems(
-            Startup,
-            (listen_inventory_fragment, fire_kiln, spawn_ui).chain(),
-        )
+        .add_systems(Startup, (listen_fragment, fire_kiln, spawn_ui).chain())
         .add_systems(
             Update,
             (
                 clipboard_paste,
-                refill_inventory,
+                fragments,
                 hover,
                 sound::unlock,
                 view,
+                bench::pan,
                 run_ticks,
                 play_sound,
                 edit,
@@ -2672,6 +2692,10 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(status) = analysis::run(&args) {
+        std::process::exit(status);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(status) = bench::run(&args) {
         std::process::exit(status);
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -2904,7 +2928,7 @@ fn refusal(
         });
 }
 
-#[derive(Clone, Copy, Component)]
+#[derive(Clone, Copy, Component, PartialEq, Eq)]
 enum InstructionSymbol {
     Ui(Instr),
     Card(Instr),
@@ -2921,7 +2945,7 @@ impl InstructionSymbol {
 fn render_instruction_symbols(
     mut commands: Commands,
     kiln: Res<Kiln>,
-    symbols: Query<(Entity, &InstructionSymbol), Added<InstructionSymbol>>,
+    symbols: Query<(Entity, &InstructionSymbol), Changed<InstructionSymbol>>,
 ) {
     for (entity, symbol) in &symbols {
         let skin = instruction_symbol(symbol.instr());
@@ -4121,12 +4145,27 @@ fn tapes(
 struct Fill;
 
 #[derive(Component)]
-struct Board;
+struct Board(Option<Hex>);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tiling {
     Cells { r0: i32, r1: i32, x0: i32, x1: i32 },
     Slab(IVec2, IVec2),
+}
+
+impl Tiling {
+    fn columns(r: i32, x0: i32, x1: i32) -> std::ops::RangeInclusive<i32> {
+        x0 - r.div_euclid(2) - 2..=x1 - r.div_euclid(2) + 2
+    }
+
+    fn contains(self, h: Hex) -> bool {
+        match self {
+            Tiling::Cells { r0, r1, x0, x1 } => {
+                (r0..=r1).contains(&h.r) && Self::columns(h.r, x0, x1).contains(&h.q)
+            }
+            Tiling::Slab(..) => false,
+        }
+    }
 }
 
 const BOND_WIDTH: f32 = 0.14;
@@ -4471,9 +4510,38 @@ fn tile(kiln: &Kiln, h: Hex) -> (Mesh2d, MeshMaterial2d<ColorMaterial>, Transfor
     )
 }
 
-struct Painter<'a, 'gw, 'gs, 'cw, 'cs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
+enum Ink {
+    Color(Handle<Mesh>, Handle<ColorMaterial>),
+    Lit(Handle<Mesh>, Handle<Lit>),
+    Sprite(Sprite),
+    Symbol(Instr),
+}
+
+struct Stroke {
+    ink: Ink,
+    layers: RenderLayers,
+    transform: Transform,
+}
+
+trait Pigment: Material2d {
+    fn ink(mesh: Handle<Mesh>, material: Handle<Self>) -> Ink;
+}
+
+impl Pigment for ColorMaterial {
+    fn ink(mesh: Handle<Mesh>, material: Handle<Self>) -> Ink {
+        Ink::Color(mesh, material)
+    }
+}
+
+impl Pigment for Lit {
+    fn ink(mesh: Handle<Mesh>, material: Handle<Self>) -> Ink {
+        Ink::Lit(mesh, material)
+    }
+}
+
+struct Painter<'a, 'gw, 'gs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
     gizmos: &'a mut Gizmos<'gw, 'gs, G>,
-    commands: &'a mut Commands<'cw, 'cs>,
+    strokes: &'a mut Vec<Stroke>,
     kiln: &'a Kiln,
     layers: RenderLayers,
     shift: Vec2,
@@ -4481,7 +4549,7 @@ struct Painter<'a, 'gw, 'gs, 'cw, 'cs, G: GizmoConfigGroup = DefaultGizmoConfigG
     portal_opacity: f32,
 }
 
-impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
+impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
     fn shifted(&mut self, by: Vec2, draw: impl FnOnce(&mut Self)) {
         let was = self.shift;
         self.shift += by * self.scale;
@@ -4494,8 +4562,11 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         transform.translation =
             (transform.translation.truncate() * self.scale + self.shift).extend(z);
         transform.scale *= self.scale;
-        self.commands
-            .spawn((Fill, self.layers.clone(), mesh, material, transform));
+        self.strokes.push(Stroke {
+            ink: Ink::Color(mesh.0, material.0),
+            layers: self.layers.clone(),
+            transform,
+        });
     }
 
     fn interior(&mut self, sim: &Sim, at: Vec2, scale: f32, lift: f32) {
@@ -4527,7 +4598,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
             .circle_2d(at * self.scale + self.shift, r * self.scale, IVORY);
     }
 
-    fn fill<M: Material2d>(
+    fn fill<M: Pigment>(
         &mut self,
         mesh: &Handle<Mesh>,
         material: &Handle<M>,
@@ -4536,30 +4607,27 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         scale: Vec2,
         z: f32,
     ) {
-        self.commands.spawn((
-            Fill,
-            self.layers.clone(),
-            Mesh2d(mesh.clone()),
-            MeshMaterial2d(material.clone()),
-            Transform {
+        self.strokes.push(Stroke {
+            ink: M::ink(mesh.clone(), material.clone()),
+            layers: self.layers.clone(),
+            transform: Transform {
                 translation: (at * self.scale + self.shift).extend(z),
                 rotation: Quat::from_rotation_z(angle),
                 scale: (scale * self.scale).extend(1.0),
             },
-        ));
+        });
     }
 
     fn instruction(&mut self, instr: Instr, at: Vec2, side: f32, z: f32) {
-        self.commands.spawn((
-            InstructionSymbol::Card(instr),
-            Fill,
-            self.layers.clone(),
-            Transform {
+        self.strokes.push(Stroke {
+            ink: Ink::Symbol(instr),
+            layers: self.layers.clone(),
+            transform: Transform {
                 translation: (at * self.scale + self.shift).extend(z),
                 scale: Vec3::splat(side * self.scale),
                 ..default()
             },
-        ));
+        });
     }
 
     fn stamp(
@@ -4713,20 +4781,19 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, '_, '_, G> {
         let (shift, turn, scale) = rig::entry(Machine::Portal)
             .motion
             .map_or(([0.0, 0.0], 0.0, 1.0), |motion| motion.pose(pulse));
-        self.commands.spawn((
-            Fill,
-            self.layers.clone(),
-            Sprite {
+        self.strokes.push(Stroke {
+            ink: Ink::Sprite(Sprite {
                 image: self.kiln.image(look.skin),
                 color: Color::WHITE.with_alpha(self.portal_opacity),
                 custom_size: Some(look::quad(Machine::Portal).size() * self.scale * scale),
                 ..default()
-            },
-            Transform::from_translation(
+            }),
+            layers: self.layers.clone(),
+            transform: Transform::from_translation(
                 ((at + Vec2::from(shift) * HEX) * self.scale + self.shift).extend(z),
             )
             .with_rotation(Quat::from_rotation_z(turn)),
-        ));
+        });
     }
 
     fn particles(
@@ -4949,7 +5016,7 @@ fn board(
     mut kiln: ResMut<Kiln>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
-    laid: Query<Entity, With<Board>>,
+    laid: Query<(Entity, &Board)>,
     world: Res<Game>,
 ) {
     let (transform, projection) = camera.into_inner();
@@ -4970,38 +5037,43 @@ fn board(
     } else {
         Tiling::Slab(lo.floor().as_ivec2(), hi.ceil().as_ivec2())
     };
-    if kiln.tiled == Some((tiling, world.inside())) {
+    let inside = world.inside();
+    if kiln.tiled == Some((tiling, inside)) {
         return;
     }
-    for e in &laid {
-        commands.entity(e).despawn();
+    let kept = kiln
+        .tiled
+        .filter(|(_, was)| *was == inside)
+        .map(|(old, _)| old);
+    for (e, laid) in &laid {
+        if !laid.0.is_some_and(|h| kept.is_some() && tiling.contains(h)) {
+            commands.entity(e).despawn();
+        }
     }
     match tiling {
         Tiling::Cells { r0, r1, x0, x1 } => {
             for r in r0..=r1 {
-                let (q0, q1) = (x0 - r.div_euclid(2) - 2, x1 - r.div_euclid(2) + 2);
-                for q in q0..=q1 {
+                for q in Tiling::columns(r, x0, x1) {
                     let h = Hex::new(q, r);
+                    if kept.is_some_and(|old| old.contains(h)) {
+                        continue;
+                    }
                     let (mesh, mut material, transform) = tile(&kiln, h);
-                    if world.inside() {
+                    if inside {
                         material.0 = kiln.skin(look::ETHEREAL).clone();
                     }
-                    commands.spawn((Board, mesh, material, transform));
+                    commands.spawn((Board(Some(h)), mesh, material, transform));
                 }
             }
         }
         Tiling::Slab(lo, hi) => {
             let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
             commands.spawn((
-                Board,
+                Board(None),
                 Mesh2d(kiln.bar.clone()),
                 MeshMaterial2d(
-                    kiln.material(if world.inside() {
-                        Glaze::Plum
-                    } else {
-                        Glaze::Clay
-                    })
-                    .clone(),
+                    kiln.material(if inside { Glaze::Plum } else { Glaze::Clay })
+                        .clone(),
                 ),
                 Transform {
                     translation: ((lo + hi) / 2.0).extend(0.0),
@@ -5011,14 +5083,142 @@ fn board(
             ));
         }
     }
-    kiln.tiled = Some((tiling, world.inside()));
+    kiln.tiled = Some((tiling, inside));
 }
 
 type SceneView<'w, 's> = (
     Query<'w, 's, (&'static AtomPreview, &'static RenderLayers), With<Camera>>,
     Single<'w, 's, &'static Window, With<PrimaryWindow>>,
-    Single<'w, 's, (&'static Transform, &'static Projection), With<IsDefaultUiCamera>>,
+    Single<
+        'w,
+        's,
+        (&'static Transform, &'static Projection),
+        (With<IsDefaultUiCamera>, With<Camera>),
+    >,
 );
+
+type Placed<'w, 's> = (
+    Local<'s, Canvas>,
+    Query<
+        'w,
+        's,
+        (&'static mut Transform, &'static mut RenderLayers),
+        (With<Fill>, Without<Camera>),
+    >,
+    Query<
+        'w,
+        's,
+        (
+            &'static mut Mesh2d,
+            &'static mut MeshMaterial2d<ColorMaterial>,
+        ),
+        (
+            With<Fill>,
+            Without<InstructionSymbol>,
+            Without<MeshMaterial2d<Lit>>,
+        ),
+    >,
+    Query<
+        'w,
+        's,
+        (&'static mut Mesh2d, &'static mut MeshMaterial2d<Lit>),
+        (With<Fill>, Without<MeshMaterial2d<ColorMaterial>>),
+    >,
+    Query<'w, 's, &'static mut Sprite, With<Fill>>,
+    Query<'w, 's, &'static mut InstructionSymbol, With<Fill>>,
+);
+
+#[derive(Default)]
+struct Canvas([Vec<Entity>; 4]);
+
+impl Canvas {
+    fn commit(strokes: Vec<Stroke>, commands: &mut Commands, placed: &mut Placed) {
+        let (canvas, spots, colors, lits, sprites, symbols) = placed;
+        let mut used = [0; 4];
+        for Stroke {
+            ink,
+            layers,
+            transform,
+        } in strokes
+        {
+            let kind = match ink {
+                Ink::Color(..) => 0,
+                Ink::Lit(..) => 1,
+                Ink::Sprite(_) => 2,
+                Ink::Symbol(_) => 3,
+            };
+            let pool = &mut canvas.0[kind];
+            while pool.get(used[kind]).is_some_and(|e| !spots.contains(*e)) {
+                pool.remove(used[kind]);
+            }
+            let Some(&e) = pool.get(used[kind]) else {
+                let spawned = match ink {
+                    Ink::Color(mesh, material) => commands.spawn((
+                        Fill,
+                        layers,
+                        Mesh2d(mesh),
+                        MeshMaterial2d(material),
+                        transform,
+                    )),
+                    Ink::Lit(mesh, material) => commands.spawn((
+                        Fill,
+                        layers,
+                        Mesh2d(mesh),
+                        MeshMaterial2d(material),
+                        transform,
+                    )),
+                    Ink::Sprite(sprite) => commands.spawn((Fill, layers, sprite, transform)),
+                    Ink::Symbol(instr) => {
+                        commands.spawn((Fill, layers, InstructionSymbol::Card(instr), transform))
+                    }
+                };
+                pool.push(spawned.id());
+                used[kind] += 1;
+                continue;
+            };
+            used[kind] += 1;
+            let (mut at, mut on) = spots.get_mut(e).unwrap();
+            at.set_if_neq(transform);
+            on.set_if_neq(layers);
+            match ink {
+                Ink::Color(mesh, material) => {
+                    let (mut shape, mut paint) = colors.get_mut(e).unwrap();
+                    shape.set_if_neq(Mesh2d(mesh));
+                    if paint.0 != material {
+                        paint.0 = material;
+                    }
+                }
+                Ink::Lit(mesh, material) => {
+                    let (mut shape, mut paint) = lits.get_mut(e).unwrap();
+                    shape.set_if_neq(Mesh2d(mesh));
+                    if paint.0 != material {
+                        paint.0 = material;
+                    }
+                }
+                Ink::Sprite(sprite) => {
+                    let mut shown = sprites.get_mut(e).unwrap();
+                    if shown.image != sprite.image
+                        || shown.color != sprite.color
+                        || shown.custom_size != sprite.custom_size
+                    {
+                        *shown = sprite;
+                    }
+                }
+                Ink::Symbol(instr) => {
+                    symbols
+                        .get_mut(e)
+                        .unwrap()
+                        .set_if_neq(InstructionSymbol::Card(instr));
+                }
+            }
+        }
+        for (pool, used) in canvas.0.iter_mut().zip(used) {
+            for e in pool.drain(used..) {
+                commands.entity(e).try_despawn();
+            }
+        }
+    }
+}
 
 fn draw(
     world: Res<Game>,
@@ -5026,18 +5226,16 @@ fn draw(
     mut card_gizmos: Gizmos<CardGizmos>,
     mut commands: Commands,
     kiln: Res<Kiln>,
-    fills: Query<Entity, With<Fill>>,
+    mut placed: Placed,
     view: SceneView,
 ) {
     let (previews, window, camera) = view;
     let (transform, projection) = camera.into_inner();
     let viewport = Viewport::of(&window, transform, projection).unwrap();
-    for e in &fills {
-        commands.entity(e).despawn();
-    }
+    let mut strokes = Vec::new();
     let mut p = Painter {
         gizmos: &mut gizmos,
-        commands: &mut commands,
+        strokes: &mut strokes,
         kiln: &kiln,
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
@@ -5159,7 +5357,7 @@ fn draw(
     for (atom, layers) in &previews {
         let mut preview = Painter {
             gizmos: &mut gizmos,
-            commands: &mut commands,
+            strokes: &mut strokes,
             kiln: &kiln,
             layers: layers.clone(),
             shift: Vec2::ZERO,
@@ -5171,7 +5369,7 @@ fn draw(
     let mut p = Painter {
         portal_opacity: 1.0,
         gizmos: &mut card_gizmos,
-        commands: &mut commands,
+        strokes: &mut strokes,
         kiln: &kiln,
         layers: CARD,
         shift: Vec2::ZERO,
@@ -5196,6 +5394,7 @@ fn draw(
         };
         rendered_card(&mut p, card.item, play, card_slot(card.item), &*world);
     }
+    Canvas::commit(strokes, &mut commands, &mut placed);
 }
 
 fn rendered_card<G: GizmoConfigGroup>(
@@ -5456,13 +5655,11 @@ fn hover_card<G: GizmoConfigGroup>(
                 let (mesh, _, mut transform) = tile(p.kiln, h);
                 transform.translation = (p.shift + px(h) * p.scale).extend(layer::LIFT);
                 transform.scale *= p.scale;
-                p.commands.spawn((
-                    Fill,
-                    mesh,
-                    MeshMaterial2d(p.kiln.skin(look::ETHEREAL).clone()),
+                p.strokes.push(Stroke {
+                    ink: Ink::Color(mesh.0, p.kiln.skin(look::ETHEREAL).clone()),
+                    layers: p.layers.clone(),
                     transform,
-                    p.layers.clone(),
-                ));
+                });
             }
             (p.shift, p.scale) = (shift, old_scale);
             p.interior(&portal.sim, Vec2::ZERO, scale, layer::LIFT);

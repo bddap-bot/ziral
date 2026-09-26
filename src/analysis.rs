@@ -29,14 +29,41 @@ pub fn run(args: &[String]) -> Option<i32> {
     })
 }
 
+const FRAME_BUDGET: f32 = 1.0 / 60.0;
+
+fn frames<'a>(inputs: impl Iterator<Item = &'a (f64, Input)>) -> Value {
+    let mut seconds: Vec<f32> = inputs
+        .filter_map(|(_, input)| match input {
+            Input::Frame(dt) => Some(*dt),
+            _ => None,
+        })
+        .collect();
+    seconds.sort_by(f32::total_cmp);
+    let ms = |seconds: f32| (f64::from(seconds) * 1e6).round() / 1e3;
+    let rank = |p: f64| {
+        let index = (p * seconds.len() as f64).ceil() as usize;
+        index.checked_sub(1).map(|index| ms(seconds[index]))
+    };
+    json!({
+        "count": seconds.len(),
+        "p50_ms": rank(0.5),
+        "p90_ms": rank(0.9),
+        "p99_ms": rank(0.99),
+        "max_ms": seconds.last().copied().map(ms),
+        "over_budget": seconds.iter().filter(|dt| **dt > FRAME_BUDGET).count(),
+    })
+}
+
 fn marks(record: &Record) -> Vec<Value> {
     record
         .inputs
         .iter()
         .filter(|(_, input)| matches!(input, Input::Key(KeyCode::KeyM, _)))
         .map(|(at, _)| {
+            let window = [(at - 15.0).max(0.0), (at + 15.0).min(record.duration())];
             json!({
-                "at": at, "window": [(at - 15.0).max(0.0), (at + 15.0).min(record.duration())],
+                "at": at, "window": window,
+                "frames": frames(record.inputs.iter().filter(|(at, _)| (window[0]..=window[1]).contains(at))),
             })
         })
         .collect()
@@ -270,6 +297,7 @@ pub(super) fn summarize(record: &Record) -> Value {
         "hover_card_dwell_seconds": dwell.into_iter().map(|(item, seconds)| json!({"card": card_item(item), "seconds": seconds})).collect::<Vec<_>>(),
         "steps_around_stalls": around_stalls,
         "paused_seconds": paused,
+        "frames": frames(record.inputs.iter()),
         "marks": marks(record),
     })
 }
@@ -313,11 +341,32 @@ mod tests {
         assert_eq!(
             marks(&session.record),
             vec![
-                json!({"at": 5.0, "window": [0.0, 20.0]}),
-                json!({"at": 45.0, "window": [30.0, 50.0]}),
+                json!({"at": 5.0, "window": [0.0, 20.0], "frames": {
+                    "count": 1, "p50_ms": 5000.0, "p90_ms": 5000.0, "p99_ms": 5000.0, "max_ms": 5000.0, "over_budget": 1,
+                }}),
+                json!({"at": 45.0, "window": [30.0, 50.0], "frames": {
+                    "count": 2, "p50_ms": 5000.0, "p90_ms": 40000.0, "p99_ms": 40000.0, "max_ms": 40000.0, "over_budget": 2,
+                }}),
             ]
         );
     }
+    #[test]
+    fn frames_report_percentiles_and_count_only_frames_longer_than_the_budget() {
+        let mut world = World::new(sim::start());
+        let mut session = Session::new(&world.state());
+        assert_eq!(
+            summarize(&session.record)["frames"],
+            json!({"count": 0, "p50_ms": null, "p90_ms": null, "p99_ms": null, "max_ms": null, "over_budget": 0})
+        );
+        for dt in std::iter::repeat_n(1.0 / 60.0, 97).chain([0.25, 0.02, 0.02]) {
+            session.send(&mut world, Input::Frame(dt));
+        }
+        assert_eq!(
+            summarize(&session.record)["frames"],
+            json!({"count": 100, "p50_ms": 16.667, "p90_ms": 16.667, "p99_ms": 20.0, "max_ms": 250.0, "over_budget": 3})
+        );
+    }
+
     #[test]
     fn metrics_recompute_placement_dwell_pause_and_hesitation() {
         use sim::{ArmLength, Item, Machine};
