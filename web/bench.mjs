@@ -26,14 +26,19 @@ function own() {
     const pids = [process.pid];
     while (pids.length) {
         const pid = pids.pop();
+        let fields;
         try {
             const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
-            const [user, system] = stat.slice(stat.lastIndexOf(')') + 2).split(' ').slice(11, 13);
-            spent.set(pid, Number(user) + Number(system));
-            for (const task of readdirSync(`/proc/${pid}/task`)) {
-                pids.push(...readFileSync(`/proc/${pid}/task/${task}/children`, 'utf8').split(' ').filter(Boolean).map(Number));
-            }
-        } catch {}
+            fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        } catch {
+            continue;
+        }
+        spent.set(`${pid}@${fields[19]}`, Number(fields[11]) + Number(fields[12]));
+        let tasks = [];
+        try { tasks = readdirSync(`/proc/${pid}/task`); } catch {}
+        for (const task of tasks) {
+            try { pids.push(...readFileSync(`/proc/${pid}/task/${task}/children`, 'utf8').split(' ').filter(Boolean)); } catch {}
+        }
     }
     let ticks = 0;
     for (const value of spent.values()) ticks += value;
@@ -42,12 +47,12 @@ function own() {
 
 const samples = [];
 setInterval(() => {
-    let spare = lowered ? 0 : own();
+    let spare = own();
     for (const line of readFileSync('/proc/stat', 'utf8').split('\n')) {
         const [name, , nice, , idle, iowait] = line.split(' ');
-        if (/^cpu\d+$/.test(name) && cpus.has(Number(name.slice(3)))) spare += Number(nice) + Number(idle) + Number(iowait);
+        if (/^cpu\d+$/.test(name) && cpus.has(Number(name.slice(3)))) spare += (lowered ? 0 : Number(nice)) + Number(idle) + Number(iowait);
     }
-    samples.push([Date.now(), spare]);
+    samples.push([performance.now(), spare]);
 }, 100).unref();
 
 function others(from, to) {
@@ -60,10 +65,10 @@ function others(from, to) {
 }
 
 async function settle(deadline) {
-    while (Date.now() < deadline) {
-        const from = Date.now();
+    while (performance.now() < deadline) {
+        const from = performance.now();
         await sleep(5);
-        if (others(from, Date.now()) <= BUSY) return;
+        if (others(from, performance.now()) <= BUSY) return;
     }
 }
 
@@ -71,7 +76,7 @@ function ziral(...args) {
     return new Promise((resolve, reject) => {
         const child = spawn('cargo', ['run', '--release', '--quiet', '--', ...args], {stdio: ['ignore', 'pipe', 'inherit']});
         let output = '';
-        child.stdout.on('data', chunk => output += chunk);
+        child.stdout.setEncoding('utf8').on('data', chunk => output += chunk);
         child.once('error', reject);
         child.once('close', code => code === 0 ? resolve(output) : reject(new Error(`ziral ${args[0]} exited with ${code}`)));
     });
@@ -140,7 +145,7 @@ async function record(url, path) {
         const {sessionId} = await send('Target.attachToTarget', {targetId, flatten: true});
         const evaluate = async expression => (await send('Runtime.evaluate', {expression, returnByValue: true, awaitPromise: true}, sessionId)).result.value;
         await send('Emulation.setDeviceMetricsOverride', {...SIZE, deviceScaleFactor: 1, mobile: false}, sessionId);
-        const start = Date.now();
+        const start = performance.now();
         await send('Page.navigate', {url: `${url}#bench`}, sessionId);
         const chunks = `(async () => {
             const url = performance.getEntriesByType('resource').map(entry => entry.name).find(name => name.endsWith('/web/record.js'));
@@ -171,8 +176,8 @@ async function record(url, path) {
             writeFileSync(join(scratch, 'web.png'), Buffer.from(data, 'base64'));
         }
         await evaluate(`dispatchEvent(new Event('pagehide'))`);
-        const end = Date.now();
         const saved = await evaluate(chunks);
+        const end = performance.now();
         const sessions = new Set(saved.map(chunk => chunk.session));
         if (sessions.size !== 1) throw new Error(`expected one recorded session, found ${sessions.size}`);
         saved.sort((a, b) => a.start - b.start);
@@ -196,13 +201,13 @@ async function windows(target, run, path, {start, end}) {
 }
 
 async function holds(target, measure) {
-    const deadline = Date.now() + PATIENCE * 1000;
+    const deadline = performance.now() + PATIENCE * 1000;
     for (let run = 1; ; run++) {
         const path = join(scratch, `${target}-${run}.json`);
         const measured = await windows(target, run, path, await measure(path));
         if (measured.every(({over}) => over === 0)) return true;
         if (measured.some(({over, busy}) => over && !busy)) return false;
-        if (Date.now() > deadline) {
+        if (performance.now() > deadline) {
             console.log(`${target}: still over budget with other work on more than ${BUSY} CPUs after ${PATIENCE / 60} minutes`);
             return false;
         }
@@ -213,9 +218,9 @@ async function holds(target, measure) {
 
 try {
     const native = await holds('native', async path => {
-        const start = Date.now();
+        const start = performance.now();
         await ziral('--bench', path, String(END), ...MARKS.map(String));
-        return {start, end: Date.now()};
+        return {start, end: performance.now()};
     });
     let url = page;
     let server;
