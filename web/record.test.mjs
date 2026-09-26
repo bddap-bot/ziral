@@ -312,10 +312,39 @@ test('a bench session stores its chunks, never uploads them, and the next load f
     assert.deepEqual(sent, [0, 1]);
     assert.deepEqual([...saved.keys()], [`ziral-record-${session}-2`, `ziral-record-${session}-3`]);
     assert.deepEqual([...saved.values()].map(text => JSON.parse(text).bench), [true, true]);
+    context.crypto.randomUUID = () => 'c'.repeat(36);
+    context.begin_record();
+    context.append_record(build, 0, '[[4,"Refill"]]');
+    await settle();
+    await context.upload();
+    assert.deepEqual(sent, [0, 1]);
     const reloaded = page({localStorage});
     reloaded.request_record = receiver;
     await settle();
     await reloaded.upload();
     assert.deepEqual(sent, [0, 1]);
     assert.equal(saved.size, 0);
+});
+
+test('a bench chunk committed to IndexedDB is deleted on the next load', async () => {
+    const disk = new Map([[`ziral-record-${session}-2`, JSON.stringify({session, build, seed: 0, start: 2, inputs: [[2, 'Refill']], bench: true})]]);
+    const opening = {};
+    page({indexedDB: {open: () => opening}});
+    opening.result = {transaction: () => ({objectStore: () => ({
+        delete: key => disk.delete(key),
+        openCursor() {
+            const request = {};
+            const entries = [...disk];
+            const step = () => {
+                const [key, value] = entries.shift() ?? [];
+                request.result = key && {key, value, continue: step};
+                request.onsuccess();
+            };
+            queueMicrotask(step);
+            return request;
+        },
+    })})};
+    opening.onsuccess();
+    await settle();
+    assert.equal(disk.size, 0);
 });
