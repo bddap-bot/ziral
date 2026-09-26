@@ -201,6 +201,11 @@ impl Session {
         self.publish();
         finish_record();
     }
+
+    pub fn bench(&mut self) {
+        self.publish();
+        bench_record();
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -208,6 +213,7 @@ impl Session {
 extern "C" {
     fn begin_record();
     fn finish_record();
+    fn bench_record();
     fn append_record(build: &str, seed: u64, inputs: &str);
 }
 
@@ -215,6 +221,8 @@ extern "C" {
 fn begin_record() {}
 #[cfg(not(target_arch = "wasm32"))]
 fn finish_record() {}
+#[cfg(not(target_arch = "wasm32"))]
+fn bench_record() {}
 #[cfg(not(target_arch = "wasm32"))]
 fn append_record(_: &str, _: u64, _: &str) {}
 

@@ -1,6 +1,7 @@
 let live;
 let id = crypto.randomUUID();
 let attempted = 0;
+let bench = false;
 const database = new Promise((resolve, reject) => {
     const opening = indexedDB.open('ziral-records', 1);
     opening.onupgradeneeded = () => opening.result.createObjectStore('records');
@@ -22,7 +23,7 @@ function seal() {
     attempted = performance.now();
     const chunk = live;
     live = {...chunk, start: chunk.start + chunk.inputs.length, inputs: []};
-    const text = JSON.stringify(chunk);
+    const text = JSON.stringify(bench ? {...chunk, bench} : chunk);
     const key = name(chunk);
     try { localStorage.setItem(key, text); } catch (error) { console.error(error); }
     database.then(db => {
@@ -33,6 +34,7 @@ function seal() {
         };
         transaction.onerror = () => console.error(transaction.error);
     }).catch(console.error);
+    if (bench) return;
     queue(key, chunk);
     upload();
 }
@@ -46,6 +48,11 @@ export function begin_record() {
 
 export function finish_record() {
     seal();
+}
+
+export function bench_record() {
+    seal();
+    bench = true;
 }
 
 export function append_record(build, seed, inputs) {
@@ -98,6 +105,7 @@ export async function send_record(chunk, request = request_record, start = chunk
 function restore(key, text) {
     let chunk;
     try { chunk = JSON.parse(text); } catch { return; }
+    if (chunk?.bench) return forget(key);
     queue(key, {start: 0, ...chunk});
 }
 

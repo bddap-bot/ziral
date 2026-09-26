@@ -287,3 +287,35 @@ test('the public page records and uploads without a fragment or credential', asy
     assert.equal(sent[0].session, session);
     assert.deepEqual(Object.keys(sent[0]).sort(), ['build', 'inputs', 'seed', 'session', 'start']);
 });
+
+test('a bench session stores its chunks, never uploads them, and the next load forgets them', async () => {
+    const {saved, localStorage} = storage();
+    const sent = [];
+    const receiver = async bytes => {
+        const batch = JSON.parse(new TextDecoder().decode(bytes));
+        sent.push(batch.start);
+        return {next: batch.start + batch.inputs.length};
+    };
+    let now = 6000;
+    const context = page({localStorage, performance: {now: () => now}});
+    context.request_record = receiver;
+    context.append_record(build, 0, '[[0,"Refill"]]');
+    now += 1;
+    context.append_record(build, 0, '[[1,"Refill"]]');
+    context.bench_record();
+    now += 5000;
+    context.append_record(build, 0, '[[2,"Refill"]]');
+    now += 5000;
+    context.append_record(build, 0, '[[3,"Refill"]]');
+    await settle();
+    await context.upload();
+    assert.deepEqual(sent, [0, 1]);
+    assert.deepEqual([...saved.keys()], [`ziral-record-${session}-2`, `ziral-record-${session}-3`]);
+    assert.deepEqual([...saved.values()].map(text => JSON.parse(text).bench), [true, true]);
+    const reloaded = page({localStorage});
+    reloaded.request_record = receiver;
+    await settle();
+    await reloaded.upload();
+    assert.deepEqual(sent, [0, 1]);
+    assert.equal(saved.size, 0);
+});
