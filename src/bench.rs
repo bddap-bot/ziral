@@ -75,6 +75,7 @@ const CARDS: [Machine; 3] = [
 ];
 
 const SCENE_SHARE: f32 = 0.6;
+const MARGIN: f32 = 1.1;
 
 fn factory(sim: &mut Sim, at: Hex) {
     use Instr::{Drop, Grab, Rot};
@@ -155,7 +156,7 @@ pub fn load(world: &mut Game, session: &mut session::Session, size: Vec2) -> (Ve
     let sim = self::world();
     let (lo, hi) = PortalView::extent(&sim);
     let room = Vec2::new(size.x - PALETTE_WIDTH, size.y * SCENE_SHARE);
-    let scale = ((hi - lo) / room).max_element();
+    let scale = ((hi - lo) / room).max_element() * MARGIN;
     let centre = Vec2::new(PALETTE_WIDTH + room.x / 2.0, room.y / 2.0);
     let mut view = Viewport {
         cam: Vec2::ZERO,
