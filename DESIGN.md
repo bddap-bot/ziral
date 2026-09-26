@@ -1274,14 +1274,14 @@ One portal stands on the starting map. Its temporary image is the existing sourc
 
 The model's component store is independent of rendering resources so validation, playback and analysis instantiate the same model and use the same input reducer. Portal positions participate in the lockstep simulation's placement and movement checks; their entity components own the interior baselines. Saved state contains both. A crossing queues one camera transform, consumed by live input or replay, so neither playback nor restoration leaves the camera in the previous world's coordinates. Pinned cards stay with their world, while leaving an interior drops its replay position.
 
-Forward playback steps the existing projected simulation once. Tape edits and backward steps reconstruct it from the canonical baseline. This keeps one stepping implementation without repeatedly rebuilding the entire past during continuous play. Tape rows contain instruction pictures without numeric labels. The crossing image comparison hides tiles and controls and compares the remaining rendered pixels at 1280 by 720.
+Forward playback steps the existing projected simulation once. Tape edits and backward steps reconstruct it from the canonical baseline. This keeps one stepping implementation without repeatedly rebuilding the entire past during continuous play. Tape rows contain instruction pictures without numeric labels.
 ## The portal is a machine
 
 Directive (verbatim): "some mystical theme"
 
 Directive (verbatim): "something visually interesting in the portal"
 
-The portal occupies one cell, appears in the recipe palette, and is made from a six-base-atom ring with six single bonds. That ring fits the first output tier and describes an opening without requiring a later material. One portal stands on the starting board. Its painted plum ceramic housing surrounds an ivory and brass aperture; the ordinary scene renderer fits the canonical interior extent inside it. Empty interiors retain the painted depth of the aperture. A separately painted ethereal tile has broad plum and ivory mineral veining; the overworld retains the clay batch. The fixture and its card show the camera entering the portal.
+The portal occupies one cell, appears in the recipe palette, and is made from a six-base-atom ring with six single bonds. That ring fits the first output tier and describes an opening without requiring a later material. One portal stands on the starting board. Its painted plum ceramic housing surrounds an ivory and brass aperture; the ordinary scene renderer fits the canonical interior extent inside it. A separately painted ethereal tile has broad plum and ivory mineral veining; the overworld retains the clay batch. The fixture and its card show the camera entering the portal.
 
 The dumbest design makes a placed portal carry its own canonical simulation, just as an arm carries its tape. Placement, lifting and saving then carry the interior with the machine. This removes the temporary parallel position list and rendering component store: joining two independently edited arrays would require identity bookkeeping on every move. A portal is a machine rather than an atom-processing glyph, so it has no fake reaction or seat. Interiors cannot contain another portal. Existing replay, extent fitting and camera crossing remain the only implementations.
 
@@ -1380,3 +1380,13 @@ Directive (verbatim):
 > lets take molt as a path but steer it a bit. its organic material, small legs and carapace growing from it in unsettling ways, interdimensional mold, fungus what grew. I will design a branch of crafting that deals with growing the substance.
 
 Pick: Molt, steered. Round two paints six Molt descendants whose thin rims leave most of the tile to the interior, each with its own opening: hexagon, almond, amoeboid, circle, kidney and rounded triangle. The [round-two sheet](art/explorations/portal-frame/molt/sheet.png) fills each opening with a uniformly reduced capture of the starting portal's interior and places it at shipped size; [briefs, captions and placement](art/explorations/portal-frame/molt/README.md) sit beside it. The crafting branch that grows the substance is reserved for its own design. The bible and shipped portal art remain unchanged, and the next pick is open in issue #150.
+
+## A portal's window shows the world below
+
+Directive (verbatim): "i would like the portal tile to show a window to the world below, right now, it half does, but not quite. it shows the machines, but not the tiles below"
+
+The portal's window is the square, inside its aperture, that its interior is fitted into. It shows the interior's floor, the ethereal tiles laid where the interior board lays them and cut at the square's edges, with the machines standing on it. From outside, the window looks as that part of the interior looks from inside, so a crossing changes only what lies around the window. An empty interior shows its one tile and the edges of its neighbours. The held portal and the portal's card draw the same window.
+
+The dumbest design draws the floor in the one routine that already draws an interior's contents: a single mesh of every tile the square meets, cut to the square, carrying the board tile's texture coordinates and lying over the housing and under the machines. It depends only on the fitted extent, so it is built when that extent changes and dropped once nothing draws it. Whole tiles were rejected: those that fit leave gaps along the edges, and those that cover the square spill onto the housing and, once the housing fades near the crossing, onto the overworld. A clipping shader would add a material and a pipeline, and rendering each interior to a texture would add a camera per portal.
+
+Tests: the floor covers exactly its window and samples each tile as the board does, for an empty, a wide and a tall interior; it lies over the housing and under everything the interior draws; the picture inside the window, tiles included, is the same on either side of the crossing.

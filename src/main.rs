@@ -556,6 +556,55 @@ impl PortalView {
         Self::TILE / self.side
     }
 
+    fn floor(&self) -> Mesh {
+        let (lo, hi) = (self.center - self.side / 2.0, self.center + self.side / 2.0);
+        let (mut positions, mut uvs, mut indices) = (Vec::new(), Vec::new(), Vec::new());
+        for h in Tiling::cover(lo, hi).cells() {
+            let mut face = corners(px(h), HEX)[..6].to_vec();
+            for (normal, bound) in [
+                (Vec2::X, hi.x),
+                (Vec2::NEG_X, -lo.x),
+                (Vec2::Y, hi.y),
+                (Vec2::NEG_Y, -lo.y),
+            ] {
+                let past = |v: Vec2| v.dot(normal) - bound;
+                face = face
+                    .iter()
+                    .zip(face.iter().cycle().skip(1))
+                    .flat_map(|(&a, &b)| {
+                        let (pa, pb) = (past(a), past(b));
+                        [
+                            (pa <= 0.0).then_some(a),
+                            (pa * pb < 0.0).then(|| a.lerp(b, pa / (pa - pb))),
+                        ]
+                    })
+                    .flatten()
+                    .collect();
+            }
+            if face.len() < 3 {
+                continue;
+            }
+            let first = positions.len() as u32;
+            indices.extend((2..face.len() as u32).flat_map(|k| [first, first + k - 1, first + k]));
+            for v in face {
+                let local = (v - px(h)) / HEX;
+                positions.push((v - self.center).extend(0.0).to_array());
+                uvs.push([0.5 + local.x / 2.0, 0.5 - local.y / 2.0]);
+            }
+        }
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_NORMAL,
+            vec![[0.0, 0.0, 1.0]; positions.len()],
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+        .with_inserted_indices(Indices::U32(indices))
+    }
+
     fn enter(&self, at: Hex, viewport: &mut Viewport) {
         viewport.cam = self.center + (viewport.cam - px(at)) / self.scale();
         viewport.scale /= self.scale();
@@ -4165,6 +4214,16 @@ enum Tiling {
 }
 
 impl Tiling {
+    fn cover(lo: Vec2, hi: Vec2) -> Tiling {
+        let (col, row) = (HEX * 3f32.sqrt(), HEX * 1.5);
+        Tiling::Cells {
+            r0: (lo.y / row).floor() as i32 - 1,
+            r1: (hi.y / row).ceil() as i32 + 1,
+            x0: (lo.x / col).floor() as i32,
+            x1: (hi.x / col).ceil() as i32,
+        }
+    }
+
     fn columns(r: i32, x0: i32, x1: i32) -> std::ops::RangeInclusive<i32> {
         x0 - r.div_euclid(2) - 2..=x1 - r.div_euclid(2) + 2
     }
@@ -4593,6 +4652,7 @@ impl Pigment for Lit {
 struct Painter<'a, 'gw, 'gs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
     gizmos: &'a mut Gizmos<'gw, 'gs, G>,
     strokes: &'a mut Vec<Stroke>,
+    floor: &'a mut dyn FnMut(PortalView) -> Handle<Mesh>,
     kiln: &'a Kiln,
     layers: RenderLayers,
     shift: Vec2,
@@ -4622,13 +4682,22 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
 
     fn interior(&mut self, sim: &Sim, at: Vec2, scale: f32, lift: f32) {
         let fit = PortalView::of(sim);
+        let (kiln, floor) = (self.kiln, (self.floor)(fit));
+        self.fill(
+            &floor,
+            kiln.skin(look::ETHEREAL),
+            at,
+            0.0,
+            Vec2::splat(scale),
+            lift + layer::GLYPHS + layer::INTERIOR / 2.0,
+        );
         let (shift, old_scale) = (self.shift, self.scale);
         self.shift += (at - fit.center * scale) * self.scale;
         self.scale *= scale;
         scene(
             self,
             &Frame::between(sim, sim, 1.0),
-            lift,
+            lift + layer::INTERIOR,
             &[],
             1.0,
             false,
@@ -4897,6 +4966,7 @@ mod layer {
     pub const HELD: Range<f32> = 0.44..0.5;
     pub const CARD: Range<f32> = 0.6..0.7;
     pub const LIFT: f32 = 0.8;
+    pub const INTERIOR: f32 = 0.001;
 
     pub fn z(band: Range<f32>, i: usize, n: usize) -> f32 {
         band.start + (band.end - band.start) * (i as f32 / n as f32)
@@ -5079,12 +5149,7 @@ fn board(
     let (lo, hi) = (v.cam - v.half(), v.cam + v.half());
     let span = hi - lo;
     let tiling = if (span.x / col) * (span.y / row) < MAX_GRID_CELLS {
-        Tiling::Cells {
-            r0: (lo.y / row).floor() as i32 - 1,
-            r1: (hi.y / row).ceil() as i32 + 1,
-            x0: (lo.x / col).floor() as i32,
-            x1: (hi.x / col).ceil() as i32,
-        }
+        Tiling::cover(lo, hi)
     } else {
         Tiling::Slab(lo.floor().as_ivec2(), hi.ceil().as_ivec2())
     };
@@ -5143,6 +5208,7 @@ type SceneView<'w, 's> = (
 
 type Placed<'w, 's> = (
     Local<'s, Canvas>,
+    ResMut<'w, Assets<Mesh>>,
     Query<
         'w,
         's,
@@ -5173,11 +5239,24 @@ type Placed<'w, 's> = (
 );
 
 #[derive(Default)]
-struct Canvas([Vec<Entity>; Ink::POOLS]);
+struct Canvas {
+    pools: [Vec<Entity>; Ink::POOLS],
+    kept: std::collections::HashMap<[u32; 3], Handle<Mesh>>,
+    drawn: std::collections::HashMap<[u32; 3], Handle<Mesh>>,
+}
 
 impl Canvas {
+    fn floor(&mut self, meshes: &mut Assets<Mesh>, fit: PortalView) -> Handle<Mesh> {
+        let key = [fit.center.x, fit.center.y, fit.side].map(f32::to_bits);
+        let Self { kept, drawn, .. } = self;
+        drawn
+            .entry(key)
+            .or_insert_with(|| kept.remove(&key).unwrap_or_else(|| meshes.add(fit.floor())))
+            .clone()
+    }
+
     fn commit(strokes: Vec<Stroke>, commands: &mut Commands, placed: &mut Placed) {
-        let (canvas, spots, colors, lits, sprites, symbols) = placed;
+        let (canvas, _, spots, colors, lits, sprites, symbols) = placed;
         let mut used = [0; Ink::POOLS];
         for Stroke {
             ink,
@@ -5186,7 +5265,7 @@ impl Canvas {
         } in strokes
         {
             let kind = ink.pool();
-            let pool = &mut canvas.0[kind];
+            let pool = &mut canvas.pools[kind];
             while pool.get(used[kind]).is_some_and(|e| !spots.contains(*e)) {
                 pool.remove(used[kind]);
             }
@@ -5243,11 +5322,12 @@ impl Canvas {
                 }
             }
         }
-        for (pool, used) in canvas.0.iter_mut().zip(used) {
+        for (pool, used) in canvas.pools.iter_mut().zip(used) {
             for e in pool.drain(used..) {
                 commands.entity(e).try_despawn();
             }
         }
+        canvas.kept = std::mem::take(&mut canvas.drawn);
     }
 }
 
@@ -5264,9 +5344,12 @@ fn draw(
     let (transform, projection) = camera.into_inner();
     let viewport = Viewport::of(&window, transform, projection).unwrap();
     let mut strokes = Vec::new();
+    let (canvas, meshes, ..) = &mut placed;
+    let mut floor = |fit| canvas.floor(meshes, fit);
     let mut p = Painter {
         gizmos: &mut gizmos,
         strokes: &mut strokes,
+        floor: &mut floor,
         kiln: &kiln,
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
@@ -5356,7 +5439,7 @@ fn draw(
                     &portal.sim,
                     pose.at,
                     PortalView::of(&portal.sim).scale(),
-                    layer::HELD.start + 0.001,
+                    layer::HELD.start,
                 );
             }
             let at = |id: usize| grab.checked_add(set.atoms[id].unwrap().pos).map(px);
@@ -5389,6 +5472,7 @@ fn draw(
         let mut preview = Painter {
             gizmos: &mut gizmos,
             strokes: &mut strokes,
+            floor: &mut floor,
             kiln: &kiln,
             layers: layers.clone(),
             shift: Vec2::ZERO,
@@ -5401,6 +5485,7 @@ fn draw(
         portal_opacity: 1.0,
         gizmos: &mut card_gizmos,
         strokes: &mut strokes,
+        floor: &mut floor,
         kiln: &kiln,
         layers: CARD,
         shift: Vec2::ZERO,
@@ -5490,7 +5575,7 @@ fn scene<G: GizmoConfigGroup>(
             &portal.sim,
             px(portal.at),
             PortalView::of(&portal.sim).scale(),
-            lift + 0.001,
+            lift,
         );
     }
     for (index, glyph) in f.sim.glyphs.iter().enumerate() {
@@ -5667,8 +5752,7 @@ fn hover_card<G: GizmoConfigGroup>(
             let fit = PortalView::of(&portal.sim);
             let progress = f.tick / fixture(machine).ticks as f32;
             let scale = fit.scale().powf(1.0 - progress.clamp(0.0, 1.0));
-            let (shift, old_scale) = (p.shift, p.scale);
-            let opacity = p.portal_opacity;
+            let (old_scale, opacity) = (p.scale, p.portal_opacity);
             p.portal_opacity = (1.0 - progress * 3.0).clamp(0.0, 1.0);
             p.scale *= scale / fit.scale();
             p.machine(
@@ -5678,21 +5762,7 @@ fn hover_card<G: GizmoConfigGroup>(
                 layer::LIFT + layer::GLYPHS,
                 (false, 1.0, sim::ActivationEnergy::default()),
             );
-            p.scale = old_scale;
-            p.portal_opacity = opacity;
-            p.shift -= fit.center * scale * p.scale;
-            p.scale *= scale;
-            for h in portal.sim.ids().flat_map(|id| portal.sim.stands(id)) {
-                let (mesh, _, mut transform) = tile(p.kiln, h);
-                transform.translation = (p.shift + px(h) * p.scale).extend(layer::LIFT);
-                transform.scale *= p.scale;
-                p.strokes.push(Stroke {
-                    ink: Ink::Color(mesh.0, p.kiln.skin(look::ETHEREAL).clone()),
-                    layers: p.layers.clone(),
-                    transform,
-                });
-            }
-            (p.shift, p.scale) = (shift, old_scale);
+            (p.scale, p.portal_opacity) = (old_scale, opacity);
             p.interior(&portal.sim, Vec2::ZERO, scale, layer::LIFT);
             return;
         }
@@ -7839,15 +7909,20 @@ mod tests {
     fn portal_card_enters_the_same_canonical_fixture() {
         let fixture = fixture(Machine::Portal);
         let fit = PortalView::of(&fixture.sim.portals[0].as_ref().unwrap().sim);
-        let bead = |tick| {
-            card_fills(Machine::Portal, tick)
-                .into_iter()
-                .find(|(at, _)| (at.z - (layer::BEAD + layer::LIFT)).abs() < 1e-3)
-                .expect("fixture bead")
-                .1
-        };
-        assert!((bead(0) - HEX * 0.4 * fit.scale()).abs() < 1e-3);
-        assert!((bead(fixture.ticks) - HEX * 0.4).abs() < 1e-3);
+        for (tick, scale) in [(0, fit.scale()), (fixture.ticks, 1.0)] {
+            let fills = card_fills(Machine::Portal, tick);
+            let scale_at = |z: f32| {
+                fills
+                    .iter()
+                    .find(|(at, _)| (at.z - z).abs() < 1e-4)
+                    .map(|(_, scale)| *scale)
+            };
+            let bead = scale_at(layer::LIFT + layer::INTERIOR + layer::BEAD).expect("fixture bead");
+            let floor = scale_at(layer::LIFT + layer::GLYPHS + layer::INTERIOR / 2.0)
+                .expect("interior floor");
+            assert!((bead - HEX * 0.4 * scale).abs() < 1e-3);
+            assert!((floor - scale).abs() < 1e-4);
+        }
     }
 
     #[test]
@@ -7927,6 +8002,177 @@ mod tests {
             assert!(*seen.lock().unwrap());
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+
+    #[test]
+    fn portal_floor_covers_its_window_with_the_boards_tile_mapping() {
+        use bevy::mesh::VertexAttributeValues::Float32x2;
+        let hexagon = RegularPolygon::new(1.0, 6).mesh().build();
+        let corners = hexagon.attribute(Mesh::ATTRIBUTE_POSITION).unwrap();
+        let Some(Float32x2(corner_uvs)) = hexagon.attribute(Mesh::ATTRIBUTE_UV_0) else {
+            panic!("the board's tile carries uvs")
+        };
+        let corner = |k: usize| {
+            (
+                Vec2::from_slice(&corners.as_float3().unwrap()[k]),
+                Vec2::from(corner_uvs[k]),
+            )
+        };
+        let ((p0, u0), (p1, u1), (p2, u2)) = (corner(0), corner(1), corner(2));
+        let map = Mat2::from_cols(u1 - u0, u2 - u0) * Mat2::from_cols(p1 - p0, p2 - p0).inverse();
+        let mut tall = Sim::empty();
+        for pos in [ORIGIN, Hex::new(0, 4)] {
+            tall.spawn(sim::Atom {
+                kind: sim::AtomKind::Base,
+                pos,
+            });
+        }
+        for sim in [
+            Sim::empty(),
+            fixture(Machine::Arm(ArmLength::One)).sim,
+            tall,
+        ] {
+            let fit = PortalView::of(&sim);
+            let floor = fit.floor();
+            let layout = |mesh: &Mesh| {
+                mesh.attributes()
+                    .map(|(attribute, _)| attribute.id)
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                layout(&floor),
+                layout(&hexagon),
+                "the floor is laid like a tile"
+            );
+            let positions = floor
+                .attribute(Mesh::ATTRIBUTE_POSITION)
+                .unwrap()
+                .as_float3()
+                .unwrap();
+            let Some(Float32x2(uvs)) = floor.attribute(Mesh::ATTRIBUTE_UV_0) else {
+                panic!("the floor carries uvs")
+            };
+            let indices: Vec<usize> = floor.indices().unwrap().iter().collect();
+            let mut area = 0.0;
+            for triangle in indices.chunks(3) {
+                let [a, b, c] = [0, 1, 2].map(|k| Vec2::from_slice(&positions[triangle[k]]));
+                area += (b - a).perp_dot(c - a).abs() / 2.0;
+                let cell = hex_at(fit.center + (a + b + c) / 3.0);
+                for &i in triangle {
+                    let at = Vec2::from_slice(&positions[i]);
+                    assert!(
+                        at.abs().max_element() <= fit.side / 2.0 + 1e-3,
+                        "{at} lies outside the window"
+                    );
+                    let local = (fit.center + at - px(cell)) / HEX;
+                    assert!(
+                        Vec2::from(uvs[i]).distance(u0 + map * (local - p0)) < 1e-4,
+                        "{at} samples its tile off the board's mapping"
+                    );
+                }
+            }
+            assert!(
+                (area - fit.side * fit.side).abs() < 1e-3 * fit.side * fit.side,
+                "the floor covers {area} of a {} window",
+                fit.side * fit.side
+            );
+        }
+    }
+
+    #[test]
+    fn portal_floor_lies_over_its_housing_and_under_everything_inside() {
+        type Window<'w, 's> = (
+            Query<'w, 's, (Entity, &'static Transform, &'static RenderLayers), With<Fill>>,
+            Query<'w, 's, &'static MeshMaterial2d<ColorMaterial>, With<Fill>>,
+            Query<'w, 's, &'static Sprite, With<Fill>>,
+        );
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = std::env::temp_dir().join(format!("ziral-portal-floor-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("portal", dir.clone(), 2);
+        lit_plugin(&mut app);
+        let mut game = app.world_mut().resource_mut::<Game>();
+        game.overworld.sim.portals[0].as_mut().unwrap().sim =
+            "B0,3 A1,3 0,3-1,3\narm 1 2,0 1 FwR 1\nbonder 0,2 4"
+                .parse::<Fragment>()
+                .unwrap()
+                .into_sim();
+        game.overworld.prev.portals = game.overworld.sim.portals.clone();
+        app.add_systems(
+            Update,
+            (|mut game: ResMut<Game>,
+              camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>| {
+                game.camera_changes.clear();
+                let (mut transform, mut projection) = camera.into_inner();
+                transform.translation = Vec3::ZERO;
+                let Projection::Orthographic(ortho) = &mut *projection else {
+                    unreachable!()
+                };
+                ortho.scale = 1.0;
+            })
+            .before(view),
+        );
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(false));
+        let probe = seen.clone();
+        app.add_systems(
+            Last,
+            move |world: Res<Game>, kiln: Res<Kiln>, (fills, colors, sprites): Window| {
+                let at = px(world.portal(0).at);
+                let drawn: Vec<(Entity, f32)> = fills
+                    .iter()
+                    .filter(|(_, transform, layers)| {
+                        **layers == RenderLayers::default()
+                            && (transform.translation.truncate() - at).abs().max_element()
+                                < PortalView::TILE / 2.0
+                    })
+                    .map(|(e, transform, _)| (e, transform.translation.z))
+                    .collect();
+                let housing = kiln.image(look::machine(Machine::Portal).skin);
+                let is_housing = |e: Entity| sprites.get(e).is_ok_and(|s| s.image == housing);
+                let is_floor = |e: Entity| {
+                    colors
+                        .get(e)
+                        .is_ok_and(|m| &m.0 == kiln.skin(look::ETHEREAL))
+                };
+                let [(_, housing)] = drawn
+                    .iter()
+                    .filter(|(e, _)| is_housing(*e))
+                    .collect::<Vec<_>>()[..]
+                else {
+                    return;
+                };
+                let [(_, floor)] = drawn
+                    .iter()
+                    .filter(|(e, _)| is_floor(*e))
+                    .collect::<Vec<_>>()[..]
+                else {
+                    panic!("the window draws one floor")
+                };
+                assert!(
+                    housing < floor,
+                    "the housing at {housing} covers the floor at {floor}"
+                );
+                let inside: Vec<f32> = drawn
+                    .iter()
+                    .filter(|(e, _)| !is_housing(*e) && !is_floor(*e))
+                    .map(|(_, z)| *z)
+                    .collect();
+                assert!(
+                    inside.len() >= 5,
+                    "the interior's glyph, arm, atoms and bond are drawn"
+                );
+                assert!(
+                    inside.iter().all(|z| z > floor),
+                    "the floor at {floor} covers something inside at {inside:?}"
+                );
+                *probe.lock().unwrap() = true;
+            },
+        );
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        assert!(*seen.lock().unwrap());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -8232,8 +8478,7 @@ mod tests {
     }
 
     #[test]
-    fn portal_crossing_renders_the_same_picture_apart_from_tiles() {
-        type Background<'w, 's> = Query<'w, 's, Entity, Or<(With<Board>, With<Node>)>>;
+    fn portal_crossing_renders_the_same_window_tiles_included() {
         let _render = RENDER_TEST
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -8260,23 +8505,29 @@ mod tests {
                 }
             }
         ).before(view));
-        app.add_systems(PostUpdate, |mut commands: Commands, tiles: Background| {
-            for tile in &tiles {
-                commands.entity(tile).insert(Visibility::Hidden);
-            }
-        });
+        app.add_systems(
+            PostUpdate,
+            |mut commands: Commands, controls: Query<Entity, With<Node>>| {
+                for control in &controls {
+                    commands.entity(control).insert(Visibility::Hidden);
+                }
+            },
+        );
         app.run();
         let before = image::open(dir.join("00000.png")).unwrap().to_rgba8();
         let after = image::open(dir.join("00007.png")).unwrap().to_rgba8();
         assert_eq!(before.dimensions(), (1280, 720));
+        let window = |x: u32, y: u32| (282..998).contains(&x) && (2..718).contains(&y);
         let changed = before
-            .pixels()
+            .enumerate_pixels()
             .zip(after.pixels())
-            .filter(|(a, b)| a.0.iter().zip(b.0).any(|(a, b)| a.abs_diff(b) > 2))
+            .filter(|((x, y, a), b)| {
+                window(*x, *y) && a.0.iter().zip(b.0).any(|(a, b)| a.abs_diff(b) > 2)
+            })
             .count();
         assert!(
             changed < 100,
-            "{changed} non-tile pixels changed across the crossing"
+            "{changed} window pixels changed across the crossing"
         );
         let colors: std::collections::HashSet<_> = before
             .enumerate_pixels()
