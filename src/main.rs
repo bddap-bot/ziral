@@ -4166,6 +4166,33 @@ impl Tiling {
             Tiling::Slab(..) => false,
         }
     }
+
+    fn cells(self) -> Vec<Hex> {
+        let Tiling::Cells { r0, r1, x0, x1 } = self else {
+            return Vec::new();
+        };
+        (r0..=r1)
+            .flat_map(|r| Self::columns(r, x0, x1).map(move |q| Hex::new(q, r)))
+            .collect()
+    }
+
+    fn relay(
+        self,
+        old: Option<Tiling>,
+        laid: impl IntoIterator<Item = (Entity, Option<Hex>)>,
+    ) -> (Vec<Entity>, Vec<Hex>) {
+        let gone = laid
+            .into_iter()
+            .filter(|(_, h)| !h.is_some_and(|h| old.is_some() && self.contains(h)))
+            .map(|(e, _)| e)
+            .collect();
+        let new = self
+            .cells()
+            .into_iter()
+            .filter(|h| !old.is_some_and(|old| old.contains(*h)))
+            .collect();
+        (gone, new)
+    }
 }
 
 const BOND_WIDTH: f32 = 0.14;
@@ -5045,43 +5072,32 @@ fn board(
         .tiled
         .filter(|(_, was)| *was == inside)
         .map(|(old, _)| old);
-    for (e, laid) in &laid {
-        if !laid.0.is_some_and(|h| kept.is_some() && tiling.contains(h)) {
-            commands.entity(e).despawn();
-        }
+    let (gone, new) = tiling.relay(kept, laid.iter().map(|(e, laid)| (e, laid.0)));
+    for e in gone {
+        commands.entity(e).despawn();
     }
-    match tiling {
-        Tiling::Cells { r0, r1, x0, x1 } => {
-            for r in r0..=r1 {
-                for q in Tiling::columns(r, x0, x1) {
-                    let h = Hex::new(q, r);
-                    if kept.is_some_and(|old| old.contains(h)) {
-                        continue;
-                    }
-                    let (mesh, mut material, transform) = tile(&kiln, h);
-                    if inside {
-                        material.0 = kiln.skin(look::ETHEREAL).clone();
-                    }
-                    commands.spawn((Board(Some(h)), mesh, material, transform));
-                }
-            }
+    for h in new {
+        let (mesh, mut material, transform) = tile(&kiln, h);
+        if inside {
+            material.0 = kiln.skin(look::ETHEREAL).clone();
         }
-        Tiling::Slab(lo, hi) => {
-            let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
-            commands.spawn((
-                Board(None),
-                Mesh2d(kiln.bar.clone()),
-                MeshMaterial2d(
-                    kiln.material(if inside { Glaze::Plum } else { Glaze::Clay })
-                        .clone(),
-                ),
-                Transform {
-                    translation: ((lo + hi) / 2.0).extend(0.0),
-                    scale: (hi - lo).extend(1.0),
-                    ..default()
-                },
-            ));
-        }
+        commands.spawn((Board(Some(h)), mesh, material, transform));
+    }
+    if let Tiling::Slab(lo, hi) = tiling {
+        let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
+        commands.spawn((
+            Board(None),
+            Mesh2d(kiln.bar.clone()),
+            MeshMaterial2d(
+                kiln.material(if inside { Glaze::Plum } else { Glaze::Clay })
+                    .clone(),
+            ),
+            Transform {
+                translation: ((lo + hi) / 2.0).extend(0.0),
+                scale: (hi - lo).extend(1.0),
+                ..default()
+            },
+        ));
     }
     kiln.tiled = Some((tiling, inside));
 }
@@ -7356,6 +7372,46 @@ mod shot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pan_relays_only_the_cells_entering_and_leaving_the_view() {
+        let mut ids = bevy::ecs::world::World::new();
+        let old = Tiling::Cells {
+            r0: -3,
+            r1: 4,
+            x0: -5,
+            x1: 6,
+        };
+        let laid: Vec<(Entity, Option<Hex>)> = old
+            .cells()
+            .into_iter()
+            .map(|h| (ids.spawn_empty().id(), Some(h)))
+            .collect();
+        let panned = Tiling::Cells {
+            r0: -3,
+            r1: 4,
+            x0: -4,
+            x1: 7,
+        };
+        let (gone, new) = panned.relay(Some(old), laid.clone());
+        assert_eq!((gone.len(), new.len()), (8, 8));
+        let mut after: Vec<Hex> = laid
+            .iter()
+            .filter(|(e, _)| !gone.contains(e))
+            .filter_map(|(_, h)| *h)
+            .chain(new)
+            .collect();
+        let mut want = panned.cells();
+        after.sort_by_key(|h| (h.r, h.q));
+        want.sort_by_key(|h| (h.r, h.q));
+        assert_eq!(after, want);
+        let (gone, new) = panned.relay(None, laid.clone());
+        assert_eq!((gone.len(), new.len()), (laid.len(), want.len()));
+        let slab = ids.spawn_empty().id();
+        let (gone, new) = Tiling::Slab(IVec2::ZERO, IVec2::ONE)
+            .relay(Some(old), laid.iter().copied().chain([(slab, None)]));
+        assert_eq!((gone.len(), new.len()), (laid.len() + 1, 0));
+    }
     use sim::{Atom, AtomKind, Bond, Tier};
 
     fn portal_copy_game() -> Game {
