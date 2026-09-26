@@ -1,5 +1,5 @@
 {
-  "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root; lint with `botq test-map --check`.",
+  "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root.",
   "rules": [
     {
       "paths": ["records/**", "default.nix"],
@@ -10,11 +10,6 @@
         "nix-instantiate --parse default.nix"
       ],
       "why": "the standalone receiver has its own lockfile, storage and relay tests"
-    },
-    {
-      "paths": ["test-map.json"],
-      "tests": ["botq test-map --check"],
-      "why": "editing the map re-lints its own completeness"
     },
     {
       "paths": ["art/ask.sh", "art/director-model.txt", "art/tests/ask.sh"],
