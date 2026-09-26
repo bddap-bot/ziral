@@ -201,7 +201,7 @@ pub fn pan(
     let turn = std::f32::consts::TAU * time.elapsed_secs() / PAN_SECONDS;
     transform.translation.x = bench.cam.x + px(Hex::new(PAN_TILES, 0)).x * turn.sin();
     if let Projection::Orthographic(ortho) = &mut *projection {
-        ortho.scale = bench.scale * (1.0 + ZOOM * (turn / 2.0).sin());
+        ortho.scale = bench.scale * (1.0 - ZOOM * (1.0 + (turn / 2.0).sin()) / 2.0);
     }
 }
 
