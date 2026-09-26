@@ -86,7 +86,7 @@ impl Input {
                 }
             }
             Self::Import(sim) => world.restore(persist::State { sim: *sim.clone() }),
-            Self::Paste(sim) => world.lift(*sim.clone(), Back::Inventory),
+            Self::Paste(sim) => world.lift(*sim.clone()),
             Self::Focus(portal) => {
                 world.enter(*portal);
             }

@@ -1075,8 +1075,7 @@ impl Sim {
     pub fn upgrade(&mut self, glyph: usize, compound: &Sim) -> Option<TickEvents> {
         let old = self.glyphs.get(glyph).copied().flatten()?;
         if old.kind != GlyphKind::Source
-            || !compound.arms.is_empty()
-            || compound.glyphs.iter().any(Option::is_some)
+            || compound.ids().any(|id| !matches!(id, Id::Atom(_)))
             || Form::of(compound) != *crate::form::source_upgrade()
         {
             return None;
@@ -1474,6 +1473,7 @@ impl Sim {
             b: ids[bond.b].unwrap(),
             ..*bond
         }));
+        placed.extend(ids.into_iter().flatten().map(Id::Atom));
         placed
     }
 }
