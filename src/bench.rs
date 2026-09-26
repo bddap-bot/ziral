@@ -153,7 +153,7 @@ pub fn world() -> Sim {
 }
 
 pub fn load(world: &mut Game, session: &mut session::Session, size: Vec2) -> (Vec2, f32) {
-    session.bench();
+    session::bench_record();
     let sim = self::world();
     let (lo, hi) = PortalView::extent(&sim);
     let room = Vec2::new(size.x - PALETTE_WIDTH, size.y * SCENE_SHARE);
