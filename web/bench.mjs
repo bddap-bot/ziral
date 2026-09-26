@@ -7,15 +7,57 @@ import {extname, join} from 'node:path';
 const MARKS = [30, 60];
 const WINDOW = 30;
 const END = MARKS.at(-1) + WINDOW / 2 + 2;
-const RUNS = 2;
 const SIZE = {width: 1280, height: 720};
+const PATIENCE = 30 * 60;
 
 const [page = 'web/dist', kept] = process.argv.slice(2);
 const scratch = kept ?? mkdtempSync(join(tmpdir(), 'ziral-bench-'));
 const sleep = seconds => new Promise(resolve => setTimeout(resolve, seconds * 1000));
 
+const cpus = new Set(readFileSync('/proc/self/status', 'utf8').match(/^Cpus_allowed_list:\s*(.+)$/m)[1].split(',').flatMap(range => {
+    const [first, last = first] = range.split('-').map(Number);
+    return Array.from({length: last - first + 1}, (_, offset) => first + offset);
+}));
+const QUIET = cpus.size / 8;
+const group = readFileSync('/proc/self/cgroup', 'utf8').match(/^0::(.*)$/m)[1];
+const samples = [];
+setInterval(() => {
+    let free = 0;
+    for (const line of readFileSync('/proc/stat', 'utf8').split('\n')) {
+        const [name, , nice, , idle, iowait] = line.split(' ');
+        if (/^cpu\d+$/.test(name) && cpus.has(Number(name.slice(3)))) free += Number(nice) + Number(idle) + Number(iowait);
+    }
+    const used = Number(readFileSync(`/sys/fs/cgroup${group}/cpu.stat`, 'utf8').match(/^usage_usec (\d+)$/m)[1]);
+    samples.push([Date.now(), free, used]);
+}, 100).unref();
+
+function others(from, to) {
+    let most = 0;
+    for (let index = 1; index < samples.length; index++) {
+        const [[start, free, used], [end, freed, spent]] = [samples[index - 1], samples[index]];
+        if (end > from && start < to) most = Math.max(most, cpus.size - ((freed - free) * 10 + (spent - used) / 1000) / (end - start));
+    }
+    return most;
+}
+
+async function quiet(deadline) {
+    while (Date.now() < deadline) {
+        const from = Date.now();
+        await sleep(5);
+        if (others(from, Date.now()) <= QUIET) return;
+    }
+}
+
 function ziral(...args) {
     return execFileSync('cargo', ['run', '--release', '--quiet', '--', ...args], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit']});
+}
+
+function headless(path) {
+    return new Promise((resolve, reject) => {
+        const bench = spawn('cargo', ['run', '--release', '--quiet', '--', '--bench', path, String(END), ...MARKS.map(String)], {stdio: ['ignore', 'inherit', 'inherit']});
+        bench.once('error', reject);
+        bench.once('exit', code => code === 0 ? resolve(Date.now()) : reject(new Error(`ziral --bench exited with ${code}`)));
+    });
 }
 
 async function serve(directory) {
@@ -74,7 +116,7 @@ function browse(host) {
     return {send, close};
 }
 
-async function record(url) {
+async function record(url, path) {
     const {send, close} = browse(new URL(url).hostname);
     try {
         const {targetId} = await send('Target.createTarget', {url: 'about:blank'});
@@ -110,39 +152,50 @@ async function record(url) {
             const {data} = await send('Page.captureScreenshot', {format: 'png'}, sessionId);
             writeFileSync(join(scratch, 'web.png'), Buffer.from(data, 'base64'));
         }
+        const end = Date.now();
         await evaluate(`dispatchEvent(new Event('pagehide'))`);
         const saved = await evaluate(chunks);
         const sessions = new Set(saved.map(chunk => chunk.session));
         if (sessions.size !== 1) throw new Error(`expected one recorded session, found ${sessions.size}`);
         saved.sort((a, b) => a.start - b.start);
-        return {build: saved[0].build, seed: saved[0].seed, inputs: saved.flatMap(chunk => chunk.inputs)};
+        writeFileSync(path, JSON.stringify({build: saved[0].build, seed: saved[0].seed, inputs: saved.flatMap(chunk => chunk.inputs)}));
+        return end;
     } finally {
         await close();
         rmSync(join(scratch, 'profile'), {recursive: true, force: true});
     }
 }
 
-function steady(target, run, path) {
-    const {marks} = JSON.parse(ziral('--analyze', path));
+function windows(target, run, path, end) {
+    const {duration_seconds: duration, marks} = JSON.parse(ziral('--analyze', path));
     if (marks.length !== MARKS.length) throw new Error(`${target}: expected ${MARKS.length} marks, found ${marks.length}`);
-    for (const {window: [from, to], frames} of marks) {
+    const wall = at => end - (duration - at) * 1000;
+    return marks.map(({window: [from, to], frames}) => {
         if (Math.abs(to - from - WINDOW) > 0.5) throw new Error(`${target}: window ${from}-${to} is not ${WINDOW} s`);
-        console.log(`${target} run ${run}, ${from.toFixed(0)}-${to.toFixed(0)} s: ${frames.count} frames, p50 ${frames.p50_ms} ms, p90 ${frames.p90_ms} ms, p99 ${frames.p99_ms} ms, max ${frames.max_ms} ms, ${frames.over_budget} over budget`);
-    }
-    return marks.every(({frames}) => frames.over_budget === 0);
+        const busy = others(wall(from) - 1000, wall(to) + 1000);
+        console.log(`${target} run ${run}, ${from.toFixed(0)}-${to.toFixed(0)} s: ${frames.count} frames, p50 ${frames.p50_ms} ms, p90 ${frames.p90_ms} ms, p99 ${frames.p99_ms} ms, max ${frames.max_ms} ms, ${frames.over_budget} over budget, other work on up to ${busy.toFixed(1)} of ${cpus.size} CPUs`);
+        return {over: frames.over_budget, quiet: busy <= QUIET};
+    });
 }
 
 async function holds(target, measure) {
-    for (let run = 1; run <= RUNS; run++) {
+    const deadline = Date.now() + PATIENCE * 1000;
+    for (let run = 1; ; run++) {
         const path = join(scratch, `${target}-${run}.json`);
-        await measure(path);
-        if (steady(target, run, path)) return true;
+        const measured = windows(target, run, path, await measure(path));
+        if (measured.every(({over}) => over === 0)) return true;
+        if (measured.some(({over, quiet}) => over && quiet)) return false;
+        if (Date.now() > deadline) {
+            console.log(`${target}: still over budget with other work on more than ${QUIET} CPUs after ${PATIENCE / 60} minutes`);
+            return false;
+        }
+        console.log(`${target} run ${run} went over budget only while other work held more than ${QUIET} CPUs; measuring again once it holds fewer`);
+        await quiet(deadline);
     }
-    return false;
 }
 
 try {
-    const native = await holds('native', async path => ziral('--bench', path, String(END), ...MARKS.map(String)));
+    const native = await holds('native', headless);
     let url = page;
     let server;
     if (!/^https?:/.test(page)) {
@@ -151,7 +204,7 @@ try {
     }
     let web;
     try {
-        web = await holds('web', async path => writeFileSync(path, JSON.stringify(await record(url))));
+        web = await holds('web', path => record(url, path));
     } finally {
         server?.close();
     }
