@@ -1345,7 +1345,7 @@ Directive (verbatim): "i think current version of ziral web is dropping frames. 
 
 A frame is over budget when it lasts longer than 1/60 s.
 
-The cause is `dfcb0e0`, which began recording sessions. Every five seconds the page serialized, parsed and stored the whole session record, and the page and the wasm session each kept every input, so the pause grew with the session. Measured unpaced on the starting world, its parent `43bee89` had no frame over budget in minutes one to four, the longest 14.3 ms; `dfcb0e0` had nine to sixteen a minute, the longest growing from 37 to 50 ms.
+The cause is `dfcb0e0`, which began recording sessions. Every five seconds the page serialized, parsed and stored the whole session record, and the page and the wasm session each kept every input, so the pause grew with the session. Measured unpaced on the starting world, its parent `43bee89` had no frame over budget in minutes one to four, the longest 14.3 ms; `dfcb0e0` had nine to sixteen a minute, the longest reaching 50 ms in the fifth minute.
 
 The page now seals the inputs appended since the previous seal into one chunk, every five seconds and when the page hides. A chunk is an upload batch: session, build, seed, the index of its first input, and its inputs. It is written to IndexedDB, and to localStorage only until IndexedDB commits it, so a page closing mid-write keeps it and chunks never crowd out the save. An acknowledged chunk leaves memory and storage. The wasm session hands each frame's inputs to the page and keeps none. A seal costs the last five seconds of inputs, however long the session runs. A whole record saved by an earlier page uploads from its first input and is then forgotten.
 
