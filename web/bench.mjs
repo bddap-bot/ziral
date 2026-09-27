@@ -8,6 +8,7 @@ const MARKS = [30, 60];
 const WINDOW = 30;
 const END = MARKS.at(-1) + WINDOW / 2 + 2;
 const SIZE = {width: 1280, height: 720};
+const RENDER_TIMEOUT = Number(readFileSync(new URL('./render-timeout-seconds', import.meta.url), 'utf8'));
 
 const [page = 'web/dist', kept] = process.argv.slice(2);
 const scratch = kept ?? mkdtempSync(join(tmpdir(), 'ziral-bench-'));
@@ -33,7 +34,7 @@ function run(command, args, limit = Infinity) {
 }
 
 let executable;
-const ziral = (...args) => run(executable, args, END + 120);
+const ziral = (...args) => run(executable, args, RENDER_TIMEOUT);
 
 async function serve(directory) {
     const types = {'.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm'};

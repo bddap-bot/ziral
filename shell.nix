@@ -7,6 +7,7 @@ in
 pkgs.mkShell {
   buildInputs = with pkgs; [
     cargo
+    gdb
     rustc
     clippy
     clang_multi

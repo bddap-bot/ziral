@@ -5963,6 +5963,7 @@ dependencies = [
  "arboard",
  "bevy",
  "image",
+ "libc",
  "quick-xml",
  "serde",
  "serde_json",

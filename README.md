@@ -19,3 +19,11 @@ Install the receiver with `cargo install --path records --locked`. Run `ziral-re
 `nix-shell --run './web/build.sh && node web/bench.mjs'` runs the busy-scene frame benchmark on the native build and the web build; each passes when two consecutive thirty-second windows have no frame longer than 1/60 s. Other work on the machine lengthens its frames, so run it on an otherwise idle machine. `node web/bench.mjs https://bddap-bot.github.io/ziral/` measures the deployed page from a checkout at the deployed commit, since the analyzer reads only its own build's records. Opening the page at `#bench` runs the benchmark scene until reload; its autosave stays apart from the saved world, and its record is never uploaded.
 
 Run the full test suite with `nix-shell --run 'cargo test --no-run && MALLOC_ARENA_MAX=2 cargo test -- --test-threads=2'`. Building first keeps the allocator limit off the compiler processes. The test run uses two threads and two glibc allocation arenas to reduce retained capture memory. Cargo builds at most six crates concurrently; the optimized test profile retains line-number debug information, debug assertions and overflow checks.
+
+Render tests and the native benchmark share the deadline in
+`web/render-timeout-seconds`. Run tests in `nix-shell` so the timeout debugger
+is available. Each serialized render holds a cancellable watchdog through
+teardown. On expiry it prints the test name and GDB stacks (the test thread
+first on Linux), then exits the test process unsuccessfully: a deadlocked
+renderer cannot be safely reused by later tests. Stack collection has a
+15-second kill limit. Successful renders cancel the watchdog immediately.

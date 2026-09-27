@@ -48,6 +48,7 @@ arboard = { version = "3", default-features = false, features = ["wayland-data-c
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
+libc = "0.2"
 quick-xml = "0.41"
 
 [profile.dev.package."*"]

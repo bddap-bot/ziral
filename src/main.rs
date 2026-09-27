@@ -85,7 +85,7 @@ fn atom_at(kind: sim::AtomKind) -> Vec2 {
 }
 
 #[cfg(test)]
-static RENDER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+mod render_test;
 
 fn brass(lift: f32) -> Color {
     Glaze::Brass.color().mix(&Glaze::Clay.color(), lift)
@@ -7940,9 +7940,7 @@ mod tests {
 
     #[test]
     fn portal_preview_fits_the_baseline_and_each_world_uses_its_own_tiles() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         for inside in [false, true] {
             let dir = std::env::temp_dir().join(format!(
                 "ziral-portal-surfaces-{}-{inside}",
@@ -8099,9 +8097,7 @@ mod tests {
             Query<'w, 's, &'static MeshMaterial2d<ColorMaterial>, With<Fill>>,
             Query<'w, 's, &'static Sprite, With<Fill>>,
         );
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir = std::env::temp_dir().join(format!("ziral-portal-floor-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = shot::still("portal", dir.clone(), 2);
@@ -8596,9 +8592,7 @@ mod tests {
 
     #[test]
     fn portal_crossing_renders_the_same_window_tiles_included() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir =
             std::env::temp_dir().join(format!("ziral-portal-crossing-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -8848,9 +8842,7 @@ mod tests {
 
     #[test]
     fn ghost_frames_keep_lit_rigs_solid_skins_and_the_step_tally() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir = std::env::temp_dir().join(format!("ziral-ghost-material-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = shot::still("ghost", dir.clone(), 120);
@@ -8923,9 +8915,7 @@ mod tests {
     }
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir = std::env::temp_dir().join(format!("ziral-{view}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -10218,9 +10208,7 @@ mod tests {
 
     #[test]
     fn the_first_click_opens_a_placed_pasted_or_selected_arms_full_tape_at_every_zoom() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir = std::env::temp_dir().join(format!("ziral-first-tape-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = shot::still("start", dir.clone(), 1);
@@ -11732,9 +11720,7 @@ mod tests {
 
     #[test]
     fn every_display_site_uses_one_renderer_and_exposes_all_four_instruction_symbol_corners() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir =
             std::env::temp_dir().join(format!("ziral-instruction-sites-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -11850,9 +11836,7 @@ mod tests {
 
     #[test]
     fn inventory_atoms_use_the_world_bead_circle_and_rim() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir =
             std::env::temp_dir().join(format!("ziral-inventory-atoms-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -11953,9 +11937,7 @@ mod tests {
     }
 
     fn card_fills(machine: Machine, ticks: u64) -> Vec<(Vec3, f32)> {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let name = machines::name(machine);
         let dir =
             std::env::temp_dir().join(format!("ziral-card-{name}-{ticks}-{}", std::process::id()));
@@ -12452,9 +12434,7 @@ mod tests {
     fn regrab_frames() -> &'static [Shown] {
         static FRAMES: std::sync::OnceLock<Vec<Shown>> = std::sync::OnceLock::new();
         FRAMES.get_or_init(|| {
-            let _render = RENDER_TEST
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _render = render_test::lock();
             let dir =
                 std::env::temp_dir().join(format!("ziral-card-regrab-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
@@ -12727,9 +12707,7 @@ mod tests {
 
     #[test]
     fn hover_and_pinned_cards_share_the_clay_surface_and_a_pin_has_no_corner_handle() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let dir = std::env::temp_dir().join(format!("ziral-card-handle-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -13489,9 +13467,7 @@ mod tests {
 
     #[test]
     fn the_refusal_line_shows_each_shortfall_as_beads_and_writes_nothing() {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _render = render_test::lock();
         let (mut w, text) = copied();
         for item in [SECOND, ARM, GRAB] {
             stocked(&mut w, item, 1);

@@ -3,6 +3,14 @@
   "exclusive": ["nix-shell --run 'node web/bench.mjs'"],
   "rules": [
     {
+      "paths": ["web/render-timeout-seconds"],
+      "tests": [
+        "nix-shell --run 'cargo test -- --test-threads=2'",
+        "nix-shell --run './web/build.sh && node web/bench.mjs'"
+      ],
+      "why": "one render deadline is compiled into the test guard and read by the native bench"
+    },
+    {
       "paths": ["records/**", "default.nix"],
       "tests": [
         "nix-shell --run 'cargo fmt --manifest-path records/Cargo.toml --check'",
