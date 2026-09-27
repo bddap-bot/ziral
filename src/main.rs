@@ -378,6 +378,7 @@ enum Press {
         screen: Vec2,
         point: Vec2,
         cell: Hex,
+        target: Id,
     },
     Ground {
         screen: Vec2,
@@ -1987,10 +1988,11 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         }
         self.down = Some(match target {
             Some(Id::Atom(id)) => Press::Atom { screen, point, id },
-            Some(Id::Portal(_) | Id::Arm(_) | Id::Glyph(_)) => Press::Cell {
+            Some(target @ (Id::Portal(_) | Id::Arm(_) | Id::Glyph(_))) => Press::Cell {
                 screen,
                 point,
                 cell,
+                target,
             },
             None => Press::Ground {
                 screen,
@@ -2043,7 +2045,10 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                 self.pick(ids);
             }
             Some(Press::Ground { .. }) => self.focus = None,
-            Some(Press::Cell { cell, .. }) if at == Some(cell) && !self.holding() => {
+            Some(Press::Cell { cell, target, .. }) if at == Some(cell) && !self.holding() => {
+                if let Id::Arm(arm) = target {
+                    self.focus_tape(arm);
+                }
                 if let Some((index, portal)) = self
                     .sim
                     .portals
@@ -10157,6 +10162,118 @@ mod tests {
         w.press(px(ORIGIN), px(ORIGIN));
         w.release(Some(ORIGIN));
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 2 }));
+    }
+
+    #[test]
+    fn the_first_click_opens_a_placed_pasted_or_selected_arms_full_tape_at_every_zoom() {
+        let _render = RENDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = std::env::temp_dir().join(format!("ziral-first-tape-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = shot::still("start", dir.clone(), 1);
+        lit_plugin(&mut app);
+        #[derive(Resource, Default)]
+        struct TapeFrame(usize);
+        app.init_resource::<TapeFrame>();
+        let checked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let probe = checked.clone();
+        app.add_systems(
+            Update,
+            (move |mut game: ResMut<Game>,
+                   mut frame: ResMut<TapeFrame>,
+                   camera: Single<(&mut Transform, &mut Projection), With<IsDefaultUiCamera>>| {
+                frame.0 += 1;
+                if !(10..118).contains(&frame.0) {
+                    return;
+                }
+                let case = (frame.0 - 10) / 6;
+                let step = (frame.0 - 10) % 6;
+                if step == 0 {
+                    let tape = if case.is_multiple_of(2) { vec![] } else { vec![Instr::Grab, Instr::Rot(Spin::Cw)] };
+                    let mut world = World::new(Sim::empty());
+                    world.running = false;
+                    world.refill();
+                    match (case / 2) % 3 {
+                        0 => {
+                            world.sim.arms.push(Arm::new(ArmLength::One, ORIGIN, 0, tape));
+                            world.prev = world.sim.clone();
+                            world.pick(vec![Id::Arm(0)]);
+                        }
+                        1 => {
+                            world.lift_inventory(Item::Machine(Machine::Arm(ArmLength::One)));
+                            world.release(Some(ORIGIN));
+                            world.sim.arms[0].tape = tape;
+                            world.prev = world.sim.clone();
+                        }
+                        _ => {
+                            let mut set = Sim::empty();
+                            set.arms.push(Arm::new(ArmLength::One, ORIGIN, 0, tape));
+                            assert!(world.paste_text(&Fragment::of(&set).unwrap().to_string()));
+                            world.release(Some(ORIGIN));
+                        }
+                    }
+                    assert_eq!(world.focus, Some(Focus::Pick(vec![Id::Arm(0)])));
+                    *game = Game::from_world(world);
+                    let (mut transform, mut projection) = camera.into_inner();
+                    transform.translation = Vec3::ZERO;
+                    let Projection::Orthographic(ortho) = &mut *projection else { unreachable!() };
+                    ortho.scale = [0.1, 0.5, 4.0][case / 6];
+                } else if step == 2 {
+                    game.press(px(ORIGIN), px(ORIGIN));
+                    game.release(Some(ORIGIN));
+                }
+            }).after(edit).before(tapes),
+        );
+        app.add_systems(
+            Last,
+            move |game: Res<Game>,
+                  rows: Query<(&TapeRow, &ComputedNode, Option<&Children>)>,
+                  nodes: Query<&ComputedNode>,
+                  frame: Res<TapeFrame>| {
+                if !(10..118).contains(&frame.0) || (frame.0 - 10) % 6 != 2 {
+                    return;
+                }
+                let drawn = rows.iter().find(|(row, _, _)| row.arm() == Some(0)).map(
+                    |(row, node, children)| {
+                        (
+                            row.line.clone(),
+                            node.size(),
+                            children.is_some_and(|children| {
+                                children.iter().any(|child| {
+                                    nodes
+                                        .get(child)
+                                        .is_ok_and(|node| node.size().y >= SYMBOL_PX)
+                                })
+                            }),
+                        )
+                    },
+                );
+                probe.lock().unwrap().push((
+                    frame.0,
+                    tape_line(&*game, 0),
+                    game.focus.clone(),
+                    drawn,
+                ));
+            },
+        );
+        assert_eq!(app.run(), bevy::app::AppExit::Success);
+        let checked = checked.lock().unwrap();
+        assert_eq!(checked.len(), 18);
+        for (frame, expected, focus, drawn) in checked.iter() {
+            let (line, size, full_child) = drawn.as_ref().expect("the arm must have a tape row");
+            assert_eq!(line.as_ref(), Some(expected));
+            assert!(
+                size.y >= SYMBOL_PX + 2.0 * CURSOR_PX,
+                "first-click tape is a thin line on frame {frame}: {size:?}, focus {focus:?}"
+            );
+            assert_eq!(expected.cursor, Some(expected.tape.len()), "frame {frame}");
+            assert!(
+                full_child,
+                "frame {frame} must draw the tape contents in full"
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

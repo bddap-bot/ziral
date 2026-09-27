@@ -1510,3 +1510,15 @@ The simplest design removes the separate inventory button dispatch. Recipe paint
 Tests exercise both surfaces through the shared target and recorded input actions, both mouse buttons, three card scales, unchanged simulation state, stocked inventory placement, animated atoms and a three-card ingredient route.
 
 `proofs/item-hover-inventory-139.png` and `proofs/item-hover-card-139.png` show the same resonator tutorial when hovering plum in inventory and in the cobalt converter's recipe. `proofs/item-route-139.gif` shows plum dragged from that recipe to create a resonator card, amber dragged from the resonator's recipe to create an amber converter card, and base dragged from that recipe to create a source card. These are game-only captures of deployed Pages build `22389d1` at 1600 by 1000; the animation contains 71 sampled frames played at eight frames per second. The browser check verifies the deployed build, the three recorded atom drag-outs and unchanged inventory.
+
+## An arm opens its tape on the first click
+
+Report (verbatim):
+
+> arms tapes aren't displaying properly, they are just thin liines until the arm is deselected then clicked
+
+Placing, pasting and marquee selection leave machines in `Focus::Pick`. The press handler keeps that selection so dragging any selected machine moves the whole group. It also skipped tape focus when a selected arm was clicked without dragging. An empty tape then had neither instructions nor a cursor to give its row height: only its border and padding appeared. Deselecting and clicking took the unselected-arm branch and supplied the missing cursor. The deployed build reproduced both states.
+
+The simplest design retains the pressed machine's identity until release. A completed click on an arm opens its tape; a drag still moves the selected group. Tape layout follows that focus in the same update, using the existing cursor and symbols. No timer, repeated rebuild, extra height rule or zoom-dependent drawing path is needed. The selection guard remains responsible for group dragging, not for suppressing completed clicks.
+
+The regression measures the laid-out tape and cursor on the first click after placement, paste and selection, with empty and programmed tapes at three board scales. It fails on the collapsed row before the fix. Existing group-drag tests continue to require every selected machine to move together.
