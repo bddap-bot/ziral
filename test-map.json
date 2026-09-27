@@ -1,6 +1,6 @@
 {
-  "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root. An `exclusive` command runs one copy at a time on the machine: the frame-budget benchmark times frames against spare CPU, so a second copy would measure the first.",
-  "exclusive": ["nix-shell --run './web/build.sh && node web/bench.mjs'"],
+  "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root. An `exclusive` command runs one copy at a time on the machine: the frame-budget benchmark times frames against spare CPU, so a second copy would measure the first. The builds it measures run as their own command before it, so only the measurement holds the machine.",
+  "exclusive": ["nix-shell --run 'node web/bench.mjs'"],
   "rules": [
     {
       "paths": ["records/**", "default.nix"],
@@ -84,7 +84,8 @@
         "node --test web/record.test.mjs",
         "nix-shell --run 'cargo fmt --manifest-path web/transport/Cargo.toml --check'",
         "nix-shell --run 'CC_wasm32_unknown_unknown=clang NIX_HARDENING_ENABLE= cargo clippy --manifest-path web/transport/Cargo.toml --target wasm32-unknown-unknown -- --deny warnings'",
-        "nix-shell --run './web/build.sh && node web/bench.mjs'"
+        "nix-shell --run './web/build.sh && cargo build --release'",
+        "nix-shell --run 'node web/bench.mjs'"
       ],
       "why": "running the web build is the only thing that compiles the wasm module and checks the wasm-bindgen pin; the frame-budget benchmark runs the busy scene on every target"
     },
@@ -98,7 +99,8 @@
       "tests": [
         "nix-instantiate --parse shell.nix",
         "nix-shell --run 'cargo build --tests'",
-        "nix-shell --run './web/build.sh && node web/bench.mjs'"
+        "nix-shell --run './web/build.sh && cargo build --release'",
+        "nix-shell --run 'node web/bench.mjs'"
       ],
       "why": "a parse catches syntax; a build inside the shell catches a missing package; the compiler and browser it pins move frame times, so the frame-budget benchmark runs too"
     },
@@ -106,7 +108,8 @@
       "paths": ["src/*.wgsl"],
       "tests": [
         "nix-shell --run 'shellcheck art/machines/proof.sh && art/machines/proof.sh'",
-        "nix-shell --run './web/build.sh && node web/bench.mjs'"
+        "nix-shell --run './web/build.sh && cargo build --release'",
+        "nix-shell --run 'node web/bench.mjs'"
       ],
       "why": "a shader only compiles when a scene is drawn; the proof shot draws lit machines at two turns and fails on a shader error; the frame-budget benchmark runs the busy scene on every target"
     },
@@ -116,7 +119,8 @@
         "nix-shell --run 'cargo fmt --check'",
         "nix-shell --run 'cargo clippy --all-targets -- --deny warnings'",
         "nix-shell --run 'cargo test -- --test-threads=2'",
-        "nix-shell --run './web/build.sh && node web/bench.mjs'"
+        "nix-shell --run './web/build.sh && cargo build --release'",
+        "nix-shell --run 'node web/bench.mjs'"
       ],
       "why": "one crate, one suite; two test threads because the box hangs cargo test under contention; the frame-budget benchmark runs the busy scene on every target"
     }
