@@ -1511,3 +1511,14 @@ Superseded: from Toy 1 turns a machine through its facing, "the same cell-specif
 Tests: `TWIST` starts at 0, ends at exactly 1, holds 1 past the end and overshoots on the way; a machine turn's progress equals `TWIST` at every sampled phase and differs from the arm's `Swing`. The existing turn tests (mid-sweep angle strictly between rest facings, six presses landing exactly on the start facing, grabbed-point turns) pass unchanged.
 
 `proofs/machine-twist-146.gif` is the deployed page at `440249b`, a 640 by 320 crop of 1280 by 720 frames played at 50 frames per second: an arm running a tape of clockwise rotates beside a picked bonder turned clockwise every 800 ms, the arm on `Swing` and the bonder on `Twist`. The landing's frame-budget check passed both windows with zero over-budget frames (native maximum 5.666 ms, web maximum 9.5 ms).
+
+## Interior tiles vary from tile to tile
+
+Report (verbatim): "tiles in the shadow realm are all the same, such a complex tile desing is potentially cool but needs variance"
+
+The shadow realm is a portal's interior. Its floor is a batch of twenty-four ethereal tiles, `art/textures/ethereal-00.png` to `ethereal-23.png`, and each interior cell wears the member selected by the coordinate hash that picks each overworld cell's clay tile. Member 00 is the painting every interior cell wore before. All members share one material, glazed mineral ceramic in broad plum and ivory fields inside the shared grout; what varies is the arrangement of the veins. Each other member was briefed with an arrangement of its own, such as one slender seam, a spiral eddy or drifting clouds, and `ethereal-NN.prompt.txt` records the caption its painting received. A portal's window draws its floor as one mesh per member the square meets, so the window shows the same tiles the interior does.
+
+A second painting of member 00's caption returned member 00's composition, so twenty-four paintings of one caption would still read as one tile. Turning or mirroring one painting per cell still shows one composition, only turned, and would add a second way of varying tiles beside the batch. Four briefs that named a shape (a ring, an S, a crescent, a zigzag) read as a letter or symbol at the shipped forty-pixel size and were briefed again. `art/textures/ethereal-candidates/scores.tsv` gives each painting's brief, round, critic score and outcome, and `sheet.png` shows the paintings in the same order, one member per row.
+
+Tests: a patch of twelve by twelve cells shows every member of its world; interior board cells, and every triangle of a window's floor, wear their cell's member; every member has its prompt beside it.
+

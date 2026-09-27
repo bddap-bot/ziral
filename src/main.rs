@@ -557,53 +557,67 @@ impl PortalView {
         Self::TILE / self.side
     }
 
-    fn floor(&self) -> Mesh {
+    fn floor(&self) -> Vec<(Skin, Mesh)> {
         let (lo, hi) = (self.center - self.side / 2.0, self.center + self.side / 2.0);
-        let (mut positions, mut uvs, mut indices) = (Vec::new(), Vec::new(), Vec::new());
-        for h in Tiling::cover(lo, hi).cells() {
-            let mut face = corners(px(h), HEX)[..6].to_vec();
-            for (normal, bound) in [
-                (Vec2::X, hi.x),
-                (Vec2::NEG_X, -lo.x),
-                (Vec2::Y, hi.y),
-                (Vec2::NEG_Y, -lo.y),
-            ] {
-                let past = |v: Vec2| v.dot(normal) - bound;
-                face = face
-                    .iter()
-                    .zip(face.iter().cycle().skip(1))
-                    .flat_map(|(&a, &b)| {
-                        let (pa, pb) = (past(a), past(b));
-                        [
-                            (pa <= 0.0).then_some(a),
-                            (pa * pb < 0.0).then(|| a.lerp(b, pa / (pa - pb))),
-                        ]
-                    })
-                    .flatten()
-                    .collect();
-            }
-            if face.len() < 3 {
-                continue;
-            }
-            let first = positions.len() as u32;
-            indices.extend((2..face.len() as u32).flat_map(|k| [first, first + k - 1, first + k]));
-            for v in face {
-                let local = (v - px(h)) / HEX;
-                positions.push((v - self.center).extend(0.0).to_array());
-                uvs.push([0.5 + local.x / 2.0, 0.5 - local.y / 2.0]);
-            }
-        }
-        Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::default(),
-        )
-        .with_inserted_attribute(
-            Mesh::ATTRIBUTE_NORMAL,
-            vec![[0.0, 0.0, 1.0]; positions.len()],
-        )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-        .with_inserted_indices(Indices::U32(indices))
+        let faces: Vec<(Hex, Vec<Vec2>)> = Tiling::cover(lo, hi)
+            .cells()
+            .into_iter()
+            .filter_map(|h| {
+                let mut face = corners(px(h), HEX)[..6].to_vec();
+                for (normal, bound) in [
+                    (Vec2::X, hi.x),
+                    (Vec2::NEG_X, -lo.x),
+                    (Vec2::Y, hi.y),
+                    (Vec2::NEG_Y, -lo.y),
+                ] {
+                    let past = |v: Vec2| v.dot(normal) - bound;
+                    face = face
+                        .iter()
+                        .zip(face.iter().cycle().skip(1))
+                        .flat_map(|(&a, &b)| {
+                            let (pa, pb) = (past(a), past(b));
+                            [
+                                (pa <= 0.0).then_some(a),
+                                (pa * pb < 0.0).then(|| a.lerp(b, pa / (pa - pb))),
+                            ]
+                        })
+                        .flatten()
+                        .collect();
+                }
+                (face.len() >= 3).then_some((h, face))
+            })
+            .collect();
+        look::ETHEREAL
+            .into_iter()
+            .filter_map(|skin| {
+                let (mut positions, mut uvs, mut indices) = (Vec::new(), Vec::new(), Vec::new());
+                for (h, face) in faces.iter().filter(|(h, _)| look::tile(*h, true) == skin) {
+                    let first = positions.len() as u32;
+                    indices.extend(
+                        (2..face.len() as u32).flat_map(|k| [first, first + k - 1, first + k]),
+                    );
+                    for v in face {
+                        let local = (*v - px(*h)) / HEX;
+                        positions.push((*v - self.center).extend(0.0).to_array());
+                        uvs.push([0.5 + local.x / 2.0, 0.5 - local.y / 2.0]);
+                    }
+                }
+                (!positions.is_empty()).then(|| {
+                    let mesh = Mesh::new(
+                        PrimitiveTopology::TriangleList,
+                        RenderAssetUsages::default(),
+                    )
+                    .with_inserted_attribute(
+                        Mesh::ATTRIBUTE_NORMAL,
+                        vec![[0.0, 0.0, 1.0]; positions.len()],
+                    )
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+                    .with_inserted_indices(Indices::U32(indices));
+                    (skin, mesh)
+                })
+            })
+            .collect()
     }
 
     fn enter(&self, at: Hex, viewport: &mut Viewport) {
@@ -4624,10 +4638,10 @@ fn phase(since: f32, period: f32, motion: f32) -> f32 {
 #[derive(Default, Reflect, GizmoConfigGroup)]
 struct CardGizmos;
 
-fn tile(kiln: &Kiln, h: Hex) -> (Mesh2d, MeshMaterial2d<ColorMaterial>, Transform) {
+fn tile(kiln: &Kiln, h: Hex, inside: bool) -> (Mesh2d, MeshMaterial2d<ColorMaterial>, Transform) {
     (
         Mesh2d(kiln.hexagon.clone()),
-        MeshMaterial2d(kiln.skin(look::tile(h).skin).clone()),
+        MeshMaterial2d(kiln.skin(look::tile(h, inside)).clone()),
         Transform {
             translation: px(h).extend(0.0),
             rotation: Quat::IDENTITY,
@@ -4681,7 +4695,7 @@ impl Pigment for Lit {
 struct Painter<'a, 'gw, 'gs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
     gizmos: &'a mut Gizmos<'gw, 'gs, G>,
     strokes: &'a mut Vec<Stroke>,
-    floor: &'a mut dyn FnMut(PortalView) -> Handle<Mesh>,
+    floor: &'a mut dyn FnMut(PortalView) -> Vec<(Skin, Handle<Mesh>)>,
     kiln: &'a Kiln,
     layers: RenderLayers,
     shift: Vec2,
@@ -4717,7 +4731,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
     }
 
     fn tile(&mut self, h: Hex, z: f32) {
-        let (mesh, material, mut transform) = tile(self.kiln, h);
+        let (mesh, material, mut transform) = tile(self.kiln, h, false);
         transform.translation =
             (transform.translation.truncate() * self.scale + self.shift).extend(z);
         transform.scale *= self.scale;
@@ -4730,20 +4744,15 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
 
     fn interior(&mut self, sim: &Sim, at: Vec2, scale: f32, under: f32) {
         let fit = PortalView::of(sim);
-        let (kiln, floor) = (self.kiln, (self.floor)(fit));
+        let kiln = self.kiln;
         let (shift, old_scale, depth) = (self.shift, self.scale, self.depth);
         self.depth = Depth {
             base: depth.base + (under - layer::INTERIOR) * depth.span,
             span: depth.span * layer::INTERIOR / layer::SCENE,
         };
-        self.fill(
-            &floor,
-            kiln.skin(look::ETHEREAL),
-            at,
-            0.0,
-            Vec2::splat(scale),
-            0.0,
-        );
+        for (skin, floor) in (self.floor)(fit) {
+            self.fill(&floor, kiln.skin(skin), at, 0.0, Vec2::splat(scale), 0.0);
+        }
         self.shift += (at - fit.center * scale) * self.scale;
         self.scale *= scale;
         scene(
@@ -5227,11 +5236,7 @@ fn board(
         commands.entity(e).despawn();
     }
     for h in new {
-        let (mesh, mut material, transform) = tile(&kiln, h);
-        if inside {
-            material.0 = kiln.skin(look::ETHEREAL).clone();
-        }
-        commands.spawn((Board::Cell(h), mesh, material, transform));
+        commands.spawn((Board::Cell(h), tile(&kiln, h, inside)));
     }
     if let Tiling::Slab(lo, hi) = tiling {
         let (lo, hi) = (lo.as_vec2(), hi.as_vec2());
@@ -5287,17 +5292,24 @@ type Placed<'w, 's> = (
 #[derive(Default)]
 struct Canvas {
     pools: [Vec<Entity>; Ink::POOLS],
-    kept: std::collections::HashMap<[u32; 3], Handle<Mesh>>,
-    drawn: std::collections::HashMap<[u32; 3], Handle<Mesh>>,
+    kept: std::collections::HashMap<[u32; 3], Vec<(Skin, Handle<Mesh>)>>,
+    drawn: std::collections::HashMap<[u32; 3], Vec<(Skin, Handle<Mesh>)>>,
 }
 
 impl Canvas {
-    fn floor(&mut self, meshes: &mut Assets<Mesh>, fit: PortalView) -> Handle<Mesh> {
+    fn floor(&mut self, meshes: &mut Assets<Mesh>, fit: PortalView) -> Vec<(Skin, Handle<Mesh>)> {
         let key = [fit.center.x, fit.center.y, fit.side].map(f32::to_bits);
         let Self { kept, drawn, .. } = self;
         drawn
             .entry(key)
-            .or_insert_with(|| kept.remove(&key).unwrap_or_else(|| meshes.add(fit.floor())))
+            .or_insert_with(|| {
+                kept.remove(&key).unwrap_or_else(|| {
+                    fit.floor()
+                        .into_iter()
+                        .map(|(skin, mesh)| (skin, meshes.add(mesh)))
+                        .collect()
+                })
+            })
             .clone()
     }
 
@@ -8136,11 +8148,7 @@ mod tests {
                         return;
                     }
                     for (material, transform) in &board {
-                        let skin = if inside {
-                            look::ETHEREAL
-                        } else {
-                            look::tile(hex_at(transform.translation.truncate())).skin
-                        };
+                        let skin = look::tile(hex_at(transform.translation.truncate()), inside);
                         assert_eq!(&material.0, kiln.skin(skin), "world tile texture");
                     }
                     if !inside {
@@ -8195,42 +8203,44 @@ mod tests {
             tall,
         ] {
             let fit = PortalView::of(&sim);
-            let floor = fit.floor();
             let layout = |mesh: &Mesh| {
                 mesh.attributes()
                     .map(|(attribute, _)| attribute.id)
                     .collect::<Vec<_>>()
             };
-            assert_eq!(
-                layout(&floor),
-                layout(&hexagon),
-                "the floor is laid like a tile"
-            );
-            let positions = floor
-                .attribute(Mesh::ATTRIBUTE_POSITION)
-                .unwrap()
-                .as_float3()
-                .unwrap();
-            let Some(Float32x2(uvs)) = floor.attribute(Mesh::ATTRIBUTE_UV_0) else {
-                panic!("the floor carries uvs")
-            };
-            let indices: Vec<usize> = floor.indices().unwrap().iter().collect();
             let mut area = 0.0;
-            for triangle in indices.chunks(3) {
-                let [a, b, c] = [0, 1, 2].map(|k| Vec2::from_slice(&positions[triangle[k]]));
-                area += (b - a).perp_dot(c - a).abs() / 2.0;
-                let cell = hex_at(fit.center + (a + b + c) / 3.0);
-                for &i in triangle {
-                    let at = Vec2::from_slice(&positions[i]);
-                    assert!(
-                        at.abs().max_element() <= fit.side / 2.0 + 1e-3,
-                        "{at} lies outside the window"
-                    );
-                    let local = (fit.center + at - px(cell)) / HEX;
-                    assert!(
-                        Vec2::from(uvs[i]).distance(u0 + map * (local - p0)) < 1e-4,
-                        "{at} samples its tile off the board's mapping"
-                    );
+            for (skin, floor) in fit.floor() {
+                assert_eq!(
+                    layout(&floor),
+                    layout(&hexagon),
+                    "the floor is laid like a tile"
+                );
+                let positions = floor
+                    .attribute(Mesh::ATTRIBUTE_POSITION)
+                    .unwrap()
+                    .as_float3()
+                    .unwrap();
+                let Some(Float32x2(uvs)) = floor.attribute(Mesh::ATTRIBUTE_UV_0) else {
+                    panic!("the floor carries uvs")
+                };
+                let indices: Vec<usize> = floor.indices().unwrap().iter().collect();
+                for triangle in indices.chunks(3) {
+                    let [a, b, c] = [0, 1, 2].map(|k| Vec2::from_slice(&positions[triangle[k]]));
+                    area += (b - a).perp_dot(c - a).abs() / 2.0;
+                    let cell = hex_at(fit.center + (a + b + c) / 3.0);
+                    assert_eq!(skin, look::tile(cell, true), "{cell:?} wears its own tile");
+                    for &i in triangle {
+                        let at = Vec2::from_slice(&positions[i]);
+                        assert!(
+                            at.abs().max_element() <= fit.side / 2.0 + 1e-3,
+                            "{at} lies outside the window"
+                        );
+                        let local = (fit.center + at - px(cell)) / HEX;
+                        assert!(
+                            Vec2::from(uvs[i]).distance(u0 + map * (local - p0)) < 1e-4,
+                            "{at} samples its tile off the board's mapping"
+                        );
+                    }
                 }
             }
             assert!(
@@ -8294,7 +8304,7 @@ mod tests {
                 let is_floor = |e: Entity| {
                     colors
                         .get(e)
-                        .is_ok_and(|m| &m.0 == kiln.skin(look::ETHEREAL))
+                        .is_ok_and(|m| look::ETHEREAL.iter().any(|skin| &m.0 == kiln.skin(*skin)))
                 };
                 let [(_, housing)] = drawn
                     .iter()
@@ -8303,13 +8313,17 @@ mod tests {
                 else {
                     return;
                 };
-                let [(_, floor)] = drawn
+                let floors: Vec<f32> = drawn
                     .iter()
                     .filter(|(e, _)| is_floor(*e))
-                    .collect::<Vec<_>>()[..]
-                else {
-                    panic!("the window draws one floor")
-                };
+                    .map(|(_, z)| *z)
+                    .collect();
+                assert!(
+                    floors.len() > 1,
+                    "the window shows {} interior tiles",
+                    floors.len()
+                );
+                let floor = &floors.iter().copied().fold(f32::MIN, f32::max);
                 assert!(
                     floor < housing,
                     "the floor at {floor} covers the housing at {housing}"
@@ -9253,7 +9267,7 @@ mod tests {
         );
         let expected = look::tests::grout_color().to_srgba();
         let expected = [expected.red, expected.green, expected.blue];
-        let name = |s: &Seam| s.cells.map(|h| (h, look::tile(h).skin));
+        let name = |s: &Seam| s.cells.map(|h| (h, look::tile(h, false)));
         let tone = |s: &Seam| {
             (0..3)
                 .map(|c| (s.mean[c] - expected[c]).abs())

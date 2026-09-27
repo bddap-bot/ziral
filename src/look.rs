@@ -279,19 +279,22 @@ macro_rules! finish {
 }
 
 macro_rules! tiles {
-    ($($n:literal),*) => {
-        [$(finish!(concat!("textures/tile-", $n), Finish::Grouted)),*]
+    ($family:literal) => {
+        tiles!(
+            $family; "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12",
+            "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23"
+        )
+    };
+    ($family:literal; $($n:literal),*) => {
+        [$(finish!(concat!("textures/", $family, "-", $n), Finish::Grouted)),*]
     };
 }
 
-pub const TILES: [Skin; 24] = tiles![
-    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
-    "16", "17", "18", "19", "20", "21", "22", "23"
-];
+pub const TILES: [Skin; 24] = tiles!("tile");
 
 pub const MANUAL: Skin = skin!("overlay/page");
 
-pub const ETHEREAL: Skin = finish!("textures/ethereal", Finish::Grouted);
+pub const ETHEREAL: [Skin; 24] = tiles!("ethereal");
 
 pub const GROUT: Skin = skin!("textures/grout");
 
@@ -309,16 +312,9 @@ impl Skin {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Tile {
-    pub skin: Skin,
-}
-
-pub fn tile(h: Hex) -> Tile {
-    let x = h.scramble();
-    Tile {
-        skin: TILES[(x % TILES.len() as u32) as usize],
-    }
+pub fn tile(h: Hex, inside: bool) -> Skin {
+    let batch = if inside { ETHEREAL } else { TILES };
+    batch[(h.scramble() % batch.len() as u32) as usize]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -479,7 +475,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .chain(BondKind::ALL.into_iter().map(|k| bond(k).skin))
         .chain(Machine::ALL.into_iter().map(|item| machine(item).skin))
         .chain(TILES)
-        .chain([ETHEREAL])
+        .chain(ETHEREAL)
         .chain(crate::KEYS.iter().map(|k| k.symbol))
         .chain([MANUAL])
 }
@@ -863,8 +859,9 @@ pub(crate) mod tests {
                 + BondKind::ALL.len()
                 + Machine::ALL.len()
                 + TILES.len()
+                + ETHEREAL.len()
                 + KEYS.len()
-                + 2
+                + 1
         );
     }
 
@@ -981,6 +978,7 @@ pub(crate) mod tests {
             assert!(index.parse::<u32>().is_ok(), "{}", t.name);
             (t.name, family)
         }));
+        painted.extend(ETHEREAL.iter().map(|t| (t.name, t.name)));
         for (png, name) in painted {
             let prompt = art.join(format!("{name}.prompt.txt"));
             assert!(art.join(format!("{png}.png")).exists(), "{png}.png");
@@ -1005,17 +1003,19 @@ pub(crate) mod tests {
 
     #[test]
     fn a_cell_keeps_its_tile_and_a_patch_shows_every_tile() {
-        let mut seen = vec![false; TILES.len()];
-        for q in -6..6 {
-            for r in -6..6 {
-                let t = tile(Hex::new(q, r));
-                assert_eq!(t, tile(Hex::new(q, r)));
-                seen[TILES.iter().position(|s| *s == t.skin).unwrap()] = true;
+        for (inside, batch) in [(false, TILES), (true, ETHEREAL)] {
+            let mut seen = vec![false; batch.len()];
+            for q in -6..6 {
+                for r in -6..6 {
+                    let t = tile(Hex::new(q, r), inside);
+                    assert_eq!(t, tile(Hex::new(q, r), inside));
+                    seen[batch.iter().position(|s| *s == t).unwrap()] = true;
+                }
             }
+            assert!(
+                seen.iter().all(|s| *s),
+                "a 12 by 12 patch misses a tile: {seen:?}"
+            );
         }
-        assert!(
-            seen.iter().all(|s| *s),
-            "a 12 by 12 patch misses a tile: {seen:?}"
-        );
     }
 }
