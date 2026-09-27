@@ -1,5 +1,6 @@
 {
-  "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root.",
+  "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root. An `exclusive` command runs one copy at a time on the machine: the frame-budget benchmark times frames against spare CPU, so a second copy would measure the first.",
+  "exclusive": ["nix-shell --run './web/build.sh && node web/bench.mjs'"],
   "rules": [
     {
       "paths": ["records/**", "default.nix"],
