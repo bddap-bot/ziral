@@ -114,15 +114,15 @@
       "why": "a shader only compiles when a scene is drawn; the proof shot draws lit machines at two turns and fails on a shader error; the frame-budget benchmark runs the busy scene on every target"
     },
     {
-      "paths": ["**/*.rs", "Cargo.toml", "Cargo.lock"],
+      "paths": ["**/*.rs", "Cargo.toml", "Cargo.lock", ".cargo/config.toml"],
       "tests": [
         "nix-shell --run 'cargo fmt --check'",
         "nix-shell --run 'cargo clippy --all-targets -- --deny warnings'",
-        "nix-shell --run 'cargo test -- --test-threads=2'",
+        "nix-shell --run 'cargo test --no-run && MALLOC_ARENA_MAX=2 cargo test -- --test-threads=2'",
         "nix-shell --run './web/build.sh && cargo build --release'",
         "nix-shell --run 'node web/bench.mjs'"
       ],
-      "why": "one crate, one suite; two test threads because the box hangs cargo test under contention; the frame-budget benchmark runs the busy scene on every target"
+      "why": "one crate, one suite; compile before limiting test allocation arenas, so capture memory is bounded without restricting compiler allocation; the frame-budget benchmark runs the busy scene on every target"
     }
   ]
 }
