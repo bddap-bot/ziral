@@ -1369,6 +1369,14 @@ Directive (verbatim): "speaking of astra, id like to see some fucked designs for
 
 Directive (verbatim): "btw i suspect the current design bible is too restrictive"
 
-Open exploration awaiting a pick. Six independent directions test organic shell, impossible mirror geometry, a living fur fringe, torn paper, liquid metal and a thorn skeleton. The [candidate sheet](art/explorations/portal-frame/sheet.png) pairs each with its shipped-size board placement and a large view; its captions name the bible rules each breaks. The [briefs and actual paint captions](art/explorations/portal-frame/README.md) live beside the pictures.
+Round one's six independent directions test organic shell, impossible mirror geometry, a living fur fringe, torn paper, liquid metal and a thorn skeleton. The [candidate sheet](art/explorations/portal-frame/sheet.png) pairs each with its shipped-size board placement and a large view; its captions name the bible rules each breaks. The [briefs and actual paint captions](art/explorations/portal-frame/README.md) live beside the pictures.
 
 The simplest design is an isolated set of paintings through the existing director and paint pipeline. Applying the shipped palette and housing gates would defeat the exploration, so these candidates are not entries in the shipped machine manifest and no selection is automated. The bible and shipped portal art remain unchanged. A pick and any resulting rule changes are a separate decision in issue #150.
+
+Directive (verbatim):
+
+> mol is gross, i love it. lets explore that direction. the frame itself needs to be lower profile to allow the dimension below to take up more of the frame. there's no reason the portal needs to be square by the way.
+> 
+> lets take molt as a path but steer it a bit. its organic material, small legs and carapace growing from it in unsettling ways, interdimensional mold, fungus what grew. I will design a branch of crafting that deals with growing the substance.
+
+Pick: Molt, steered. Round two paints six Molt descendants whose thin rims leave most of the tile to the interior, each with its own opening: hexagon, almond, amoeboid, circle, kidney and rounded triangle. The [round-two sheet](art/explorations/portal-frame/molt/sheet.png) fills each opening with a uniformly reduced capture of the starting portal's interior and places it at shipped size; [briefs, captions and placement](art/explorations/portal-frame/molt/README.md) sit beside it. The crafting branch that grows the substance is reserved for its own design. The bible and shipped portal art remain unchanged, and the next pick is open in issue #150.

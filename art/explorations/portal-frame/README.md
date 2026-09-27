@@ -1,6 +1,6 @@
 # Portal frame explorations
 
-Open exploration awaiting a pick in issue #150. These six paintings are independent of the art bible; none replaces the shipped portal. Each sheet caption names the rules that direction breaks.
+Round one of the exploration in issue #150. The pick was Molt, steered; round two is in [molt/](molt/README.md). These six paintings are independent of the art bible; none replaces the shipped portal. Each sheet caption names the rules that direction breaks.
 
 ![Six portal frame candidates](sheet.png)
 
