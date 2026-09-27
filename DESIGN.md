@@ -1362,3 +1362,13 @@ Frame times include whatever else the machine runs, so the benchmark measures th
 Tests: a seal stores only the inputs appended since the previous one; a chunk leaves localStorage once IndexedDB commits it; an acknowledgment forgets only the chunks it covers, and a failed upload keeps them; restored chunks upload from the earliest whatever order storage lists them in; a whole record saved before chunking uploads and is forgotten; the analyzer's percentiles, with a frame of exactly 1/60 s within budget and a 20 ms frame over budget but not dropped; a one-column pan relays only the cells entering and leaving the view; the bench world crafts at every line and turns every carousel on each of 400 ticks; sound begins on M and on a touch's release, but not on Shift, Control, Escape or a touch's start; a benchmark page's chunks, a later session's on that page included, are stored but never uploaded, and the next load deletes them from both stores.
 
 `proofs/frame-budget-141.png` charts every frame of both targets in the two measured windows on deployed build `f8d3df6`; `proofs/bench-scene-141.png` is that deployed page running the benchmark. `proofs/frame-gate-141.png` places each window of those runs at the most CPUs other work held during it.
+
+## Portal frame: open exploration
+
+Directive (verbatim): "speaking of astra, id like to see some fucked designs for the portal frame object. i think weird could be the way to go."
+
+Directive (verbatim): "btw i suspect the current design bible is too restrictive"
+
+Open exploration awaiting a pick. Six independent directions test organic shell, impossible mirror geometry, a living fur fringe, torn paper, liquid metal and a thorn skeleton. The [candidate sheet](art/explorations/portal-frame/sheet.png) pairs each with its shipped-size board placement and a large view; its captions name the bible rules each breaks. The [briefs and actual paint captions](art/explorations/portal-frame/README.md) live beside the pictures.
+
+The simplest design is an isolated set of paintings through the existing director and paint pipeline. Applying the shipped palette and housing gates would defeat the exploration, so these candidates are not entries in the shipped machine manifest and no selection is automated. The bible and shipped portal art remain unchanged. A pick and any resulting rule changes are a separate decision in issue #150.
