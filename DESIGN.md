@@ -1289,7 +1289,7 @@ The housing uses the existing body-first machine pipeline, with unchanged measur
 
 The portal has no atom seats. Its registration therefore uses the complete keyed silhouette: one translation and one uniform scale fit that silhouette to its single-cell envelope. No pixel is clipped and no axis is stretched. Inventing an atom seat only to satisfy the registration code would make the scaffold misdescribe the machine. The existing footprint, palette and critic gates still judge the registered result.
 
-A populated portal cannot be recycled into a generic inventory item, because that item cannot carry its interior. Empty portals recycle normally, and their pinned cards retire with them. A portal moves with its interior intact. Recipe-fragment copying refuses interiors, as it already refuses sources; persistence stores the complete placed object.
+Portals recycle through the shared focus grammar, returning the portal item and discarding its interior. Their pinned cards retire with them. A portal moves with its interior intact. Recipe-fragment copying refuses interiors, as it already refuses sources; persistence stores the complete placed object.
 
 The retained housing is candidate 2 at score 7 after three rounds; no candidate reached the fixed taste threshold of 8. The ethereal tile reached 8 in its first round. Housing registration and relief are deterministic derivatives of the retained square painting; the tile is uniformly sized to the grout template. The proof combines native application captures without scaling them.
 
@@ -1297,7 +1297,7 @@ The portal has no firing part. It draws its complete housing, so a synthetic spl
 
 Generation selects articulated entries before invoking the part splitter. A static-only or texture-only run skips the splitter entirely, because its no-argument mode selects every machine.
 
-The portal appends one craftable inventory slot; source upgrades remain excluded from inventory. The source-only selection fixture excludes the populated starting portal, whose contents prevent recycling a combined selection. Recipe text retains canonical atom and bond ordering.
+The portal appends one craftable inventory slot; source upgrades remain excluded from inventory. The source-only selection fixture excludes the starting portal so that it selects only sources. Recipe text retains canonical atom and bond ordering.
 
 ## Free interiors remember overworld encounters
 
@@ -1434,3 +1434,13 @@ Directive (verbatim):
 The held fragment follows the pointer without outlining the tile beneath it. The simplest design deletes that outline from the shared carry renderer, covering one machine, a picked group and a blueprint alike. Placement still uses the pointer cell and occupied destinations still outline the blocking objects; neither depends on drawing a cursor tile. No on-screen text is added.
 
 `proofs/carry-no-cursor-132.gif` captures deployed Pages build `08a4378`: the bonder carried alone, then the bonder and output selected and carried together across empty tiles. The moving frames leave the cursor tile unmarked. The browser check verifies the deployed build and both machines' final positions.
+
+## Portals obey focus deletion
+
+Report (verbatim): "portal object is not deletable"
+
+A press already selected the portal through the ordinary hit test. Releasing the click now copies its interior into the hand; before release, Z acts on the focused portal. The shared deletion path then refused any selection containing a populated portal: a recycling guard coupled deletion to whether the generic inventory item could retain its contents. The starting portal contains an arm and atom, so it always met that refusal.
+
+The dumbest design removes that guard from selected and held deletion. Z removes the focused objects through the existing editor and returns their ordinary inventory bill. A removed portal returns one portal item; its interior is discarded, and its pinned cards retire through the existing cleanup. Moving still carries the complete interior. No extra key, portal deletion handler, rendered text, or per-frame work is introduced.
+
+The regression places empty and populated portals, clicks them through hit testing, checks their ordinary selection focus, and presses Z both during that press and while dragging. Each disappears and returns one portal item. The populated cases fail with the old recycling guard.

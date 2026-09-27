@@ -286,13 +286,6 @@ impl FacingTween {
     }
 }
 
-fn recyclable(set: &Sim) -> bool {
-    set.portals
-        .iter()
-        .flatten()
-        .all(|p| p.sim.ids().next().is_none() && p.sim.inventory == sim::Inventory::EMPTY)
-}
-
 fn runs(set: &Sim) -> bool {
     !set.arms.is_empty() || set.atoms.iter().any(Option::is_some)
 }
@@ -1871,9 +1864,6 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             return;
         }
         let set = self.lifted(&machines(ids), ORIGIN);
-        if !recyclable(&set) {
-            return;
-        }
         self.return_to_inventory(&set);
         self.remove(ids);
     }
@@ -2153,15 +2143,15 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                     self.pop(back);
                 }
                 (KeyZ, _) => {
-                    let Some(Focus::Hold { set, back }) = &self.focus else {
+                    let Some(Focus::Hold { back, .. }) = &self.focus else {
                         unreachable!()
                     };
                     match back {
-                        Back::Inventory if recyclable(set) => {
+                        Back::Inventory => {
                             self.end_turn();
                             self.focus = None;
                         }
-                        Back::Pick { pick, .. } if self.edits(pick) && recyclable(set) => {
+                        Back::Pick { pick, .. } if self.edits(pick) => {
                             let pick = pick.clone();
                             let Some(Focus::Hold { back, .. }) = self.focus.take() else {
                                 unreachable!()
@@ -8075,23 +8065,36 @@ mod tests {
     }
 
     #[test]
-    fn portal_recycling_preserves_contents_and_retires_empty_interior_cards() {
-        for held in [false, true] {
-            let mut game = Game::new(sim::start());
-            game.press(Vec2::ZERO, px(PORTAL_CELL));
-            if held {
-                game.begin_drag();
+    fn placed_portals_focus_and_delete_through_the_shared_grammar() {
+        for populated in [false, true] {
+            for held in [false, true] {
+                let item = Item::Machine(Machine::Portal);
+                let mut game = Game::new(Sim::empty());
+                game.sim_mut().receive(item);
+                game.lift_inventory(item);
+                let at = Hex::new(4, 2);
+                game.release(Some(at));
+                if populated {
+                    game.overworld.sim.portals[0].as_mut().unwrap().sim =
+                        fixture(Machine::Arm(ArmLength::One)).sim;
+                    game.prev = game.sim().clone();
+                }
+                game.press(Vec2::ZERO, px(at));
+                assert_eq!(game.focus, Some(Focus::Pick(vec![Id::Portal(0)])));
+                if held {
+                    game.begin_drag();
+                }
+                game.key(KeyCode::KeyZ, false);
+                game.release(Some(at));
+                assert!(game.sim().portals[0].is_none());
+                assert!(game.focus.is_none());
+                assert_eq!(game.sim().inventory.count(item), Some(1));
             }
-            game.key(KeyCode::KeyZ, false);
-            if held {
-                game.key(KeyCode::Escape, false);
-            }
-            assert_eq!(
-                game.portal(0).sim.arms.len(),
-                1,
-                "populated portal survives recycling"
-            );
         }
+    }
+
+    #[test]
+    fn portal_deletion_retires_interior_cards() {
         let mut sim = Sim::empty();
         sim.portals.push(Some(sim::Portal::new(ORIGIN)));
         let mut game = Game::new(sim);
