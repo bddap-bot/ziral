@@ -5014,6 +5014,13 @@ mod layer {
     pub const LIFT: f32 = 0.8;
     pub const INTERIOR: f32 = 0.001;
 
+    pub fn glyph(kind: crate::sim::GlyphKind, i: usize, n: usize, lift: f32) -> f32 {
+        let kinds = crate::sim::GlyphKind::ALL;
+        let rank = kinds.iter().position(|k| *k == kind).unwrap();
+        let step = (BOND - GLYPHS) / kinds.len() as f32;
+        GLYPHS + lift + (rank as f32 + i as f32 / n as f32) * step
+    }
+
     pub fn z(band: Range<f32>, i: usize, n: usize) -> f32 {
         band.start + (band.end - band.start) * (i as f32 / n as f32)
     }
@@ -5587,7 +5594,15 @@ fn scene<G: GizmoConfigGroup>(
             .clone()
             .map(|(_, phase)| rig::pulse(true, phase))
             .sum();
-        p.portal(px(portal.at), layer::GLYPHS + lift, pulse);
+        p.portal(
+            px(portal.at),
+            layer::z(
+                layer::GLYPHS - layer::INTERIOR + lift..layer::GLYPHS + lift,
+                index,
+                f.sim.portals.len(),
+            ),
+            pulse,
+        );
         for (event, phase) in responses.filter(|_| particles) {
             p.particles(
                 Machine::Portal,
@@ -5621,7 +5636,7 @@ fn scene<G: GizmoConfigGroup>(
             item,
             at,
             angle,
-            layer::GLYPHS + lift,
+            layer::glyph(g.kind, index, f.sim.glyphs.len(), lift),
             (fired, phase, g.energy),
         );
         if particles {
@@ -5651,7 +5666,11 @@ fn scene<G: GizmoConfigGroup>(
     }
     for (i, arm) in f.arms.iter().enumerate() {
         let item = f.sim.arms[i].machine();
-        let z = layer::z(layer::ARMS, i, f.arms.len()) + lift;
+        let z = layer::z(
+            layer::ARMS.start + lift..layer::ARMS.end + lift,
+            i,
+            f.arms.len(),
+        );
         let fired = events
             .iter()
             .any(|event| rig::activation(item).matches(event, i));
@@ -5752,14 +5771,14 @@ fn hover_card<G: GizmoConfigGroup>(
             Machine::Portal,
             at,
             0.0,
-            z(2),
+            layer::z(z(2)..z(3), 0, 1),
             (false, 1.0, sim::ActivationEnergy::default()),
         ),
         Item::Machine(machine) => p.rig(
             machine,
             at - look::quad(machine).centre,
             0.0,
-            z(2),
+            layer::z(z(2)..z(3), 0, 1),
             (false, 1.0, sim::ActivationEnergy::default()),
         ),
         Item::Atom(_) => unreachable!("an atom resolves to its route before painting"),
@@ -5783,7 +5802,7 @@ fn hover_card<G: GizmoConfigGroup>(
                 machine,
                 Vec2::ZERO,
                 0.0,
-                layer::LIFT + layer::GLYPHS,
+                layer::z(layer::LIFT + layer::GLYPHS..layer::LIFT + layer::BOND, 0, 1),
                 (false, 1.0, sim::ActivationEnergy::default()),
             );
             p.scale = old_scale;
@@ -6351,6 +6370,25 @@ mod shot {
                 }
                 world.sim = sim;
                 frame = Frame::Wide;
+            }
+            "source-ring:near" | "source-ring:far" => {
+                world.sim = Sim::empty();
+                for (dir, at) in DIRS.into_iter().enumerate() {
+                    world.sim.glyphs.push(Some(Glyph::new(
+                        GlyphKind::Bonder,
+                        FOCUS.add(at.scale(if dir == 0 { 1 } else { 2 })),
+                        dir,
+                    )));
+                }
+                world
+                    .sim
+                    .glyphs
+                    .insert(3, Some(Glyph::new(GlyphKind::Source, FOCUS, 0)));
+                world.sim.glyphs.insert(2, None);
+                world.pointer = None;
+                if name == "source-ring:far" {
+                    frame = Frame::Wide;
+                }
             }
             "wide" => frame = Frame::Wide,
             "board" => world.sim = Sim::empty(),
@@ -8992,6 +9030,28 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = shot::still(view, dir.clone(), n);
         lit_plugin(&mut app);
+        if view.starts_with("source-ring:") {
+            app.add_systems(
+                Last,
+                |fills: Query<(&Transform, &RenderLayers), With<MeshMaterial2d<Lit>>>,
+                 world: Res<Game>| {
+                    let mut depths: Vec<_> = fills
+                        .iter()
+                        .filter(|(_, layers)| **layers == RenderLayers::default())
+                        .map(|(t, _)| t.translation.z)
+                        .collect();
+                    if depths.is_empty() {
+                        return;
+                    }
+                    depths.sort_by(f32::total_cmp);
+                    assert!(
+                        depths.windows(2).all(|pair| pair[0] < pair[1]),
+                        "machines share a depth: {depths:?}"
+                    );
+                    assert_eq!(depths.len(), world.sim().glyphs.iter().flatten().count());
+                },
+            );
+        }
         let exit = app.run();
         let frames: Vec<_> = (0..n)
             .map(|k| std::fs::read(dir.join(format!("{k:05}.png"))))
@@ -9055,6 +9115,26 @@ mod tests {
             changed.len(),
             changed[0]
         );
+    }
+
+    #[test]
+    fn a_source_ring_keeps_separate_machine_depths_and_identical_frames_at_two_zooms() {
+        for view in ["source-ring:near", "source-ring:far"] {
+            let (world, ..) = shot::scene(view, 0);
+            let mut occupied = std::collections::HashSet::new();
+            for glyph in world.sim.glyphs.iter().flatten() {
+                for cell in glyph.cells() {
+                    assert!(
+                        occupied.insert(cell),
+                        "overlapping machine footprints at {cell:?}"
+                    );
+                }
+            }
+            let frames = still_frames(view, 8);
+            for frame in &frames[1..] {
+                assert!(frames[0].as_raw() == frame.as_raw(), "{view} flickered");
+            }
+        }
     }
 
     struct Seam {
@@ -12099,7 +12179,13 @@ mod tests {
                 "{name} tiles"
             );
             assert_eq!(
-                at(layer::GLYPHS + layer::LIFT).len(),
+                fills
+                    .iter()
+                    .filter(
+                        |(p, _)| (layer::GLYPHS + layer::LIFT..layer::BOND + layer::LIFT)
+                            .contains(&p.z)
+                    )
+                    .count(),
                 sim.glyphs.iter().flatten().count(),
                 "{name} glyphs"
             );

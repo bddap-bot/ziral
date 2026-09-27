@@ -8,6 +8,16 @@ Directive (verbatim): "queue low priority a job to review our art documentation 
 
 The art documents mix current direction, abandoned experiments and the exact prompts of earlier paints. This review checks BIBLE.md, SYMBOLS.md, MACHINES.md, the art entries here, the manifest directions and the recorded prompts together. The simplest design deletes repeated rules, corrects descriptions against the existing pipeline and labels historical evidence. Rewriting past paint records during this review would falsify their provenance; changing the rubric or repainting would turn a documentation correction into a new art decision. Unresolved choices from this review are listed on [issue #110](https://github.com/bddap-bot/ziral/issues/110).
 
+## Machine overlap has one order
+
+Report (verbatim):
+
+> looks like the base atom creator texture excheeds its bounds a little which causes it to z-fight on its edges with neighboring machines
+
+Overlapping machine art has one fixed order: portal housings, placed glyphs, arms, then held machines. Placed glyphs draw in the order of GlyphKind::ALL, then simulation storage order; the later entry draws on top. This keeps matching sprites together, while later storage slots settle ties. Arms and held machines draw in storage order. Empty storage slots retain their place. Camera position, zoom, material and activation never choose the winner. Portal housings stay below their window floors.
+
+The simplest design assigns depths from those existing orders. A glyph type owns one depth band divided by storage slot. The existing single-sprite renderer needs no part intervals, and matching sprites remain batched. No sorting pass, entity, texture or shader work is added. Clipping the source painting would hide one overlap without defining the order of the others.
+
 ## Pitch
 
 One sentence: who the player is, what they do, why that is fun.
