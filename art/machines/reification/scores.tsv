@@ -1,12 +1,8 @@
-reification-1	0.121	0.859	0.145	0.020	-	fail outside 0.121 > 0.05	[]	-	-
-reification-2	0.032	0.825	0.175	0.045	7	pass	["Give the broad golden face more ceramic depth: pooled amber glaze, bright glassy edges and patches of exposed fired clay would enrich its sandy surface.","Differentiate the red seat collars with compressed rubber lips, rubbed edges and darker inner recesses; their repeated soft shading currently feels uniform.","Strengthen the outer brass rim with a heavier underside shadow and selective polished corners so the housing feels thick and weighty.","Make the central fitting a more confident crafted focal point with crisp layered metalwork and distinct fasteners; its muddy concentric shading loses definition."]	885e6aa24f34ac8f	false
-reification-3	0.208	0.820	0.183	0.040	-	fail outside 0.208 > 0.05	[]	-	-
-reification-4	0.030	0.842	0.147	0.045	7	pass	["Give the broad golden glaze more character: pooled amber, fine crazing and a few sharp surviving highlights would deepen its ceramic richness.","Differentiate the fittings through touch: sharper brass edges, darker tarnished recesses and matte, compressed rubber would make the materials more convincing.","Break the repeated soft shading around the red collars with distinctive chips, rubbed lips and accumulated grime so the machine feels individually made and used."]	6049e8d2ddc54c3a	false
-reification-5	0.069	0.826	0.171	0.028	-	fail outside 0.069 > 0.05	[]	-	-
-reification-6	0.149	0.838	0.147	0.089	-	fail outside 0.149 > 0.05	[]	-	-
-reification-7	0.096	0.840	0.160	0.040	-	fail outside 0.096 > 0.05	[]	-	-
-reification-8	0.116	0.837	0.162	0.082	-	fail outside 0.116 > 0.05	[]	-	-
-reification-9	0.128	0.825	0.172	0.045	-	fail outside 0.128 > 0.05	[]	-	-
-reification-10	0.069	0.853	0.182	0.028	-	fail outside 0.069 > 0.05	[]	-	-
-reification-11	0.152	0.858	0.161	0.028	-	fail outside 0.152 > 0.05	[]	-	-
-reification-12	0.197	0.849	0.155	0.020	-	fail outside 0.197 > 0.05	[]	-	-
+reification-1	0.055	0.821	0.133	0.089	-	fail outside 0.055 > 0.05	[]	-	-
+reification-2	0.066	0.828	0.153	0.045	-	fail outside 0.066 > 0.05	[]	-	-
+reification-3	0.038	0.819	0.134	0.020	7	pass	["Give the broad amber housing richer glaze pooling, fine crazing and selectively worn edges; its orange finish currently feels too uniform.","Distinguish the seat materials more clearly: cooler tarnished brass, matte rubber lips and sharper ceramic highlights would make the construction more tangible.","Develop the central collar into a more characterful focal fitting with deliberate tooling and asymmetric wear.","Vary the small fittings with crisp fastener heads and accumulated grime so their detail reads as crafted hardware rather than repeated bumps."]	86bf55f68ff34c8a	false
+reification-4	0.068	0.823	0.151	0.045	-	fail outside 0.068 > 0.05	[]	-	-
+reification-5	0.048	0.816	0.159	0.045	8	pass	["Give the central brass collar clearer facets and sharper worn edges; its mottled surface currently blurs the machine's focal point.","Deepen a few broad shadows beneath the rim and fittings to make the glazed body feel thicker and heavier.","Differentiate the rubber seats from their brass surrounds with matte dark surfaces and selective metallic glints; the repeated rings currently share a similar softness."]	bcd2cec5a1529000	false
+reification-6	0.140	0.821	0.186	0.063	-	fail outside 0.140 > 0.05	[]	-	-
+reification-7	0.113	0.819	0.174	0.072	-	fail outside 0.113 > 0.05	[]	-	-
+reification-8	0.160	0.788	0.167	0.072	-	fail outside 0.160 > 0.05	[]	-	-
