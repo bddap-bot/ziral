@@ -23,7 +23,7 @@ Run the full test suite with `nix-shell --run 'cargo test --no-run && MALLOC_ARE
 Render tests and the native benchmark share the deadline in
 `web/render-timeout-seconds`. Run tests in `nix-shell` so the timeout debugger
 is available. Each serialized render holds a cancellable watchdog through
-teardown. On expiry it prints the test name and GDB stacks (the test thread
-first on Linux), then exits the test process unsuccessfully: a deadlocked
+teardown. On expiry it prints the test name and the watched thread’s GDB stack on Linux
+(all threads on other platforms), then exits the test process unsuccessfully: a deadlocked
 renderer cannot be safely reused by later tests. Stack collection has a
 15-second kill limit. Successful renders cancel the watchdog immediately.

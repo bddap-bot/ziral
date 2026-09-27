@@ -53,8 +53,9 @@ pub fn lock() -> Guard {
             ]);
             #[cfg(target_os = "linux")]
             debugger.args(["-ex", &format!("python next(t for t in gdb.selected_inferior().threads() if t.ptid[1] == {tid}).switch()"), "-ex", "bt"]);
+            #[cfg(not(target_os = "linux"))]
+            debugger.args(["-ex", "thread apply all bt"]);
             let status = debugger
-                .args(["-ex", "set pagination off", "-ex", "thread apply all bt"])
                 .args(["--pid", &std::process::id().to_string()])
                 .stdin(Stdio::null())
                 .stdout(Stdio::inherit())
