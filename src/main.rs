@@ -697,7 +697,12 @@ impl Game {
         *self = next;
     }
     fn restore(&mut self, state: persist::State) {
+        let changed = self.overworld.sim != state.sim;
+        let cue = sound::ActionCue::of(sound::Action::Edit, &state.sim);
         self.replace_with(Self::from_state(state));
+        if changed {
+            self.actions.push(cue);
+        }
     }
     fn enter(&mut self, portal: Option<usize>) -> bool {
         if self.holding() || self.card_drag.is_some() {
@@ -2233,6 +2238,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                     self.end_turn();
                     self.down = None;
                     self.resim(n);
+                    self.queue_action(sound::ActionCue::new(sound::Action::Edit, []));
                 }
                 return;
             }

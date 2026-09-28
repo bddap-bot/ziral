@@ -1530,7 +1530,7 @@ Directive (verbatim):
 
 > id like sound effects for user actions that affect the world. eg, picking up a machine, dropping a machine, rotating a machine. sound changes for an array of machines. leave room for giving each machine custom sounds. the sounds can't be annoying or sound too reppetitive since they'll be playing all the time.
 
-The shared editor's successful lift, placement, turn and deletion emit one action cue for the whole set, including atoms. The same path handles a palette object, a pasted blueprint and a picked group. Tape edits, changed inventory caps, refill and imports also sound; simulation steps, source upgrades and portal crossings retain their existing music. Selection, camera motion and refused edits add no building cue.
+The shared editor's successful lift, placement, turn and deletion emit one action cue for the whole set, including atoms. The same path handles a palette object, a pasted blueprint and a picked group. Tape edits, changed inventory caps, refill, imports and a successful backward step also sound; simulation steps, source upgrades and portal crossings retain their existing music. Selection, camera motion and refused edits add no building cue.
 
 Each cue chooses the most numerous machine kind, with a stable tie break, and lowers its pitch with group size, offset slightly by the number of machine kinds. It never creates a voice per object. A machine may set `actions.pickup`, `actions.drop`, `actions.rotate`, `actions.delete` or `actions.edit` beside its `instrument` in the machine manifest, each with the same `voice` and `note` fields. Omitted entries use five distinct soft ceramic defaults. The manifest writer preserves these overrides.
 

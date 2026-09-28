@@ -85,15 +85,7 @@ impl Input {
                     card.scale = *scale;
                 }
             }
-            Self::Import(sim) => {
-                let changed = world.state().sim != **sim;
-                world.restore(persist::State { sim: *sim.clone() });
-                if changed {
-                    world
-                        .actions
-                        .push(sound::ActionCue::of(sound::Action::Edit, sim));
-                }
-            }
+            Self::Import(sim) => world.restore(persist::State { sim: *sim.clone() }),
             Self::Paste(sim) => world.lift(*sim.clone()),
             Self::Focus(portal) => {
                 world.enter(*portal);
@@ -235,6 +227,22 @@ fn append_record(_: &[u8], _: u32) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_restore_and_legacy_import_share_one_change_cue() {
+        let mut world = Game::new(sim::start());
+        let mut state = world.state();
+        Input::Restore(Box::new(state.clone())).apply(&mut world);
+        assert!(world.actions.is_empty());
+        state.sim.glyphs[0].as_mut().unwrap().at = Hex::new(-8, 1);
+        Input::Restore(Box::new(state.clone())).apply(&mut world);
+        assert_eq!(
+            world.actions,
+            [sound::ActionCue::of(sound::Action::Edit, &state.sim)]
+        );
+        Input::Import(Box::new(sim::start())).apply(&mut world);
+        assert_eq!(world.actions.len(), 1);
+    }
 
     #[test]
     fn record_keeps_import_targets_raw_pointer_viewport_and_clock() {
