@@ -4151,7 +4151,7 @@ fn persistence(
                     if session.replaying() {
                         *session = session::Session::new(&state);
                     }
-                    session.send(&mut world, session::Input::Restore(Box::new(state)));
+                    session.send(&mut world, session::Input::Import(Box::new(state.sim)));
                 }
                 Err(reason) => persist::refuse(&reason),
             }

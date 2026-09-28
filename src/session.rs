@@ -90,7 +90,7 @@ impl Input {
             Self::Focus(portal) => {
                 world.enter(*portal);
             }
-            Self::Restore(state) => world.restore(*state.clone()),
+            Self::Restore(state) => world.replace_with(Game::from_state(*state.clone())),
             Self::Refill => world.refill(),
             Self::Wheel(..) | Self::Button(..) | Self::KeyUp(_) => {}
         }
@@ -229,19 +229,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn file_restore_and_legacy_import_share_one_change_cue() {
+    fn the_initial_snapshot_is_silent_and_player_imports_sound_when_changed() {
         let mut world = Game::new(sim::start());
         let mut state = world.state();
-        Input::Restore(Box::new(state.clone())).apply(&mut world);
-        assert!(world.actions.is_empty());
         state.sim.glyphs[0].as_mut().unwrap().at = Hex::new(-8, 1);
         Input::Restore(Box::new(state.clone())).apply(&mut world);
+        assert!(world.actions.is_empty());
+        Input::Import(Box::new(state.sim.clone())).apply(&mut world);
+        assert!(world.actions.is_empty());
+        Input::Import(Box::new(sim::start())).apply(&mut world);
         assert_eq!(
             world.actions,
-            [sound::ActionCue::of(sound::Action::Edit, &state.sim)]
+            [sound::ActionCue::of(sound::Action::Edit, &sim::start())]
         );
-        Input::Import(Box::new(sim::start())).apply(&mut world);
-        assert_eq!(world.actions.len(), 1);
     }
 
     #[test]
@@ -324,6 +324,8 @@ impl Record {
         }
         world.clipboard = None;
         world.score = None;
+        world.actions.clear();
+        world.overworld.actions.clear();
         world
     }
 }
