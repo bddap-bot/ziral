@@ -7570,12 +7570,14 @@ mod tests {
     fn portal_copy_drives_its_instrument_motion_and_emitter_once_per_click_across_ticks() {
         let mut game = portal_copy_game();
         let at = game.portal(0).at;
+        let pickup = sound::ActionCue::of(sound::Action::Pickup, &game.portal(0).sim);
         for _ in 0..2 {
             game.press(px(at), px(at));
             game.release(Some(at));
             game.key(KeyCode::Escape, false);
             game.release(Some(at));
         }
+        assert_eq!(game.actions, [pickup; 2]);
         game.advance(0.2);
         game.overworld.edit().step();
         let tick = game.score.take().unwrap();
