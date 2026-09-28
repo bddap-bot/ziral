@@ -4551,7 +4551,6 @@ struct Painter<'a, 'gw, 'gs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
     layers: RenderLayers,
     shift: Vec2,
     scale: f32,
-    portal_opacity: f32,
 }
 
 impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
@@ -4798,7 +4797,6 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         self.strokes.push(Stroke {
             ink: Ink::Sprite(Sprite {
                 image: self.kiln.image(look.skin),
-                color: Color::WHITE.with_alpha(self.portal_opacity),
                 custom_size: Some(look::quad(Machine::Portal).size() * self.scale * scale),
                 ..default()
             }),
@@ -5089,17 +5087,6 @@ fn board(
     kiln.tiled = Some((tiling, inside));
 }
 
-type SceneView<'w, 's> = (
-    Query<'w, 's, (&'static AtomPreview, &'static RenderLayers), With<Camera>>,
-    Single<'w, 's, &'static Window, With<PrimaryWindow>>,
-    Single<
-        'w,
-        's,
-        (&'static Transform, &'static Projection),
-        (With<IsDefaultUiCamera>, With<Camera>),
-    >,
-);
-
 type Placed<'w, 's> = (
     Local<'s, Canvas>,
     ResMut<'w, Assets<Mesh>>,
@@ -5232,11 +5219,8 @@ fn draw(
     mut commands: Commands,
     kiln: Res<Kiln>,
     mut placed: Placed,
-    view: SceneView,
+    previews: Query<(&AtomPreview, &RenderLayers), With<Camera>>,
 ) {
-    let (previews, window, camera) = view;
-    let (transform, projection) = camera.into_inner();
-    let viewport = Viewport::of(&window, transform, projection).unwrap();
     let mut strokes = Vec::new();
     let (canvas, meshes, ..) = &mut placed;
     let mut floor = |fit| canvas.floor(meshes, fit);
@@ -5248,8 +5232,6 @@ fn draw(
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
         scale: 1.0,
-        portal_opacity: (viewport.scale * viewport.size.min_element() / PortalView::TILE - 1.0)
-            .clamp(0.0, 1.0),
     };
     let board_phase = world.board_phase();
     let mut f = Frame::between(&world.prev, world.shown(), board_phase);
@@ -5310,7 +5292,6 @@ fn draw(
                     p.outline(px(cell), HEX * 0.9);
                 }
             }
-            p.portal_opacity = 1.0;
             let poses = world.facing_poses(TurnTarget::Held, pointer);
             let mut beads = vec![None; set.atoms.len()];
             for (i, pose) in poses.iter().enumerate() {
@@ -5372,12 +5353,10 @@ fn draw(
             layers: layers.clone(),
             shift: Vec2::ZERO,
             scale: 1.0,
-            portal_opacity: 1.0,
         };
         preview.bead(Vec2::ZERO, look::atom(atom.0), layer::BEAD);
     }
     let mut p = Painter {
-        portal_opacity: 1.0,
         gizmos: &mut card_gizmos,
         strokes: &mut strokes,
         floor: &mut floor,
@@ -5642,8 +5621,7 @@ fn hover_card<G: GizmoConfigGroup>(
             let fit = PortalView::of(&portal.sim);
             let progress = f.tick / fixture(machine).ticks as f32;
             let scale = fit.scale().powf(1.0 - progress.clamp(0.0, 1.0));
-            let (old_scale, opacity) = (p.scale, p.portal_opacity);
-            p.portal_opacity = (1.0 - progress * 3.0).clamp(0.0, 1.0);
+            let old_scale = p.scale;
             p.scale *= scale / fit.scale();
             p.machine(
                 machine,
@@ -5652,7 +5630,7 @@ fn hover_card<G: GizmoConfigGroup>(
                 layer::LIFT + layer::GLYPHS,
                 (false, 1.0, sim::ActivationEnergy::default()),
             );
-            (p.scale, p.portal_opacity) = (old_scale, opacity);
+            p.scale = old_scale;
             p.interior(&portal.sim, Vec2::ZERO, scale, layer::LIFT);
             return;
         }

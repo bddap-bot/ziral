@@ -146,4 +146,4 @@ The three output cards play the shared fixtures in [src/sim.rs](../src/sim.rs) r
 
 Directive: “their own recipes remain in the recipe panel”.
 
-A portal's aperture frames the canonical extent through one uniform transform. Its housing fades as the camera fills that aperture. A body with no atom-seat marks registers by its complete silhouette with one translation and uniform scale. Registration preserves the complete silhouette. The ethereal texture uses the grout template's square resolution as its size source. Its first painting is retained at critic score 8 in `textures/ethereal-candidates/`.
+A portal's aperture frames the canonical extent through one uniform transform. Its housing stays fully drawn through the zoom and disappears with the overworld on entry. A body with no atom-seat marks registers by its complete silhouette with one translation and uniform scale. Registration preserves the complete silhouette. The ethereal texture uses the grout template's square resolution as its size source. Its first painting is retained at critic score 8 in `textures/ethereal-candidates/`.
