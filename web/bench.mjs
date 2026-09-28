@@ -32,9 +32,9 @@ async function attainable() {
     return attained;
 }
 
-function cargo(args, limit = Infinity) {
+function run(command, args, limit = Infinity) {
     return new Promise((resolve, reject) => {
-        const child = spawn('cargo', args, {stdio: ['ignore', 'pipe', 'inherit']});
+        const child = spawn(command, args, {stdio: ['ignore', 'pipe', 'inherit']});
         let expired = false;
         const stuck = Number.isFinite(limit) && setTimeout(() => {
             expired = true;
@@ -46,12 +46,13 @@ function cargo(args, limit = Infinity) {
         child.once('close', (code, signal) => {
             clearTimeout(stuck);
             if (code === 0) resolve(output);
-            else reject(new Error(`cargo ${args.join(' ')} ${expired ? `killed after ${limit} s` : signal ? `killed by ${signal}` : `exited with ${code}`}`));
+            else reject(new Error(`${command} ${args.join(' ')} ${expired ? `killed after ${limit} s` : signal ? `killed by ${signal}` : `exited with ${code}`}`));
         });
     });
 }
 
-const ziral = (...args) => cargo(['run', '--release', '--quiet', '--', ...args], END + 120);
+let executable;
+const ziral = (...args) => run(executable, args, END + 120);
 
 async function serve(directory) {
     const types = {'.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm'};
@@ -187,7 +188,10 @@ async function holds(target, measure) {
 }
 
 try {
-    await cargo(['build', '--release', '--quiet']);
+    const build = await run('cargo', ['build', '--release', '--bin', 'ziral', '--message-format=json']);
+    executable = build.trim().split('\n').map(line => JSON.parse(line))
+        .find(message => message.reason === 'compiler-artifact' && message.target.name === 'ziral' && message.executable)?.executable;
+    if (!executable) throw new Error('release build did not report the ziral executable');
     const native = await holds('native', path => ziral('--bench', path, String(END), ...MARKS.map(String)));
     let url = page;
     let server;
