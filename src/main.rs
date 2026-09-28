@@ -1060,11 +1060,11 @@ trait WorldAccess: std::ops::DerefMut<Target = Viewer> + Sized {
         self.view().dir(id)
     }
 
+    #[cfg(test)]
     fn anchor(&self, id: Id) -> Hex {
         self.view().anchor(id)
     }
 
-    #[cfg(test)]
     fn cells(&self, id: Id) -> Vec<Hex> {
         self.view().cells(id)
     }
@@ -2461,6 +2461,23 @@ fn corners(center: Vec2, size: f32) -> [Vec2; 7] {
         let a = (30.0 + 60.0 * k as f32).to_radians();
         center + size * Vec2::new(a.cos(), a.sin())
     })
+}
+
+fn footprint_edges(cells: &[Hex]) -> Vec<[Vec2; 2]> {
+    cells
+        .iter()
+        .flat_map(|cell| {
+            DIRS.iter().filter_map(move |dir| {
+                if cells.contains(&cell.add(*dir)) {
+                    return None;
+                }
+                let normal = px(*dir).normalize();
+                let tangent = Vec2::new(-normal.y, normal.x);
+                let center = px(*cell) + px(*dir) / 2.0;
+                Some([center - tangent * HEX / 2.0, center + tangent * HEX / 2.0])
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -4638,6 +4655,16 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         );
     }
 
+    fn footprint(&mut self, cells: &[Hex]) {
+        for [a, b] in footprint_edges(cells) {
+            self.gizmos.line_2d(
+                a * self.scale + self.shift,
+                b * self.scale + self.shift,
+                IVORY,
+            );
+        }
+    }
+
     fn ring(&mut self, at: Vec2, r: f32) {
         self.gizmos
             .circle_2d(at * self.scale + self.shift, r * self.scale, IVORY);
@@ -5292,16 +5319,12 @@ fn draw(
                     p.ring(at, ATOM_RADIUS + LINE_PX);
                 }
             }
-            Id::Portal(_) | Id::Arm(_) | Id::Glyph(_) => {
-                p.outline(px(world.anchor(target)), HEX * 0.9)
-            }
+            Id::Portal(_) | Id::Arm(_) | Id::Glyph(_) => p.footprint(&world.cells(target)),
         }
     }
-    for (i, g) in world.shown().glyphs.iter().enumerate() {
-        if let Some(g) = g
-            && world.picks(Id::Glyph(i))
-        {
-            p.outline(px(g.at), HEX * 0.9);
+    for id in world.shown().ids() {
+        if !matches!(id, Id::Atom(_)) && world.picks(id) {
+            p.footprint(&world.cells(id));
         }
     }
     for (i, at) in f.atoms.iter().enumerate() {
@@ -5309,11 +5332,6 @@ fn draw(
             && world.picks(Id::Atom(i))
         {
             p.outline(*at, HEX * 0.9);
-        }
-    }
-    for (i, arm) in f.arms.iter().enumerate() {
-        if world.picks(Id::Arm(i)) {
-            p.outline(arm.pivot, HEX * 0.9);
         }
     }
     if let Some(pointer) = world.pointer {
@@ -9822,6 +9840,37 @@ mod tests {
     const CORNER_A: Hex = Hex::new(-1, -1);
     const CORNER_B: Hex = Hex::new(2, 1);
     const INSIDE: [Id; 2] = [Id::Arm(0), Id::Glyph(0)];
+
+    #[test]
+    fn every_machine_outline_encloses_all_its_tiles_without_internal_edges() {
+        for machine in Machine::ALL {
+            for dir in 0..6 {
+                let cells: Vec<_> = look::footprint(machine)
+                    .into_iter()
+                    .map(|cell| cell.at.turned(dir).add(Hex::new(7, -4)))
+                    .collect();
+                let edges = footprint_edges(&cells);
+                let area: f32 = edges.iter().map(|[a, b]| a.perp_dot(*b) / 2.0).sum();
+                let expected = cells.len() as f32 * 3.0 * 3f32.sqrt() * HEX * HEX / 2.0;
+                assert!((area - expected).abs() < 0.1, "{machine:?} {dir}");
+                for [a, b] in &edges {
+                    assert!((a.distance(*b) - HEX).abs() < 0.001);
+                    assert_eq!(
+                        edges
+                            .iter()
+                            .filter(|[next, _]| next.distance(*b) < 0.001)
+                            .count(),
+                        1,
+                        "{machine:?} {dir}"
+                    );
+                    let midpoint = (*a + *b) / 2.0;
+                    let inward = Vec2::new(a.y - b.y, b.x - a.x).normalize();
+                    assert!(cells.contains(&hex_at(midpoint + inward)));
+                    assert!(!cells.contains(&hex_at(midpoint - inward)));
+                }
+            }
+        }
+    }
 
     #[test]
     fn the_marquee_picks_every_machine_with_a_body_cell_inside_and_none_outside() {

@@ -1478,3 +1478,11 @@ The bible offers the concept art in `art/reference/` as inspiration. Its state g
 Machines should read as distinct from each other; silhouette, reach, seats, colour and ornament are possibilities to judge together. Existing Directive lines remain verbatim and in order. Technical notes explain shared grout, clear atom seats and even-lit albedo by the seams, readability and competing runtime lighting they address. Pipeline checks live in `art/MACHINES.md`, separate from visual inspiration.
 
 The portal aperture frames its interior through one uniform transform without prescribing a square. This admits the Bracket opening without a second bible edit when the frame ships. Historical entries above describe earlier implementations, not additional restrictions on this direction.
+
+## Selection surrounds the whole machine
+
+Report (verbatim):
+
+> when selecting some machines, the white highlight only surrounds one tile of the machine, which doesn't make sense
+
+Selection and hover outline the outer edges of every tile in the existing machine footprint, including arm shafts and hands. Shared edges inside one machine disappear; each selected machine keeps its own complete boundary. A single machine-selection loop replaces the separate anchor-only glyph and arm loops and includes portals. The highlight depends on the same occupied cells used to target machines, so no second shape definition or on-screen text is needed.
