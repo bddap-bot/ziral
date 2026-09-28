@@ -60,6 +60,8 @@ struct Entry {
     #[serde(skip_serializing_if = "Option::is_none")]
     motion: Option<crate::rig::Motion>,
     instrument: crate::sound::Instrument,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actions: Option<crate::sound::ActionSounds>,
     emitter: crate::particles::Emitter,
     #[serde(skip_serializing_if = "Option::is_none")]
     rig_emitter: Option<crate::particles::Emitter>,
@@ -2204,6 +2206,7 @@ mod tests {
                             painted: None,
                             motion: None,
                             instrument: crate::sound::instrument(item(name)),
+                            actions: None,
                             emitter: crate::rig::entry(item(name)).emitter,
                             rig_emitter: crate::rig::entry(item(name)).rig_emitter,
                         },

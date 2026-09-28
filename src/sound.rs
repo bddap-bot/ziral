@@ -21,11 +21,12 @@ mod native {
         }));
     }
 
-    pub fn emit(commands: &mut Commands, clip: &Clip, gain: f32) {
+    pub fn emit(commands: &mut Commands, clip: &Clip, gain: f32, speed: f32) {
         commands.spawn((
             AudioPlayer::new(clip.clone()),
             PlaybackSettings {
                 volume: Volume::Linear(gain),
+                speed,
                 ..PlaybackSettings::DESPAWN
             },
         ));
@@ -44,15 +45,21 @@ const mixer = `registerProcessor("mixer", class extends AudioWorkletProcessor {
         super();
         this.port.onmessage = ({ data }) => {
             if (data.samples) this.clips[data.clip] = data.samples;
-            else if (this.clips[data[0]]) this.voices.push({ samples: this.clips[data[0]], gain: data[1], at: 0 });
+            else if (this.clips[data[0]]) this.voices.push({ samples: this.clips[data[0]], gain: data[1], speed: data[2], at: 0 });
         };
     }
     process(_, [[out]]) {
         for (let v = this.voices.length - 1; v >= 0; v--) {
             const voice = this.voices[v];
-            const end = Math.min(out.length, voice.samples.length - voice.at);
-            for (let i = 0; i < end; i++) out[i] += voice.gain * voice.samples[voice.at + i];
-            voice.at += end;
+            const end = Math.min(out.length, Math.ceil((voice.samples.length - voice.at) / voice.speed));
+            for (let i = 0; i < end; i++) {
+                const at = voice.at + i * voice.speed;
+                const whole = Math.floor(at);
+                const a = voice.samples[whole];
+                const b = voice.samples[whole + 1] ?? 0;
+                out[i] += voice.gain * (a + (b - a) * (at - whole));
+            }
+            voice.at += end * voice.speed;
             if (voice.at >= voice.samples.length) this.voices[v] = this.voices[this.voices.length - 1], this.voices.pop();
         }
         return true;
@@ -89,13 +96,13 @@ export function add_clip(samples, rate) {
     ready.then(port => port.postMessage({ clip, samples: copy }, [copy.buffer]));
     return clip;
 }
-export function play_clip(clip, gain) {
-    if (context.state === "running") port?.postMessage([clip, gain]);
+export function play_clip(clip, gain, speed) {
+    if (context.state === "running") port?.postMessage([clip, gain, speed]);
 }
 "#)]
     extern "C" {
         fn add_clip(samples: &[f32], rate: u32) -> u32;
-        fn play_clip(clip: u32, gain: f32);
+        fn play_clip(clip: u32, gain: f32, speed: f32);
     }
 
     pub type Clip = u32;
@@ -110,8 +117,8 @@ export function play_clip(clip, gain) {
         }));
     }
 
-    pub fn emit(_: &mut Commands, clip: &Clip, gain: f32) {
-        play_clip(*clip, gain);
+    pub fn emit(_: &mut Commands, clip: &Clip, gain: f32, speed: f32) {
+        play_clip(*clip, gain, speed);
     }
 }
 
@@ -162,6 +169,8 @@ pub fn gain(cell: crate::sim::Hex, view: View) -> Option<f32> {
 #[derive(Deserialize)]
 struct Entry {
     instrument: Instrument,
+    #[serde(default)]
+    actions: ActionSounds,
 }
 
 #[derive(Deserialize)]
@@ -221,8 +230,162 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    Pickup,
+    Drop,
+    Rotate,
+    Delete,
+    Edit,
+}
+
+impl Action {
+    const ALL: [Self; 5] = [
+        Self::Pickup,
+        Self::Drop,
+        Self::Rotate,
+        Self::Delete,
+        Self::Edit,
+    ];
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ActionSounds {
+    pickup: Option<Instrument>,
+    drop: Option<Instrument>,
+    rotate: Option<Instrument>,
+    delete: Option<Instrument>,
+    edit: Option<Instrument>,
+}
+
+impl ActionSounds {
+    fn get(&self, action: Action) -> Option<Instrument> {
+        match action {
+            Action::Pickup => self.pickup,
+            Action::Drop => self.drop,
+            Action::Rotate => self.rotate,
+            Action::Delete => self.delete,
+            Action::Edit => self.edit,
+        }
+    }
+}
+
+fn action_instrument(machine: Option<Machine>, action: Action) -> Instrument {
+    machine
+        .and_then(|machine| {
+            let name = crate::look::machine(machine)
+                .skin
+                .name
+                .split('/')
+                .nth(1)
+                .unwrap();
+            manifest().machine[name].actions.get(action)
+        })
+        .unwrap_or(Instrument {
+            voice: Voice::Ceramic,
+            note: [62, 50, 57, 43, 67][action as usize],
+        })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActionCue {
+    action: Action,
+    machine: Option<Machine>,
+    count: usize,
+    kinds: usize,
+}
+
+impl ActionCue {
+    pub fn picked(
+        action: Action,
+        sim: &crate::sim::Sim,
+        ids: impl IntoIterator<Item = crate::sim::Id>,
+    ) -> Self {
+        use crate::sim::{Id, Item};
+        Self::new(
+            action,
+            ids.into_iter().map(|id| match id {
+                Id::Portal(_) => Item::Machine(Machine::Portal),
+                Id::Arm(i) => Item::Machine(sim.arms[i].machine()),
+                Id::Glyph(i) => Item::Machine(Machine::Glyph(sim.glyphs[i].unwrap().kind)),
+                Id::Atom(i) => Item::Atom(sim.atoms[i].unwrap().kind),
+            }),
+        )
+    }
+
+    pub fn of(action: Action, sim: &crate::sim::Sim) -> Self {
+        Self::picked(action, sim, sim.ids())
+    }
+
+    pub fn new(action: Action, items: impl IntoIterator<Item = crate::sim::Item>) -> Self {
+        let mut counts = [0usize; Machine::ALL.len()];
+        let mut count = 0;
+        for item in items {
+            match item {
+                crate::sim::Item::Machine(machine) => {
+                    counts[Machine::ALL
+                        .iter()
+                        .position(|kind| *kind == machine)
+                        .unwrap()] += 1;
+                    count += 1;
+                }
+                crate::sim::Item::Atom(_) => count += 1,
+                crate::sim::Item::Token(_) => {}
+            }
+        }
+        let machine = counts
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, n)| **n)
+            .filter(|(_, n)| **n > 0)
+            .map(|(i, _)| Machine::ALL[i]);
+        Self {
+            action,
+            machine,
+            count: count.max(1),
+            kinds: counts.iter().filter(|n| **n > 0).count(),
+        }
+    }
+
+    fn settings(self, serial: u32, gain: f32) -> (f32, f32) {
+        let variation = (serial as f32 * 0.618_034).fract();
+        let weight = (self.count as f32).log2().min(6.0);
+        (
+            (0.09 + variation * 0.025) * gain,
+            0.97 + variation * 0.06 - weight * 0.035 + self.kinds as f32 * 0.004,
+        )
+    }
+}
+
+fn action_samples(instrument: Instrument) -> Vec<i16> {
+    samples(instrument)
+        .into_iter()
+        .take(4_320)
+        .enumerate()
+        .map(|(i, sample)| {
+            let attack = (i as f32 / 240.0).min(1.0);
+            let release = ((4_320 - i) as f32 / 1_440.0).min(1.0);
+            (sample as f32 * attack * release) as i16
+        })
+        .collect()
+}
+
+pub fn play_actions(commands: &mut Commands, bank: &mut Bank, cues: &[ActionCue], gain: f32) {
+    for cue in cues.iter().take(8) {
+        bank.serial = bank.serial.wrapping_add(1) % 65_536;
+        let kind = cue
+            .machine
+            .and_then(|machine| Machine::ALL.iter().position(|kind| *kind == machine))
+            .unwrap_or(Machine::ALL.len());
+        let (gain, speed) = cue.settings(bank.serial, gain);
+        out::emit(commands, &bank.actions[kind][cue.action as usize], gain, speed);
+    }
+}
+
 #[derive(Resource)]
 pub struct Bank {
+    actions: Vec<[out::Clip; 5]>,
+    serial: u32,
     voices: Vec<(Machine, out::Clip)>,
     upgrade: out::Clip,
     pub unlocked: bool,
@@ -230,6 +393,10 @@ pub struct Bank {
 
 fn bank(mut clip: impl FnMut(&[i16]) -> out::Clip) -> Bank {
     Bank {
+        actions: Machine::ALL.into_iter().map(Some).chain([None]).map(|machine| {
+            Action::ALL.map(|action| clip(&action_samples(action_instrument(machine, action))))
+        }).collect(),
+        serial: 0,
         voices: Machine::ALL
             .into_iter()
             .map(|machine| (machine, clip(&samples(instrument(machine)))))
@@ -292,7 +459,7 @@ pub fn play(commands: &mut Commands, bank: &Bank, hits: &[Hit], view: View) {
                 .expect("every machine has a loaded instrument")
                 .1
         };
-        out::emit(commands, clip, gain);
+        out::emit(commands, clip, gain, 1.0);
     }
 }
 
@@ -397,12 +564,93 @@ mod tests {
     use crate::sim::{GlyphKind, Instr, Stall};
 
     #[test]
+    fn action_defaults_overrides_and_manifest_roundtrip() {
+        let entry: Entry = toml::from_str(
+            r#"
+instrument = { voice = "brass", note = 43 }
+actions = { pickup = { voice = "wood", note = 60 } }
+"#,
+        )
+        .unwrap();
+        assert_eq!(
+            entry.actions.get(Action::Pickup),
+            Some(Instrument {
+                voice: Voice::Wood,
+                note: 60
+            })
+        );
+        assert_eq!(entry.actions.get(Action::Drop), None);
+        let text = toml::to_string(&entry.actions).unwrap();
+        assert_eq!(
+            toml::from_str::<ActionSounds>(&text).unwrap(),
+            entry.actions
+        );
+        for machine in Machine::ALL.into_iter().map(Some).chain([None]) {
+            for action in Action::ALL {
+                let samples = action_samples(action_instrument(machine, action));
+                assert_eq!(samples.len(), 4_320);
+                assert_eq!(samples[0], 0);
+                assert!(samples.last().unwrap().abs() < 10);
+                assert!(samples.iter().any(|sample| sample.abs() > 100));
+            }
+        }
+    }
+
+    #[test]
+    fn action_groups_are_order_independent_quiet_and_vary_for_a_minute() {
+        use crate::sim::Item;
+        let a = Item::Machine(Machine::ALL[0]);
+        let b = Item::Machine(Machine::ALL[1]);
+        let solo = ActionCue::new(Action::Drop, [a]);
+        let group = ActionCue::new(Action::Drop, [a, b, a]);
+        assert_eq!(group, ActionCue::new(Action::Drop, [b, a, a]));
+        assert_eq!(group.machine, Some(Machine::ALL[0]));
+        assert_eq!((group.count, group.kinds), (3, 2));
+        assert!(group.settings(1, 1.0).1 < solo.settings(1, 1.0).1);
+        let mut speeds = std::collections::BTreeSet::new();
+        for i in 1..=240 {
+            let (gain, speed) = group.settings(i, 0.5);
+            assert!(gain < 0.06);
+            speeds.insert(speed.to_bits());
+        }
+        assert_eq!(speeds.len(), 240);
+    }
+
+    #[test]
+    fn an_action_group_spawns_one_player_with_a_prebuilt_sample() {
+        use bevy::ecs::system::SystemState;
+        let mut world = World::new();
+        let mut state: SystemState<Commands> = SystemState::new(&mut world);
+        let mut bank = Bank {
+            actions: vec![std::array::from_fn(|_| Handle::default()); Machine::ALL.len() + 1],
+            serial: 0,
+            voices: Vec::new(),
+            upgrade: Handle::default(),
+            unlocked: true,
+        };
+        let cue = ActionCue::new(
+            Action::Pickup,
+            [crate::sim::Item::Machine(Machine::ALL[0]); 100],
+        );
+        play_actions(
+            &mut state.get_mut(&mut world).unwrap(),
+            &mut bank,
+            &[cue],
+            0.5,
+        );
+        state.apply(&mut world);
+        assert_eq!(world.query::<&bevy::audio::AudioPlayer>().iter(&world).count(), 1);
+    }
+
+    #[test]
     fn sound_begins_only_on_a_press_the_page_counts_as_activation() {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<Touches>()
             .insert_resource(Bank {
+                actions: Vec::new(),
+                serial: 0,
                 voices: Vec::new(),
                 upgrade: Default::default(),
                 unlocked: false,

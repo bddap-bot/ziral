@@ -485,6 +485,7 @@ struct Viewer {
     card_drag: Option<CardDrag>,
     events: Vec<sim::TickEvents>,
     score: Option<sim::TickEvents>,
+    actions: Vec<sound::ActionCue>,
     responses: Vec<(sim::TickEvent, f32)>,
     refused: Option<Refused>,
     turn: Option<FacingTween>,
@@ -513,6 +514,7 @@ impl Viewer {
             card_drag: None,
             events: Vec::new(),
             score: None,
+            actions: Vec::new(),
             responses: Vec::new(),
             refused: None,
             turn: None,
@@ -1701,7 +1703,11 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         if self.has_rollback() {
             return;
         }
+        let before = self.sim.inventory;
         self.sim.inventory.set_cap(item, notches);
+        if before != self.sim.inventory {
+            self.queue_action(sound::ActionCue::new(sound::Action::Edit, [item]));
+        }
         self.resim(self.ghosts());
     }
 
@@ -1709,7 +1715,11 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         if self.has_rollback() {
             return;
         }
+        let before = self.sim.inventory;
         self.sim.fill_inventory();
+        if before != self.sim.inventory {
+            self.queue_action(sound::ActionCue::new(sound::Action::Edit, []));
+        }
         self.resim(self.ghosts());
     }
 
@@ -1758,7 +1768,28 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         }
     }
 
+    fn action(&mut self, action: sound::Action, set: &Sim) {
+        let cue = sound::ActionCue::of(action, set);
+        self.queue_action(cue);
+    }
+
+    fn queue_action(&mut self, cue: sound::ActionCue) {
+        if self.actions.len() < 8 {
+            self.actions.push(cue);
+        }
+    }
+
     fn begin_turn(&mut self, target: TurnTarget, spin: Spin, centre: Vec2) {
+        let cue = match (&self.focus, target) {
+            (Some(Focus::Hold { set, .. }), TurnTarget::Held) => {
+                sound::ActionCue::of(sound::Action::Rotate, set)
+            }
+            (_, TurnTarget::Board(id)) => {
+                sound::ActionCue::picked(sound::Action::Rotate, &self.sim, [id])
+            }
+            _ => unreachable!(),
+        };
+        self.queue_action(cue);
         let phase = self.turn_phase();
         let resume = self
             .turn
@@ -1887,6 +1918,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         self.end_turn();
         let carried = self.carried(&pick);
         let set = self.lifted(&carried, grab);
+        self.action(sound::Action::Pickup, &set);
         let sim = Box::new(self.sim.clone());
         let prev = Box::new(self.prev.clone());
         let rollback_ghost = self.ghost.clone().map(Box::new);
@@ -1922,6 +1954,8 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             return;
         }
         let set = self.lifted(&machines(ids), ORIGIN);
+        let cue = sound::ActionCue::picked(sound::Action::Delete, &self.sim, ids.iter().copied());
+        self.queue_action(cue);
         self.return_to_inventory(&set);
         self.remove(ids);
     }
@@ -1957,6 +1991,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             return;
         }
         self.end_turn();
+        self.action(sound::Action::Pickup, &set);
         self.focus = Some(Focus::Hold {
             set: Box::new(set),
             offset: Vec2::ZERO,
@@ -2122,6 +2157,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             self.pop(back);
             return;
         }
+        self.action(sound::Action::Drop, &set);
         let ghosts = self.ghosts();
         let ids = match back {
             Back::Pick {
@@ -2312,6 +2348,12 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                 };
                 let edited = sim.arms[arm].tape.len() != len;
                 self.focus = Some(Focus::Tape { arm, cursor });
+                if edited {
+                    self.queue_action(sound::ActionCue::new(
+                        sound::Action::Edit,
+                        [Item::Machine(self.sim.arms[arm].machine())],
+                    ));
+                }
                 if edited && self.ghost.is_some() {
                     self.resim(self.ghosts());
                 }
@@ -2781,19 +2823,21 @@ fn main() {
 fn play_sound(
     mut commands: Commands,
     mut world: ResMut<Game>,
-    bank: Option<Res<sound::Bank>>,
+    bank: Option<ResMut<sound::Bank>>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
 ) {
     let tick = world.score.take();
     let cue = world.cue.take();
-    let Some(bank) = bank.filter(|bank| bank.unlocked) else {
+    let actions = std::mem::take(&mut world.actions);
+    let Some(mut bank) = bank.filter(|bank| bank.unlocked) else {
         return;
     };
     let (transform, projection) = camera.into_inner();
     let Some(view) = Viewport::of(&window, transform, projection) else {
         return;
     };
+    sound::play_actions(&mut commands, &mut bank, &actions, 1.0 / (1.0 + view.scale));
     if let Some(tick) = tick {
         sound::play(&mut commands, &bank, &sound::score(&tick), view.sound());
     }
@@ -11011,6 +11055,42 @@ mod tests {
     }
 
     #[test]
+    fn building_cues_follow_successful_edits_not_selection_or_refusal() {
+        let mut w = lone(vec![bonder(ORIGIN, 0)], Vec::new());
+        w.running = false;
+        w.pick(vec![Id::Glyph(0)]);
+        assert!(w.actions.is_empty());
+        w.pointer = Some(px(ORIGIN));
+        w.key(KeyCode::KeyD, false);
+        assert_eq!(w.actions.len(), 1);
+        w.actions.clear();
+        w.delete(&[Id::Glyph(0)]);
+        assert_eq!(w.actions.len(), 1);
+        w.actions.clear();
+        let mut set = Sim::empty();
+        set.glyphs.push(Some(bonder(ORIGIN, 0)));
+        w.lift(set);
+        assert_eq!(w.actions.len(), 1);
+        w.actions.clear();
+        w.place(None);
+        assert!(w.actions.is_empty());
+        let mut w = lone(
+            Vec::new(),
+            vec![Arm::new(ArmLength::One, ORIGIN, 0, Vec::new())],
+        );
+        w.sim.fill_inventory();
+        w.focus_tape(0);
+        w.key(KeyCode::KeyD, false);
+        assert_eq!(w.actions.len(), 1);
+        w.actions.clear();
+        w.key(KeyCode::Backspace, false);
+        assert_eq!(w.actions.len(), 1);
+        w.actions.clear();
+        w.key(KeyCode::Backspace, false);
+        assert!(w.actions.is_empty());
+    }
+
+    #[test]
     fn a_pick_of_machines_and_atoms_lifts_carries_turns_and_lands_as_one_from_either_kind() {
         for grab in [ORIGIN, Hex::new(1, 1)] {
             let arm = Arm::new(ArmLength::One, Hex::new(-2, 2), 1, vec![Instr::Grab]);
@@ -11053,6 +11133,10 @@ mod tests {
                 assert_eq!((frame.atoms[a], frame.atoms[b]), (None, None));
                 assert!(frame.atoms[loose].is_some());
             }
+            let pickup = sound::ActionCue::new(sound::Action::Pickup, set.items());
+            assert_eq!(w.actions, [pickup]);
+            let rotate = sound::ActionCue::of(sound::Action::Rotate, set);
+            let drop = sound::ActionCue::new(sound::Action::Drop, set.items());
             w.key(KeyCode::KeyD, false);
             w.advance(w.period * TURN_MOTION * 0.3);
             assert!(carried_as_one(&w, points[2]).abs() > 0.1);
@@ -11076,6 +11160,7 @@ mod tests {
                 }]
             );
             assert_eq!(w.focus, picked(&pick));
+            assert_eq!(w.actions, [pickup, rotate, drop]);
         }
     }
 

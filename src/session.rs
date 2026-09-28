@@ -85,7 +85,15 @@ impl Input {
                     card.scale = *scale;
                 }
             }
-            Self::Import(sim) => world.restore(persist::State { sim: *sim.clone() }),
+            Self::Import(sim) => {
+                let changed = world.state().sim != **sim;
+                world.restore(persist::State { sim: *sim.clone() });
+                if changed {
+                    world
+                        .actions
+                        .push(sound::ActionCue::of(sound::Action::Edit, sim));
+                }
+            }
             Self::Paste(sim) => world.lift(*sim.clone()),
             Self::Focus(portal) => {
                 world.enter(*portal);
