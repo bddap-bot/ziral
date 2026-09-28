@@ -5315,7 +5315,6 @@ fn draw(
     if let Some(pointer) = world.pointer {
         if let Some(Focus::Hold { set, .. }) = &world.focus {
             let grab = hex_at(pointer);
-            p.outline(px(grab), HEX * 0.9);
             for id in world.sim().blocked(set, grab, &[]) {
                 for cell in world.sim().stands(id) {
                     p.outline(px(cell), HEX * 0.9);

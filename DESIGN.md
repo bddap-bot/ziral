@@ -1424,3 +1424,11 @@ Releasing a click on a portal copies its canonical interior to the clipboard and
 Tests: a click copies and holds the canonical interior after it has run, placement pays the normal bill, the starting portal's arm and atom travel together and land picked as one, and copy sound and motion still fire once per click.
 
 `proofs/portal-click-131.gif` captures the deployed Pages build `8017e41` on the starting board with stocked inventory: one portal click, the blueprint carried with the pointer, and one placement click. No keyboard input is used. The browser check also reads the copied fragment and verifies that placement adds its arm and atom to the board.
+
+## Carrying machines leaves the cursor tile unmarked
+
+Directive (verbatim):
+
+> when moving a machine or machines around, the tile under the mouse cursor is highlighed. this provides no benefit and should be removed.
+
+The held fragment follows the pointer without outlining the tile beneath it. The simplest design deletes that outline from the shared carry renderer, covering one machine, a picked group and a blueprint alike. Placement still uses the pointer cell and occupied destinations still outline the blocking objects; neither depends on drawing a cursor tile. No on-screen text is added.
