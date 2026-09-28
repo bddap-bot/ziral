@@ -1363,7 +1363,7 @@ Tests: a seal stores only the inputs appended since the previous one; a chunk le
 
 `proofs/frame-budget-141.png` charts every frame of both targets in the two measured windows on deployed build `f8d3df6`; `proofs/bench-scene-141.png` is that deployed page running the benchmark.
 
-## Portal frame: open exploration
+## Portal frame: Bracket
 
 Directive (verbatim): "speaking of astra, id like to see some fucked designs for the portal frame object. i think weird could be the way to go."
 
@@ -1379,7 +1379,17 @@ Directive (verbatim):
 > 
 > lets take molt as a path but steer it a bit. its organic material, small legs and carapace growing from it in unsettling ways, interdimensional mold, fungus what grew. I will design a branch of crafting that deals with growing the substance.
 
-Pick: Molt, steered. Round two paints six Molt descendants whose thin rims leave most of the tile to the interior, each with its own opening: hexagon, almond, amoeboid, circle, kidney and rounded triangle. The [round-two sheet](art/explorations/portal-frame/molt/sheet.png) fills each opening with a uniformly reduced capture of the starting portal's interior and places it at shipped size; [briefs, captions and placement](art/explorations/portal-frame/molt/README.md) sit beside it. The crafting branch that grows the substance is reserved for its own design. The bible and shipped portal art remain unchanged, and the next pick is open in issue #150.
+Pick: Molt, steered. Round two paints six Molt descendants whose thin rims leave most of the tile to the interior, each with its own opening: hexagon, almond, amoeboid, circle, kidney and rounded triangle. The [round-two sheet](art/explorations/portal-frame/molt/sheet.png) fills each opening with a uniformly reduced capture of the starting portal's interior and places it at shipped size; [briefs, captions and placement](art/explorations/portal-frame/molt/README.md) sit beside it. The crafting branch that grows the substance is reserved for its own design. The bible and shipped portal art remain unchanged in this exploration.
+
+Directive (verbatim):
+
+> bracket is the one
+
+Pick: Bracket, the kidney opening in [05-bracket](art/explorations/portal-frame/molt/05-bracket/brief.md), from round two at `d2e82b60`. [Ship Bracket as the portal frame](https://github.com/bddap-bot/ziral/issues/163) carries the implementation; the crafting branch that grows the substance is reserved for its own design and belongs to neither issue.
+
+The pick settles these bible rules to loosen, exactly as the brief names them: Palette §1 (rust, ochre and coral); Materials §2 (bracket fungus, membrane and legs); Silhouette §2 (one-sided crescent rather than complete housing); portal preamble and §4 (kidney aperture, low-profile frame). `art/BIBLE.md` stays unchanged here: the loosening lands through [#157](https://github.com/bddap-bot/ziral/issues/157), and the shipping frame's own brief names only what that work does not already cover, without a second edit of the same sentences.
+
+The settled framing retains round two's rule—uniformly scale the interior to cover the kidney opening's bounding box, centre it behind the opening, and let the rim clip it without stretching or warping—because the Bracket panel keeps the interior tiles and arm legible within the opening.
 
 ## A portal's window shows the world below
 
