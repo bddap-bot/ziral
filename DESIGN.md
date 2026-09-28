@@ -1423,6 +1423,18 @@ Tests: a pick of a bonder, an arm and one atom of a bonded pair, dragged from th
 
 `proofs/pick-as-one-130.gif` is the deployed page at `d685338`, a 480 by 480 crop of 1280 by 720 frames: the starting portal copied and its blueprint pasted, carried between cells, turned and dropped, then the placed arm and atom dragged together by the arm.
 
+## A drag keeps its grabbed point
+
+Directive (verbatim):
+
+> if i click and drag a ziral machine from near the edge of its tile, it snaps to a different location once i start dragging. such that the part of the machine i selected centers apon my cursor. i think this feels confusing and would like us to try pinning the cursor to a location on the machine. rotations should be around the cursor
+
+The press retains its world point. The single pick lift retains that point's offset from the grabbed cell, and the existing held poses subtract it from the pointer. Turning rotates this offset along with the held set; the existing sweep already turns every pose about the pointer, including when another turn interrupts it. Machines and atoms in a pick use the same offset. Palette and pasted sets start with zero offset. Release keeps the existing grid placement.
+
+This is the smallest design: one vector in the held selection and one subtraction before drawing its poses, with rotation work only on a turn input. No second drag path, per-frame traversal or new drawing is needed.
+
+Tests cover a tile-edge press on either bonder slot, alone and in a pick with an arm and atom, at three zoom scales; the first drag frame, further movement, interrupted turns while moving, the settled turn, and a fresh palette lift after cancellation.
+
 ## A portal click puts its blueprint in hand
 
 Directive (verbatim):

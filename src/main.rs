@@ -318,11 +318,18 @@ enum Back {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 enum Focus {
     Pick(Vec<Id>),
-    Tape { arm: usize, cursor: usize },
-    Hold { set: Box<Sim>, back: Back },
+    Tape {
+        arm: usize,
+        cursor: usize,
+    },
+    Hold {
+        set: Box<Sim>,
+        back: Back,
+        offset: Vec2,
+    },
     Card(u64),
 }
 
@@ -356,10 +363,23 @@ impl Focus {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Press {
-    Atom { screen: Vec2, id: usize },
-    Cell { screen: Vec2, cell: Hex },
-    Ground { screen: Vec2, world: Vec2 },
-    Marquee { from: Vec2 },
+    Atom {
+        screen: Vec2,
+        point: Vec2,
+        id: usize,
+    },
+    Cell {
+        screen: Vec2,
+        point: Vec2,
+        cell: Hex,
+    },
+    Ground {
+        screen: Vec2,
+        world: Vec2,
+    },
+    Marquee {
+        from: Vec2,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1234,7 +1254,7 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
                 }]
             }
             TurnTarget::Held => match &self.focus {
-                Some(Focus::Hold { set, .. }) => held_poses(set, centre),
+                Some(Focus::Hold { set, offset, .. }) => held_poses(set, centre - *offset),
                 _ => Vec::new(),
             },
         }
@@ -1847,6 +1867,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         self.events.clear();
         self.focus = Some(Focus::Hold {
             set: Box::new(set),
+            offset: Vec2::ZERO,
             back: Back::Pick {
                 pick,
                 carried,
@@ -1901,6 +1922,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         self.end_turn();
         self.focus = Some(Focus::Hold {
             set: Box::new(set),
+            offset: Vec2::ZERO,
             back: Back::Inventory,
         });
         self.down = None;
@@ -1928,8 +1950,12 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             None => {}
         }
         self.down = Some(match target {
-            Some(Id::Atom(id)) => Press::Atom { screen, id },
-            Some(Id::Portal(_) | Id::Arm(_) | Id::Glyph(_)) => Press::Cell { screen, cell },
+            Some(Id::Atom(id)) => Press::Atom { screen, point, id },
+            Some(Id::Portal(_) | Id::Arm(_) | Id::Glyph(_)) => Press::Cell {
+                screen,
+                point,
+                cell,
+            },
             None => Press::Ground {
                 screen,
                 world: point,
@@ -1947,14 +1973,14 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
 
     fn begin_drag(&mut self) {
         let grab = match self.down {
-            Some(Press::Atom { id, .. }) => self
+            Some(Press::Atom { id, point, .. }) => self
                 .shown()
                 .atoms
                 .get(id)
                 .copied()
                 .flatten()
-                .map(|atom| atom.pos),
-            Some(Press::Cell { cell, .. }) => Some(cell),
+                .map(|atom| (atom.pos, point)),
+            Some(Press::Cell { cell, point, .. }) => Some((cell, point)),
             Some(Press::Ground { world, .. }) => {
                 self.down = Some(Press::Marquee { from: world });
                 return;
@@ -1963,7 +1989,12 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         };
         let ids = self.focus.as_ref().map_or(Vec::new(), Focus::picked);
         match grab {
-            Some(grab) if !ids.is_empty() => self.lift_pick(ids, grab),
+            Some((grab, point)) if !ids.is_empty() => {
+                self.lift_pick(ids, grab);
+                if let Some(Focus::Hold { offset, .. }) = &mut self.focus {
+                    *offset = point - px(grab);
+                }
+            }
             _ => self.down = None,
         }
     }
@@ -2005,7 +2036,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
 
     fn place(&mut self, at: Option<Hex>) {
         self.end_turn();
-        let Some(Focus::Hold { set, back }) =
+        let Some(Focus::Hold { set, back, .. }) =
             self.focus.take_if(|f| matches!(f, Focus::Hold { .. }))
         else {
             return;
@@ -2163,10 +2194,11 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                     }
                 }
                 (_, Some(Instr::Rot(spin))) => {
-                    let Some(Focus::Hold { set, .. }) = &mut self.focus else {
+                    let Some(Focus::Hold { set, offset, .. }) = &mut self.focus else {
                         unreachable!()
                     };
                     turn(set, spin);
+                    *offset = Vec2::from_angle(spin_angle(spin)).rotate(*offset);
                 }
                 _ => {}
             }
@@ -9280,6 +9312,78 @@ mod tests {
     }
 
     #[test]
+    fn an_edge_grab_pins_the_whole_pick_through_zoom_motion_and_interrupted_turns() {
+        for scale in [0.125, 1.0, 8.0] {
+            for group in [false, true] {
+                for slot in [0, 1] {
+                    let glyph = bonder(Hex::new(3, -2), 4);
+                    let mut w = lone(vec![glyph], vec![]);
+                    w.running = false;
+                    if group {
+                        w.sim
+                            .arms
+                            .push(Arm::new(ArmLength::One, Hex::new(5, -2), 0, vec![]));
+                        w.sim.spawn(Atom {
+                            kind: AtomKind::Base,
+                            pos: Hex::new(5, -3),
+                        });
+                        w.prev = w.sim.clone();
+                        w.pick(vec![Id::Glyph(0), Id::Arm(0), Id::Atom(0)]);
+                    }
+                    let viewport = Viewport {
+                        cam: Vec2::new(33.0, -27.0),
+                        size: Vec2::new(1280.0, 720.0),
+                        scale,
+                    };
+                    let grab = px(glyph.slots().nth(slot).unwrap()) + Vec2::new(HEX * 0.7, 0.0);
+                    let screen = viewport.screen(grab);
+                    let original = held_poses(&w.sim, Vec2::ZERO);
+                    w.press(screen, viewport.world(screen));
+                    for delta in [Vec2::new(DRAG_PX * 2.0, 0.0), Vec2::new(47.0, -31.0)] {
+                        let pointer = viewport.world(screen + delta);
+                        w.pointer = Some(pointer);
+                        w.drag(screen + delta);
+                        let poses = w.facing_poses(TurnTarget::Held, pointer);
+                        assert_eq!(poses.len(), original.len());
+                        for (pose, before) in poses.iter().zip(&original) {
+                            assert!(pose.at.distance(before.at + pointer - grab) < 1e-3);
+                        }
+                    }
+                    for key in [KeyCode::KeyD, KeyCode::KeyD, KeyCode::KeyA] {
+                        w.key(key, false);
+                        for dt in [0.0, w.period * TURN_MOTION * 0.23] {
+                            w.advance(dt);
+                            let pointer = w.pointer.unwrap() + Vec2::new(1.3, -0.7);
+                            w.pointer = Some(pointer);
+                            let poses = w.facing_poses(TurnTarget::Held, pointer);
+                            let angle = poses[0].angle - original[0].angle;
+                            for (pose, before) in poses.iter().zip(&original) {
+                                let expected =
+                                    pointer + Vec2::from_angle(angle).rotate(before.at - grab);
+                                assert!(
+                                    pose.at.distance(expected) < 1e-3,
+                                    "{pose:?} != {expected}"
+                                );
+                            }
+                        }
+                    }
+                    w.advance(w.period);
+                    let pointer = w.pointer.unwrap();
+                    let poses = w.facing_poses(TurnTarget::Held, pointer);
+                    for (pose, before) in poses.iter().zip(&original) {
+                        let expected = pointer
+                            + Vec2::from_angle(spin_angle(Spin::Cw)).rotate(before.at - grab);
+                        assert!(pose.at.distance(expected) < 1e-3);
+                    }
+                    w.key(KeyCode::Escape, false);
+                    w.lift(fresh(Item::Machine(Machine::Arm(ArmLength::One))));
+                    assert_eq!(w.facing_poses(TurnTarget::Held, pointer)[0].at, pointer);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_machine_drag_across_three_cells_draws_one_sprite_at_each_raw_pointer_position() {
         let from = Hex::new(-1, 0);
         let mut w = lone(vec![bonder(from, 0)], vec![]);
@@ -9526,6 +9630,7 @@ mod tests {
                     Some(Focus::Hold {
                         set,
                         back: Back::Pick { pick, .. },
+                        ..
                     }) if *pick == [hovered] && set.atoms.iter().flatten().any(|atom| atom.pos == ORIGIN)
                 ));
                 assert_eq!(w.sim.glyphs.iter().flatten().count(), 2);
@@ -9624,7 +9729,7 @@ mod tests {
             pos: ORIGIN,
         })];
         assert!(
-            matches!(&w.focus, Some(Focus::Hold { set, back: Back::Pick { pick, .. } }) if *pick == [Id::Atom(0)] && set.atoms == grabbed)
+            matches!(&w.focus, Some(Focus::Hold { set, back: Back::Pick { pick, .. }, .. }) if *pick == [Id::Atom(0)] && set.atoms == grabbed)
         );
     }
 
@@ -9770,7 +9875,7 @@ mod tests {
         assert_eq!(w.focus, Some(Focus::Tape { arm: 1, cursor: 0 }));
         w.drag(px(lone_arm) + Vec2::new(DRAG_PX * 2.0, 0.0));
         assert!(
-            matches!(&w.focus, Some(Focus::Hold { set, back: Back::Pick { pick, .. } }) if set.arms.len() == 1 && *pick == [Id::Arm(1)])
+            matches!(&w.focus, Some(Focus::Hold { set, back: Back::Pick { pick, .. }, .. }) if set.arms.len() == 1 && *pick == [Id::Arm(1)])
         );
         w.release(None);
         w.pick(INSIDE.to_vec());
@@ -9897,7 +10002,7 @@ mod tests {
         assert!(w.paste_text(&text));
         assert!(matches!(
             &w.focus,
-            Some(Focus::Hold { set, back: Back::Inventory }) if set.arms.len() == 1 && set.glyphs.len() == 1
+            Some(Focus::Hold { set, back: Back::Inventory, .. }) if set.arms.len() == 1 && set.glyphs.len() == 1
         ));
         w.key(KeyCode::KeyD, false);
         let to = Hex::new(5, 5);
@@ -10516,7 +10621,7 @@ mod tests {
     }
 
     fn held(w: &World) -> (Vec<Hex>, Vec<Bond>, Back) {
-        let Some(Focus::Hold { set, back }) = &w.focus else {
+        let Some(Focus::Hold { set, back, .. }) = &w.focus else {
             panic!("not holding: {:?}", w.focus)
         };
         let cells = set.atoms.iter().flatten().map(|a| a.pos).collect();
@@ -11920,6 +12025,7 @@ mod tests {
         board.scale = 1.25;
         world.focus = Some(Focus::Hold {
             set: Box::new(Sim::empty()),
+            offset: Vec2::ZERO,
             back: Back::Inventory,
         });
         let card = world.resize_card(viewport.screen(anchor), 2.0, &viewport);
