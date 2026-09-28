@@ -1412,3 +1412,13 @@ Superseded: from Toy 1 lifts atoms by hand, the hand keeping a compound whose ce
 Tests: a pick of a bonder, an arm and one atom of a bonded pair, dragged from the bonder and from the atom, takes all four things out of both frames; at three raw pointer positions and mid-sweep every held thing sits at the pointer plus its turned offset; the drop moves every thing by one turn and translation and keeps ids, bonds, tape and pick. The starting portal's blueprint, pasted and carried, passes the same check, lands with its arm and atom picked and lifts again as one. Z on a held pick leaves the board as Z on the same pick unheld does. A portal carried with the source upgrade's compound onto a source pops back whole.
 
 `proofs/pick-as-one-130.gif` is the deployed page at `d685338`, a 480 by 480 crop of 1280 by 720 frames: the starting portal copied and its blueprint pasted, carried between cells, turned and dropped, then the placed arm and atom dragged together by the arm.
+
+## A portal click puts its blueprint in hand
+
+Directive (verbatim):
+
+> single clicking a portal should not only put the blueprint in clipboard, it should put it in hand as well. right now one must click the portal then ctrl-v. user should only need to click the portal.
+
+Releasing a click on a portal copies its canonical interior to the clipboard and lifts that same fragment into the hand, ready to place. The simplest design calls the existing lift operation directly after the copy response; placement has no dependency on reading the system clipboard. The normal inventory bill, encounter rules, rotation, cancellation and placement apply. Empty interiors still clear the clipboard and leave the hand empty. Drags and cancelled presses do not copy or lift a blueprint. No on-screen text is added.
+
+Tests: a click copies and holds the canonical interior after it has run, placement pays the normal bill, the starting portal's arm and atom travel together and land picked as one, and copy sound and motion still fire once per click.

@@ -2006,6 +2006,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                     self.clipboard = Some(ClipboardRequest::Write(fragment.to_string()));
                     self.score(&tick);
                     self.responses.push((event, 0.0));
+                    self.lift(fragment.into_sim());
                 }
             }
             _ => self.place(at),
@@ -7413,7 +7414,7 @@ mod tests {
     }
 
     #[test]
-    fn portal_copy_uses_the_canonical_contents_and_paste_pays_the_normal_bill() {
+    fn portal_click_copies_and_holds_the_canonical_contents_and_placement_pays_the_normal_bill() {
         let mut game = portal_copy_game();
         let baseline = game.portal(0).sim.clone();
         game.enter(Some(0));
@@ -7435,15 +7436,16 @@ mod tests {
         assert_eq!(fragment.inventory, sim::Inventory::EMPTY);
         assert!(fragment.portals.is_empty());
         let before = game.sim().clone();
-        let mut session = session::Session::new(&game.state());
-        session.paste(&mut game, &text);
+        assert!(matches!(&game.focus, Some(Focus::Hold { set, .. }) if **set == fragment));
         game.press(px(ORIGIN), px(ORIGIN));
         assert_eq!(game.sim(), &before);
         assert!(game.refused.is_some());
         for item in fragment.bill() {
             game.overworld.sim.receive(item);
         }
-        session.paste(&mut game, &text);
+        game.press(px(at), px(at));
+        game.release(Some(at));
+        assert!(game.holding());
         game.press(px(ORIGIN), px(ORIGIN));
         assert!(game.refused.is_none());
         assert_eq!(game.sim().inventory, sim::Inventory::EMPTY);
@@ -7460,6 +7462,7 @@ mod tests {
         for _ in 0..2 {
             game.press(px(at), px(at));
             game.release(Some(at));
+            game.key(KeyCode::Escape, false);
             game.release(Some(at));
         }
         game.advance(0.2);
@@ -10777,7 +10780,7 @@ mod tests {
     }
 
     #[test]
-    fn a_pasted_portal_blueprint_carries_its_arm_and_atom_as_one_and_lands_picked_whole() {
+    fn a_clicked_portal_blueprint_carries_its_arm_and_atom_as_one_and_lands_picked_whole() {
         let mut w = World::new(sim::start());
         w.running = false;
         w.sim.fill_inventory();
@@ -10787,7 +10790,9 @@ mod tests {
         let Some(ClipboardRequest::Write(text)) = w.clipboard.take() else {
             panic!("the portal copied nothing")
         };
-        assert!(w.paste_text(&text));
+        assert!(
+            matches!(&w.focus, Some(Focus::Hold { set, .. }) if Fragment::of(set).unwrap().to_string() == text)
+        );
         let points = [
             px(Hex::new(-6, 6)),
             px(Hex::new(-6, 6)).lerp(px(Hex::new(-5, 6)), 0.3),
