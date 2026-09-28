@@ -1422,3 +1422,5 @@ Directive (verbatim):
 Releasing a click on a portal copies its canonical interior to the clipboard and lifts that same fragment into the hand, ready to place. The simplest design calls the existing lift operation directly after the copy response; placement has no dependency on reading the system clipboard. The normal inventory bill, encounter rules, rotation, cancellation and placement apply. Empty interiors still clear the clipboard and leave the hand empty. Drags and cancelled presses do not copy or lift a blueprint. No on-screen text is added.
 
 Tests: a click copies and holds the canonical interior after it has run, placement pays the normal bill, the starting portal's arm and atom travel together and land picked as one, and copy sound and motion still fire once per click.
+
+`proofs/portal-click-131.gif` captures the deployed Pages build `8017e41` on the starting board with stocked inventory: one portal click, the blueprint carried with the pointer, and one placement click. No keyboard input is used. The browser check also reads the copied fragment and verifies that placement adds its arm and atom to the board.
