@@ -1432,3 +1432,5 @@ Directive (verbatim):
 > when moving a machine or machines around, the tile under the mouse cursor is highlighed. this provides no benefit and should be removed.
 
 The held fragment follows the pointer without outlining the tile beneath it. The simplest design deletes that outline from the shared carry renderer, covering one machine, a picked group and a blueprint alike. Placement still uses the pointer cell and occupied destinations still outline the blocking objects; neither depends on drawing a cursor tile. No on-screen text is added.
+
+`proofs/carry-no-cursor-132.gif` captures deployed Pages build `08a4378`: the bonder carried alone, then the bonder and output selected and carried together across empty tiles. The moving frames leave the cursor tile unmarked. The browser check verifies the deployed build and both machines' final positions.
