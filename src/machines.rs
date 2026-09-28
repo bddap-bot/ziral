@@ -2469,13 +2469,11 @@ mod tests {
     #[test]
     fn machines_palette_measurement_does_not_reject_or_rank_art() {
         let thresholds = Art::shipped().read().thresholds;
-        let scaffold = Scaffold::of(Machine::Portal);
-        let mut score = scaffold.score(&Capture {
-            image: fired(&scaffold, &|w| w),
-            off_centre: 0.0,
-        });
+        let scaffold = Scaffold::of(item("bonder"));
+        let mut score = scaffold.score(&scaffold.register(&fired(&scaffold, &|w| w)));
         assert!(score.measured(&thresholds).is_none());
         let rank = score.rank();
+        assert!(rank.1.is_finite());
         score.palette = 100.0;
         assert!(score.measured(&thresholds).is_none());
         assert_eq!(score.rank(), rank);
