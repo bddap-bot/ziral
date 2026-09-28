@@ -522,33 +522,16 @@ pub fn skins() -> impl Iterator<Item = Skin> {
 pub(crate) mod tests {
     use super::*;
     use crate::{KEYS, SYMBOL_PX};
-    use bevy::color::{Hsva, Luminance};
+    use bevy::color::Luminance;
     use bevy::input::keyboard::KeyCode;
     use quick_xml::events::Event;
 
-    const HUE_APART: f32 = 40.0;
-    const CHROMA_FLOOR: f32 = 0.15;
-    const VALUE_APART: f32 = 0.15;
-    const THUMB: usize = 16;
     const TILES_APART: f32 = 0.023;
     const BODY_OF_FACE: f32 = 0.95;
     const GROUT_AT_MOST: f32 = 0.65;
     const TEMPLATE_GRAIN: f32 = 0.04;
     const RING_STEPS: usize = 6;
-    const SHADING: f32 = 2.0 * VALUE_APART;
-    const AMBER_MAX_CHROMA_LOSS: f32 = 0.15;
     const SYMBOL_CONTRAST: f32 = 4.5;
-
-    fn hue_and_value_differ(a: Color, b: Color) -> [bool; 2] {
-        let (ca, cb) = (Hsva::from(a), Hsva::from(b));
-        let chroma = |c: Hsva| c.saturation * c.value;
-        let turn = (ca.hue - cb.hue).abs();
-        let hue = chroma(ca) >= CHROMA_FLOOR
-            && chroma(cb) >= CHROMA_FLOOR
-            && turn.min(360.0 - turn) >= HUE_APART;
-        let value = (a.luminance() - b.luminance()).abs() >= VALUE_APART;
-        [hue, value]
-    }
 
     fn pixels(skin: Skin) -> (usize, usize, Vec<u8>) {
         let image = skin.decode();
@@ -556,19 +539,6 @@ pub(crate) mod tests {
         let data = image.data.expect("a decoded image carries its pixels");
         assert_eq!(data.len(), w * h * 4, "{skin:?} is not rgba8");
         (w, h, data)
-    }
-
-    fn painted(skin: Skin, side: usize) -> Vec<bool> {
-        let (w, h, data) = pixels(skin);
-        let mut painted = vec![false; side * side];
-        for y in 0..h {
-            for x in 0..w {
-                if data[(y * w + x) * 4 + 3] > 0 {
-                    painted[(y * side / h) * side + x * side / w] = true;
-                }
-            }
-        }
-        painted
     }
 
     fn thumbnail(skin: Skin, side: usize) -> Vec<f32> {
@@ -592,12 +562,6 @@ pub(crate) mod tests {
             .enumerate()
             .map(|(i, s)| f32::from(crate::to_srgb(s / counts[i / 3])) / 255.0)
             .collect()
-    }
-
-    fn average(thumb: &[f32], cells: &[usize]) -> Color {
-        let channel =
-            |c: usize| cells.iter().map(|i| thumb[i * 3 + c]).sum::<f32>() / cells.len() as f32;
-        Color::srgb(channel(0), channel(1), channel(2))
     }
 
     fn sampled(skin: Skin, side: usize) -> Vec<[f32; 4]> {
@@ -678,11 +642,6 @@ pub(crate) mod tests {
         (pixel, distance)
     }
 
-    fn mean(skin: Skin) -> Color {
-        let thumb = thumbnail(skin, THUMB);
-        average(&thumb, &(0..THUMB * THUMB).collect::<Vec<usize>>())
-    }
-
     fn tile_band(skin: Skin, band: RangeInclusive<f32>) -> Vec<[f32; 3]> {
         let (w, h, data) = pixels(skin);
         (0..h)
@@ -703,10 +662,6 @@ pub(crate) mod tests {
         let channel =
             |c: usize| pixels.iter().map(|pixel| pixel[c]).sum::<f32>() / pixels.len() as f32;
         Color::srgb(channel(0), channel(1), channel(2))
-    }
-
-    fn tile_mean(skin: Skin) -> Color {
-        mean_color(&tile_body(skin))
     }
 
     fn shade(pixels: &[[f32; 3]]) -> f32 {
@@ -734,7 +689,6 @@ pub(crate) mod tests {
 
     #[test]
     fn the_grout_template_is_clay_faced_and_granular_grout_on_every_edge_of_its_ring() {
-        wears("the template face", tile_mean(GROUT), Glaze::Clay);
         let face = shade(&tile_body(GROUT));
         let (w, h, data) = pixels(GROUT);
         let ring = ring();
@@ -790,155 +744,6 @@ pub(crate) mod tests {
         assert!(strays.is_empty(), "{}", strays.join("\n"));
     }
 
-    pub(crate) fn texture_apart<M>(a: &Look<M>, b: &Look<M>, side: usize) -> f32 {
-        let x = thumbnail(a.skin, side);
-        let y = thumbnail(b.skin, side);
-        let painted: Vec<bool> = painted(a.skin, side)
-            .iter()
-            .zip(painted(b.skin, side))
-            .map(|(p, q)| *p || q)
-            .collect();
-        let apart: f32 = x
-            .iter()
-            .zip(y)
-            .enumerate()
-            .filter(|(i, _)| painted[i / 3])
-            .map(|(_, (x, y))| (x - y).abs())
-            .sum();
-        apart / (3.0 * painted.iter().filter(|p| **p).count() as f32)
-    }
-
-    fn differences<M>(a: &Look<M>, b: &Look<M>) -> [bool; 4] {
-        let [hue, value] = hue_and_value_differ(a.glaze.color(), b.glaze.color());
-        let texture = texture_apart(a, b, THUMB) >= TILES_APART;
-        [hue, value, a.shape != b.shape, texture]
-    }
-
-    fn distinct<M>(a: &Look<M>, b: &Look<M>) -> bool {
-        differences(a, b).iter().filter(|d| **d).count() >= 2
-    }
-
-    fn pairwise<M>(class: &str, looks: &[(String, Look<M>)]) {
-        for (i, (a, x)) in looks.iter().enumerate() {
-            for (b, y) in &looks[i + 1..] {
-                assert_ne!(x.skin, y.skin, "{class}: {a} and {b} wear the same texture");
-                assert!(
-                    distinct(x, y),
-                    "{class}: {a} and {b} differ in fewer than two of hue, value, shape, texture: {:?}",
-                    differences(x, y)
-                );
-            }
-        }
-    }
-
-    fn named<T: Copy + std::fmt::Debug, M>(
-        kinds: impl IntoIterator<Item = T>,
-        look: fn(T) -> Look<M>,
-    ) -> Vec<(String, Look<M>)> {
-        kinds
-            .into_iter()
-            .map(|k| (format!("{k:?}"), look(k)))
-            .collect()
-    }
-
-    #[test]
-    fn every_atom_is_distinct() {
-        pairwise("atoms", &named(AtomKind::ALL, atom));
-    }
-
-    #[test]
-    fn every_bond_is_distinct() {
-        pairwise("bonds", &named(BondKind::ALL, bond));
-    }
-
-    #[test]
-    fn every_glyph_is_distinct() {
-        let glyphs = Machine::ALL.iter().filter_map(|item| match item {
-            Machine::Glyph(kind) => Some(*kind),
-            Machine::Arm(_) | Machine::Portal => None,
-        });
-        pairwise(
-            "glyphs",
-            &named(glyphs, |kind| machine(Machine::Glyph(kind))),
-        );
-    }
-
-    #[test]
-    fn every_machine_is_distinct() {
-        pairwise("machines", &named(Machine::ALL, machine));
-    }
-
-    fn wears(what: impl std::fmt::Display, color: Color, glaze: Glaze) {
-        let [hue, _] = hue_and_value_differ(color, glaze.color());
-        let shaded = (color.luminance() - glaze.color().luminance()).abs();
-        assert!(
-            !hue && shaded <= SHADING,
-            "{what} is {:?}, not its {glaze:?} glaze",
-            Hsva::from(color)
-        );
-    }
-
-    fn skin_wears(skin: Skin, glaze: Glaze) {
-        wears(format!("{skin:?} on average"), mean(skin), glaze);
-    }
-
-    #[test]
-    fn every_skin_wears_its_glaze() {
-        for kind in AtomKind::ALL {
-            skin_wears(atom(kind).skin, atom(kind).glaze);
-        }
-        for kind in BondKind::ALL {
-            skin_wears(bond(kind).skin, bond(kind).glaze);
-        }
-        for tile in TILES {
-            wears(
-                format!("{tile:?} inside its grout"),
-                tile_mean(tile),
-                Glaze::Clay,
-            );
-        }
-    }
-
-    #[test]
-    fn the_amber_atom_loses_at_most_point_one_five_chroma() {
-        let look = atom(AtomKind::Amber);
-        let chroma = |c: Hsva| c.saturation * c.value;
-        let loss = chroma(Hsva::from(look.glaze.color())) - chroma(Hsva::from(mean(look.skin)));
-        assert!(
-            loss <= AMBER_MAX_CHROMA_LOSS,
-            "{:?} loses {loss:.3} chroma from its {:?} glaze",
-            look.skin,
-            look.glaze
-        );
-    }
-
-    #[test]
-    fn tiles_are_one_clay_family_and_every_batch_differs() {
-        let clay = Glaze::Clay.color().to_srgba();
-        for (i, a) in TILES.iter().enumerate() {
-            let color = tile_mean(*a).to_srgba();
-            let gap = ((color.red - clay.red).powi(2)
-                + (color.green - clay.green).powi(2)
-                + (color.blue - clay.blue).powi(2))
-            .sqrt();
-            assert!(gap <= 0.26, "{a:?} leaves the clay family by {gap:.3}");
-            let a_body = tile_body(*a);
-            for b in &TILES[i + 1..] {
-                assert!(a.png != b.png, "{a:?} and {b:?} are the same batch");
-                let apart = a_body
-                    .iter()
-                    .zip(tile_body(*b))
-                    .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
-                    .sum::<f32>()
-                    / (a_body.len() * 3) as f32;
-                assert!(
-                    apart >= 0.01,
-                    "{a:?} and {b:?} lack character at {apart:.3}"
-                );
-            }
-        }
-    }
-
     #[test]
     fn every_machine_sprite_has_visible_art_and_real_transparency() {
         for item in Machine::ALL {
@@ -949,26 +754,6 @@ pub(crate) mod tests {
             let area = data.len() / 4;
             assert!(visible > area / 20, "{skin:?} has no visible machine");
             assert!(clear > area / 20, "{skin:?} has no transparent surround");
-        }
-    }
-
-    #[test]
-    fn every_atom_bond_and_glyph_references_distinct_art() {
-        let semantic: Vec<Skin> = AtomKind::ALL
-            .into_iter()
-            .map(|kind| atom(kind).skin)
-            .chain(BondKind::ALL.into_iter().map(|kind| bond(kind).skin))
-            .chain(
-                GlyphKind::ALL
-                    .into_iter()
-                    .map(|kind| machine(Machine::Glyph(kind)).skin),
-            )
-            .collect();
-        for (i, a) in semantic.iter().enumerate() {
-            for b in &semantic[i + 1..] {
-                assert_ne!(a, b, "{a:?} and {b:?} reference one texture");
-                assert!(a.png != b.png, "{a:?} and {b:?} contain one image");
-            }
         }
     }
 
@@ -1247,38 +1032,6 @@ pub(crate) mod tests {
         assert!(
             seen.iter().all(|s| *s),
             "a 12 by 12 patch misses a tile: {seen:?}"
-        );
-    }
-
-    fn bead(glaze: Glaze) -> Look<()> {
-        Look {
-            glaze,
-            skin: TILES[0],
-            shape: Shape::Bead,
-            marking: (),
-        }
-    }
-
-    #[test]
-    fn hue_alone_never_counts() {
-        let (a, b) = (bead(Glaze::Terracotta), bead(Glaze::BlueGreen));
-        assert_eq!(differences(&a, &b), [true, false, false, false]);
-        assert!(!distinct(&a, &b));
-    }
-
-    #[test]
-    fn ivory_has_no_hue() {
-        assert_eq!(
-            hue_and_value_differ(Glaze::Ivory.color(), Glaze::Plum.color()),
-            [false, true]
-        );
-    }
-
-    #[test]
-    fn near_hues_do_not_count() {
-        assert_eq!(
-            hue_and_value_differ(Glaze::Brass.color(), Glaze::Terracotta.color()),
-            [false, false]
         );
     }
 }

@@ -114,7 +114,6 @@ struct TextureEntry {
 struct Thresholds {
     outside: f32,
     seat: f32,
-    palette: f32,
     off_centre: f32,
     critic: u8,
     sphere: f32,
@@ -991,8 +990,6 @@ impl Score {
             Some(format!("outside {:.3} > {}", self.outside, t.outside))
         } else if self.seat < t.seat {
             Some(format!("seat {:.3} < {}", self.seat, t.seat))
-        } else if self.palette > t.palette {
-            Some(format!("palette {:.3} > {}", self.palette, t.palette))
         } else if self.off_centre > t.off_centre {
             Some(format!(
                 "off_centre {:.3} > {}",
@@ -1003,17 +1000,8 @@ impl Score {
         }
     }
 
-    fn failing(&self, t: &Thresholds) -> Option<String> {
-        self.measured(t).or_else(|| {
-            self.judged
-                .as_ref()
-                .filter(|j| j.critic.compound)
-                .map(|_| "reads as a compound".to_string())
-        })
-    }
-
     fn passes(&self, t: &Thresholds) -> bool {
-        self.failing(t).is_none()
+        self.measured(t).is_none()
     }
 
     fn reaches(&self, t: &Thresholds) -> bool {
@@ -1027,7 +1015,7 @@ impl Score {
     fn rank(&self) -> (u8, f32) {
         (
             self.judged.as_ref().map_or(0, |j| j.critic.score),
-            self.seat - self.outside - self.palette,
+            self.seat - self.outside,
         )
     }
 
@@ -1393,7 +1381,7 @@ fn store(path: &Path, prompt: &str) -> Result<String, String> {
     Ok(prompt.to_string())
 }
 
-const JUDGE: &str = "Additional required glyph gate: does the machine read as atoms joined by bonds, a compound? If yes, compound is true and the candidate fails regardless of score. A glyph is one continuous built housing with seats as openings. Arms are exempt from this glyph gate. Answer with exactly one JSON object containing score (integer 0 through 10), compound (boolean), and issues (at most five ranked strings). Do not run commands, edit anything or write files.";
+const JUDGE: &str = "Does the machine read as atoms joined by bonds, a compound? Record that reading in compound and weigh its visual effect in the overall score and issues; it is not an automatic rejection. Answer with exactly one JSON object containing score (integer 0 through 10), compound (boolean), and issues (at most five ranked strings). Do not run commands, edit anything or write files.";
 const CRITIC_SCHEMA: &str = r#"{"type":"object","properties":{"compound":{"type":"boolean"},"score":{"type":"integer","minimum":0,"maximum":10},"issues":{"type":"array","maxItems":5,"items":{"type":"string"}}},"required":["score","compound","issues"],"additionalProperties":false}"#;
 
 fn relit_key(kept: &[u8], style: &Style, facings: &[Facing]) -> String {
@@ -1504,7 +1492,7 @@ fn quantise(png: &Path) -> Result<(), String> {
 
 impl Score {
     fn verdict(&self, t: &Thresholds) -> String {
-        match self.failing(t) {
+        match self.measured(t) {
             None => "pass".to_string(),
             Some(rule) => format!("fail {rule}"),
         }
@@ -2479,32 +2467,20 @@ mod tests {
     }
 
     #[test]
-    fn machines_palette_accepts_rubber_only_in_the_hand() {
-        let scaffold = Scaffold::of(Machine::Arm(crate::sim::ArmLength::Two));
-        for role in [Role::Hand, Role::Pivot, Role::Body] {
-            let image = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
-                let world = scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-                let color = if scaffold.in_cell(world, HEX).is_some_and(|c| c.role == role) {
-                    RUBBER
-                } else {
-                    KEY
-                };
-                rgba(color, 1.0)
-            });
-            let score = scaffold.score(&Capture {
-                image,
-                off_centre: 0.0,
-            });
-            if role == Role::Hand {
-                assert!(score.palette < 0.001, "rubber hand: {}", score.palette);
-            } else {
-                let expected = Glaze::ALL
-                    .iter()
-                    .map(|g| apart(RUBBER, g.rgb()))
-                    .fold(f32::INFINITY, f32::min);
-                assert!((score.palette - expected).abs() < 0.001);
-            }
-        }
+    fn machines_palette_measurement_does_not_reject_or_rank_art() {
+        let thresholds = Art::shipped().read().thresholds;
+        let scaffold = Scaffold::of(Machine::Portal);
+        let mut score = scaffold.score(&Capture {
+            image: fired(&scaffold, &|w| w),
+            off_centre: 0.0,
+        });
+        assert!(score.measured(&thresholds).is_none());
+        let rank = score.rank();
+        score.palette = 100.0;
+        assert!(score.measured(&thresholds).is_none());
+        assert_eq!(score.rank(), rank);
+        score.outside = thresholds.outside + 1.0;
+        assert!(score.measured(&thresholds).unwrap().starts_with("outside"));
     }
 
     #[test]
@@ -2632,7 +2608,6 @@ mod tests {
                 .and_then(|(_, s)| s.judged)
                 .unwrap_or_else(|| panic!("{name}-{kept} has no critic score in scores.tsv"));
             assert!(judged.critic.score <= 10, "{name}-{kept}: {judged:?}");
-            assert!(!judged.critic.compound, "{name}-{kept} reads as a compound");
             if !name.starts_with("arm") {
                 assert!(
                     machine.relit.is_some(),
@@ -2996,7 +2971,7 @@ mod tests {
     }
 
     #[test]
-    fn a_compound_fails_even_with_a_perfect_critic_score() {
+    fn compound_reading_informs_judgment_without_rejecting_a_candidate() {
         let scaffold = Scaffold::of(item("bonder"));
         let mut score = scaffold.score(&scaffold.register(&fired(&scaffold, &|w| w)));
         score.judged = Some(Judged {
@@ -3009,10 +2984,10 @@ mod tests {
         });
         let thresholds = Art::shipped().read().thresholds;
         assert!(score.measured(&thresholds).is_none());
-        assert!(!score.passes(&thresholds));
-        assert!(!score.reaches(&thresholds));
+        assert!(score.passes(&thresholds));
+        assert!(score.reaches(&thresholds));
         let (_, recovered) = Score::parse(&score.row("bonder-1", &thresholds)).unwrap();
-        assert!(!recovered.passes(&thresholds));
+        assert!(recovered.passes(&thresholds));
         assert!(Critic::parse(r#"{"score":10,"issues":[]}"#).is_none());
     }
 

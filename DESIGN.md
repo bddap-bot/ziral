@@ -1456,3 +1456,11 @@ The dumbest design removes that guard from selected and held deletion. Z removes
 The regression places empty and populated portals, clicks them through hit testing, checks their ordinary selection focus, and presses Z both during that press and while dragging. Each disappears and returns one portal item. The populated cases fail with the old recycling guard.
 
 `proofs/portal-delete-149.gif` shows the deployed Pages build `ce4e423` at 1280 by 720: the starting portal, a press focusing it, then Z deleting it before the release. The browser check confirms the deployed build, the absent portal and the returned portal item. Releasing a portal click without Z still puts its blueprint in hand.
+
+## Additive art direction
+
+The bible offers the concept art in `art/reference/` as inspiration. Its state glazes identify states; material and ornament colours remain free. Numeric distinctness and palette gates mistook a few measurements for readability and restricted new materials without establishing a visual problem. Those build assertions are removed. The generator retains palette distance only as a reported comparison, with no rejection threshold or ranking penalty. There is one selection path. Compound appearance likewise informs the holistic judgment instead of rejecting a candidate independently of its score; its recorded boolean remains useful comparison data.
+
+Machines should read as distinct from each other; silhouette, reach, seats, colour and ornament are possibilities to judge together. Existing Directive lines remain verbatim and in order. Technical notes explain shared grout, clear atom seats and even-lit albedo by the seams, readability and competing runtime lighting they address. Pipeline checks live in `art/MACHINES.md`, separate from visual inspiration.
+
+The portal aperture frames its interior through one uniform transform without prescribing a square. This admits the Bracket opening without a second bible edit when the frame ships. Historical entries above describe earlier implementations, not additional restrictions on this direction.
