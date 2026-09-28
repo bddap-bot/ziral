@@ -3,34 +3,15 @@ import {createServer} from 'node:http';
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {extname, join} from 'node:path';
-import {Worker} from 'node:worker_threads';
 
 const MARKS = [30, 60];
 const WINDOW = 30;
 const END = MARKS.at(-1) + WINDOW / 2 + 2;
 const SIZE = {width: 1280, height: 720};
-const PATIENCE = 30 * 60;
 
 const [page = 'web/dist', kept] = process.argv.slice(2);
 const scratch = kept ?? mkdtempSync(join(tmpdir(), 'ziral-bench-'));
 const sleep = seconds => new Promise(resolve => setTimeout(resolve, seconds * 1000));
-
-const cpus = readFileSync('/proc/self/status', 'utf8').match(/^Cpus_allowed_list:\s*(.+)$/m)[1].split(',').reduce((count, range) => {
-    const [first, last = first] = range.split('-').map(Number);
-    return count + last - first + 1;
-}, 0);
-const ROOM = cpus * 4 / 5;
-
-async function attainable() {
-    const spinners = Array.from({length: cpus}, () => new Worker('for (;;);', {eval: true}));
-    await sleep(0.5);
-    const [from, spent] = [performance.now(), process.cpuUsage()];
-    await sleep(0.5);
-    const {user, system} = process.cpuUsage(spent);
-    const attained = (user + system) / 1000 / (performance.now() - from);
-    await Promise.all(spinners.map(spinner => spinner.terminate()));
-    return attained;
-}
 
 function run(command, args, limit = Infinity) {
     return new Promise((resolve, reject) => {
@@ -158,33 +139,14 @@ async function record(url, path) {
     }
 }
 
-async function windows(target, run, path, attained) {
+async function passes(target, path) {
     const {marks} = JSON.parse(await ziral('--analyze', path));
     if (marks.length !== MARKS.length) throw new Error(`${target}: expected ${MARKS.length} marks, found ${marks.length}`);
     return marks.map(({window: [from, to], frames}) => {
         if (Math.abs(to - from - WINDOW) > 0.5) throw new Error(`${target}: window ${from}-${to} is not ${WINDOW} s`);
-        console.log(`${target} run ${run}, ${from.toFixed(0)}-${to.toFixed(0)} s: ${frames.count} frames, p50 ${frames.p50_ms} ms, p90 ${frames.p90_ms} ms, p99 ${frames.p99_ms} ms, max ${frames.max_ms} ms, ${frames.over_budget} over budget, ${attained.toFixed(1)} of ${cpus} CPUs attainable`);
+        console.log(`${target} ${from.toFixed(0)}-${to.toFixed(0)} s: ${frames.count} frames, p50 ${frames.p50_ms} ms, p90 ${frames.p90_ms} ms, p99 ${frames.p99_ms} ms, max ${frames.max_ms} ms, ${frames.over_budget} over budget`);
         return frames.over_budget;
-    });
-}
-
-async function holds(target, measure) {
-    const deadline = performance.now() + PATIENCE * 1000;
-    let before = await attainable();
-    for (let run = 1; ; run++) {
-        const path = join(scratch, `${target}-${run}.json`);
-        await measure(path);
-        const attained = Math.min(before, await attainable());
-        if ((await windows(target, run, path, attained)).every(over => over === 0)) return true;
-        if (attained >= ROOM) return false;
-        if (performance.now() > deadline) {
-            console.log(`${target}: still over budget with fewer than ${ROOM} of ${cpus} CPUs attainable after ${PATIENCE / 60} minutes`);
-            return false;
-        }
-        console.log(`${target} run ${run} went over budget with ${attained.toFixed(1)} of ${cpus} CPUs attainable; measuring again`);
-        const wait = Math.min(deadline, performance.now() + 60 * 1000);
-        while ((before = await attainable()) < ROOM && performance.now() < wait) await sleep(5);
-    }
+    }).every(over => over === 0);
 }
 
 try {
@@ -192,19 +154,22 @@ try {
     executable = build.trim().split('\n').map(line => JSON.parse(line))
         .find(message => message.reason === 'compiler-artifact' && message.target.name === 'ziral' && message.executable)?.executable;
     if (!executable) throw new Error('release build did not report the ziral executable');
-    const native = await holds('native', path => ziral('--bench', path, String(END), ...MARKS.map(String)));
+    const nativeRecord = join(scratch, 'native.json');
+    await ziral('--bench', nativeRecord, String(END), ...MARKS.map(String));
+    const native = await passes('native', nativeRecord);
     let url = page;
     let server;
     if (!/^https?:/.test(page)) {
         server = await serve(page);
         url = `http://127.0.0.1:${server.address().port}/`;
     }
-    let web;
+    const webRecord = join(scratch, 'web.json');
     try {
-        web = await holds('web', path => record(url, path));
+        await record(url, webRecord);
     } finally {
         server?.close();
     }
+    const web = await passes('web', webRecord);
     process.exitCode = native && web ? 0 : 1;
 } finally {
     if (!kept) rmSync(scratch, {recursive: true, force: true});
