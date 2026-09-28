@@ -1444,3 +1444,5 @@ A press already selected the portal through the ordinary hit test. Releasing the
 The dumbest design removes that guard from selected and held deletion. Z removes the focused objects through the existing editor and returns their ordinary inventory bill. A removed portal returns one portal item; its interior is discarded, and its pinned cards retire through the existing cleanup. Moving still carries the complete interior. No extra key, portal deletion handler, rendered text, or per-frame work is introduced.
 
 The regression places empty and populated portals, clicks them through hit testing, checks their ordinary selection focus, and presses Z both during that press and while dragging. Each disappears and returns one portal item. The populated cases fail with the old recycling guard.
+
+`proofs/portal-delete-149.gif` shows the deployed Pages build `ce4e423` at 1280 by 720: the starting portal, a press focusing it, then Z deleting it before the release. The browser check confirms the deployed build, the absent portal and the returned portal item. Releasing a portal click without Z still puts its blueprint in hand.
