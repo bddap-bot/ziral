@@ -1,45 +1,93 @@
 use crate::sim::{Machine, TickEvent, TickEvents};
-use bevy::audio::{AudioPlayer, AudioSource, PlaybackSettings, Volume};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
-const contexts = [];
-const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend"];
-for (const key of ["AudioContext", "webkitAudioContext"]) {
-    const Context = globalThis[key];
-    if (Context) {
-        globalThis[key] = new Proxy(Context, {
-            construct(target, args, newTarget) {
-                const context = Reflect.construct(target, args, newTarget);
-                contexts.push(context);
-                return context;
-            }
-        });
+const RATE: u32 = 48_000;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod native {
+    use super::*;
+    use bevy::audio::{AudioPlayer, AudioSource, PlaybackSettings, Volume};
+
+    pub type Clip = Handle<AudioSource>;
+
+    pub fn load(mut commands: Commands, mut assets: ResMut<Assets<AudioSource>>) {
+        commands.insert_resource(bank(|samples| {
+            assets.add(AudioSource {
+                bytes: wav_bytes(samples, RATE).into(),
+            })
+        }));
+    }
+
+    pub fn emit(commands: &mut Commands, clip: &Clip, gain: f32) {
+        commands.spawn((
+            AudioPlayer::new(clip.clone()),
+            PlaybackSettings {
+                volume: Volume::Linear(gain),
+                ..PlaybackSettings::DESPAWN
+            },
+        ));
     }
 }
-function resume_audio() {
-    const attempts = contexts.map(context => context.resume());
-    Promise.all(attempts).then(() => {
-        if (contexts.length && contexts.every(context => context.state === "running"))
+
+#[cfg(target_arch = "wasm32")]
+mod web {
+    use super::*;
+
+    #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
+const context = new AudioContext();
+const clips = [];
+const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend"];
+function resume() {
+    context.resume().then(() => {
+        if (context.state === "running")
             for (const type of inputEvents)
-                globalThis.removeEventListener(type, resume_audio, { capture: true });
+                globalThis.removeEventListener(type, resume, { capture: true });
     });
 }
-export function listen_for_audio_unlock() {
-    for (const type of inputEvents)
-        globalThis.addEventListener(type, resume_audio, { capture: true });
+for (const type of inputEvents)
+    globalThis.addEventListener(type, resume, { capture: true });
+export function add_clip(samples, rate) {
+    const buffer = context.createBuffer(1, samples.length, rate);
+    buffer.copyToChannel(samples, 0);
+    return clips.push(buffer) - 1;
+}
+export function play_clip(clip, gain) {
+    const source = new AudioBufferSourceNode(context, { buffer: clips[clip] });
+    source.connect(new GainNode(context, { gain })).connect(context.destination);
+    source.start();
 }
 "#)]
-extern "C" {
-    fn listen_for_audio_unlock();
+    extern "C" {
+        fn add_clip(samples: &[f32], rate: u32) -> u32;
+        fn play_clip(clip: u32, gain: f32);
+    }
+
+    pub type Clip = u32;
+
+    pub fn load(mut commands: Commands) {
+        commands.insert_resource(bank(|samples| {
+            let samples: Vec<f32> = samples
+                .iter()
+                .map(|sample| f32::from(*sample) / 32_768.0)
+                .collect();
+            add_clip(&samples, RATE)
+        }));
+    }
+
+    pub fn emit(_: &mut Commands, clip: &Clip, gain: f32) {
+        play_clip(*clip, gain);
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn listen_for_audio_unlock() {}
+use native as out;
+#[cfg(target_arch = "wasm32")]
+use web as out;
+
+pub use out::load;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -142,35 +190,20 @@ pub fn score(tick: &TickEvents) -> Vec<Hit> {
 
 #[derive(Resource)]
 pub struct Bank {
-    voices: Vec<(Machine, Handle<AudioSource>)>,
-    silence: Handle<AudioSource>,
-    upgrade: Handle<AudioSource>,
+    voices: Vec<(Machine, out::Clip)>,
+    upgrade: out::Clip,
     pub unlocked: bool,
 }
 
-pub fn load(mut commands: Commands, mut assets: ResMut<Assets<AudioSource>>) {
-    listen_for_audio_unlock();
-    let voices = Machine::ALL
-        .into_iter()
-        .map(|machine| {
-            let handle = assets.add(AudioSource {
-                bytes: wav(instrument(machine)).into(),
-            });
-            (machine, handle)
-        })
-        .collect();
-    let silence = assets.add(AudioSource {
-        bytes: wav_bytes(&[0; 32], 48_000).into(),
-    });
-    let upgrade = assets.add(AudioSource {
-        bytes: wav_bytes(&upgrade_samples(), 48_000).into(),
-    });
-    commands.insert_resource(Bank {
-        upgrade,
-        voices,
-        silence,
+fn bank(mut clip: impl FnMut(&[i16]) -> out::Clip) -> Bank {
+    Bank {
+        voices: Machine::ALL
+            .into_iter()
+            .map(|machine| (machine, clip(&samples(instrument(machine)))))
+            .collect(),
+        upgrade: clip(&upgrade_samples()),
         unlocked: false,
-    });
+    }
 }
 
 fn activates(key: KeyCode) -> bool {
@@ -197,7 +230,6 @@ fn activates(key: KeyCode) -> bool {
 }
 
 pub fn unlock(
-    mut commands: Commands,
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     touches: Res<Touches>,
@@ -207,12 +239,8 @@ pub fn unlock(
     let pressed = buttons.get_just_pressed().next().is_some()
         || keys.get_just_pressed().any(|key| activates(*key))
         || touches.any_just_released();
-    if !bank.unlocked && pressed {
+    if pressed {
         bank.unlocked = true;
-        commands.spawn((
-            AudioPlayer::new(bank.silence.clone()),
-            PlaybackSettings::DESPAWN,
-        ));
     }
 }
 
@@ -221,23 +249,17 @@ pub fn play(commands: &mut Commands, bank: &Bank, hits: &[Hit], view: View) {
         let Some(gain) = gain(hit.at, view) else {
             continue;
         };
-        let handle = if hit.upgrade {
-            bank.upgrade.clone()
+        let clip = if hit.upgrade {
+            &bank.upgrade
         } else {
-            bank.voices
+            &bank
+                .voices
                 .iter()
                 .find(|(machine, _)| *machine == hit.machine)
                 .expect("every machine has a loaded instrument")
                 .1
-                .clone()
         };
-        commands.spawn((
-            AudioPlayer::new(handle),
-            PlaybackSettings {
-                volume: Volume::Linear(gain),
-                ..PlaybackSettings::DESPAWN
-            },
-        ));
+        out::emit(commands, clip, gain);
     }
 }
 
@@ -256,12 +278,8 @@ fn upgrade_samples() -> Vec<i16> {
         .collect()
 }
 
-fn wav(instrument: Instrument) -> Vec<u8> {
-    wav_bytes(&samples(instrument), 48_000)
-}
-
 fn samples(instrument: Instrument) -> Vec<i16> {
-    let rate = 48_000;
+    let rate = RATE;
     let count = rate * 3 / 20;
     let frequency = 440.0 * 2.0_f32.powf((instrument.note as f32 - 69.0) / 12.0);
     (0..count)
@@ -279,6 +297,7 @@ fn samples(instrument: Instrument) -> Vec<i16> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn wav_bytes(samples: &[i16], rate: u32) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
     let mut bytes = Vec::with_capacity(44 + data_len as usize);
@@ -302,7 +321,7 @@ fn wav_bytes(samples: &[i16], rate: u32) -> Vec<u8> {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn proof(ticks: &[(TickEvents, View)]) -> (String, Vec<u8>) {
-    let rate = 48_000;
+    let rate = RATE as usize;
     let beat = rate * 2 / 5;
     let tail = rate * 3 / 20;
     let mut mixed = vec![0_i32; ticks.len() * beat + tail];
@@ -335,7 +354,7 @@ pub fn proof(ticks: &[(TickEvents, View)]) -> (String, Vec<u8>) {
         .into_iter()
         .map(|sample| sample.clamp(i16::MIN.into(), i16::MAX.into()) as i16)
         .collect::<Vec<_>>();
-    (text, wav_bytes(&mixed, rate as u32))
+    (text, wav_bytes(&mixed, RATE))
 }
 
 #[cfg(test)]
@@ -352,8 +371,7 @@ mod tests {
             .init_resource::<Touches>()
             .insert_resource(Bank {
                 voices: Vec::new(),
-                silence: Handle::default(),
-                upgrade: Handle::default(),
+                upgrade: Default::default(),
                 unlocked: false,
             })
             .add_systems(Update, unlock);
