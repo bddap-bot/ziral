@@ -12,7 +12,7 @@ Directive: “which uses `art/ask.sh` to write a declarative image caption”; �
 
 `art/paint.sh` passes the caption unchanged to the image tool and verifies its actual call against that caption and the attached paths and SHA-256 hashes. Each prompt ends with an **Image inputs** section containing those verified inputs. Historical unrecoverable inputs remain explicit as `unknown`. A mismatched caption or attachment, implicit conversation-image reference or non-square return fails the paint. A square return is resized uniformly and quantised. Machine candidates' returned transparency is composited over the green key before measurement; this neither clips nor reshapes the object.
 
-`prompt.txt` records the first round; `candidates/round-N.txt` records round N. These are evidence of their paints, not instructions to restore historical inputs. Shared-brief changes require newly authored captions and newly painted candidates; refreshing a hash alone is not repainting.
+`prompt.txt` records the first round; `candidates/round-N.txt` records round N. These are evidence of their paints, not instructions to restore historical inputs. Regenerating after a shared-brief change authors new captions and paints new candidates; refreshing a hash alone is not repainting.
 
 ## Generate and select
 
@@ -27,7 +27,7 @@ Inside `nix-shell`, use `cargo run -- --gen bonder` or name multiple entries. `-
    Directive: “A passing score of 8 ends painting early”; “At the three-round cap, keep the best”.
 5. **Cut and light.** Remove the key into `albedo.png`, derive `normal.png`, compute the six calibration relights, and split only the requested machines into rig parts.
 
-All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a judgment prompt or rubric change invalidates that cache during regeneration. Shipped score rows retain their original judgment keys as historical evidence; changing guidance does not require repainting or rewriting those records.
+All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a judgment prompt or rubric change invalidates that cache during regeneration. Shipped prompts and score rows retain their original brief and judgment keys as historical evidence; changing guidance, including the bible palette the brief quotes, does not require repainting or rewriting those records.
 
 The painter limits concurrent calls to six. Shell runners retry four times with doubling backoff and retain failure output. `art/machines/rig.sh` splits selected machines into a central circular moving part and its surrounding base, with colour, normal and emissive maps. It accepts entry names; an omitted list selects all entries. It does not interpret manifest masks.
 

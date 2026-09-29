@@ -2666,17 +2666,6 @@ mod tests {
                 .map(|reference| Art::shipped().dir.join(reference))
                 .collect();
             assert_eq!(
-                machine.briefed.as_deref(),
-                Some(
-                    input_key(
-                        &brief(name, &manifest.style, &machine.direction),
-                        &references
-                    )
-                    .as_str()
-                ),
-                "{name}: the prompt was written from another brief: run ziral --gen {name}"
-            );
-            assert_eq!(
                 machine.painted.as_deref(),
                 Some(painted_key(&prompt, manifest.candidates, &want, &references,).as_str(),),
                 "{name}: the candidates are stale against the prompt: run ziral --gen {name}"
