@@ -1,4 +1,4 @@
-use crate::look::{self, AMBIENT, Cell, Glaze, HEX, Quad, Role, px};
+use crate::look::{self, Cell, Glaze, HEX, Quad, Role, px};
 use crate::sim::Machine;
 use crate::sim::Slot;
 use bevy::math::{Vec2, Vec3};
@@ -16,92 +16,11 @@ const SEAT_AROUND: [f32; 2] = [0.45, 0.65];
 const SEAT_SEARCH: f32 = 0.5;
 const SEAT_STEP: f32 = 0.02;
 const SEAT_SPOKES: usize = 36;
-const SPHERE: f32 = 0.75;
-const SPHERE_ALBEDO: f32 = 0.6;
-const SPHERE_LIT: f32 = 0.15;
-const SPHERE_CAP: f32 = 0.5;
-const PAD: f32 = 1.6;
-const PAD_ALBEDO: f32 = 0.45;
-const SAMPLES: usize = 4;
-const RUBBER: [f32; 3] = [
-    0x42 as f32 / 255.0,
-    0x3B as f32 / 255.0,
-    0x37 as f32 / 255.0,
-];
-
 #[derive(Serialize, Deserialize)]
 struct Manifest {
     attempts: u32,
-    style: Style,
     thresholds: Thresholds,
     machine: BTreeMap<String, Entry>,
-    #[serde(default)]
-    texture: BTreeMap<String, TextureEntry>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct Style {
-    facings: [Facing; 6],
-    elevation: f32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-enum Facing {
-    Right,
-    UpperRight,
-    UpperLeft,
-    Left,
-    LowerLeft,
-    LowerRight,
-}
-
-impl Facing {
-    const ALL: [Facing; 6] = [
-        Facing::UpperLeft,
-        Facing::UpperRight,
-        Facing::Right,
-        Facing::LowerRight,
-        Facing::LowerLeft,
-        Facing::Left,
-    ];
-
-    fn name(self) -> &'static str {
-        match self {
-            Facing::Right => "right",
-            Facing::UpperRight => "upper-right",
-            Facing::UpperLeft => "upper-left",
-            Facing::Left => "left",
-            Facing::LowerLeft => "lower-left",
-            Facing::LowerRight => "lower-right",
-        }
-    }
-
-    fn azimuth(self) -> f32 {
-        match self {
-            Facing::Right => 0.0,
-            Facing::UpperRight => 60.0,
-            Facing::UpperLeft => 120.0,
-            Facing::Left => 180.0,
-            Facing::LowerLeft => 240.0,
-            Facing::LowerRight => 300.0,
-        }
-    }
-
-    fn light(self, elevation: f32) -> Vec3 {
-        let (azimuth, elevation) = (self.azimuth().to_radians(), elevation.to_radians());
-        Vec3::new(
-            azimuth.cos() * elevation.cos(),
-            azimuth.sin() * elevation.cos(),
-            elevation.sin(),
-        )
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
-struct TextureEntry {
-    source: String,
-    relit: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -109,14 +28,13 @@ struct Thresholds {
     outside: f32,
     seat: f32,
     off_centre: f32,
-    sphere: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Entry {
     kept: Option<u32>,
     painted: Option<String>,
-    relit: Option<String>,
+    relief: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     motion: Option<crate::rig::Motion>,
     instrument: crate::sound::Instrument,
@@ -178,10 +96,6 @@ impl Art {
         self.dir.join(name)
     }
 
-    fn texture(&self, name: &str) -> PathBuf {
-        self.dir.join("../textures/relit").join(name)
-    }
-
     fn ming_sh(&self) -> PathBuf {
         self.dir.join("../ming.sh")
     }
@@ -216,7 +130,6 @@ struct Scaffold {
     cells: Vec<Cell>,
     quad: Quad,
     canvas: u32,
-    mask: Vec<f32>,
 }
 
 const fn scale() -> f32 {
@@ -233,45 +146,21 @@ const fn band() -> f32 {
 
 impl Scaffold {
     fn of(item: Machine) -> Scaffold {
-        let mut scaffold = Scaffold {
+        Scaffold {
             cells: look::footprint(item),
             quad: look::quad(item),
             canvas: canvas(item),
-            mask: Vec::new(),
-        };
-        scaffold.mask = scaffold.mask();
-        scaffold
-    }
-
-    fn texture(side: u32) -> Scaffold {
-        let mut scaffold = Scaffold {
-            cells: Vec::new(),
-            quad: Quad {
-                centre: Vec2::ZERO,
-                side: side as f32 / scale(),
-            },
-            canvas: side + 2 * band() as u32,
-            mask: Vec::new(),
-        };
-        let (origin, side) = scaffold.crop();
-        let n = scaffold.canvas as usize;
-        scaffold.mask = vec![0.0; n * n];
-        for y in origin..origin + side {
-            for x in origin..origin + side {
-                scaffold.mask[y as usize * n + x as usize] = 1.0;
-            }
         }
-        scaffold
     }
 
-    fn mount(&self, image: &RgbaImage, pad: Rgba<u8>) -> RgbaImage {
+    fn mount(&self, image: &RgbaImage) -> RgbaImage {
         let (origin, side) = self.crop();
         assert_eq!((image.width(), image.height()), (side, side));
         RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
             if (origin..origin + side).contains(&x) && (origin..origin + side).contains(&y) {
                 *image.get_pixel(x - origin, y - origin)
             } else {
-                pad
+                Rgba([0; 4])
             }
         })
     }
@@ -299,11 +188,6 @@ impl Scaffold {
         (origin, side)
     }
 
-    fn sphere(&self) -> (Vec2, f32) {
-        let inset = band() / 2.0;
-        (Vec2::splat(self.canvas as f32 - inset), inset * SPHERE)
-    }
-
     fn in_cell(&self, world: Vec2, radius: f32) -> Option<&Cell> {
         self.cells.iter().find(|c| in_hex(world - px(c.at), radius))
     }
@@ -325,23 +209,6 @@ impl Scaffold {
             .map(|c| hex_distance(world - px(c.at), HEX))
             .fold(f32::INFINITY, f32::min)
             / HEX
-    }
-
-    fn mask(&self) -> Vec<f32> {
-        let n = self.canvas as usize;
-        let mut mask = vec![0f32; n * n];
-        for (i, m) in mask.iter_mut().enumerate() {
-            let (x, y) = ((i % n) as f32, (i / n) as f32);
-            let hits = (0..SAMPLES * SAMPLES)
-                .filter(|s| {
-                    let dx = ((s % SAMPLES) as f32 + 0.5) / SAMPLES as f32;
-                    let dy = ((s / SAMPLES) as f32 + 0.5) / SAMPLES as f32;
-                    self.covered(self.world(Vec2::new(x + dx, y + dy)))
-                })
-                .count();
-            *m = hits as f32 / (SAMPLES * SAMPLES) as f32;
-        }
-        mask
     }
 
     fn mark(&self, cell: &Cell, world: Vec2) -> Option<Glaze> {
@@ -367,10 +234,6 @@ impl Scaffold {
                 ((ring && !open) || dot).then_some(Glaze::Terracotta)
             }
         }
-    }
-
-    fn alpha(&self, candidate: &RgbaImage) -> Vec<f32> {
-        candidate.pixels().map(alpha).collect()
     }
 
     fn register(&self, candidate: &RgbaImage) -> Capture {
@@ -480,32 +343,13 @@ impl Scaffold {
 
     fn score(&self, capture: &Capture) -> Score {
         let candidate = &capture.image;
-        let alpha = self.alpha(candidate);
         let (origin, side) = self.crop();
-        let n = self.canvas as usize;
         let mut outside = 0f32;
-        let mut inside = Mean::default();
-        let mut hand = Mean::default();
-        let mut body = Mean::default();
         for y in origin..origin + side {
             for x in origin..origin + side {
-                let i = y as usize * n + x as usize;
-                if alpha[i] > 0.0 {
+                if candidate.get_pixel(x, y)[3] > 0 {
                     let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
                     outside = outside.max(self.outside(world));
-                }
-                if self.mask[i] == 1.0 && alpha[i] == 1.0 {
-                    let color = rgb(candidate.get_pixel(x, y));
-                    inside.add_rgb(color);
-                    let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-                    if self
-                        .in_cell(world, HEX)
-                        .is_some_and(|c| c.role == Role::Hand)
-                    {
-                        hand.add_rgb(color);
-                    } else {
-                        body.add_rgb(color);
-                    }
                 }
             }
         }
@@ -513,30 +357,9 @@ impl Scaffold {
             .marked()
             .map(|cell| self.seat_contrast(candidate, cell, self.seat_bounds(cell)))
             .fold(f32::INFINITY, f32::min);
-        let glaze_distance = |mean: &Mean| {
-            Glaze::ALL
-                .iter()
-                .map(|g| apart(mean.rgb(), g.rgb()))
-                .fold(f32::INFINITY, f32::min)
-        };
-        let mut palette = if inside.n > 0.0 {
-            glaze_distance(&inside)
-        } else {
-            f32::INFINITY
-        };
-        if hand.n > 0.0 {
-            let rubber = apart(hand.rgb(), RUBBER);
-            let body = if body.n > 0.0 {
-                glaze_distance(&body)
-            } else {
-                0.0
-            };
-            palette = palette.min(rubber.max(body));
-        }
         Score {
             outside,
             seat,
-            palette,
             off_centre: capture.off_centre,
         }
     }
@@ -641,145 +464,9 @@ impl Scaffold {
         })
     }
 
-    fn render_light(&self, candidate: &RgbaImage, normal: &RgbaImage, light: Vec3) -> RgbaImage {
-        let master = self.master(candidate);
-        let (centre, radius) = self.sphere();
-        RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
-            let sphere = self.sphere_normal(x, y);
-            let pad = (Vec2::new(x as f32 + 0.5, y as f32 + 0.5) - centre)
-                .abs()
-                .max_element()
-                < radius * PAD;
-            let n = sphere.unwrap_or_else(|| {
-                if pad {
-                    Vec3::Z
-                } else {
-                    decode(normal.get_pixel(x, y))
-                }
-            });
-            let p = master.get_pixel(x, y);
-            let strength = AMBIENT + (1.0 - AMBIENT) * n.dot(light).max(0.0);
-            let alpha = if pad || sphere.is_some() {
-                1.0
-            } else {
-                f32::from(normal.get_pixel(x, y)[3]) / 255.0
-            };
-            rgba(rgb(p).map(|c| c * strength), alpha)
-        })
-    }
-
-    fn sphere_normal(&self, x: u32, y: u32) -> Option<Vec3> {
-        let (centre, radius) = self.sphere();
-        ball(centre, radius, x, y)
-    }
-
-    fn master(&self, candidate: &RgbaImage) -> RgbaImage {
-        let (centre, radius) = self.sphere();
-        let mut out = candidate.clone();
-        for (x, y, p) in out.enumerate_pixels_mut() {
-            if self.sphere_normal(x, y).is_some() {
-                *p = grey(SPHERE_ALBEDO);
-            } else if (Vec2::new(x as f32 + 0.5, y as f32 + 0.5) - centre)
-                .abs()
-                .max_element()
-                < radius * PAD
-            {
-                *p = grey(PAD_ALBEDO);
-            }
-        }
-        out
-    }
-
-    fn light(&self, edit: &RgbaImage) -> Light {
-        let pixels: Vec<(Vec3, f32)> = edit
-            .enumerate_pixels()
-            .filter_map(|(x, y, p)| Some((self.sphere_normal(x, y)?, luminance(p))))
-            .collect();
-        let mut lit: Vec<bool> = pixels.iter().map(|(n, _)| n.z > SPHERE_LIT).collect();
-        let mut coef = [0f32; 4];
-        for _ in 0..3 {
-            coef = fit(pixels
-                .iter()
-                .zip(&lit)
-                .filter(|(_, l)| **l)
-                .map(|(p, _)| *p));
-            let dir = Vec3::from_slice(&coef[..3]);
-            let floor = coef[3] + 0.02 * (dir.x.abs() + dir.y.abs() + dir.z.abs());
-            for (l, (n, _)) in lit.iter_mut().zip(&pixels) {
-                *l = n.dot(dir) + coef[3] > floor;
-            }
-        }
-        let dir = Vec3::from_slice(&coef[..3]);
-        let ambient = coef[3] / (coef[3] + dir.length());
-        Light {
-            direction: dir.normalize(),
-            ambient,
-        }
-    }
-
-    fn calibration(&self, edits: &[RgbaImage]) -> Calibration {
-        let lights: Vec<Light> = edits.iter().map(|e| self.light(e)).collect();
-        let rows: Vec<[f32; 3]> = std::iter::once([0.0, 0.0, 1.0])
-            .chain(lights.iter().map(Light::row))
-            .collect();
-        let solver = invert(gram(rows.iter().map(|r| (*r, 0.0))).0);
-        let mut error = Mean::default();
-        for (x, y, _) in edits[0].enumerate_pixels() {
-            let Some(want) = self.sphere_normal(x, y).filter(|n| n.z > SPHERE_CAP) else {
-                continue;
-            };
-            let values = std::iter::once(SPHERE_ALBEDO)
-                .chain(edits.iter().map(|image| luminance(image.get_pixel(x, y))));
-            let mut rhs = [0f64; 3];
-            for (lum, row) in values.zip(&rows) {
-                for (r, a) in rhs.iter_mut().zip(row) {
-                    *r += f64::from(*a * lum);
-                }
-            }
-            let [gx, gy, rho] = apply(&solver, &rhs);
-            let tangent = if rho > 0.0 {
-                (Vec2::new(gx as f32, gy as f32) / rho as f32).clamp_length_max(1.0)
-            } else {
-                Vec2::ZERO
-            };
-            let got = tangent.extend((1.0 - tangent.length_squared()).max(0.0).sqrt());
-            error.add(got.dot(want).clamp(-1.0, 1.0).acos().to_degrees());
-        }
-        Calibration {
-            lights,
-            sphere: error.value(),
-        }
-    }
-}
-
 struct Capture {
     image: RgbaImage,
     off_centre: f32,
-}
-
-struct Calibration {
-    lights: Vec<Light>,
-    sphere: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Light {
-    direction: Vec3,
-    ambient: f32,
-}
-
-impl Light {
-    fn row(&self) -> [f32; 3] {
-        let d = self.direction * (1.0 - self.ambient);
-        [d.x, d.y, self.ambient + d.z]
-    }
-}
-
-fn ball(centre: Vec2, radius: f32, x: u32, y: u32) -> Option<Vec3> {
-    let d = (Vec2::new(x as f32 + 0.5, y as f32 + 0.5) - centre) / radius;
-    let d = Vec2::new(d.x, -d.y);
-    let rr = d.length_squared();
-    (rr < 1.0).then(|| Vec3::new(d.x, d.y, (1.0 - rr).sqrt()))
 }
 
 fn encode(v: Vec3, alpha: f32) -> Rgba<u8> {
@@ -794,67 +481,10 @@ fn decode(p: &Rgba<u8>) -> Vec3 {
     Vec3::new(c[0] * 2.0 - 1.0, c[1] * 2.0 - 1.0, c[2] * 2.0 - 1.0)
 }
 
-fn gram<const N: usize>(rows: impl Iterator<Item = ([f32; N], f32)>) -> ([[f64; N]; N], [f64; N]) {
-    let mut ata = [[0f64; N]; N];
-    let mut atb = [0f64; N];
-    for (row, b) in rows {
-        let row = row.map(f64::from);
-        for i in 0..N {
-            for j in 0..N {
-                ata[i][j] += row[i] * row[j];
-            }
-            atb[i] += row[i] * f64::from(b);
-        }
-    }
-    (ata, atb)
-}
-
-fn invert<const N: usize>(a: [[f64; N]; N]) -> [[f64; N]; N] {
-    let mut m: Vec<Vec<f64>> = (0..N)
-        .map(|i| {
-            a[i].iter()
-                .copied()
-                .chain((0..N).map(|k| f64::from(u8::from(i == k))))
-                .collect()
-        })
-        .collect();
-    for col in 0..N {
-        let pivot = (col..N)
-            .max_by(|a, b| m[*a][col].abs().total_cmp(&m[*b][col].abs()))
-            .expect("a square system");
-        m.swap(col, pivot);
-        let lead = m[col][col];
-        assert!(lead.abs() > 1e-9, "the system is singular");
-        for v in &mut m[col][col..] {
-            *v /= lead;
-        }
-        let lead_row = m[col].clone();
-        for (row, r) in m.iter_mut().enumerate() {
-            if row != col {
-                let f = r[col];
-                for (v, p) in r[col..].iter_mut().zip(&lead_row[col..]) {
-                    *v -= f * p;
-                }
-            }
-        }
-    }
-    std::array::from_fn(|i| std::array::from_fn(|j| m[i][N + j]))
-}
-
-fn apply<const N: usize>(m: &[[f64; N]; N], v: &[f64; N]) -> [f64; N] {
-    std::array::from_fn(|i| m[i].iter().zip(v).map(|(a, b)| a * b).sum())
-}
-
-fn fit(pixels: impl Iterator<Item = (Vec3, f32)>) -> [f32; 4] {
-    let (ata, atb) = gram(pixels.map(|(n, lum)| ([n.x, n.y, n.z, 1.0], lum)));
-    apply(&invert(ata), &atb).map(|v| v as f32)
-}
-
 #[derive(Debug, Clone, PartialEq)]
 struct Score {
     outside: f32,
     seat: f32,
-    palette: f32,
     off_centre: f32,
 }
 
@@ -996,20 +626,6 @@ fn save(image: &RgbaImage, path: &Path) {
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
 }
 
-fn stack(images: &[RgbaImage]) -> RgbaImage {
-    let first = images.first().expect("a relight set is not empty");
-    assert!(
-        images
-            .iter()
-            .all(|image| image.dimensions() == first.dimensions())
-    );
-    RgbaImage::from_fn(
-        first.width(),
-        first.height() * images.len() as u32,
-        |x, y| *images[(y / first.height()) as usize].get_pixel(x, y % first.height()),
-    )
-}
-
 const PAINTERS: usize = 5;
 const FIT_GRID: u32 = 512;
 const COVER: [f32; 2] = [0.03, 0.9];
@@ -1066,12 +682,7 @@ fn ming(art: &Art, caption: &Path, out: &Path) -> Result<Calls, Refusal> {
     let mut log = ming_sh(art, &["design".as_ref(), design.as_ref(), caption.as_ref()])?;
     log += &ming_sh(
         art,
-        &[
-            "design-layer".as_ref(),
-            out.as_ref(),
-            design.as_ref(),
-            plan.as_ref(),
-        ],
+        &["design-layer".as_ref(), out.as_ref(), design.as_ref(), plan.as_ref()],
     )?;
     std::fs::write(out.join("calls.tsv"), log).map_err(failed)?;
     Calls::read(out).ok_or_else(|| Refusal::Failed(format!("{}: incomplete", out.display())))
@@ -1129,13 +740,18 @@ fn matte(out: &Path) -> Result<RgbaImage, String> {
             edge.value()
         ));
     }
-    let up = image::imageops::resize(&object, w, h, image::imageops::FilterType::CatmullRom);
+    if ow != oh {
+        return Err(format!("the object layer is {ow}x{oh}, not square"));
+    }
+    let mask = image::imageops::resize(
+        &image::GrayImage::from_fn(ow, oh, |x, y| image::Luma([object.get_pixel(x, y)[3]])),
+        w,
+        h,
+        image::imageops::FilterType::CatmullRom,
+    );
     Ok(RgbaImage::from_fn(w, h, |x, y| {
-        let (o, d) = (up.get_pixel(x, y), design.get_pixel(x, y));
-        let a = alpha(o) * f32::from(alpha(o) >= NOISE);
-        let t = ((a - 0.9) / 0.1).clamp(0.0, 1.0);
-        let (layer, design) = (rgb(o), rgb(d));
-        rgba([0, 1, 2].map(|i| design[i] * t + layer[i] * (1.0 - t)), a)
+        let a = f32::from(mask.get_pixel(x, y)[0]) / 255.0;
+        rgba(rgb(design.get_pixel(x, y)), a * f32::from(a >= NOISE))
     }))
 }
 
@@ -1161,11 +777,8 @@ impl Attempt {
     }
 
     fn row(&self, t: &Thresholds) -> String {
-        let measured = self.outcome.as_ref().map_or("-\t-\t-\t-".to_string(), |s| {
-            format!(
-                "{:.3}\t{:.3}\t{:.3}\t{:.3}",
-                s.outside, s.seat, s.palette, s.off_centre
-            )
+        let measured = self.outcome.as_ref().map_or("-\t-\t-".to_string(), |s| {
+            format!("{}\t{}\t{}", s.outside, s.seat, s.off_centre)
         });
         format!(
             "{}\t{}\t{measured}\t{:.1}\t{:.1}\t{}",
@@ -1179,17 +792,7 @@ impl Attempt {
 
     fn parse(row: &str) -> Option<Attempt> {
         let cols: Vec<&str> = row.split('\t').collect();
-        let [
-            index,
-            verdict,
-            outside,
-            seat,
-            palette,
-            off_centre,
-            design,
-            layer,
-            cost,
-        ] = cols[..]
+        let [index, verdict, outside, seat, off_centre, design, layer, cost] = cols[..]
         else {
             return None;
         };
@@ -1199,7 +802,6 @@ impl Attempt {
             Ok(Score {
                 outside: outside.parse().ok()?,
                 seat: seat.parse().ok()?,
-                palette: palette.parse().ok()?,
                 off_centre: off_centre.parse().ok()?,
             })
         };
@@ -1268,30 +870,11 @@ fn painted_key(caption: &str, attempts: u32) -> String {
     key(&[caption.as_bytes(), &attempts.to_le_bytes(), PLAN.as_bytes()])
 }
 
-fn relit_key(albedo: &[u8], style: &Style, facings: &[Facing]) -> String {
-    let facings: Vec<&str> = facings.iter().map(|facing| facing.name()).collect();
+fn relief_key(albedo: &[u8]) -> String {
     key(&[
         albedo,
-        b"computed-relief-3:blur=4,height=alpha*(0.85+0.15*luma),slope=24,lambert,rgba",
-        facings.join("\n").as_bytes(),
-        &style.elevation.to_le_bytes(),
-        &AMBIENT.to_le_bytes(),
+        b"surface-normals:blur=4,height=alpha*(0.85+0.15*luma),slope=24",
     ])
-}
-
-fn direction_error(facings: &[Facing], elevation: f32, lights: &[Light]) -> f32 {
-    facings
-        .iter()
-        .zip(lights)
-        .map(|(facing, light)| {
-            light
-                .direction
-                .dot(facing.light(elevation))
-                .clamp(-1.0, 1.0)
-                .acos()
-                .to_degrees()
-        })
-        .fold(0.0, f32::max)
 }
 
 fn quantise(png: &Path) -> Result<(), String> {
@@ -1325,30 +908,14 @@ struct Remake<'a> {
     redraw: std::sync::atomic::AtomicBool,
 }
 
-struct Relight<'a> {
-    dir: &'a Path,
-    scaffold: &'a Scaffold,
-    candidate: &'a RgbaImage,
-    style: &'a Style,
-    facings: &'a [Facing],
-    threshold: f32,
-    source: RelightSource,
-}
-
-#[derive(Clone, Copy)]
-enum RelightSource {
-    Machine,
-    Texture,
-}
-
 impl Remake<'_> {
-    fn entry(&self, name: &str) -> Result<(Style, Thresholds, u32, Entry), String> {
+    fn entry(&self, name: &str) -> Result<(Thresholds, u32, Entry), String> {
         let m = self.manifest.lock().expect("the manifest is unpoisoned");
         let entry = m
             .machine
             .get(name)
             .ok_or_else(|| format!("manifest has no [machine.{name}]"))?;
-        Ok((m.style.clone(), m.thresholds, m.attempts, entry.clone()))
+        Ok((m.thresholds, m.attempts, entry.clone()))
     }
 
     fn record(&self, name: &str, patch: impl FnOnce(&mut Entry)) {
@@ -1359,43 +926,6 @@ impl Remake<'_> {
         if *entry != before {
             self.art.write(&m);
         }
-    }
-
-    fn record_texture(&self, name: &str, relit: String) {
-        let mut m = self.manifest.lock().expect("the manifest is unpoisoned");
-        let entry = m
-            .texture
-            .get_mut(name)
-            .expect("the texture entry read above");
-        if entry.relit.as_deref() != Some(&relit) {
-            entry.relit = Some(relit);
-            self.art.write(&m);
-        }
-    }
-
-    fn prepare_relief(
-        &self,
-        dir: &Path,
-        scaffold: &Scaffold,
-        candidate: &RgbaImage,
-        source: &[u8],
-        style: &Style,
-    ) -> Result<String, String> {
-        assert_eq!(style.facings, Facing::ALL);
-        let relit = dir.join("relit");
-        let expected = relit_key(source, style, &style.facings);
-        if std::fs::read_to_string(relit.join("render-key.txt"))
-            .ok()
-            .as_deref()
-            != Some(&expected)
-            && relit.exists()
-        {
-            std::fs::remove_dir_all(&relit).map_err(|e| e.to_string())?;
-        }
-        std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
-        save(&scaffold.master(candidate), &relit.join("master.png"));
-        std::fs::write(relit.join("render-key.txt"), &expected).map_err(|e| e.to_string())?;
-        Ok(expected)
     }
 
     fn attempt(
@@ -1445,26 +975,21 @@ impl Remake<'_> {
         Ok(attempt)
     }
 
-    fn paint(&self, name: &str, scaffold: &Scaffold) -> Result<(), String> {
-        let (_, thresholds, count, entry) = self.entry(name)?;
+    fn paint(&self, name: &str, scaffold: &Scaffold, painted: &str) -> Result<(), String> {
+        let (thresholds, count, entry) = self.entry(name)?;
         let dir = self.art.machine(name);
-        let caption = self.art.caption(name);
-        let text =
-            std::fs::read_to_string(&caption).map_err(|e| format!("{}: {e}", caption.display()))?;
-        let painted = painted_key(&text, count);
-        let mut rows = if entry.painted.as_deref() == Some(painted.as_str()) {
+        let mut rows = if entry.painted.as_deref() == Some(painted) {
             attempts(&dir)
         } else {
             let _ = std::fs::remove_dir_all(dir.join("attempts"));
             let _ = std::fs::remove_file(dir.join("attempts.tsv"));
             self.record(name, |e| {
-                e.painted = Some(painted.clone());
+                e.painted = Some(painted.to_string());
                 e.kept = None;
-                e.relit = None;
             });
             BTreeMap::new()
         };
-        rows.retain(|i, _| *i <= count && self.art.attempt(name, *i).join("design.png").exists());
+        rows.retain(|i, _| *i <= count && Calls::read(&self.art.attempt(name, *i)).is_some());
         for index in 1..=count {
             if rows.values().any(|a| a.passes(&thresholds)) {
                 break;
@@ -1483,7 +1008,8 @@ impl Remake<'_> {
             .filter_map(|a| Some((a.index, a.outcome.as_ref().ok()?.excess(&thresholds))))
             .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
             .ok_or_else(|| {
-                let verdicts: Vec<String> = rows.values().map(|a| a.verdict(&thresholds)).collect();
+                let verdicts: Vec<String> =
+                    rows.values().map(|a| a.verdict(&thresholds)).collect();
                 format!("no attempt made a sprite: {}", verdicts.join("; "))
             })?;
         let capture = scaffold.register(&matte(&self.art.attempt(name, kept))?);
@@ -1499,41 +1025,26 @@ impl Remake<'_> {
         let started = std::time::Instant::now();
         let scaffold = Scaffold::of(item(name));
         let dir = self.art.machine(name);
-        let (_, _, count, entry) = self.entry(name)?;
+        let (_, count, entry) = self.entry(name)?;
         let caption = self.art.caption(name);
-        let text =
-            std::fs::read_to_string(&caption).map_err(|e| format!("{}: {e}", caption.display()))?;
+        let text = std::fs::read_to_string(&caption)
+            .map_err(|e| format!("{}: {e}", caption.display()))?;
+        let painted = painted_key(&text, count);
         let mut changed = false;
-        if entry.painted.as_deref() != Some(painted_key(&text, count).as_str())
+        if entry.painted.as_deref() != Some(painted.as_str())
             || entry.kept.is_none()
             || !dir.join("albedo.png").exists()
         {
-            self.paint(name, &scaffold)?;
+            self.paint(name, &scaffold, &painted)?;
             changed = true;
         }
-        let (style, thresholds, _, entry) = self.entry(name)?;
+        let (_, _, entry) = self.entry(name)?;
         let albedo = open(dir.join("albedo.png"));
-        let candidate = scaffold.mount(&albedo, Rgba([0; 4]));
-        let relit = self.prepare_relief(&dir, &scaffold, &candidate, albedo.as_raw(), &style)?;
-        let relit_dir = dir.join("relit");
-        let current = entry.relit.as_deref() == Some(relit.as_str())
-            && dir.join("normal.png").exists()
-            && relit_dir.join("albedo.png").exists()
-            && relit_dir.join("normal.png").exists();
-        if !current {
-            self.relief(
-                name,
-                &Relight {
-                    dir: &dir,
-                    scaffold: &scaffold,
-                    candidate: &candidate,
-                    style: &style,
-                    facings: &style.facings,
-                    threshold: thresholds.sphere,
-                    source: RelightSource::Machine,
-                },
-            )?;
-            self.record(name, |e| e.relit = Some(relit.clone()));
+        let relief = relief_key(albedo.as_raw());
+        if entry.relief.as_deref() != Some(relief.as_str()) || !dir.join("normal.png").exists() {
+            let normal = scaffold.surface_normals(&scaffold.mount(&albedo));
+            save(&scaffold.cropped(&normal), &dir.join("normal.png"));
+            self.record(name, |e| e.relief = Some(relief.clone()));
             changed = true;
         }
         println!(
@@ -1543,125 +1054,6 @@ impl Remake<'_> {
             started.elapsed().as_secs_f32()
         );
         Ok(changed)
-    }
-
-    fn relief(&self, name: &str, request: &Relight<'_>) -> Result<(), String> {
-        let relit = request.dir.join("relit");
-        std::fs::create_dir_all(&relit).map_err(|e| e.to_string())?;
-        let normal = request.scaffold.surface_normals(request.candidate);
-        let edits: Vec<_> = request
-            .facings
-            .iter()
-            .map(|facing| {
-                let image = request.scaffold.render_light(
-                    request.candidate,
-                    &normal,
-                    facing.light(request.style.elevation),
-                );
-                save(&image, &relit.join(format!("{}.png", facing.name())));
-                (facing.name(), image)
-            })
-            .collect();
-        let error = self.accept_relief(request, &edits, &normal)?;
-        println!("{name}\tcomputed relight error {error:.3} degrees");
-        if !error.is_finite() || error > request.threshold {
-            return Err(format!(
-                "computed calibration error {error} exceeds {}",
-                request.threshold
-            ));
-        }
-        Ok(())
-    }
-
-    fn accept_relief(
-        &self,
-        request: &Relight<'_>,
-        edits: &[(&str, RgbaImage)],
-        normal: &RgbaImage,
-    ) -> Result<f32, String> {
-        let images: Vec<RgbaImage> = edits.iter().map(|(_, image)| image.clone()).collect();
-        let relief = request.scaffold.calibration(&images);
-        let mut lights: Vec<String> = edits
-            .iter()
-            .zip(&relief.lights)
-            .zip(request.facings)
-            .map(|(((edge, _), light), facing)| {
-                let d = light.direction;
-                let want = facing.light(request.style.elevation);
-                let error = d.dot(want).clamp(-1.0, 1.0).acos().to_degrees();
-                format!(
-                    "{edge}\trequested=({:+.6},{:+.6},{:+.6})\tmeasured=({:+.6},{:+.6},{:+.6})\terror={error:.3}\tambient={:.6}",
-                    want.x, want.y, want.z, d.x, d.y, d.z, light.ambient
-                )
-            })
-            .collect();
-        let direction = direction_error(request.facings, request.style.elevation, &relief.lights);
-        let error = relief.sphere.max(direction);
-        lights.push(format!("sphere error {:.3} degrees", relief.sphere));
-        lights.push(format!("direction error {direction:.3} degrees"));
-        let relit = request.dir.join("relit");
-        std::fs::write(relit.join("lights.txt"), lights.join("\n") + "\n")
-            .map_err(|e| e.to_string())?;
-        if !error.is_finite() || error > request.threshold {
-            return Ok(error);
-        }
-        save(&request.scaffold.cropped(normal), &relit.join("normal.png"));
-        if matches!(request.source, RelightSource::Machine) {
-            save(
-                &request.scaffold.cropped(normal),
-                &request.dir.join("normal.png"),
-            );
-        }
-        let extract = |image: &RgbaImage| request.scaffold.cropped(image);
-        save(
-            &stack(&images.iter().map(extract).collect::<Vec<_>>()),
-            &relit.join("albedo.png"),
-        );
-        quantise(&relit.join("albedo.png"))?;
-        Ok(error)
-    }
-
-    fn texture(&self, name: &str) -> Result<bool, String> {
-        let (style, thresholds, entry) = {
-            let m = self.manifest.lock().expect("the manifest is unpoisoned");
-            let entry = m
-                .texture
-                .get(name)
-                .ok_or_else(|| format!("manifest has no [texture.{name}]"))?;
-            (m.style.clone(), m.thresholds, entry.clone())
-        };
-        let source = self.art.dir.join("..").join(&entry.source);
-        let image = open(&source);
-        if image.width() != image.height() {
-            return Err(format!("{} is not square", source.display()));
-        }
-        let scaffold = Scaffold::texture(image.width());
-        let candidate = scaffold.mount(&image, grey(PAD_ALBEDO));
-        let dir = self.art.texture(name);
-        let key = self.prepare_relief(&dir, &scaffold, &candidate, image.as_raw(), &style)?;
-        let relit = dir.join("relit");
-        let current = entry.relit.as_deref() == Some(&key)
-            && relit.join("albedo.png").exists()
-            && relit.join("normal.png").exists();
-        if current {
-            println!("{name}\tup to date");
-            return Ok(false);
-        }
-        self.relief(
-            name,
-            &Relight {
-                dir: &dir,
-                scaffold: &scaffold,
-                candidate: &candidate,
-                style: &style,
-                facings: &style.facings,
-                threshold: thresholds.sphere,
-                source: RelightSource::Texture,
-            },
-        )?;
-        self.record_texture(name, key);
-        println!("{name}\tlanded");
-        Ok(true)
     }
 
     fn sheet(&self) -> Result<(), String> {
@@ -1735,18 +1127,7 @@ fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<
             .into_iter()
             .map(|name| {
                 s.spawn(move || {
-                    let machine = remake
-                        .manifest
-                        .lock()
-                        .expect("the manifest is unpoisoned")
-                        .machine
-                        .contains_key(name);
-                    let result = if machine {
-                        remake.machine(name)
-                    } else {
-                        remake.texture(name)
-                    };
-                    (name.to_string(), result)
+                    (name.to_string(), remake.machine(name))
                 })
             })
             .collect();
@@ -1783,15 +1164,10 @@ pub fn configure(args: &[String]) -> Option<i32> {
     }
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
     let manifest = art.read();
-    let known = |n: &str| manifest.machine.contains_key(n) || manifest.texture.contains_key(n);
+    let known = |n: &str| manifest.machine.contains_key(n);
     let painter = |caption: &Path, out: &Path| ming(&art, caption, out);
     let names: Vec<String> = match rest.as_slice() {
-        ["--all"] => manifest
-            .machine
-            .keys()
-            .chain(manifest.texture.keys())
-            .cloned()
-            .collect(),
+        ["--all"] => manifest.machine.keys().cloned().collect(),
         [_, ..] if rest.iter().all(|n| known(n)) => rest.iter().map(|n| n.to_string()).collect(),
         _ => {
             eprintln!("{USAGE}");
@@ -1807,7 +1183,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
 mod tests {
     use super::*;
 
-    use crate::look::light;
+    use crate::look::{AMBIENT, light};
     use crate::sim::{Arm, Glyph, Hex, ORIGIN};
 
     const RELIEF: f32 = 0.1;
@@ -1892,21 +1268,6 @@ mod tests {
     }
 
     #[test]
-    fn machines_palette_measurement_does_not_reject_or_rank_art() {
-        let thresholds = Art::shipped().read().thresholds;
-        let scaffold = Scaffold::of(item("bonder"));
-        let mut score = scaffold.score(&scaffold.register(&fired(&scaffold, &|w| w)));
-        assert!(score.measured(&thresholds).is_none());
-        let excess = score.excess(&thresholds);
-        assert!(excess <= 1.0, "{excess}");
-        score.palette = 100.0;
-        assert!(score.measured(&thresholds).is_none());
-        assert_eq!(score.excess(&thresholds), excess);
-        score.outside = thresholds.outside + 1.0;
-        assert!(score.measured(&thresholds).unwrap().starts_with("outside"));
-    }
-
-    #[test]
     fn machines_body_only_registration_uniformly_fits_the_silhouette() {
         let scaffold = Scaffold::of(Machine::Portal);
         let candidate = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
@@ -1921,7 +1282,6 @@ mod tests {
 
         assert_eq!(capture.off_centre, 0.0);
         let score = scaffold.score(&capture);
-        assert!(score.palette.is_finite(), "body palette is measurable");
         assert!(score.outside <= 0.05);
     }
 
@@ -1959,7 +1319,7 @@ mod tests {
                     let h = Hex::new(q, r);
                     let p = scaffold.pixel(px(h));
                     let inside = p.x >= 0.0 && p.y >= 0.0 && p.x < n as f32 && p.y < n as f32;
-                    if inside && scaffold.mask[p.y as usize * n + p.x as usize] == 1.0 {
+                    if inside && scaffold.covered(px(h)) {
                         covered.push(h);
                     }
                 }
@@ -1981,73 +1341,6 @@ mod tests {
             footprint.sort_by_key(key);
             assert_eq!(covered, footprint, "{item:?}");
         }
-    }
-
-    #[test]
-    fn the_manifest_keys_six_facing_reliefs_for_every_rotatable_texture() {
-        let art = Art::shipped();
-        let manifest = art.read();
-        assert_eq!(manifest.style.facings, Facing::ALL);
-        assert_eq!(manifest.style.elevation, 45.0);
-        let names: Vec<&str> = manifest.texture.keys().map(String::as_str).collect();
-        assert_eq!(
-            names,
-            [
-                "atom-amber",
-                "atom-base",
-                "atom-cobalt",
-                "atom-plum",
-                "bond-double",
-                "bond-single"
-            ]
-        );
-        for (name, entry) in &manifest.texture {
-            let source = art.dir.join("..").join(&entry.source);
-            assert!(source.exists(), "{name}");
-            if let Some(relit) = &entry.relit {
-                let dir = art.texture(name).join("relit");
-                assert_eq!(
-                    relit,
-                    &relit_key(
-                        open(&source).as_raw(),
-                        &manifest.style,
-                        &manifest.style.facings,
-                    ),
-                    "{name}"
-                );
-                assert!(dir.join("albedo.png").exists(), "{name}");
-                assert!(dir.join("normal.png").exists(), "{name}");
-            }
-        }
-    }
-
-    #[test]
-    fn relight_keys_change_with_the_pixels_elevation_and_facings() {
-        let mut style = Art::shipped().read().style;
-        let original = relit_key(b"pixels", &style, &style.facings);
-        assert_ne!(relit_key(b"other pixels", &style, &style.facings), original);
-        style.elevation += 1.0;
-        assert_ne!(relit_key(b"pixels", &style, &style.facings), original);
-        style.elevation -= 1.0;
-        style.facings.swap(0, 1);
-        assert_ne!(relit_key(b"pixels", &style, &style.facings), original);
-    }
-
-    #[test]
-    fn a_relight_set_must_match_every_requested_direction() {
-        let style = Art::shipped().read().style;
-        let lights: Vec<Light> = style
-            .facings
-            .iter()
-            .map(|facing| Light {
-                direction: facing.light(style.elevation),
-                ambient: AMBIENT,
-            })
-            .collect();
-        assert!(direction_error(&style.facings, style.elevation, &lights) < 0.1);
-        let mut swapped = lights;
-        swapped.swap(0, 1);
-        assert!(direction_error(&style.facings, style.elevation, &swapped) > 25.0);
     }
 
     #[test]
@@ -2186,38 +1479,6 @@ mod tests {
     }
 
     #[test]
-    fn computed_relights_shade_machine_and_calibration_with_the_same_light() {
-        let scaffold = Scaffold::texture(128);
-        let candidate =
-            RgbaImage::from_pixel(scaffold.canvas, scaffold.canvas, grey(SPHERE_ALBEDO));
-        let centre = Vec2::splat(scaffold.canvas as f32 / 2.0);
-        let normal = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
-            encode(ball(centre, 48.0, x, y).unwrap_or(Vec3::Z), 1.0)
-        });
-        let facings = Facing::ALL;
-        let edits: Vec<_> = facings
-            .iter()
-            .map(|facing| {
-                let light = facing.light(45.0);
-                let rendered = scaffold.render_light(&candidate, &normal, light);
-                for (x, y) in [(200, 190), (180, 175), (205, 210)] {
-                    let n = decode(normal.get_pixel(x, y));
-                    let want = SPHERE_ALBEDO * (AMBIENT + (1.0 - AMBIENT) * n.dot(light).max(0.0));
-                    assert!((luminance(rendered.get_pixel(x, y)) - want).abs() <= 1.0 / 255.0);
-                }
-                rendered
-            })
-            .collect();
-        let calibration = scaffold.calibration(&edits);
-        assert!(direction_error(&facings, 45.0, &calibration.lights) < 0.2);
-        assert!(calibration.sphere < Art::shipped().read().thresholds.sphere);
-        assert!(direction_error(&facings, 20.0, &calibration.lights) > 24.0);
-        let mut changed = edits;
-        changed.swap(0, 3);
-        assert!(direction_error(&facings, 45.0, &scaffold.calibration(&changed).lights) > 25.0);
-    }
-
-    #[test]
     fn bounded_measurement_matches_the_exhaustive_pixel_and_hex_walks_bit_for_bit() {
         for name in ["arm", "bonder", "source", "reification", "output-3"] {
             let scaffold = Scaffold::of(item(name));
@@ -2313,7 +1574,7 @@ mod tests {
             let (_, side) = scaffold.crop();
             let albedo = open(dir.join("albedo.png"));
             assert_eq!(albedo.dimensions(), (side, side), "{name}/albedo.png");
-            let mounted = scaffold.mount(&albedo, Rgba([0; 4]));
+            let mounted = scaffold.mount(&albedo);
             let score = scaffold.score(&Capture {
                 image: mounted.clone(),
                 off_centre: recorded.off_centre,
@@ -2338,46 +1599,15 @@ mod tests {
                 tilted as f32 > shipped_normal.pixels().len() as f32 * 0.01,
                 "{name}/normal.png is flat"
             );
-            let facings = &manifest.style.facings;
             assert_eq!(
-                entry.relit.as_deref(),
-                Some(relit_key(albedo.as_raw(), &manifest.style, facings).as_str()),
-                "{name}: the maps are stale against albedo.png: run ziral --gen {name}"
+                entry.relief.as_deref(),
+                Some(relief_key(albedo.as_raw()).as_str()),
+                "{name}: normal.png is stale against albedo.png: run ziral --gen {name}"
             );
-            let atlas = open(dir.join("relit/albedo.png"));
-            assert_eq!(atlas.width(), side, "{name}");
-            assert_eq!(atlas.height(), side * facings.len() as u32, "{name}");
             let normal = scaffold.surface_normals(&mounted);
             assert!(
                 shipped_normal.as_raw() == scaffold.cropped(&normal).as_raw(),
                 "{name}: shipped normals differ from the computed relief"
-            );
-            let edits: Vec<_> = facings
-                .iter()
-                .map(|facing| {
-                    let rendered = open(dir.join(format!("relit/{}.png", facing.name())));
-                    let expected = scaffold.render_light(
-                        &mounted,
-                        &normal,
-                        facing.light(manifest.style.elevation),
-                    );
-                    assert!(
-                        rendered.as_raw() == expected.as_raw(),
-                        "{name}/{}: machine and sphere must be one computed render",
-                        facing.name()
-                    );
-                    rendered
-                })
-                .collect();
-            let measured = scaffold.calibration(&edits);
-            assert!(
-                direction_error(facings, manifest.style.elevation, &measured.lights)
-                    <= manifest.thresholds.sphere,
-                "{name}: light direction"
-            );
-            assert!(
-                measured.sphere <= manifest.thresholds.sphere,
-                "{name}: sphere shape"
             );
         }
     }
@@ -2395,7 +1625,6 @@ mod tests {
         }
         art.write(&Manifest {
             attempts,
-            style: shipped.style,
             thresholds: shipped.thresholds,
             machine: machines
                 .iter()
@@ -2405,7 +1634,7 @@ mod tests {
                         Entry {
                             kept: None,
                             painted: None,
-                            relit: None,
+                            relief: None,
                             motion: None,
                             instrument: crate::sound::instrument(item(name)),
                             emitter: crate::rig::entry(item(name)).emitter,
@@ -2491,7 +1720,7 @@ mod tests {
         assert_eq!(verdicts[2], "pass");
         assert_eq!(rows[&3].calls.design, 1.5);
         assert_eq!(art.read().machine["bonder"].kept, Some(3));
-        assert!(art.machine("bonder").join("relit/albedo.png").exists());
+        assert!(art.machine("bonder").join("normal.png").exists());
         assert!(art.dir.join("sheet.png").exists());
         let again = run();
         assert!(landed(&again));
@@ -2528,30 +1757,33 @@ mod tests {
     }
 
     #[test]
-    fn a_spent_call_stops_painting_and_failed_calls_use_up_the_attempts() {
-        let art = studio("spent", &["bonder"], 4);
+    fn a_spent_call_stops_every_machine_and_failed_calls_use_up_the_attempts() {
+        let names = ["bonder".to_string(), "resonator".to_string()];
+        let art = studio("spent", &["bonder", "resonator"], 4);
         let calls = std::sync::atomic::AtomicUsize::new(0);
         let spent = |_: &Path, _: &Path| {
-            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Err(Refusal::Spent("usage went from 0 to 0.01".to_string()))
+            if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                Err(Refusal::Spent("usage went from 0 to 0.01".to_string()))
+            } else {
+                Err(Refusal::Failed("HTTP 502".to_string()))
+            }
         };
-        let results = remake(&art, &["bonder".to_string()], &spent);
+        let results = remake(&art, &names, &spent);
         assert!(!landed(&results));
-        assert!(
-            results[0]
-                .1
-                .as_ref()
-                .unwrap_err()
-                .starts_with("stopped: usage"),
-            "{results:?}"
-        );
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert!(!art.machine("bonder").join("albedo.png").exists());
+        for (name, result) in &results {
+            assert!(
+                result.as_ref().unwrap_err().starts_with("stopped: usage"),
+                "{name}: {result:?}"
+            );
+            assert!(!art.machine(name).join("albedo.png").exists());
+        }
+        assert!(calls.load(std::sync::atomic::Ordering::SeqCst) <= 2);
+        calls.store(0, std::sync::atomic::Ordering::SeqCst);
         let failed = |_: &Path, _: &Path| {
             calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Err(Refusal::Failed("HTTP 502".to_string()))
         };
-        let results = remake(&art, &["bonder".to_string()], &failed);
+        let results = remake(&art, &names[..1], &failed);
         assert!(
             results[0]
                 .1
@@ -2560,7 +1792,7 @@ mod tests {
                 .contains("paint: HTTP 502"),
             "{results:?}"
         );
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 5);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
         std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 

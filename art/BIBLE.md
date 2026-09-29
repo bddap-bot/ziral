@@ -34,7 +34,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory reads chiefly by 
 
 ## 2. Language
 
-**Materials and light.** Glazed clay, rubbed brass and matte rubber offer a tactile starting point; other materials are welcome. Technical note: capture albedo under even, diffuse light because runtime normal-map lighting supplies direction; baked highlights and shadows would compete with it. [MACHINES.md](MACHINES.md#relief) describes the relief approximation and calibration relights.
+**Materials and light.** Glazed clay, rubbed brass and matte rubber offer a tactile starting point; other materials are welcome. Technical note: capture albedo under even, diffuse light because runtime normal-map lighting supplies direction; baked highlights and shadows would compete with it. [MACHINES.md](MACHINES.md#relief) describes the relief approximation.
 
 Directive: “Every machine body, including arms, has rich material: glaze variation, shading and depth are expected”; “The complete arm creeps, overshoots, and rings out”.
 

@@ -1095,7 +1095,7 @@ The critic ranks moxie above topology. The rubric judges, in order, presence, ma
 
 Directive: “the bar stays at 8”.
 
-Directive: the [director model](art/director-model.txt) composes the image prompts with creative freedom over art direction, changing the prompts as it sees fit.
+Directive: the director model composes the image prompts with creative freedom over art direction, changing the prompts as it sees fit.
 
 One director writes new prompts for machines, textures and the manual page. Moving its instruction and schema into `art/direct.sh` removed the separate Rust wording and kept one brief-to-caption step. [art/MACHINES.md](art/MACHINES.md#inputs-and-provenance) records current prompt provenance and regeneration; the reference concepts retain their historical log.
 
@@ -1464,3 +1464,9 @@ The bible offers the concept art in `art/reference/` as inspiration. Its state g
 Machines should read as distinct from each other; silhouette, reach, seats, colour and ornament are possibilities to judge together. Existing Directive lines remain verbatim and in order. Technical notes explain shared grout, clear atom seats and even-lit albedo by the seams, readability and competing runtime lighting they address. Pipeline checks live in `art/MACHINES.md`, separate from visual inspiration.
 
 The portal aperture frames its interior through one uniform transform without prescribing a square. This admits the Bracket opening without a second bible edit when the frame ships. Historical entries above describe earlier implementations, not additional restrictions on this direction.
+
+## Machine art from caption, Design and Design-Layer (#162, branch `ming-image`)
+
+Every machine sprite is painted by one chain: a declarative `caption.txt` per machine, Ming-Image Design for the picture, Ming-Image Design-Layer for the object's alpha, then fit, seat registration and the pre-existing footprint measurements as the retry policy, up to four attempts, keeping the first pass or else the attempt closest to its thresholds. [art/MACHINES.md](art/MACHINES.md) describes it and [PROOF.md](PROOF.md) records the generated set.
+
+It supersedes, on this branch, the director and critic runners (`ask.sh`, `direct.sh`, the director model file), the critic rounds, the green-key scaffold and chroma-key removal, the palette measurement, and the calibration relights, which lit only an analytic sphere and read nothing of the sprite. Entries above that describe those stages are historical.

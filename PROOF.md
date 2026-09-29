@@ -20,6 +20,9 @@ Names come from `look::machine`; every PNG is compiled in with `include_bytes!`,
 - `art/direct.sh`, `art/ask.sh`, `art/director-model.txt`, `art/tests/ask.sh`: the director and critic model calls; a caption file per machine and measured retries replace them.
 - The critic loop in `src/machines.rs`: rounds, rebriefs, judged boards, scores rows with critic columns, the rubric and threshold.
 - Chroma-key removal (`KEY`, spill and unspill): Design-Layer returns real alpha.
+- The calibration relights (`relit/` for every machine, atom and bond; the sphere renderer and its solver; `style.facings`, `style.elevation`, `thresholds.sphere`, the `[texture.*]` entries): they lit and measured only an analytic sphere, never the sprite, and nothing at runtime loads them.
+- The palette measurement: it was reported and never decided.
+- `proofs/rounds/`: renders of deleted critic rounds.
 - Per machine: `prompt.txt`, `candidates/`, `scores.tsv`, `scaffold.png` (the painter no longer takes a reference), `second-bond/recipe.png`.
 - Manifest: `candidates`, `style.shared`, `style.arm`, `style.critic`, `thresholds.critic`, every `direction`, `references` and `briefed`.
 
@@ -27,11 +30,11 @@ Names come from `look::machine`; every PNG is compiled in with `include_bytes!`,
 
 - `art/machines/manifest.toml`: the one source of rig parts, motion, particles, instruments, thresholds and cache keys.
 - Registration and measurement in `src/machines.rs`: now the retry policy for the model's shape liberties.
-- Relief and calibration relights: the runtime normal map comes from them, and atoms and bonds use the same path.
+- Surface normals from the albedo (`normal.png`): the shader lights the sprite through them.
 - `art/machines/rig.sh`: the game loads split part maps; the layer split separates by object, not by moving part.
 - The sheet builder (`--gen` writes `art/machines/sheet.png`): the one view of the whole set.
 - The game-side loaders (`src/look.rs`, `src/rig.rs`): unchanged; the chain writes their contract.
-- `art/paint.sh` and `art/textures/gen.sh`: the tiles and ethereal surface are painted over the grout template and the manual page is an edit of a supplied page, reference images Design cannot take. Symbols and pips are vector sources rendered by script at exact slot geometry; a raster model does not beat them. Atoms and bonds could move to this chain; they stay on `paint.sh` in this pass.
+- `art/paint.sh` and `art/textures/gen.sh`: the tiles and ethereal surface are painted over the grout template and the manual page is an edit of a supplied page, reference images Design cannot take. Symbols and pips are vector sources rendered by script at exact slot geometry; a raster model does not beat them. Atoms and bonds are not regenerated in this pass and keep their `paint.sh` textures; moving them is the one swap left open.
 
 ## Lighting-split probe
 
@@ -49,7 +52,7 @@ Verdict: Design-Layer splits by object only; it does not separate light terms. E
 
 [art/machines/sheet.png](art/machines/sheet.png) is every kept sprite on clay with its attempt and verdict. [proofs/ming-set-rig-162.png](proofs/ming-set-rig-162.png) is the `rig` shot scene with the new art loaded: the source, bonder and second bond with atoms in their seats, and every machine in the inventory column.
 
-Attempts were painted ahead of measurement, so machines whose early attempt would have ended the run still painted four; `attempts.tsv` records the measured ones. Model time is the sum of both calls' wall times for every attempt painted; the listed price and the account usage read $0 before the first call and after the last.
+This run painted attempts ahead of measurement, so machines whose early attempt ended the run still painted more; the committed loop measures each attempt before painting the next, and `attempts.tsv` records the measured ones. Model time is the sum of both calls' wall times for every attempt painted; the listed price and the account usage read $0 before the first call and after the last.
 
 | machine | attempts painted | kept | verdict of the kept attempt | model time (s) | cost |
 |---|---|---|---|---|---|

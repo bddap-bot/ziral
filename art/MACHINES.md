@@ -8,28 +8,26 @@ A caption is a declarative art director's description of the finished sprite: su
 
 `art/ming.sh design` sends the caption unchanged to `inclusionai/ming-image-0.1-design` on OpenRouter, which returns one 2048 px square picture on a plain background. It takes no reference image, so the footprint reaches it only through the caption's words.
 
-`art/ming.sh design-layer` sends that picture with one fixed layer plan to `inclusionai/ming-image-0.1-design-layer`: the complete object with its through-holes empty, the shadow beneath it, the background. It returns 1024 px RGBA layers. The object layer's alpha, scaled to the picture, is the sprite's alpha; its colour is the picture's where the layer is opaque and the layer's own at the soft edge. The shadow and background are discarded: runtime lighting supplies direction through the normal map.
+`art/ming.sh design-layer` sends that picture with one fixed layer plan to `inclusionai/ming-image-0.1-design-layer`: the complete object with its through-holes empty, the shadow beneath it, the background. It returns 1024 px RGBA layers. The object layer's alpha, scaled to the picture with values under 8/255 dropped as the layer's background noise, is the sprite's alpha; the colour is the picture's. The shadow and background are discarded: runtime lighting supplies direction through the normal map.
 
-Both calls check the listed price before and the account usage before and after. A non-zero price or a usage change exits 3 and stops every painter in the run. `OPENROUTER_API_KEY` comes from the environment.
+Both calls check the listed price before and the account usage before and after, a failed call included. A non-zero price, a non-zero reported cost or a usage change exits 3 and stops every painter in the run; any other failure is a failed attempt. `OPENROUTER_API_KEY` comes from the environment.
 
 ## Attempts
 
 Inside `nix-shell`, `cargo run -- --gen NAME...` or `--gen --all`. Each machine gets up to `attempts` Design → Design-Layer runs, at most five in flight across machines, and stops at the first that passes:
 
-1. **Matte.** A non-square picture, a split with one layer, an object layer covering under 3% or over 90% of its frame, or one that reaches the frame's edge fails the attempt.
+1. **Matte.** A non-square picture or object layer, a split with one layer, an object layer covering under 3% or over 90% of its frame, or one that reaches the frame's edge fails the attempt.
 2. **Fit.** The silhouette's bounding centre goes to the footprint centre and one uniform scale makes it the largest that stays inside the union of footprint hexes. Nothing is stretched or rotated.
 3. **Register.** On a machine with seats, the seat rims found near their cells give one translation and one uniform scale by least squares.
-4. **Measure.** `outside` is the farthest a visible pixel lies beyond the footprint, `seat` the rim contrast of the weakest seat, `off_centre` the farthest registered seat from its cell, all in hex circumradii against the manifest thresholds. `palette` is reported and never decides.
+4. **Measure.** `outside` is the farthest a visible pixel lies beyond the footprint, `seat` the rim contrast of the weakest seat, `off_centre` the farthest registered seat from its cell, all in hex circumradii against the manifest thresholds.
 
 With no pass, the attempt whose worst measurement is closest to its threshold is kept and its failing verdict stays on the sheet. A run where no attempt made a sprite does not land.
 
-`attempts.tsv` records every attempt: verdict, the four measurements, the two call times and the cost. The pictures and layers stay in the ignored `attempts/` directory. `painted` in the manifest keys the caption, the budget and the layer plan; a change repaints from attempt one, and an unchanged machine is only re-lit if its albedo changed.
+`attempts.tsv` records every measured attempt: verdict, the three measurements, the two call times and the cost. The pictures and layers stay in the ignored `attempts/` directory. `painted` in the manifest keys the caption, the budget and the layer plan; a change repaints from attempt one.
 
 ## Relief
 
-`albedo.png` is the registered sprite cropped to the machine's quad, 256 px per hex, quantised. A deterministic shallow height approximation combines alpha with 15% luminance variation, blurred by four pixels; central differences produce `normal.png`. This is approximate relief, not recovered geometry.
-
-One renderer shades the machine and an analytic grey calibration sphere with `ambient + (1 - ambient) * max(normal · light, 0)` for the six manifest facings at 45° elevation. `relit/` holds those renders, `lights.txt` the requested and measured directions, and `relit/albedo.png` the six stacked. It is calibration evidence, not a runtime material. The same relief runs for the atom and bond textures.
+`albedo.png` is the registered sprite cropped to the machine's quad, 256 px per hex, quantised. A deterministic shallow height approximation combines alpha with 15% luminance variation, blurred by four pixels; central differences produce `normal.png`, keyed to the albedo by `relief` in the manifest. This is approximate relief, not recovered geometry; the shader lights it.
 
 `art/machines/rig.sh` splits articulated machines into a central circular moving part and its base, with colour, normal and emissive maps; static housings keep an empty part list. `sheet.png` shows every kept sprite on clay with its attempt and verdict.
 

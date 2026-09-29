@@ -18,11 +18,10 @@ Round one of the exploration in issue #150. The pick was Molt, steered; round tw
 From the repository root, inside `nix-shell`, choose a candidate directory as `candidate` and run:
 
 ```sh
-art/direct.sh "$(cat "$candidate/brief.md")" > "$candidate/prompt.txt"
 art/paint.sh -s 1024 "$candidate/paint.png" "$candidate/prompt.txt"
 ```
 
-To reuse the exact painted caption, run only the second command. The paint script removes the provenance footer before sending the caption unchanged, verifies the image call, rejects non-square returns, and resizes uniformly. These paintings have no reference attachments. The adjacent briefs are the complete exploration directions; the shipped shared style is deliberately excluded. Registration, palette and automatic selection gates from the shipped manifest do not select an exploration winner.
+The captions were written by a director model whose runner is gone; `prompt.txt` is the caption to reuse. The paint script removes the provenance footer before sending the caption unchanged, verifies the image call, rejects non-square returns, and resizes uniformly. These paintings have no reference attachments. The adjacent briefs are the complete exploration directions; the shipped shared style is deliberately excluded. Registration, palette and automatic selection gates from the shipped manifest do not select an exploration winner.
 
 The sheet is an albedo placement study, not a proposed runtime patch. Each native-size panel uses an unscaled crop of the actual board renderer. The default camera renders a hex circumradius of 20 world units at two pixels per world unit: a tile is 80 pixels high. Each candidate is scaled uniformly, with its central body approximately one tile high. Paper and thorn extensions intentionally exceed that footprint. Separate large views expose the material and silhouette. The empty apertures are painted placeholders, not a replacement for the canonical live interior preview. No caption is drawn inside a game panel.
 

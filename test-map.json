@@ -25,11 +25,6 @@
       "why": "prose; nothing executes it"
     },
     {
-      "paths": ["proofs/rounds/**"],
-      "tests": [],
-      "why": "critic round renders and their score record are inspected together on the stitched proof"
-    },
-    {
       "paths": ["proofs/*.png", "proofs/*.gif", "proofs/*.mp4"],
       "tests": [],
       "why": "visual proof assets are inspected at their native dimensions"
@@ -50,12 +45,12 @@
       "why": "every shipped texture must keep the prompt that painted it beside it"
     },
     {
-      "paths": ["art/machines/**", "art/textures/relit/**", "art/ming.sh"],
+      "paths": ["art/machines/**", "art/ming.sh"],
       "tests": [
         "nix-shell --run 'shellcheck art/ming.sh art/machines/rig.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"
       ],
-      "why": "the machine sprites are painted by ziral --gen through ming.sh from each machine's caption; the tests check the shipped captions, kept attempts, maps and keys against the manifest"
+      "why": "the machine sprites are painted by ziral --gen through ming.sh from each machine's caption; the tests check the shipped captions, kept attempts, normal maps and keys against the manifest"
     },
     {
       "paths": ["art/**/*.sh"],
