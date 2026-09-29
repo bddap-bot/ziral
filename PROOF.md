@@ -32,3 +32,14 @@ Names come from `look::machine`; every PNG is compiled in with `include_bytes!`,
 - The sheet builder (`--gen` writes `art/machines/sheet.png`): the one view of the whole set.
 - The game-side loaders (`src/look.rs`, `src/rig.rs`): unchanged; the chain writes their contract.
 - `art/paint.sh` and `art/textures/gen.sh`: the tiles and ethereal surface are painted over the grout template and the manual page is an edit of a supplied page, reference images Design cannot take. Symbols and pips are vector sources rendered by script at exact slot geometry; a raster model does not beat them. Atoms and bonds could move to this chain; they stay on `paint.sh` in this pass.
+
+## Lighting-split probe
+
+One reference, the resonator's first Design picture, the same picture its object split used. The Design-Layer plan asked for four layers: flat albedo with no shading or highlights, specular highlights only, directional light and shadow only, and the background (plan and outputs in [proofs/ming-light-split-162.png](proofs/ming-light-split-162.png), last tile the recomposite).
+
+- Layer 1 ("flat albedo") is a smoothed re-render of the body without the brass crest, rivets or crazing, still shaded and glossy: luminance standard deviation 30.1 over its opaque pixels.
+- Layer 2 ("specular only") is the complete detailed object, opaque over the same silhouette: opaque IoU with layer 1 is 0.962.
+- Layer 3 ("light and shadow") is a flat pale wash, RGB (225, 225, 227) at alpha 10 to 79, with no shading structure.
+- Stacking the four layers misses the reference by a mean |ΔRGB| of 20.4 / 25.4 / 24.1, against 4.3 for the object split.
+
+Verdict: Design-Layer splits by object only; it does not separate light terms. Evidence for a later decision, not a stage here.
