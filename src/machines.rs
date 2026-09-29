@@ -1014,6 +1014,7 @@ const FIT_GRID: u32 = 512;
 const COVER: [f32; 2] = [0.03, 0.9];
 const FRAME_EDGE: f32 = 0.01;
 const EDGE_ALPHA: f32 = 0.02;
+const NOISE: f32 = 8.0 / 255.0;
 const PLAN: &str = "Decompose this image into 3 layers with the following specifications:\n\nNumber of layers: 3\nLayer 1: The complete object, every part and fitting of it, with any hole cut through it left empty.\nLayer 2: The soft shadow beneath the object, if any.\nLayer 3: The plain background.\n";
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -1125,7 +1126,7 @@ fn matte(out: &Path) -> Result<RgbaImage, String> {
     let up = image::imageops::resize(&object, w, h, image::imageops::FilterType::CatmullRom);
     Ok(RgbaImage::from_fn(w, h, |x, y| {
         let (o, d) = (up.get_pixel(x, y), design.get_pixel(x, y));
-        let a = alpha(o);
+        let a = alpha(o) * f32::from(alpha(o) >= NOISE);
         let t = ((a - 0.9) / 0.1).clamp(0.0, 1.0);
         let (layer, design) = (rgb(o), rgb(d));
         rgba([0, 1, 2].map(|i| design[i] * t + layer[i] * (1.0 - t)), a)
