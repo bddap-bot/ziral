@@ -13,11 +13,6 @@
       "why": "the standalone receiver has its own lockfile, storage and relay tests"
     },
     {
-      "paths": ["art/ask.sh", "art/director-model.txt", "art/tests/ask.sh"],
-      "tests": ["nix-shell --run 'shellcheck art/ask.sh art/tests/ask.sh && art/tests/ask.sh && cargo test ask_sh -- --test-threads=2 && cargo test direct_sh -- --test-threads=2'"],
-      "why": "the shared runner passes the directive model explicitly and accepts only successful calls with matching transcript models"
-    },
-    {
       "paths": ["art/paint.sh", "art/textures/gen.sh", "art/tests/**"],
       "tests": [
         "nix-shell --run 'shellcheck art/paint.sh art/textures/gen.sh art/tests/paint.sh && art/tests/paint.sh'"
@@ -50,22 +45,17 @@
       "why": "one vector source regenerates every symbol and its shipped-size proof; runtime displays place those same alpha-blended textures"
     },
     {
-      "paths": ["art/direct.sh"],
-      "tests": ["nix-shell --run 'shellcheck art/direct.sh && cargo test direct_sh -- --test-threads=2'"],
-      "why": "direct.sh writes every painted prompt; the stub-codex test runs the script"
-    },
-    {
       "paths": ["art/textures/*.prompt.txt", "art/overlay/*.prompt.txt"],
       "tests": ["nix-shell --run 'cargo test every_painted_texture_has_the_prompt -- --test-threads=2'"],
       "why": "every shipped texture must keep the prompt that painted it beside it"
     },
     {
-      "paths": ["art/machines/**", "art/textures/relit/**"],
+      "paths": ["art/machines/**", "art/textures/relit/**", "art/ming.sh"],
       "tests": [
-        "nix-shell --run 'shellcheck art/paint.sh art/ask.sh art/direct.sh art/machines/rig.sh'",
+        "nix-shell --run 'shellcheck art/ming.sh art/machines/rig.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"
       ],
-      "why": "the machine textures are painted by ziral --gen through paint.sh, their prompts written through direct.sh and their candidates judged through ask.sh; the tests check the shipped scaffolds, prompts, kept candidates, maps and keys against the manifest"
+      "why": "the machine sprites are painted by ziral --gen through ming.sh from each machine's caption; the tests check the shipped captions, kept attempts, maps and keys against the manifest"
     },
     {
       "paths": ["art/**/*.sh"],

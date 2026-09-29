@@ -2,4 +2,4 @@
 web/dist/
 *.log
 *.part
-art/machines/*/judged/
+art/machines/*/attempts/

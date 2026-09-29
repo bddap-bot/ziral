@@ -9,8 +9,6 @@ use std::path::{Path, PathBuf};
 
 const PX_PER_HEX: f32 = 256.0;
 const BAND: f32 = 0.5;
-const KEY: [f32; 3] = [0.0, 1.0, 0.0];
-const SPILL: [f32; 2] = [0.1, 0.6];
 const SEAT: f32 = 0.4;
 const SEAT_RING: f32 = 0.32;
 const SEAT_DOT: f32 = 0.12;
@@ -25,7 +23,6 @@ const SPHERE_CAP: f32 = 0.5;
 const PAD: f32 = 1.6;
 const PAD_ALBEDO: f32 = 0.45;
 const SAMPLES: usize = 4;
-const CRITIC_PX: u32 = 512;
 const RUBBER: [f32; 3] = [
     0x42 as f32 / 255.0,
     0x3B as f32 / 255.0,
@@ -34,7 +31,7 @@ const RUBBER: [f32; 3] = [
 
 #[derive(Serialize, Deserialize)]
 struct Manifest {
-    candidates: u32,
+    attempts: u32,
     style: Style,
     thresholds: Thresholds,
     machine: BTreeMap<String, Entry>,
@@ -44,9 +41,6 @@ struct Manifest {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Style {
-    shared: String,
-    arm: String,
-    critic: String,
     facings: [Facing; 6],
     elevation: f32,
 }
@@ -115,17 +109,12 @@ struct Thresholds {
     outside: f32,
     seat: f32,
     off_centre: f32,
-    critic: u8,
     sphere: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Entry {
-    direction: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    references: Vec<String>,
     kept: Option<u32>,
-    briefed: Option<String>,
     painted: Option<String>,
     relit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -193,58 +182,16 @@ impl Art {
         self.dir.join("../textures/relit").join(name)
     }
 
-    fn candidate(&self, name: &str, index: u32) -> PathBuf {
-        self.machine(name)
-            .join(format!("candidates/{name}-{index}.png"))
+    fn ming_sh(&self) -> PathBuf {
+        self.dir.join("../ming.sh")
     }
 
-    fn paint_sh(&self) -> PathBuf {
-        self.dir.join("../paint.sh")
+    fn caption(&self, name: &str) -> PathBuf {
+        self.machine(name).join("caption.txt")
     }
 
-    fn ask_sh(&self) -> PathBuf {
-        self.dir.join("../ask.sh")
-    }
-
-    fn direct_sh(&self) -> PathBuf {
-        self.dir.join("../direct.sh")
-    }
-
-    fn prompt(&self, name: &str) -> PathBuf {
-        self.machine(name).join("prompt.txt")
-    }
-
-    fn judged(&self, name: &str, index: u32) -> PathBuf {
-        self.machine(name)
-            .join(format!("judged/{name}-{index}.png"))
-    }
-
-    fn round(&self, name: &str, round: usize) -> PathBuf {
-        self.machine(name)
-            .join(format!("candidates/round-{round}.txt"))
-    }
-
-    fn candidates(&self, name: &str) -> Vec<u32> {
-        let mut indices: Vec<u32> = std::fs::read_dir(self.machine(name).join("candidates"))
-            .map(|entries| {
-                entries
-                    .filter_map(Result::ok)
-                    .filter_map(|e| {
-                        let file = e.file_name();
-                        let stem = file
-                            .to_str()?
-                            .strip_prefix(name)?
-                            .strip_prefix('-')?
-                            .strip_suffix(".png")?;
-                        stem.parse()
-                            .ok()
-                            .filter(|i: &u32| *i > 0 && i.to_string() == stem)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        indices.sort_unstable();
-        indices
+    fn attempt(&self, name: &str, index: u32) -> PathBuf {
+        self.machine(name).join(format!("attempts/{index}"))
     }
 }
 
@@ -317,14 +264,14 @@ impl Scaffold {
         scaffold
     }
 
-    fn mount(&self, image: &RgbaImage) -> RgbaImage {
+    fn mount(&self, image: &RgbaImage, pad: Rgba<u8>) -> RgbaImage {
         let (origin, side) = self.crop();
         assert_eq!((image.width(), image.height()), (side, side));
         RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
             if (origin..origin + side).contains(&x) && (origin..origin + side).contains(&y) {
                 *image.get_pixel(x - origin, y - origin)
             } else {
-                grey(PAD_ALBEDO)
+                pad
             }
         })
     }
@@ -422,132 +369,26 @@ impl Scaffold {
         }
     }
 
-    fn paint(&self, world: Vec2) -> Rgba<u8> {
-        let glaze = self
-            .in_cell(world, HEX)
-            .and_then(|cell| self.mark(cell, world));
-        let guide = if self.covered(world) && !self.cells.iter().any(|c| c.role == Role::Pivot) {
-            [0.7; 3]
-        } else {
-            KEY
-        };
-        rgba(glaze.map_or(guide, Glaze::rgb), 1.0)
-    }
-
-    fn render(&self) -> RgbaImage {
-        RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
-            self.paint(self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)))
-        })
-    }
-
     fn alpha(&self, candidate: &RgbaImage) -> Vec<f32> {
-        candidate.pixels().map(pixel_opacity).collect()
-    }
-
-    fn cut(&self, candidate: &RgbaImage) -> RgbaImage {
-        let (origin, side) = self.crop();
-        RgbaImage::from_fn(side, side, |x, y| {
-            let p = candidate.get_pixel(x + origin, y + origin);
-            rgba(unspill(rgb(p)), pixel_opacity(p))
-        })
-    }
-
-    fn board(&self, candidate: &RgbaImage) -> RgbaImage {
-        let side = self.quad.side.round() as u32;
-        let sprite = shrink(&self.cut(candidate), side);
-        let (tiles, grout) = tiles();
-        let half = side as f32 / 2.0;
-        let shipped = RgbaImage::from_fn(side, side, |x, y| {
-            let world =
-                self.quad.centre + Vec2::new(x as f32 + 0.5 - half, half - (y as f32 + 0.5));
-            let h = crate::hex_at(world);
-            let u = (world - px(h)) / HEX * *look::ring().end();
-            let tile = if look::hex_norm(u.x, u.y) >= *look::ring().start() {
-                grout
-            } else {
-                let skin = look::tile(h).skin;
-                &tiles[look::TILES
-                    .iter()
-                    .position(|t| *t == skin)
-                    .expect("a tile skin is one of TILES")]
-            };
-            let at = Vec2::new((u.x + 1.0) / 2.0, 1.0 - (u.y + 1.0) / 2.0) * tile.width() as f32;
-            let ground = rgb(&bilinear(tile, at));
-            let s = sprite.get_pixel(x, y);
-            let a = f32::from(s[3]) / 255.0;
-            let c = rgb(s);
-            rgba([0, 1, 2].map(|i| ground[i] * (1.0 - a) + c[i] * a), 1.0)
-        });
-        magnify(&shipped, CRITIC_PX.div_ceil(side))
+        candidate.pixels().map(alpha).collect()
     }
 
     fn register(&self, candidate: &RgbaImage) -> Capture {
-        let keyed = RgbaImage::from_fn(candidate.width(), candidate.height(), |x, y| {
-            let pixel = candidate.get_pixel(x, y);
-            let alpha = f32::from(pixel[3]) / 255.0;
-            let color = rgb(pixel);
-            rgba(
-                [0, 1, 2].map(|i| color[i] * alpha + KEY[i] * (1.0 - alpha)),
-                1.0,
-            )
-        });
-        let candidate = &keyed;
-        assert_eq!(
-            (candidate.width(), candidate.height()),
-            (self.canvas, self.canvas),
-            "a candidate is painted over the whole scaffold"
-        );
+        let fitted = self.fit(candidate);
         let cells: Vec<Vec2> = self.marked().map(|c| px(c.at)).collect();
-        let seats: Option<Vec<Vec2>> = self.marked().map(|c| self.seat(candidate, c)).collect();
-        let Some(seats) = seats else {
-            return Capture {
-                image: candidate.clone(),
-                off_centre: f32::INFINITY,
-            };
-        };
         if cells.is_empty() {
-            let points: Vec<_> = candidate
-                .enumerate_pixels()
-                .filter(|(_, _, p)| pixel_opacity(p) > 0.0)
-                .map(|(x, y, _)| self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)))
-                .collect();
-            let lo = points
-                .iter()
-                .copied()
-                .fold(Vec2::splat(f32::INFINITY), Vec2::min);
-            let hi = points
-                .iter()
-                .copied()
-                .fold(Vec2::splat(f32::NEG_INFINITY), Vec2::max);
-            let center = (lo + hi) / 2.0;
-            let extent = self
-                .cells
-                .iter()
-                .map(|cell| {
-                    let p = (px(cell.at) - self.quad.centre) / HEX;
-                    look::hex_norm(p.x, p.y) + 1.0
-                })
-                .fold(0.0, f32::max);
-            let scale = points
-                .iter()
-                .map(|p| {
-                    let p = (*p - center) / HEX;
-                    look::hex_norm(p.x, p.y)
-                })
-                .fold(0.0, f32::max)
-                / extent;
-            let image = RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
-                let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-                bilinear(
-                    candidate,
-                    self.pixel(center + (world - self.quad.centre) * scale),
-                )
-            });
             return Capture {
-                image,
+                image: fitted,
                 off_centre: 0.0,
             };
         }
+        let seats: Option<Vec<Vec2>> = self.marked().map(|c| self.seat(&fitted, c)).collect();
+        let Some(seats) = seats else {
+            return Capture {
+                image: fitted,
+                off_centre: f32::INFINITY,
+            };
+        };
         let n = cells.len() as f32;
         let (c0, s0) = (
             cells.iter().sum::<Vec2>() / n,
@@ -567,7 +408,7 @@ impl Scaffold {
         let onto = |w: Vec2| s0 + k * (w - c0);
         let image = RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
             let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-            bilinear(candidate, self.pixel(onto(world)))
+            bilinear(&fitted, self.pixel(onto(world)))
         });
         let off_centre = self
             .marked()
@@ -577,6 +418,64 @@ impl Scaffold {
             })
             .fold(0.0, f32::max);
         Capture { image, off_centre }
+    }
+
+    fn fit(&self, candidate: &RgbaImage) -> RgbaImage {
+        let (width, height) = candidate.dimensions();
+        let step = (width.max(height) / FIT_GRID).max(1);
+        let solid = |x: u32, y: u32| x < width && y < height && candidate.get_pixel(x, y)[3] >= 128;
+        let mut lo = Vec2::splat(f32::INFINITY);
+        let mut hi = Vec2::splat(f32::NEG_INFINITY);
+        let mut edge = Vec::new();
+        for y in (0..height).step_by(step as usize) {
+            for x in (0..width).step_by(step as usize) {
+                if !solid(x, y) {
+                    continue;
+                }
+                let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+                lo = lo.min(p);
+                hi = hi.max(p);
+                let inner = x >= step
+                    && y >= step
+                    && solid(x - step, y)
+                    && solid(x + step, y)
+                    && solid(x, y - step)
+                    && solid(x, y + step);
+                if !inner {
+                    edge.push(p);
+                }
+            }
+        }
+        if edge.is_empty() {
+            return RgbaImage::new(self.canvas, self.canvas);
+        }
+        let centre = (lo + hi) / 2.0;
+        let world =
+            |p: Vec2, k: f32| self.quad.centre + Vec2::new(p.x - centre.x, centre.y - p.y) / k;
+        let over = |k: f32| {
+            edge.iter()
+                .map(|p| self.outside(world(*p, k)))
+                .fold(0.0, f32::max)
+        };
+        let guess = (hi - lo).max_element() / self.quad.side;
+        let (mut small, mut large) = (guess / 100.0, guess * 100.0);
+        for _ in 0..40 {
+            let mid = (small * large).sqrt();
+            if over(mid) > 0.0 {
+                small = mid;
+            } else {
+                large = mid;
+            }
+        }
+        RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
+            let w = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)) - self.quad.centre;
+            let p = centre + Vec2::new(w.x, -w.y) * large;
+            if p.x < 0.0 || p.y < 0.0 || p.x >= width as f32 || p.y >= height as f32 {
+                Rgba([0; 4])
+            } else {
+                bilinear(candidate, p)
+            }
+        })
     }
 
     fn score(&self, capture: &Capture) -> Score {
@@ -662,15 +561,15 @@ impl Scaffold {
         let mut around = Mean::default();
         for y in y0..y1 {
             for x in x0..x1 {
-                let p = candidate.get_pixel(x, y);
+                let p = over_black(candidate.get_pixel(x, y));
                 let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
                 let r = (world - px(cell.at)).length() / HEX;
                 if r <= SEAT_DOT {
-                    centre.add_rgb(rgb(p));
+                    centre.add_rgb(p);
                 } else if self.mark(cell, world).is_some() {
-                    mark.add_rgb(rgb(p));
+                    mark.add_rgb(p);
                 } else if (SEAT_AROUND[0]..=SEAT_AROUND[1]).contains(&r) {
-                    around.add_rgb(rgb(p));
+                    around.add_rgb(p);
                 }
             }
         }
@@ -681,8 +580,7 @@ impl Scaffold {
         let sample = |world: Vec2| {
             let p = self.pixel(world);
             let inside = p.min_element() >= 0.0 && p.max_element() < self.canvas as f32;
-            let pixel = inside.then(|| candidate.get_pixel(p.x as u32, p.y as u32))?;
-            (pixel_opacity(pixel) > 0.0).then(|| Vec3::from_array(rgb(pixel)))
+            inside.then(|| Vec3::from_array(over_black(candidate.get_pixel(p.x as u32, p.y as u32))))
         };
         let step = SEAT_STEP * HEX;
         let rings = ((SEAT_AROUND[1] - SEAT_DOT) / SEAT_STEP).ceil() as usize;
@@ -729,7 +627,7 @@ impl Scaffold {
     fn surface_normals(&self, candidate: &RgbaImage) -> RgbaImage {
         let height = RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
             let p = candidate.get_pixel(x, y);
-            grey(opacity(rgb(p)) * f32::from(p[3]) / 255.0 * (0.85 + 0.15 * luminance(p)))
+            grey(alpha(p) * (0.85 + 0.15 * luminance(p)))
         });
         let height = image::imageops::blur(&height, 4.0);
         let sample = |x: u32, y: u32| luminance(height.get_pixel(x, y));
@@ -738,8 +636,7 @@ impl Scaffold {
             let dy = sample(x, (y + 1).min(self.canvas - 1)) - sample(x, y.saturating_sub(1));
             encode(
                 Vec3::new(-24.0 * dx, 24.0 * dy, 1.0).normalize(),
-                opacity(rgb(candidate.get_pixel(x, y))) * f32::from(candidate.get_pixel(x, y)[3])
-                    / 255.0,
+                alpha(candidate.get_pixel(x, y)),
             )
         })
     }
@@ -767,7 +664,7 @@ impl Scaffold {
             } else {
                 f32::from(normal.get_pixel(x, y)[3]) / 255.0
             };
-            rgba(unspill(rgb(p)).map(|c| c * strength), alpha)
+            rgba(rgb(p).map(|c| c * strength), alpha)
         })
     }
 
@@ -959,29 +856,6 @@ struct Score {
     seat: f32,
     palette: f32,
     off_centre: f32,
-    judged: Option<Judged>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct Judged {
-    key: String,
-    critic: Critic,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-struct Critic {
-    compound: bool,
-    score: u8,
-    issues: Vec<String>,
-}
-
-impl Critic {
-    fn parse(text: &str) -> Option<Critic> {
-        let object = text.get(text.find('{')?..=text.rfind('}')?)?;
-        let mut judgement: Critic = serde_json::from_str(object).ok()?;
-        judgement.issues.truncate(5);
-        (judgement.score <= 10).then_some(judgement)
-    }
 }
 
 impl Score {
@@ -1004,71 +878,11 @@ impl Score {
         self.measured(t).is_none()
     }
 
-    fn reaches(&self, t: &Thresholds) -> bool {
-        self.passes(t)
-            && self
-                .judged
-                .as_ref()
-                .is_some_and(|j| j.critic.score >= t.critic)
+    fn excess(&self, t: &Thresholds) -> f32 {
+        (self.outside / t.outside)
+            .max(t.seat / self.seat)
+            .max(self.off_centre / t.off_centre)
     }
-
-    fn rank(&self) -> (u8, f32) {
-        (
-            self.judged.as_ref().map_or(0, |j| j.critic.score),
-            self.seat - self.outside,
-        )
-    }
-
-    fn issues(&self) -> &[String] {
-        self.judged.as_ref().map_or(&[], |j| &j.critic.issues)
-    }
-}
-
-fn shrink(image: &RgbaImage, side: u32) -> RgbaImage {
-    let (w, h) = image.dimensions();
-    let mut bins = vec![[0f32; 5]; (side * side) as usize];
-    for (x, y, p) in image.enumerate_pixels() {
-        let bin = &mut bins[(y * side / h * side + x * side / w) as usize];
-        let a = f32::from(p[3]) / 255.0;
-        for (i, c) in rgb(p).iter().enumerate() {
-            bin[i] += c * a;
-        }
-        bin[3] += a;
-        bin[4] += 1.0;
-    }
-    RgbaImage::from_fn(side, side, |x, y| {
-        let b = bins[(y * side + x) as usize];
-        if b[3] > 0.0 {
-            rgba([b[0] / b[3], b[1] / b[3], b[2] / b[3]], b[3] / b[4])
-        } else {
-            Rgba([0, 0, 0, 0])
-        }
-    })
-}
-
-fn magnify(image: &RgbaImage, by: u32) -> RgbaImage {
-    RgbaImage::from_fn(image.width() * by, image.height() * by, |x, y| {
-        *image.get_pixel(x / by, y / by)
-    })
-}
-
-fn tiles() -> &'static (Vec<RgbaImage>, RgbaImage) {
-    static TILES: std::sync::OnceLock<(Vec<RgbaImage>, RgbaImage)> = std::sync::OnceLock::new();
-    TILES.get_or_init(|| {
-        let side = (2.0 * HEX) as u32;
-        let decode = |skin: &look::Skin| {
-            shrink(
-                &image::load_from_memory(skin.png)
-                    .unwrap_or_else(|e| panic!("{skin:?} does not decode: {e}"))
-                    .to_rgba8(),
-                side,
-            )
-        };
-        (
-            look::TILES.iter().map(decode).collect(),
-            decode(&look::GROUT),
-        )
-    })
 }
 
 #[derive(Default)]
@@ -1161,20 +975,12 @@ fn apart(a: [f32; 3], b: [f32; 3]) -> f32 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
-fn spill(c: [f32; 3]) -> f32 {
-    c[1] - c[0].max(c[2])
+fn alpha(p: &Rgba<u8>) -> f32 {
+    f32::from(p[3]) / 255.0
 }
 
-fn pixel_opacity(p: &Rgba<u8>) -> f32 {
-    opacity(rgb(p)) * f32::from(p[3]) / 255.0
-}
-
-fn opacity(c: [f32; 3]) -> f32 {
-    1.0 - ((spill(c) - SPILL[0]) / (SPILL[1] - SPILL[0])).clamp(0.0, 1.0)
-}
-
-fn unspill(c: [f32; 3]) -> [f32; 3] {
-    [c[0], c[1] - spill(c).max(0.0), c[2]]
+fn over_black(p: &Rgba<u8>) -> [f32; 3] {
+    rgb(p).map(|c| c * alpha(p))
 }
 
 fn open(path: impl AsRef<Path>) -> RgbaImage {
@@ -1204,58 +1010,193 @@ fn stack(images: &[RgbaImage]) -> RgbaImage {
     )
 }
 
-const PAINTERS: usize = 6;
-const ROUNDS: usize = 3;
+const PAINTERS: usize = 5;
+const FIT_GRID: u32 = 512;
+const COVER: [f32; 2] = [0.03, 0.9];
+const FRAME_EDGE: f32 = 0.01;
+const EDGE_ALPHA: f32 = 0.02;
+const PLAN: &str = "Decompose this image into 3 layers with the following specifications:\n\nNumber of layers: 3\nLayer 1: The complete object, every part and fitting of it, with any hole cut through it left empty.\nLayer 2: The soft shadow beneath the object, if any.\nLayer 3: The plain background.\n";
 
-struct Paint {
-    images: Vec<PathBuf>,
-    output: PathBuf,
-    prompt_path: PathBuf,
-    size: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+struct Calls {
+    design: f32,
+    layer: f32,
+    cost: f64,
 }
 
-type Painter<'a> = &'a (dyn Fn(&Paint) -> Result<(), String> + Sync);
-
-fn paint_sh(art: &Art, job: &Paint) -> Result<(), String> {
-    let stem = job
-        .output
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let mut command = std::process::Command::new(art.paint_sh());
-    command.arg("-s").arg(job.size.to_string());
-    for image in &job.images {
-        command.arg("-i").arg(image);
+impl Calls {
+    fn read(out: &Path) -> Option<Calls> {
+        if !out.join("design.png").exists() || !out.join("layer-1.png").exists() {
+            return None;
+        }
+        let text = std::fs::read_to_string(out.join("calls.tsv")).ok()?;
+        let mut calls = Calls::default();
+        let mut seen = [false; 2];
+        for line in text.lines() {
+            let cols: Vec<&str> = line.split('\t').collect();
+            let [model, seconds, cost, ..] = cols[..] else {
+                return None;
+            };
+            let (seconds, cost): (f32, f64) = (seconds.parse().ok()?, cost.parse().ok()?);
+            match model {
+                "design" => (calls.design, seen[0]) = (seconds, true),
+                "design-layer" => (calls.layer, seen[1]) = (seconds, true),
+                _ => return None,
+            }
+            calls.cost += cost;
+        }
+        (seen == [true, true]).then_some(calls)
     }
-    let output = command
-        .arg(&job.output)
-        .arg(&job.prompt_path)
+}
+
+enum Refusal {
+    Spent(String),
+    Failed(String),
+}
+
+type Painter<'a> = &'a (dyn Fn(&Path, &Path) -> Result<Calls, Refusal> + Sync);
+
+fn ming(art: &Art, caption: &Path, out: &Path) -> Result<Calls, Refusal> {
+    let failed = |e: std::io::Error| Refusal::Failed(format!("{}: {e}", out.display()));
+    std::fs::create_dir_all(out).map_err(failed)?;
+    let plan = out.join("plan.txt");
+    std::fs::write(&plan, PLAN).map_err(failed)?;
+    let design = out.join("design.png");
+    let mut log = ming_sh(art, &["design".as_ref(), design.as_ref(), caption.as_ref()])?;
+    log += &ming_sh(
+        art,
+        &["design-layer".as_ref(), out.as_ref(), design.as_ref(), plan.as_ref()],
+    )?;
+    std::fs::write(out.join("calls.tsv"), log).map_err(failed)?;
+    Calls::read(out).ok_or_else(|| Refusal::Failed(format!("{}: incomplete", out.display())))
+}
+
+fn ming_sh(art: &Art, args: &[&std::ffi::OsStr]) -> Result<String, Refusal> {
+    let script = art.ming_sh();
+    let output = std::process::Command::new(&script)
+        .args(args)
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
         .output()
-        .map_err(|e| format!("{}: {e}", art.paint_sh().display()))?;
+        .map_err(|e| Refusal::Failed(format!("{}: {e}", script.display())))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
-        eprintln!("{stem}: {line}");
+        eprintln!("{line}");
     }
-    if output.status.success() {
-        let mut image = open(&job.output);
-        if image.pixels().any(|p| p[3] != 255) {
-            for p in image.pixels_mut() {
-                let a = f32::from(p[3]) / 255.0;
-                let c = rgb(p);
-                *p = rgba([0, 1, 2].map(|i| c[i] * a + KEY[i] * (1.0 - a)), 1.0);
-            }
-            save(&image, &job.output);
-        }
-        return Ok(());
-    }
-    Err(stderr
+    let last = stderr
         .lines()
         .rev()
         .find(|l| !l.trim().is_empty())
-        .unwrap_or("paint.sh failed without a word")
-        .to_string())
+        .unwrap_or("ming.sh failed without a word")
+        .to_string();
+    match output.status.code() {
+        Some(0) => Ok(String::from_utf8_lossy(&output.stdout).into_owned()),
+        Some(3) => Err(Refusal::Spent(last)),
+        _ => Err(Refusal::Failed(last)),
+    }
+}
+
+fn matte(out: &Path) -> Result<RgbaImage, String> {
+    let design = open(out.join("design.png"));
+    let (w, h) = design.dimensions();
+    if w != h {
+        return Err(format!("the design is {w}x{h}, not square"));
+    }
+    if !out.join("layer-2.png").exists() {
+        return Err("the split returned one layer".to_string());
+    }
+    let object = open(out.join("layer-1.png"));
+    let (ow, oh) = object.dimensions();
+    let cover = object.pixels().map(alpha).sum::<f32>() / (ow * oh) as f32;
+    if !(COVER[0]..=COVER[1]).contains(&cover) {
+        return Err(format!("the object layer covers {cover:.3} of the frame"));
+    }
+    let band = ((ow.min(oh) as f32 * FRAME_EDGE).ceil() as u32).max(1);
+    let mut edge = Mean::default();
+    for (x, y, p) in object.enumerate_pixels() {
+        if x < band || y < band || x >= ow - band || y >= oh - band {
+            edge.add(alpha(p));
+        }
+    }
+    if edge.value() > EDGE_ALPHA {
+        return Err(format!(
+            "the object layer reaches the frame edge at {:.3} alpha",
+            edge.value()
+        ));
+    }
+    let up = image::imageops::resize(&object, w, h, image::imageops::FilterType::CatmullRom);
+    Ok(RgbaImage::from_fn(w, h, |x, y| {
+        let (o, d) = (up.get_pixel(x, y), design.get_pixel(x, y));
+        let a = alpha(o);
+        let t = ((a - 0.9) / 0.1).clamp(0.0, 1.0);
+        let (layer, design) = (rgb(o), rgb(d));
+        rgba([0, 1, 2].map(|i| design[i] * t + layer[i] * (1.0 - t)), a)
+    }))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Attempt {
+    index: u32,
+    calls: Calls,
+    outcome: Result<Score, String>,
+}
+
+impl Attempt {
+    fn passes(&self, t: &Thresholds) -> bool {
+        self.outcome.as_ref().is_ok_and(|s| s.passes(t))
+    }
+
+    fn verdict(&self, t: &Thresholds) -> String {
+        match &self.outcome {
+            Ok(score) => score
+                .measured(t)
+                .map_or("pass".to_string(), |rule| format!("fail {rule}")),
+            Err(why) => why.replace(['\t', '\n'], " "),
+        }
+    }
+
+    fn row(&self, t: &Thresholds) -> String {
+        let measured = self.outcome.as_ref().map_or("-\t-\t-\t-".to_string(), |s| {
+            format!(
+                "{:.3}\t{:.3}\t{:.3}\t{:.3}",
+                s.outside, s.seat, s.palette, s.off_centre
+            )
+        });
+        format!(
+            "{}\t{}\t{measured}\t{:.1}\t{:.1}\t{}",
+            self.index,
+            self.verdict(t),
+            self.calls.design,
+            self.calls.layer,
+            self.calls.cost
+        )
+    }
+
+    fn parse(row: &str) -> Option<Attempt> {
+        let cols: Vec<&str> = row.split('\t').collect();
+        let [index, verdict, outside, seat, palette, off_centre, design, layer, cost] = cols[..]
+        else {
+            return None;
+        };
+        let outcome = if outside == "-" {
+            Err(verdict.to_string())
+        } else {
+            Ok(Score {
+                outside: outside.parse().ok()?,
+                seat: seat.parse().ok()?,
+                palette: palette.parse().ok()?,
+                off_centre: off_centre.parse().ok()?,
+            })
+        };
+        Some(Attempt {
+            index: index.parse().ok()?,
+            calls: Calls {
+                design: design.parse().ok()?,
+                layer: layer.parse().ok()?,
+                cost: cost.parse().ok()?,
+            },
+            outcome,
+        })
+    }
 }
 
 struct Cap {
@@ -1307,88 +1248,15 @@ fn key(parts: &[&[u8]]) -> String {
     format!("{h:016x}")
 }
 
-fn input_key(text: &str, images: &[PathBuf]) -> String {
-    let contents: Vec<Vec<u8>> = images.iter().map(|path| read(path)).collect();
-    let mut parts = vec![text.as_bytes()];
-    parts.extend(contents.iter().map(Vec::as_slice));
-    key(&parts)
+fn painted_key(caption: &str, attempts: u32) -> String {
+    key(&[caption.as_bytes(), &attempts.to_le_bytes(), PLAN.as_bytes()])
 }
 
-fn painted_key(prompt: &str, count: u32, scaffold: &RgbaImage, references: &[PathBuf]) -> String {
-    let count = count.to_le_bytes();
-    let width = scaffold.width().to_le_bytes();
-    let contents: Vec<Vec<u8>> = references.iter().map(|path| read(path)).collect();
-    let mut parts = vec![prompt.as_bytes(), &count, &width, scaffold.as_raw()];
-    parts.extend(contents.iter().map(Vec::as_slice));
-    key(&parts)
-}
-
-fn brief(name: &str, style: &Style, direction: &str) -> String {
-    let shared = if name.starts_with("arm") {
-        &style.arm
-    } else {
-        &style.shared
-    };
-    let palette = include_str!("../art/BIBLE.md")
-        .split_once("## 1. Palette\n")
-        .unwrap()
-        .1
-        .split_once("## 2. Language")
-        .unwrap()
-        .0;
-    format!("{shared} {direction}\nPalette table from art/BIBLE.md:\n{palette}")
-}
-
-fn caption(text: &str) -> &str {
-    text.rsplit_once("\n\nImage inputs:\n")
-        .filter(|(_, inputs)| {
-            let inputs = inputs.trim_end();
-            !inputs.is_empty()
-                && inputs.lines().all(|line| {
-                    line == "none"
-                        || line == "unknown"
-                        || line
-                            .strip_prefix("unknown ")
-                            .is_some_and(|path| serde_json::from_str::<String>(path).is_ok())
-                        || line
-                            .strip_prefix("sha256 ")
-                            .and_then(|line| line.split_once(' '))
-                            .is_some_and(|(hash, path)| {
-                                hash.len() == 64
-                                    && hash.bytes().all(|c| c.is_ascii_hexdigit())
-                                    && serde_json::from_str::<String>(path).is_ok()
-                            })
-                })
-        })
-        .map_or(text, |(caption, _)| caption)
-}
-
-fn stored(path: &Path) -> Result<Option<String>, String> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(caption(&text).trim().to_string()).filter(|text| !text.is_empty())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("{}: {e}", path.display())),
-    }
-}
-
-fn store(path: &Path, prompt: &str) -> Result<String, String> {
-    let prompt = prompt.trim();
-    if prompt.is_empty() {
-        return Err(format!("{}: an empty prompt was written", path.display()));
-    }
-    std::fs::write(path, format!("{prompt}\n\nImage inputs:\nunknown\n"))
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(prompt.to_string())
-}
-
-const JUDGE: &str = "Does the machine read as atoms joined by bonds, a compound? Record that reading in compound and weigh its visual effect in the overall score and issues; it is not an automatic rejection. Answer with exactly one JSON object containing score (integer 0 through 10), compound (boolean), and issues (at most five ranked strings). Do not run commands, edit anything or write files.";
-const CRITIC_SCHEMA: &str = r#"{"type":"object","properties":{"compound":{"type":"boolean"},"score":{"type":"integer","minimum":0,"maximum":10},"issues":{"type":"array","maxItems":5,"items":{"type":"string"}}},"required":["score","compound","issues"],"additionalProperties":false}"#;
-
-fn relit_key(kept: &[u8], style: &Style, facings: &[Facing]) -> String {
+fn relit_key(albedo: &[u8], style: &Style, facings: &[Facing]) -> String {
     let facings: Vec<&str> = facings.iter().map(|facing| facing.name()).collect();
     key(&[
-        kept,
-        b"computed-relief-2:blur=4,height=0.85+0.15*luma,slope=24,lambert,rgba",
+        albedo,
+        b"computed-relief-3:blur=4,height=alpha*(0.85+0.15*luma),slope=24,lambert,rgba",
         facings.join("\n").as_bytes(),
         &style.elevation.to_le_bytes(),
         &AMBIENT.to_le_bytes(),
@@ -1410,69 +1278,6 @@ fn direction_error(facings: &[Facing], elevation: f32, lights: &[Light]) -> f32 
         .fold(0.0, f32::max)
 }
 
-fn judged_key(critic: &str, candidate: &[u8]) -> String {
-    key(&[critic.as_bytes(), candidate, JUDGE.as_bytes()])
-}
-
-fn rebrief(brief: &str, prompt: &str, issues: &[String], round: usize) -> Option<String> {
-    if round == ROUNDS {
-        return Some(format!(
-            "{brief} Write a new prompt from this brief alone: the whole object's straight-down gameplay read and its seat layout come first, and any detail that competes with them is simplified or left out."
-        ));
-    }
-    if issues.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "{brief} The current prompt: \"{prompt}\" The best candidate has these measured or visual issues, most important first: {} Rewrite the prompt so the next picture fixes them.",
-        issues.join(" ")
-    ))
-}
-
-fn best(scored: &[(u32, Score)], keep: impl Fn(&Score) -> bool) -> Option<(u32, &Score)> {
-    scored
-        .iter()
-        .filter(|(_, s)| keep(s))
-        .max_by(|a, b| {
-            let (ra, rb) = (a.1.rank(), b.1.rank());
-            ra.0.cmp(&rb.0)
-                .then(ra.1.total_cmp(&rb.1))
-                .then_with(|| a.0.cmp(&b.0).reverse())
-        })
-        .map(|(i, s)| (*i, s))
-}
-
-type Ask<'a> = &'a (dyn Fn(&[PathBuf], &str) -> Result<String, String> + Sync);
-
-fn run(script: &Path, images: &[PathBuf], args: &[&str]) -> Result<String, String> {
-    let mut command = std::process::Command::new(script);
-    for image in images {
-        command.arg("-i").arg(image);
-    }
-    let output = command
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|e| format!("{}: {e}", script.display()))?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
-        eprintln!("{line}");
-    }
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
-    }
-    Err(stderr
-        .lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("{} failed without a word", script.display())))
-}
-
-fn read(path: &Path) -> Vec<u8> {
-    std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-}
-
 fn quantise(png: &Path) -> Result<(), String> {
     let status = std::process::Command::new("pngquant")
         .args(["--quality", "70-95", "--speed", "1", "--force", "--output"])
@@ -1486,100 +1291,21 @@ fn quantise(png: &Path) -> Result<(), String> {
         .ok_or_else(|| format!("pngquant {status} on {}", png.display()))
 }
 
-impl Score {
-    fn verdict(&self, t: &Thresholds) -> String {
-        match self.measured(t) {
-            None => "pass".to_string(),
-            Some(rule) => format!("fail {rule}"),
-        }
-    }
-
-    fn row(&self, candidate: &str, t: &Thresholds) -> String {
-        format!(
-            "{candidate}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{}\t{}\t{}\t{}\t{}",
-            self.outside,
-            self.seat,
-            self.palette,
-            self.off_centre,
-            self.judged
-                .as_ref()
-                .map_or("-".to_string(), |j| j.critic.score.to_string()),
-            self.verdict(t),
-            serde_json::to_string(self.issues()).expect("issues serialise"),
-            self.judged.as_ref().map_or("-", |j| j.key.as_str()),
-            self.judged
-                .as_ref()
-                .map_or("-", |j| if j.critic.compound { "true" } else { "false" })
-        )
-    }
-
-    fn parse(row: &str) -> Option<(String, Score)> {
-        let mut cols: Vec<&str> = row.split('\t').collect();
-        let compound = if cols.len() == 10 {
-            cols.pop()?.parse().ok()
-        } else {
-            Some(false)
-        };
-        let [
-            candidate,
-            outside,
-            seat,
-            palette,
-            off_centre,
-            critic,
-            _,
-            issues,
-            judged,
-        ] = cols[..]
-        else {
-            return None;
-        };
-        let judged = match (critic, judged) {
-            ("-", "-") => None,
-            (_, "-") | ("-", _) => return None,
-            (score, key) => Some(Judged {
-                key: key.to_string(),
-                critic: Critic {
-                    compound: compound?,
-                    score: score.parse().ok()?,
-                    issues: serde_json::from_str(issues).ok()?,
-                },
-            }),
-        };
-        Some((
-            candidate.to_string(),
-            Score {
-                outside: outside.parse().ok()?,
-                seat: seat.parse().ok()?,
-                palette: palette.parse().ok()?,
-                off_centre: off_centre.parse().ok()?,
-                judged,
-            },
-        ))
-    }
-}
-
-struct Prepared {
-    scaffold: Scaffold,
-    style: Style,
-    thresholds: Thresholds,
-    count: u32,
-    entry: Entry,
-    brief: String,
-    prompt: Option<String>,
-    rendered: RgbaImage,
-    scaffold_png: PathBuf,
-    references: Vec<PathBuf>,
-    changed: bool,
+fn attempts(dir: &Path) -> BTreeMap<u32, Attempt> {
+    std::fs::read_to_string(dir.join("attempts.tsv"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(Attempt::parse)
+        .map(|a| (a.index, a))
+        .collect()
 }
 
 struct Remake<'a> {
     art: &'a Art,
     manifest: std::sync::Mutex<Manifest>,
-    director: Ask<'a>,
     painter: Painter<'a>,
-    critic: Ask<'a>,
     cap: Cap,
+    spent: std::sync::Mutex<Option<String>>,
     redraw: std::sync::atomic::AtomicBool,
 }
 
@@ -1600,41 +1326,13 @@ enum RelightSource {
 }
 
 impl Remake<'_> {
-    fn paint(&self, jobs: Vec<(String, Paint)>) -> Vec<(String, Result<(), String>)> {
-        std::thread::scope(|s| {
-            let handles: Vec<_> = jobs
-                .into_iter()
-                .map(|(label, job)| {
-                    s.spawn(move || {
-                        let out = {
-                            let _permit = self.cap.take();
-                            (self.painter)(&job)
-                        };
-                        match &out {
-                            Ok(()) => {
-                                self.redraw.store(true, std::sync::atomic::Ordering::SeqCst);
-                                println!("{label}\tpainted");
-                            }
-                            Err(e) => println!("{label}\tpaint failed: {e}"),
-                        }
-                        (label, out)
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| h.join().expect("a paint returns"))
-                .collect()
-        })
-    }
-
     fn entry(&self, name: &str) -> Result<(Style, Thresholds, u32, Entry), String> {
         let m = self.manifest.lock().expect("the manifest is unpoisoned");
         let entry = m
             .machine
             .get(name)
             .ok_or_else(|| format!("manifest has no [machine.{name}]"))?;
-        Ok((m.style.clone(), m.thresholds, m.candidates, entry.clone()))
+        Ok((m.style.clone(), m.thresholds, m.attempts, entry.clone()))
     }
 
     fn record(&self, name: &str, patch: impl FnOnce(&mut Entry)) {
@@ -1664,13 +1362,12 @@ impl Remake<'_> {
         dir: &Path,
         scaffold: &Scaffold,
         candidate: &RgbaImage,
-        keyed: &[u8],
+        source: &[u8],
         style: &Style,
-        facings: &[Facing],
     ) -> Result<String, String> {
         assert_eq!(style.facings, Facing::ALL);
         let relit = dir.join("relit");
-        let expected = relit_key(keyed, style, facings);
+        let expected = relit_key(source, style, &style.facings);
         if std::fs::read_to_string(relit.join("render-key.txt"))
             .ok()
             .as_deref()
@@ -1685,321 +1382,126 @@ impl Remake<'_> {
         Ok(expected)
     }
 
-    fn score(&self, name: &str, scaffold: &Scaffold) -> Vec<(u32, Score)> {
-        self.art
-            .candidates(name)
-            .into_iter()
-            .map(|i| {
-                let png = open(self.art.candidate(name, i));
-                (i, scaffold.score(&scaffold.register(&png)))
-            })
-            .collect()
-    }
-
-    fn assess(
+    fn attempt(
         &self,
         name: &str,
+        index: u32,
         scaffold: &Scaffold,
-        style: &Style,
-        thresholds: Thresholds,
-        scored: Vec<(u32, Score)>,
-    ) -> Result<Vec<(u32, Score)>, String> {
-        let dir = self.art.machine(name);
-        let previous: BTreeMap<u32, Score> = std::fs::read_to_string(dir.join("scores.tsv"))
-            .unwrap_or_default()
-            .lines()
-            .filter_map(Score::parse)
-            .filter_map(|(label, score)| {
-                let index: u32 = label.rsplit('-').next()?.parse().ok()?;
-                self.art
-                    .candidate(name, index)
-                    .exists()
-                    .then_some((index, score))
-            })
-            .collect();
-        let scaffold_png = dir.join("scaffold.png");
-        std::fs::create_dir_all(dir.join("judged")).map_err(|e| e.to_string())?;
-        let scored: Vec<(u32, Score)> = std::thread::scope(|s| {
-            let handles: Vec<_> = scored
-                .into_iter()
-                .map(|(i, mut score)| {
-                    let (previous, scaffold_png, style) =
-                        (previous.get(&i), scaffold_png.clone(), &style);
-                    s.spawn(move || {
-                        let key = judged_key(&style.critic, &read(&self.art.candidate(name, i)));
-                        if let Some(judged) = previous
-                            .and_then(|p| p.judged.clone())
-                            .filter(|j| j.key == key)
-                        {
-                            score.judged = Some(judged);
-                            return (i, score);
-                        }
-                        if score.measured(&thresholds).is_some() {
-                            return (i, score);
-                        }
-                        let board = self.art.judged(name, i);
-                        let capture = scaffold.register(&open(self.art.candidate(name, i)));
-                        save(&scaffold.board(&capture.image), &board);
-                        let label = format!("{name}-{i}");
-                        self.redraw.store(true, std::sync::atomic::Ordering::SeqCst);
-                        let reply = {
-                            let _permit = self.cap.take();
-                            (self.critic)(&[board, scaffold_png], &style.critic)
-                        };
-                        score.judged = match reply {
-                            Ok(text) => {
-                                let critic = Critic::parse(&text);
-                                if critic.is_none() {
-                                    println!("{label}\tcritic returned no score: {}", text.trim());
-                                }
-                                critic.map(|critic| Judged { key, critic })
-                            }
-                            Err(e) => {
-                                println!("{label}\tcritic failed: {e}");
-                                None
-                            }
-                        };
-                        (i, score)
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| h.join().expect("a judgement returns"))
-                .collect()
-        });
-        let mut rows = previous;
-        rows.extend(scored.iter().cloned());
-        let text: Vec<String> = rows
-            .iter()
-            .map(|(i, s)| s.row(&format!("{name}-{i}"), &thresholds))
-            .collect();
-        std::fs::write(dir.join("scores.tsv"), text.join("\n") + "\n")
-            .map_err(|e| e.to_string())?;
-        for (i, s) in &scored {
-            println!("{}", s.row(&format!("{name}-{i}"), &thresholds));
-        }
-        Ok(scored)
+        thresholds: &Thresholds,
+    ) -> Result<Attempt, String> {
+        let out = self.art.attempt(name, index);
+        let calls = match Calls::read(&out) {
+            Some(calls) => calls,
+            None => {
+                let result = {
+                    let _permit = self.cap.take();
+                    if let Some(why) = self.spent.lock().expect("unpoisoned").clone() {
+                        return Err(format!("stopped: {why}"));
+                    }
+                    let _ = std::fs::remove_dir_all(&out);
+                    (self.painter)(&self.art.caption(name), &out)
+                };
+                match result {
+                    Ok(calls) => calls,
+                    Err(Refusal::Spent(why)) => {
+                        *self.spent.lock().expect("unpoisoned") = Some(why.clone());
+                        return Err(format!("stopped: {why}"));
+                    }
+                    Err(Refusal::Failed(why)) => {
+                        return Ok(Attempt {
+                            index,
+                            calls: Calls::default(),
+                            outcome: Err(format!("paint: {why}")),
+                        });
+                    }
+                }
+            }
+        };
+        let outcome = matte(&out)
+            .map(|sprite| scaffold.score(&scaffold.register(&sprite)))
+            .map_err(|why| format!("matte: {why}"));
+        let attempt = Attempt {
+            index,
+            calls,
+            outcome,
+        };
+        println!("{name}\t{}", attempt.row(thresholds));
+        Ok(attempt)
     }
 
-    fn prepare(&self, name: &str) -> Result<Prepared, String> {
+    fn paint(&self, name: &str, scaffold: &Scaffold) -> Result<(), String> {
+        let (_, thresholds, count, entry) = self.entry(name)?;
+        let dir = self.art.machine(name);
+        let caption = self.art.caption(name);
+        let text = std::fs::read_to_string(&caption)
+            .map_err(|e| format!("{}: {e}", caption.display()))?;
+        let painted = painted_key(&text, count);
+        let mut rows = if entry.painted.as_deref() == Some(painted.as_str()) {
+            attempts(&dir)
+        } else {
+            let _ = std::fs::remove_dir_all(dir.join("attempts"));
+            let _ = std::fs::remove_file(dir.join("attempts.tsv"));
+            self.record(name, |e| {
+                e.painted = Some(painted.clone());
+                e.kept = None;
+                e.relit = None;
+            });
+            BTreeMap::new()
+        };
+        rows.retain(|i, _| *i <= count && self.art.attempt(name, *i).join("design.png").exists());
+        for index in 1..=count {
+            if rows.values().any(|a| a.passes(&thresholds)) {
+                break;
+            }
+            if rows.contains_key(&index) {
+                continue;
+            }
+            let attempt = self.attempt(name, index, scaffold, &thresholds)?;
+            rows.insert(index, attempt);
+            let table: Vec<String> = rows.values().map(|a| a.row(&thresholds)).collect();
+            std::fs::write(dir.join("attempts.tsv"), table.join("\n") + "\n")
+                .map_err(|e| e.to_string())?;
+        }
+        let (kept, _) = rows
+            .values()
+            .filter_map(|a| Some((a.index, a.outcome.as_ref().ok()?.excess(&thresholds))))
+            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+            .ok_or_else(|| {
+                let verdicts: Vec<String> =
+                    rows.values().map(|a| a.verdict(&thresholds)).collect();
+                format!("no attempt made a sprite: {}", verdicts.join("; "))
+            })?;
+        let capture = scaffold.register(&matte(&self.art.attempt(name, kept))?);
+        let albedo = dir.join("albedo.png");
+        save(&scaffold.cropped(&capture.image), &albedo);
+        quantise(&albedo)?;
+        self.record(name, |e| e.kept = Some(kept));
+        self.redraw.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn machine(&self, name: &str) -> Result<bool, String> {
+        let started = std::time::Instant::now();
         let scaffold = Scaffold::of(item(name));
         let dir = self.art.machine(name);
-        let (style, thresholds, count, entry) = self.entry(name)?;
-        if count == 0 {
-            return Err("the manifest asks for no candidates".to_string());
-        }
-        std::fs::create_dir_all(dir.join("candidates")).map_err(|e| e.to_string())?;
-        let rendered = scaffold.render();
-        let scaffold_png = dir.join("scaffold.png");
+        let (_, _, count, entry) = self.entry(name)?;
+        let caption = self.art.caption(name);
+        let text = std::fs::read_to_string(&caption)
+            .map_err(|e| format!("{}: {e}", caption.display()))?;
         let mut changed = false;
-        if !scaffold_png.exists() || open(&scaffold_png).as_raw() != rendered.as_raw() {
-            save(&rendered, &scaffold_png);
+        if entry.painted.as_deref() != Some(painted_key(&text, count).as_str())
+            || entry.kept.is_none()
+            || !dir.join("albedo.png").exists()
+        {
+            self.paint(name, &scaffold)?;
             changed = true;
         }
-        let brief = brief(name, &style, &entry.direction);
-        let references: Vec<PathBuf> = entry
-            .references
-            .iter()
-            .map(|reference| self.art.dir.join(reference))
-            .collect();
-        for reference in &references {
-            if !reference.is_file() {
-                return Err(format!("{} is not a reference image", reference.display()));
-            }
-        }
-        let briefed = input_key(&brief, &references);
-        let prompt = stored(&self.art.prompt(name))?
-            .filter(|_| entry.briefed.as_deref() == Some(briefed.as_str()));
-        Ok(Prepared {
-            scaffold,
-            style,
-            thresholds,
-            count,
-            entry,
-            brief,
-            prompt,
-            rendered,
-            scaffold_png,
-            references,
-            changed,
-        })
-    }
-
-    fn author(&self, images: &[PathBuf], text: &str) -> Result<String, String> {
-        let _permit = self.cap.take();
-        (self.director)(images, text)
-    }
-
-    fn machine(&self, name: &str, prepared: Prepared) -> Result<bool, String> {
-        let started = std::time::Instant::now();
-        let Prepared {
-            scaffold,
-            style,
-            thresholds,
-            count,
-            entry,
-            brief,
-            prompt,
-            rendered,
-            scaffold_png,
-            references,
-            mut changed,
-        } = prepared;
-        let dir = self.art.machine(name);
-        let candidates = dir.join("candidates");
-        let mut kept = entry.kept.filter(|k| self.art.candidate(name, *k).exists());
-        let mut issues: Vec<String> = Vec::new();
-        let mut prompt = match prompt {
-            Some(prompt) => prompt,
-            None => {
-                changed = true;
-                let images = std::iter::once(scaffold_png.clone())
-                    .chain(references.iter().cloned())
-                    .collect::<Vec<_>>();
-                let written = self.author(&images, &brief)?;
-                let stored = store(&self.art.prompt(name), &written)?;
-                self.record(name, |e| {
-                    let references: Vec<PathBuf> = e
-                        .references
-                        .iter()
-                        .map(|reference| self.art.dir.join(reference))
-                        .collect();
-                    e.briefed = Some(input_key(&brief, &references));
-                });
-                stored
-            }
-        };
-        let painted = painted_key(&prompt, count, &rendered, &references);
-        if entry.painted.as_deref() != Some(painted.as_str()) {
-            let _ = std::fs::remove_dir_all(&candidates);
-            let _ = std::fs::remove_dir_all(dir.join("judged"));
-            let _ = std::fs::remove_file(dir.join("scores.tsv"));
-            kept = None;
-        }
-        std::fs::create_dir_all(&candidates).map_err(|e| e.to_string())?;
-        let kept = 'keep: {
-            for round in 1..=ROUNDS {
-                let slots = (round as u32 - 1) * count + 1..=round as u32 * count;
-                let empty = slots.clone().all(|i| !self.art.candidate(name, i).exists());
-                if empty
-                    && round > 1
-                    && let Some(text) = rebrief(&brief, &prompt, &issues, round)
-                {
-                    let images = std::iter::once(scaffold_png.clone())
-                        .chain(references.iter().cloned())
-                        .collect::<Vec<_>>();
-                    prompt = self.author(&images, &text)?;
-                    changed = true;
-                }
-                let failed: Vec<String> = if empty {
-                    store(&self.art.round(name, round), &prompt)?;
-                    let jobs = slots
-                        .map(|i| {
-                            (
-                                format!("{name}-{i}"),
-                                Paint {
-                                    images: std::iter::once(scaffold_png.clone())
-                                        .chain(references.iter().cloned())
-                                        .collect(),
-                                    output: self.art.candidate(name, i),
-                                    prompt_path: self.art.round(name, round),
-                                    size: scaffold.canvas,
-                                },
-                            )
-                        })
-                        .collect();
-                    self.paint(jobs)
-                        .into_iter()
-                        .filter_map(|(label, r)| r.err().map(|e| format!("{label}: {e}")))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                let painted_now = empty && failed.len() < count as usize;
-                changed |= painted_now;
-                if painted_now && round == 1 {
-                    std::fs::copy(self.art.round(name, round), self.art.prompt(name))
-                        .map_err(|e| e.to_string())?;
-                }
-                if painted_now {
-                    self.record(name, |e| {
-                        e.kept = None;
-                        e.painted = Some(painted.clone());
-                        e.relit = None;
-                    });
-                }
-                let only_kept = kept.filter(|_| !empty);
-                let mut scored = match only_kept {
-                    Some(k) => {
-                        let png = open(self.art.candidate(name, k));
-                        vec![(k, scaffold.score(&scaffold.register(&png)))]
-                    }
-                    None => self.score(name, &scaffold),
-                };
-                let assess = |scored| self.assess(name, &scaffold, &style, thresholds, scored);
-                scored = assess(scored)?;
-                let keeping = |scored: &[(u32, Score)], i: u32| {
-                    scored
-                        .iter()
-                        .any(|(k, s)| *k == i && s.passes(&thresholds) && s.judged.is_some())
-                };
-                if let Some(k) = kept.filter(|k| keeping(&scored, *k)) {
-                    break 'keep k;
-                }
-                if only_kept.is_some() {
-                    scored = assess(self.score(name, &scaffold))?;
-                }
-                if let Some((k, _)) = best(&scored, |s| s.reaches(&thresholds)) {
-                    break 'keep k;
-                }
-                if empty && failed.len() == count as usize {
-                    return Err(format!(
-                        "no candidate passes; {} of {count} paints failed: {}",
-                        failed.len(),
-                        failed.join(", ")
-                    ));
-                }
-                let measured = scored
-                    .iter()
-                    .filter(|(_, s)| s.measured(&thresholds).is_none());
-                if measured.clone().count() > 0 && measured.clone().all(|(_, s)| s.judged.is_none())
-                {
-                    return Err("the critic read no candidate; nothing repainted".to_string());
-                }
-                if round == ROUNDS
-                    && let Some((k, _)) =
-                        best(&scored, |s| s.passes(&thresholds) && s.judged.is_some())
-                {
-                    break 'keep k;
-                }
-                issues = best(&scored, |s| s.measured(&thresholds).is_none())
-                    .or_else(|| best(&scored, |_| true))
-                    .map(|(_, s)| {
-                        s.measured(&thresholds)
-                            .into_iter()
-                            .chain(s.issues().iter().cloned())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-            }
-            return Err(format!(
-                "no candidate passes the measured rules in {ROUNDS} rounds"
-            ));
-        };
-        let capture = scaffold.register(&open(self.art.candidate(name, kept)));
-        let facings = &style.facings;
-        let relit = self.prepare_relief(
-            &dir,
-            &scaffold,
-            &capture.image,
-            &read(&self.art.candidate(name, kept)),
-            &style,
-            facings,
-        )?;
+        let (style, thresholds, _, entry) = self.entry(name)?;
+        let albedo = open(dir.join("albedo.png"));
+        let candidate = scaffold.mount(&albedo, Rgba([0; 4]));
+        let relit = self.prepare_relief(&dir, &scaffold, &candidate, albedo.as_raw(), &style)?;
         let relit_dir = dir.join("relit");
         let current = entry.relit.as_deref() == Some(relit.as_str())
-            && dir.join("albedo.png").exists()
             && dir.join("normal.png").exists()
             && relit_dir.join("albedo.png").exists()
             && relit_dir.join("normal.png").exists();
@@ -2009,22 +1511,20 @@ impl Remake<'_> {
                 &Relight {
                     dir: &dir,
                     scaffold: &scaffold,
-                    candidate: &capture.image,
+                    candidate: &candidate,
                     style: &style,
-                    facings,
+                    facings: &style.facings,
                     threshold: thresholds.sphere,
                     source: RelightSource::Machine,
                 },
             )?;
+            self.record(name, |e| e.relit = Some(relit.clone()));
             changed = true;
         }
-        self.record(name, |e| {
-            e.kept = Some(kept);
-            e.relit = Some(relit.clone());
-        });
         println!(
-            "{name}\t{}\tkept {name}-{kept}\t{:.0}s",
+            "{name}\t{}\tkept attempt {}\t{:.0}s",
             if changed { "landed" } else { "up to date" },
+            entry.kept.map_or("-".to_string(), |k| k.to_string()),
             started.elapsed().as_secs_f32()
         );
         Ok(changed)
@@ -2093,14 +1593,9 @@ impl Remake<'_> {
         save(&request.scaffold.cropped(normal), &relit.join("normal.png"));
         if matches!(request.source, RelightSource::Machine) {
             save(
-                &request.scaffold.cut(request.candidate),
-                &request.dir.join("albedo.png"),
-            );
-            save(
                 &request.scaffold.cropped(normal),
                 &request.dir.join("normal.png"),
             );
-            quantise(&request.dir.join("albedo.png"))?;
         }
         let extract = |image: &RgbaImage| request.scaffold.cropped(image);
         save(
@@ -2126,16 +1621,9 @@ impl Remake<'_> {
             return Err(format!("{} is not square", source.display()));
         }
         let scaffold = Scaffold::texture(image.width());
-        let candidate = scaffold.mount(&image);
+        let candidate = scaffold.mount(&image, grey(PAD_ALBEDO));
         let dir = self.art.texture(name);
-        let key = self.prepare_relief(
-            &dir,
-            &scaffold,
-            &candidate,
-            image.as_raw(),
-            &style,
-            &style.facings,
-        )?;
+        let key = self.prepare_relief(&dir, &scaffold, &candidate, image.as_raw(), &style)?;
         let relit = dir.join("relit");
         let current = entry.relit.as_deref() == Some(&key)
             && relit.join("albedo.png").exists()
@@ -2166,45 +1654,19 @@ impl Remake<'_> {
         let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
         for item in Machine::ALL {
             let name = name(item);
-            let scores = self.art.machine(name).join("scores.tsv");
-            let (Some(entry), Ok(text)) = (m.machine.get(name), std::fs::read_to_string(&scores))
-            else {
+            let dir = self.art.machine(name);
+            let (Some(kept), true) = (
+                m.machine.get(name).and_then(|e| e.kept),
+                dir.join("albedo.png").exists(),
+            ) else {
                 continue;
             };
-            for row in text.lines().filter(|l| !l.is_empty()) {
-                let Some((candidate, score)) = Score::parse(row) else {
-                    return Err(format!("{}: bad row {row:?}", scores.display()));
-                };
-                let index: u32 = candidate
-                    .rsplit('-')
-                    .next()
-                    .and_then(|i| i.parse().ok())
-                    .ok_or_else(|| format!("{}: bad candidate {candidate:?}", scores.display()))?;
-                let kept = if entry.kept == Some(index) {
-                    "KEPT "
-                } else {
-                    ""
-                };
-                let verdict = score.verdict(&m.thresholds);
-                let rule: Vec<&str> = verdict.split(' ').take(2).collect();
-                args.push("-label".into());
-                args.push(
-                    format!(
-                        "{kept}{candidate}  {:.3} {:.3} {:.3} {:.3} {}  {}",
-                        score.outside,
-                        score.seat,
-                        score.palette,
-                        score.off_centre,
-                        score
-                            .judged
-                            .as_ref()
-                            .map_or("-".to_string(), |j| j.critic.score.to_string()),
-                        rule.join(" ")
-                    )
-                    .into(),
-                );
-                args.push(self.art.candidate(name, index).into());
-            }
+            let verdict = attempts(&dir)
+                .get(&kept)
+                .map_or("-".to_string(), |a| a.verdict(&m.thresholds));
+            args.push("-label".into());
+            args.push(format!("{name}  attempt {kept}/{}  {verdict}", m.attempts).into());
+            args.push(dir.join("albedo.png").into());
         }
         if args.len() == 1 {
             return Ok(());
@@ -2213,21 +1675,21 @@ impl Remake<'_> {
         args.extend(
             [
                 "-tile",
-                "4x",
+                "5x",
                 "-geometry",
-                "340x340+6+6",
+                "400x400+8+8",
                 "-background",
-                "#6B4F3A",
+                "#D8C3A5",
                 "-fill",
-                "#F4EDE4",
+                "#423B37",
                 "-font",
                 "DejaVu-Sans",
                 "-pointsize",
-                "12",
+                "13",
             ]
             .map(Into::into),
         );
-        args.push(part.clone().into());
+        args.push(format!("png:{}", part.display()).into());
         let status = std::process::Command::new("magick")
             .args(&args)
             .status()
@@ -2240,28 +1702,15 @@ impl Remake<'_> {
     }
 }
 
-impl<'a> Remake<'a> {
-    fn new(art: &'a Art, director: Ask<'a>, painter: Painter<'a>, critic: Ask<'a>) -> Remake<'a> {
-        Remake {
-            art,
-            manifest: std::sync::Mutex::new(art.read()),
-            director,
-            painter,
-            critic,
-            cap: Cap::new(PAINTERS),
-            redraw: std::sync::atomic::AtomicBool::new(false),
-        }
-    }
-}
-
-fn remake(
-    art: &Art,
-    names: &[String],
-    director: Ask,
-    painter: Painter,
-    critic: Ask,
-) -> Vec<(String, Result<bool, String>)> {
-    let remake = Remake::new(art, director, painter, critic);
+fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<bool, String>)> {
+    let remake = Remake {
+        art,
+        manifest: std::sync::Mutex::new(art.read()),
+        painter,
+        cap: Cap::new(PAINTERS),
+        spent: std::sync::Mutex::new(None),
+        redraw: std::sync::atomic::AtomicBool::new(false),
+    };
     let mut names: Vec<&String> = names.iter().collect();
     names.sort();
     names.dedup();
@@ -2278,7 +1727,7 @@ fn remake(
                         .machine
                         .contains_key(name);
                     let result = if machine {
-                        remake.prepare(name).and_then(|p| remake.machine(name, p))
+                        remake.machine(name)
                     } else {
                         remake.texture(name)
                     };
@@ -2320,17 +1769,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
     let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
     let manifest = art.read();
     let known = |n: &str| manifest.machine.contains_key(n) || manifest.texture.contains_key(n);
-    let director = |images: &[PathBuf], brief: &str| run(&art.direct_sh(), images, &[brief]);
-    let painter = |job: &Paint| paint_sh(&art, job);
-    let judging = std::sync::Mutex::new(());
-    let critic = |images: &[PathBuf], rubric: &str| {
-        let _judging = judging.lock().expect("one critic at a time");
-        run(
-            &art.ask_sh(),
-            images,
-            &[CRITIC_SCHEMA, &format!("{rubric} {JUDGE}")],
-        )
-    };
+    let painter = |caption: &Path, out: &Path| ming(&art, caption, out);
     let names: Vec<String> = match rest.as_slice() {
         ["--all"] => manifest
             .machine
@@ -2344,11 +1783,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
             return Some(2);
         }
     };
-    if names.is_empty() {
-        println!("nothing to do");
-        return Some(0);
-    }
-    let generated = landed(&remake(&art, &names, &director, &painter, &critic));
+    let generated = landed(&remake(&art, &names, &painter));
     let split = art.split(&manifest, &names);
     Some(i32::from(!(generated && split)))
 }
@@ -2364,30 +1799,12 @@ mod tests {
     const ASPECT: f32 = 0.02;
 
     #[test]
-    fn machines_register_transparent_paints_over_the_scaffold_key_before_sampling() {
-        let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SourceTwo));
-        let keyed = scaffold.render();
-        let transparent = RgbaImage::from_fn(keyed.width(), keyed.height(), |x, y| {
-            let p = *keyed.get_pixel(x, y);
-            if p == rgba(KEY, 1.0) {
-                Rgba([255, 0, 255, 0])
-            } else {
-                p
-            }
-        });
-        assert_eq!(
-            scaffold.register(&keyed).image,
-            scaffold.register(&transparent).image
-        );
-    }
-
-    #[test]
     fn machines_preserve_painted_alpha_in_footprint_measurement_and_cutting() {
         let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::SourceTwo));
-        let mut candidate = scaffold.render();
+        let mut candidate = fired(&scaffold, &|w| w);
         let (origin, _) = scaffold.crop();
         candidate.put_pixel(origin, origin, Rgba([255, 0, 0, 0]));
-        assert_eq!(scaffold.cut(&candidate).get_pixel(0, 0)[3], 0);
+        assert_eq!(scaffold.cropped(&candidate).get_pixel(0, 0)[3], 0);
         let capture = Capture {
             image: candidate.clone(),
             off_centre: 0.0,
@@ -2403,7 +1820,7 @@ mod tests {
 
     #[test]
     fn static_art_does_not_depend_on_part_generation() {
-        let art = studio("static-split", &["portal", "bonder"]);
+        let art = studio("static-split", &["portal", "bonder"], 1);
         let manifest = Art::shipped().read();
         assert!(!art.dir.join("rig.sh").exists());
         assert!(art.split(&manifest, &["portal".into()]));
@@ -2437,7 +1854,6 @@ mod tests {
             );
         }
     }
-    const KEYED: f32 = 0.01;
     const REGISTERED: f32 = 0.02;
 
     fn fired(scaffold: &Scaffold, at: &dyn Fn(Vec2) -> Vec2) -> RgbaImage {
@@ -2447,12 +1863,11 @@ mod tests {
                 .cells
                 .iter()
                 .find_map(|cell| scaffold.mark(cell, world));
-            let ground = if scaffold.covered(world) {
-                Glaze::Clay.rgb()
-            } else {
-                KEY
-            };
-            rgba(glaze.map_or(ground, Glaze::rgb), 1.0)
+            match glaze {
+                Some(glaze) => rgba(glaze.rgb(), 1.0),
+                None if scaffold.covered(world) => rgba(Glaze::Clay.rgb(), 1.0),
+                None => Rgba([0; 4]),
+            }
         })
     }
 
@@ -2467,11 +1882,11 @@ mod tests {
         let scaffold = Scaffold::of(item("bonder"));
         let mut score = scaffold.score(&scaffold.register(&fired(&scaffold, &|w| w)));
         assert!(score.measured(&thresholds).is_none());
-        let rank = score.rank();
-        assert!(rank.1.is_finite());
+        let excess = score.excess(&thresholds);
+        assert!(excess <= 1.0, "{excess}");
         score.palette = 100.0;
         assert!(score.measured(&thresholds).is_none());
-        assert_eq!(score.rank(), rank);
+        assert_eq!(score.excess(&thresholds), excess);
         score.outside = thresholds.outside + 1.0;
         assert!(score.measured(&thresholds).unwrap().starts_with("outside"));
     }
@@ -2481,14 +1896,11 @@ mod tests {
         let scaffold = Scaffold::of(Machine::Portal);
         let candidate = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
             let world = scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-            rgba(
-                if look::hex_norm(world.x / HEX, world.y / HEX) < 0.9 {
-                    Glaze::Plum.rgb()
-                } else {
-                    KEY
-                },
-                1.0,
-            )
+            if look::hex_norm(world.x / HEX, world.y / HEX) < 0.9 {
+                rgba(Glaze::Plum.rgb(), 1.0)
+            } else {
+                Rgba([0; 4])
+            }
         });
         let capture = scaffold.register(&candidate);
 
@@ -2516,7 +1928,7 @@ mod tests {
             let capture = scaffold.register(&painted);
             let score = scaffold.score(&capture);
             assert!(score.measured(&thresholds).is_none(), "{tier:?}: {score:?}");
-            let area = |image: &RgbaImage| image.pixels().map(pixel_opacity).sum::<f32>();
+            let area = |image: &RgbaImage| image.pixels().map(alpha).sum::<f32>();
             assert!((area(&capture.image) / area(&clean) - 1.0).abs() < REGISTERED);
         }
     }
@@ -2553,171 +1965,6 @@ mod tests {
             covered.sort_by_key(key);
             footprint.sort_by_key(key);
             assert_eq!(covered, footprint, "{item:?}");
-        }
-    }
-
-    #[test]
-    fn every_machine_has_a_manifest_entry_a_scaffold_a_kept_candidate_that_passes_and_relief() {
-        let manifest = Art::shipped().read();
-        let names: Vec<&str> = Machine::ALL.into_iter().map(name).collect();
-        assert_eq!(
-            manifest
-                .machine
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            {
-                let mut sorted = names.clone();
-                sorted.sort_unstable();
-                sorted
-            }
-        );
-        for item in Machine::ALL {
-            let name = name(item);
-            let machine = &manifest.machine[name];
-            let kept = machine
-                .kept
-                .unwrap_or_else(|| panic!("{name} keeps no candidate"));
-            let dir = Art::shipped().machine(name);
-            let scaffold = Scaffold::of(item);
-            let want = scaffold.render();
-            let shipped = open(dir.join("scaffold.png"));
-            assert!(
-                want.as_raw() == shipped.as_raw(),
-                "{name}/scaffold.png is stale: regenerate it"
-            );
-            let capture =
-                scaffold.register(&open(dir.join(format!("candidates/{name}-{kept}.png"))));
-            let score = scaffold.score(&capture);
-            assert!(
-                score.measured(&manifest.thresholds).is_none(),
-                "{name}: {score:?}"
-            );
-            let rows = std::fs::read_to_string(dir.join("scores.tsv")).expect("scores.tsv");
-            let judged = rows
-                .lines()
-                .filter_map(Score::parse)
-                .find(|(label, _)| *label == format!("{name}-{kept}"))
-                .and_then(|(_, s)| s.judged)
-                .unwrap_or_else(|| panic!("{name}-{kept} has no critic score in scores.tsv"));
-            assert!(judged.critic.score <= 10, "{name}-{kept}: {judged:?}");
-            if !name.starts_with("arm") {
-                assert!(
-                    machine.relit.is_some(),
-                    "{name} has no computed calibration set"
-                );
-            }
-            let round = (kept as usize - 1) / manifest.candidates as usize + 1;
-            assert!(
-                dir.join(format!("candidates/round-{round}.txt")).exists(),
-                "{name}: candidates/round-{round}.txt, the prompt that painted {name}-{kept}, is missing"
-            );
-            let (_, side) = scaffold.crop();
-            let albedo = open(dir.join("albedo.png"));
-            let cut = scaffold.cut(&capture.image);
-            assert_eq!(
-                (albedo.width(), albedo.height()),
-                (side, side),
-                "{name}/albedo.png"
-            );
-            for map in ["albedo", "normal"] {
-                let png = open(dir.join(format!("{map}.png")));
-                let mut drift = Mean::default();
-                for (shipped, keyed) in png.pixels().zip(cut.pixels()) {
-                    drift.add((f32::from(shipped[3]) - f32::from(keyed[3])).abs() / 255.0);
-                }
-                assert!(
-                    drift.value() <= KEYED,
-                    "{name}/{map}.png is not the kept candidate keyed: alpha drifts {:.3}",
-                    drift.value()
-                );
-            }
-            for map in ["albedo", "normal"] {
-                let png = open(dir.join(format!("{map}.png")));
-                let placed = scaffold.quad.size();
-                let aspect = png.width() as f32 / png.height() as f32 / (placed.x / placed.y);
-                assert!(
-                    (aspect - 1.0).abs() <= ASPECT,
-                    "{name}/{map}.png is {}x{} on a {placed} quad",
-                    png.width(),
-                    png.height()
-                );
-                assert_eq!(
-                    (png.width(), png.height()),
-                    (side, side),
-                    "{name}/{map}.png"
-                );
-            }
-            let normal = open(dir.join("normal.png"));
-            let tilted = normal
-                .pixels()
-                .filter(|p| decode(p).truncate().length() > RELIEF)
-                .count();
-            assert!(
-                tilted as f32 > normal.pixels().len() as f32 * 0.01,
-                "{name}/normal.png is flat"
-            );
-            let prompt = stored(&Art::shipped().prompt(name))
-                .expect("prompt.txt is readable")
-                .unwrap_or_else(|| panic!("{name} has no prompt.txt: run ziral --gen {name}"));
-            let references: Vec<PathBuf> = machine
-                .references
-                .iter()
-                .map(|reference| Art::shipped().dir.join(reference))
-                .collect();
-            assert_eq!(
-                machine.painted.as_deref(),
-                Some(painted_key(&prompt, manifest.candidates, &want, &references,).as_str(),),
-                "{name}: the candidates are stale against the prompt: run ziral --gen {name}"
-            );
-            let kept_png = read(&dir.join(format!("candidates/{name}-{kept}.png")));
-            let facings = &manifest.style.facings;
-            if let Some(relit) = &machine.relit {
-                assert_eq!(
-                    relit,
-                    &relit_key(&kept_png, &manifest.style, facings),
-                    "{name}: the maps are stale against the kept candidate: run ziral --gen {name}"
-                );
-                let atlas = open(dir.join("relit/albedo.png"));
-                let albedo = open(dir.join("albedo.png"));
-                assert_eq!(atlas.width(), albedo.width(), "{name}");
-                assert_eq!(
-                    atlas.height(),
-                    albedo.height() * manifest.style.facings.len() as u32
-                );
-                let normal = scaffold.surface_normals(&capture.image);
-                assert!(
-                    open(dir.join("normal.png")).as_raw() == scaffold.cropped(&normal).as_raw(),
-                    "{name}: shipped normals differ from the computed relief"
-                );
-                let edits: Vec<_> = facings
-                    .iter()
-                    .map(|facing| {
-                        let rendered = open(dir.join(format!("relit/{}.png", facing.name())));
-                        let expected = scaffold.render_light(
-                            &capture.image,
-                            &normal,
-                            facing.light(manifest.style.elevation),
-                        );
-                        assert!(
-                            rendered.as_raw() == expected.as_raw(),
-                            "{name}/{}: machine and sphere must be one computed render",
-                            facing.name()
-                        );
-                        rendered
-                    })
-                    .collect();
-                let measured = scaffold.calibration(&edits);
-                assert!(
-                    direction_error(facings, manifest.style.elevation, &measured.lights)
-                        <= manifest.thresholds.sphere,
-                    "{name}: light direction"
-                );
-                assert!(
-                    measured.sphere <= manifest.thresholds.sphere,
-                    "{name}: sphere shape"
-                );
-            }
         }
     }
 
@@ -2873,10 +2120,22 @@ mod tests {
             "{off:?} passes on off-centre seats alone"
         );
         let beyond = Vec2::X * (SEAT_SEARCH + 2.0 * thresholds.off_centre) * HEX;
-        let lost = scaffold.score(&scaffold.register(&fired(&scaffold, &|w| w - beyond)));
+        let slipped = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
+            let world = scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+            match scaffold
+                .cells
+                .iter()
+                .find_map(|cell| scaffold.mark(cell, world - beyond))
+            {
+                Some(glaze) => rgba(glaze.rgb(), 1.0),
+                None if scaffold.covered(world) => rgba(Glaze::Clay.rgb(), 1.0),
+                None => Rgba([0; 4]),
+            }
+        });
+        let lost = scaffold.score(&scaffold.register(&slipped));
         assert!(
             lost.off_centre > thresholds.off_centre,
-            "{lost:?} beyond the search reach"
+            "{lost:?}: seats beyond the search reach of the silhouette"
         );
     }
 
@@ -2944,27 +2203,6 @@ mod tests {
     }
 
     #[test]
-    fn compound_reading_informs_judgment_without_rejecting_a_candidate() {
-        let scaffold = Scaffold::of(item("bonder"));
-        let mut score = scaffold.score(&scaffold.register(&fired(&scaffold, &|w| w)));
-        score.judged = Some(Judged {
-            key: "test".into(),
-            critic: Critic {
-                compound: true,
-                score: 10,
-                issues: vec![],
-            },
-        });
-        let thresholds = Art::shipped().read().thresholds;
-        assert!(score.measured(&thresholds).is_none());
-        assert!(score.passes(&thresholds));
-        assert!(score.reaches(&thresholds));
-        let (_, recovered) = Score::parse(&score.row("bonder-1", &thresholds)).unwrap();
-        assert!(recovered.passes(&thresholds));
-        assert!(Critic::parse(r#"{"score":10,"issues":[]}"#).is_none());
-    }
-
-    #[test]
     fn bounded_measurement_matches_the_exhaustive_pixel_and_hex_walks_bit_for_bit() {
         for name in ["arm", "bonder", "source", "reification", "output-3"] {
             let scaffold = Scaffold::of(item(name));
@@ -3004,73 +2242,153 @@ mod tests {
         }
     }
 
+    const SHIPPED: f32 = 0.02;
+
     #[test]
-    fn a_failed_measurement_rebriefs_the_next_round_without_resetting_the_budget() {
-        let art = studio("measured-feedback", &["bonder"]);
-        let briefs = std::sync::Mutex::new(Vec::new());
-        let director = |_: &[PathBuf], text: &str| {
-            briefs.lock().unwrap().push(text.to_string());
-            Ok(text.to_string())
-        };
-        let paints = std::sync::atomic::AtomicUsize::new(0);
-        let painter = |job: &Paint| {
-            paints.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let index = job
-                .output
-                .file_stem()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .rsplit('-')
-                .next()
-                .unwrap()
-                .parse::<u32>()
-                .unwrap();
-            if index <= 2 {
-                let scaffold = Scaffold::of(item("bonder"));
-                save(&fired(&scaffold, &|w| w - Vec2::X * HEX * 2.0), &job.output);
-                Ok(())
-            } else {
-                fake(job)
+    fn every_machine_ships_its_caption_its_best_attempt_and_the_relief_of_its_albedo() {
+        let art = Art::shipped();
+        let manifest = art.read();
+        let names: Vec<&str> = Machine::ALL.into_iter().map(name).collect();
+        assert_eq!(
+            manifest
+                .machine
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            {
+                let mut sorted = names.clone();
+                sorted.sort_unstable();
+                sorted
             }
-        };
-        assert!(landed(&remake(
-            &art,
-            &["bonder".to_string()],
-            &director,
-            &painter,
-            &judge
-        )));
-        let briefs = briefs.lock().unwrap();
-        assert_eq!(briefs.len(), 2);
-        assert!(briefs[1].contains("outside ") && briefs[1].contains("> 0.05"));
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 4);
-        assert!(art.read().machine["bonder"].kept.unwrap() >= 3);
+        );
+        let t = &manifest.thresholds;
+        for item in Machine::ALL {
+            let name = name(item);
+            let entry = &manifest.machine[name];
+            let dir = art.machine(name);
+            let caption = std::fs::read_to_string(art.caption(name))
+                .unwrap_or_else(|e| panic!("{name}/caption.txt: {e}"));
+            assert_eq!(
+                entry.painted.as_deref(),
+                Some(painted_key(&caption, manifest.attempts).as_str()),
+                "{name}: the art is stale against its caption: run ziral --gen {name}"
+            );
+            let kept = entry
+                .kept
+                .unwrap_or_else(|| panic!("{name} keeps no attempt"));
+            let rows = attempts(&dir);
+            assert!(
+                rows.keys().all(|i| (1..=manifest.attempts).contains(i)),
+                "{name}"
+            );
+            let recorded = rows
+                .get(&kept)
+                .and_then(|a| a.outcome.clone().ok())
+                .unwrap_or_else(|| panic!("{name}: attempts.tsv has no sprite for attempt {kept}"));
+            for row in rows.values() {
+                if let Ok(score) = &row.outcome {
+                    assert!(
+                        score.excess(t) >= recorded.excess(t),
+                        "{name}: attempt {} measures better than the kept {kept}",
+                        row.index
+                    );
+                }
+            }
+            let scaffold = Scaffold::of(item);
+            let (_, side) = scaffold.crop();
+            let albedo = open(dir.join("albedo.png"));
+            assert_eq!(albedo.dimensions(), (side, side), "{name}/albedo.png");
+            let mounted = scaffold.mount(&albedo, Rgba([0; 4]));
+            let score = scaffold.score(&Capture {
+                image: mounted.clone(),
+                off_centre: recorded.off_centre,
+            });
+            assert!(
+                (score.outside - recorded.outside).abs() <= SHIPPED,
+                "{name}: albedo.png measures {score:?}, attempts.tsv records {recorded:?}"
+            );
+            for map in ["albedo", "normal"] {
+                let png = open(dir.join(format!("{map}.png")));
+                let placed = scaffold.quad.size();
+                let aspect = png.width() as f32 / png.height() as f32 / (placed.x / placed.y);
+                assert!((aspect - 1.0).abs() <= ASPECT, "{name}/{map}.png");
+                assert_eq!(png.dimensions(), (side, side), "{name}/{map}.png");
+            }
+            let shipped_normal = open(dir.join("normal.png"));
+            let tilted = shipped_normal
+                .pixels()
+                .filter(|p| decode(p).truncate().length() > RELIEF)
+                .count();
+            assert!(
+                tilted as f32 > shipped_normal.pixels().len() as f32 * 0.01,
+                "{name}/normal.png is flat"
+            );
+            let facings = &manifest.style.facings;
+            assert_eq!(
+                entry.relit.as_deref(),
+                Some(relit_key(albedo.as_raw(), &manifest.style, facings).as_str()),
+                "{name}: the maps are stale against albedo.png: run ziral --gen {name}"
+            );
+            let atlas = open(dir.join("relit/albedo.png"));
+            assert_eq!(atlas.width(), side, "{name}");
+            assert_eq!(atlas.height(), side * facings.len() as u32, "{name}");
+            let normal = scaffold.surface_normals(&mounted);
+            assert!(
+                shipped_normal.as_raw() == scaffold.cropped(&normal).as_raw(),
+                "{name}: shipped normals differ from the computed relief"
+            );
+            let edits: Vec<_> = facings
+                .iter()
+                .map(|facing| {
+                    let rendered = open(dir.join(format!("relit/{}.png", facing.name())));
+                    let expected = scaffold.render_light(
+                        &mounted,
+                        &normal,
+                        facing.light(manifest.style.elevation),
+                    );
+                    assert!(
+                        rendered.as_raw() == expected.as_raw(),
+                        "{name}/{}: machine and sphere must be one computed render",
+                        facing.name()
+                    );
+                    rendered
+                })
+                .collect();
+            let measured = scaffold.calibration(&edits);
+            assert!(
+                direction_error(facings, manifest.style.elevation, &measured.lights)
+                    <= manifest.thresholds.sphere,
+                "{name}: light direction"
+            );
+            assert!(
+                measured.sphere <= manifest.thresholds.sphere,
+                "{name}: sphere shape"
+            );
+        }
     }
 
-    fn studio(tag: &str, machines: &[&str]) -> Art {
-        let shipped = Art::shipped();
+    fn studio(tag: &str, machines: &[&str], attempts: u32) -> Art {
+        let shipped = Art::shipped().read();
         let root = std::env::temp_dir().join(format!("ziral-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let art = Art {
             dir: root.join("machines"),
         };
-        std::fs::create_dir_all(&art.dir).expect("a studio is creatable");
-        std::fs::copy(shipped.paint_sh(), art.paint_sh()).expect("paint.sh copies");
+        for name in machines {
+            std::fs::create_dir_all(art.machine(name)).expect("a studio is creatable");
+            std::fs::write(art.caption(name), format!("a {name}\n")).expect("a caption");
+        }
         art.write(&Manifest {
-            candidates: 2,
-            style: shipped.read().style,
-            thresholds: shipped.read().thresholds,
+            attempts,
+            style: shipped.style,
+            thresholds: shipped.thresholds,
             machine: machines
                 .iter()
                 .map(|name| {
                     (
                         name.to_string(),
                         Entry {
-                            direction: format!("a {name}"),
-                            references: Vec::new(),
                             kept: None,
-                            briefed: None,
                             painted: None,
                             relit: None,
                             motion: None,
@@ -3087,781 +2405,179 @@ mod tests {
         art
     }
 
-    fn fake(job: &Paint) -> Result<(), String> {
-        let stem = job
-            .output
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .expect("an output stem");
-        let input = job.images.first().expect("a paint input");
-        assert!(
-            input.ends_with("scaffold.png"),
-            "only albedo candidates reach the painter"
+    const GROUND: Rgba<u8> = Rgba([180, 180, 178, 255]);
+
+    fn drawn(out: &Path, sprite: &RgbaImage, layer: Option<RgbaImage>) -> Calls {
+        std::fs::create_dir_all(out).expect("an attempt dir");
+        let side = sprite.width() * 5 / 4;
+        let offset = i64::from((side - sprite.width()) / 2);
+        let mut design = RgbaImage::from_pixel(side, side, GROUND);
+        image::imageops::overlay(&mut design, sprite, offset, offset);
+        let mut object = RgbaImage::new(side, side);
+        image::imageops::replace(&mut object, sprite, offset, offset);
+        let half = |image: &RgbaImage| {
+            image::imageops::resize(
+                image,
+                side / 2,
+                side / 2,
+                image::imageops::FilterType::Triangle,
+            )
+        };
+        save(&design, &out.join("design.png"));
+        save(
+            &layer.unwrap_or_else(|| half(&object)),
+            &out.join("layer-1.png"),
         );
-        let (name, index) = stem.rsplit_once('-').expect("name-index");
-        let scaffold = Scaffold::of(item(name));
-        let count = Art {
-            dir: input
-                .parent()
-                .and_then(Path::parent)
-                .expect("the art dir")
-                .into(),
-        }
-        .read()
-        .candidates;
-        let shift = Vec2::X * ((index.parse::<u32>().expect("an index") - 1) % count) as f32;
-        save(&fired(&scaffold, &|w| w - shift), &job.output);
-        Ok(())
+        save(
+            &half(&RgbaImage::from_pixel(side, side, GROUND)),
+            &out.join("layer-2.png"),
+        );
+        std::fs::write(
+            out.join("calls.tsv"),
+            "design\t1.5\t0\t0\t0\ndesign-layer\t2.5\t0\t0\t0\n",
+        )
+        .expect("calls.tsv");
+        Calls::read(out).expect("a complete attempt")
     }
 
-    fn author(_: &[PathBuf], brief: &str) -> Result<String, String> {
-        Ok(brief.to_string())
-    }
-
-    fn judge(_: &[PathBuf], _: &str) -> Result<String, String> {
-        Ok(r#"{"compound": false, "score": 10, "issues": []}"#.to_string())
-    }
-
-    fn counted<'a>(
-        calls: &'a std::sync::atomic::AtomicUsize,
-        painter: &'a (dyn Fn(&Paint) -> Result<(), String> + Sync),
-    ) -> impl Fn(&Paint) -> Result<(), String> + Sync + 'a {
-        move |job| {
-            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            painter(job)
-        }
+    fn turned(scaffold: &Scaffold, angle: f32) -> RgbaImage {
+        let centre = scaffold.quad.centre;
+        let turn = Vec2::from_angle(angle);
+        fired(scaffold, &|w| centre + turn.rotate(w - centre))
     }
 
     #[test]
-    fn unchanged_inputs_are_skipped_and_a_changed_prompt_or_kept_is_remade() {
-        let art = studio("key", &["source"]);
+    fn attempts_run_until_one_passes_and_an_unchanged_caption_paints_nothing() {
+        let art = studio("attempts", &["bonder"], 4);
+        let scaffold = Scaffold::of(item("bonder"));
         let calls = std::sync::atomic::AtomicUsize::new(0);
-        let painter = counted(&calls, &fake);
-        let names = ["source".to_string()];
-        let run = |calls: &std::sync::atomic::AtomicUsize| {
-            calls.store(0, std::sync::atomic::Ordering::SeqCst);
-            let results = remake(&art, &names, &author, &painter, &judge);
-            assert_eq!(results.len(), 1, "{results:?}");
-            let changed = results[0].1.clone().expect("source lands");
-            (changed, calls.load(std::sync::atomic::Ordering::SeqCst))
-        };
-        assert_eq!(run(&calls), (true, 2));
-        let dir = art.machine("source");
-        for made in [
-            "scaffold.png",
-            "candidates/source-1.png",
-            "candidates/source-2.png",
-            "scores.tsv",
-            "albedo.png",
-            "normal.png",
-            "relit/lights.txt",
-            "../sheet.png",
-        ] {
-            assert!(dir.join(made).exists(), "{made}");
-        }
-        let manifest = std::fs::read_to_string(art.manifest()).expect("a manifest");
-        let kept = art.read().machine["source"].kept.expect("a kept candidate");
-        let albedo = read(&dir.join("albedo.png"));
-        let sheet = |dir: &Path| {
-            std::fs::metadata(dir.join("../sheet.png"))
-                .and_then(|m| m.modified())
-                .expect("a sheet")
-        };
-        let made = sheet(&dir);
-        assert_eq!(run(&calls), (false, 0));
-        assert_eq!(sheet(&dir), made);
-        assert_eq!(
-            std::fs::read_to_string(art.manifest()).expect("a manifest"),
-            manifest
-        );
-        assert_eq!(read(&dir.join("albedo.png")), albedo);
-        let mut m = art.read();
-        m.thresholds.outside += 0.01;
-        art.write(&m);
-        assert_eq!(run(&calls), (false, 0));
-        let mut m = art.read();
-        m.machine.get_mut("source").expect("source").direction = "another source".into();
-        art.write(&m);
-        assert_eq!(run(&calls), (true, 2));
-        assert_eq!(
-            stored(&art.prompt("source")).expect("readable").as_deref(),
-            Some(brief("source", &art.read().style, "another source").trim_end())
-        );
-        store(&art.prompt("source"), "a hand-written caption").expect("writable");
-        assert_eq!(run(&calls), (true, 2));
-        assert_eq!(
-            stored(&art.prompt("source")).expect("readable").as_deref(),
-            Some("a hand-written caption")
-        );
-        assert_eq!(run(&calls), (false, 0));
-        let mut m = art.read();
-        m.machine.get_mut("source").expect("source").kept = Some(3 - kept);
-        art.write(&m);
-        assert_eq!(run(&calls), (true, 0));
-        assert_eq!(art.read().machine["source"].kept, Some(3 - kept));
-        assert_ne!(read(&dir.join("albedo.png")), albedo);
-        assert_eq!(run(&calls), (false, 0));
-    }
-
-    #[test]
-    fn only_candidates_are_painted_and_relights_are_computed() {
-        let art = studio("scaffold", &["bonder", "source"]);
-        let jobs: std::sync::Mutex<Vec<(String, Vec<PathBuf>)>> = std::sync::Mutex::new(Vec::new());
-        let painter = |job: &Paint| {
-            let stem = job
-                .output
-                .file_stem()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-            jobs.lock().unwrap().push((stem, job.images.clone()));
-            fake(job)
-        };
-        let names = ["bonder".to_string(), "source".to_string()];
-        assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
-        let recorded = jobs.lock().unwrap();
-        let style = art.read().style;
-        for name in ["bonder", "source"] {
-            let dir = art.machine(name);
-            let facings = &style.facings;
-            let candidates: Vec<_> = recorded
-                .iter()
-                .filter(|(stem, _)| {
-                    stem.starts_with(&format!("{name}-"))
-                        && stem[name.len() + 1..].parse::<u32>().is_ok()
-                })
-                .collect();
-            assert_eq!(candidates.len(), 2, "{name}");
-            for (_, images) in &candidates {
-                assert_eq!(*images, [dir.join("scaffold.png")], "{name}");
-            }
-            let relights: Vec<_> = recorded
-                .iter()
-                .filter(|(stem, images)| {
-                    facings.iter().any(|facing| facing.name() == stem)
-                        && *images == [dir.join("relit/master.png")]
-                })
-                .collect();
-            assert!(
-                relights.is_empty(),
-                "{name}: relights must never reach the painter"
-            );
-        }
-    }
-
-    #[test]
-    fn a_machine_whose_candidates_all_fail_to_paint_does_not_land_and_the_others_still_do() {
-        let art = studio("exit", &["bonder", "source"]);
-        let painter = |job: &Paint| {
-            if job.output.to_string_lossy().contains("bonder") {
-                Err("boom".to_string())
-            } else {
-                fake(job)
-            }
-        };
-        let names = ["bonder".to_string(), "source".to_string()];
-        let results = remake(&art, &names, &author, &painter, &judge);
-        assert!(!landed(&results));
-        let by_name = |results: &[(String, Result<bool, String>)], name: &str| {
-            results
-                .iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, r)| r.clone())
-                .unwrap_or_else(|| panic!("{name} in {results:?}"))
-        };
-        assert_eq!(by_name(&results, "source"), Ok(true));
-        let reason = by_name(&results, "bonder").expect_err("bonder did not land");
-        assert!(
-            reason.contains("no candidate passes")
-                && reason.contains("2 of 2 paints failed")
-                && reason.contains("bonder-1: boom"),
-            "{reason}"
-        );
-        assert_eq!(art.read().machine["bonder"].kept, None);
-        assert!(art.read().machine["source"].kept.is_some());
-        let results = remake(&art, &names, &author, &fake, &judge);
-        assert!(landed(&results), "{results:?}");
-        assert_eq!(by_name(&results, "source"), Ok(false));
-        assert_eq!(by_name(&results, "bonder"), Ok(true));
-        assert!(art.read().machine["bonder"].kept.is_some());
-        assert!(landed(&remake(&art, &names[1..], &author, &fake, &judge)));
-        assert!(landed(&[]));
-    }
-
-    fn rows(art: &Art, name: &str) -> BTreeMap<String, (String, Score)> {
-        std::fs::read_to_string(art.machine(name).join("scores.tsv"))
-            .expect("scores.tsv")
-            .lines()
-            .map(|row| {
-                let (label, score) = Score::parse(row).unwrap_or_else(|| panic!("{row:?}"));
-                let verdict = row.split('\t').nth(6).expect("a verdict").to_string();
-                (label, (verdict, score))
-            })
-            .collect()
-    }
-
-    fn index(images: &[PathBuf]) -> u32 {
-        images[0]
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.rsplit('-').next())
-            .and_then(|i| i.parse().ok())
-            .expect("judged/NAME-INDEX.png")
-    }
-
-    #[test]
-    fn the_critic_reply_is_one_json_object_or_nothing() {
-        let parsed = |text: &str| Critic::parse(text);
-        assert_eq!(
-            parsed(
-                "```json\n{\"compound\": false, \"score\": 7, \"issues\": [\"The cup at the left shows its far wall.\"]}\n```"
-            ),
-            Some(Critic {
-                compound: false,
-                score: 7,
-                issues: vec!["The cup at the left shows its far wall.".to_string()],
-            })
-        );
-        assert_eq!(
-            parsed(r#"{"compound": false, "score": 10, "issues": []}"#),
-            Some(Critic {
-                compound: false,
-                score: 10,
-                issues: vec![]
-            })
-        );
-        assert_eq!(
-            parsed(r#"{"compound": false, "score": 11, "issues": []}"#),
-            None
-        );
-        assert_eq!(parsed(r#"{"compound": false, "score": 8}"#), None);
-        assert_eq!(parsed(r#"{"score": "eight", "issues": []}"#), None);
-        assert_eq!(parsed("A fine machine, 9/10."), None);
-        assert_eq!(parsed(""), None);
-        let six = r#"{"compound": false, "score": 3, "issues": ["a", "b", "c", "d", "e", "f"]}"#;
-        assert_eq!(parsed(six).expect("parses").issues.len(), 5);
-    }
-
-    #[test]
-    fn the_critic_sees_the_board_and_the_scaffold_and_a_malformed_reply_fails_only_that_candidate()
-    {
-        let art = studio("critic", &["source"]);
-        let seen: std::sync::Mutex<Vec<(Vec<PathBuf>, String)>> = std::sync::Mutex::new(vec![]);
-        let critic = |images: &[PathBuf], prompt: &str| {
-            seen.lock()
-                .unwrap()
-                .push((images.to_vec(), prompt.to_string()));
-            Ok(match index(images) {
-                1 => r#"{"compound": false, "score": 9, "issues": ["Slight glare on the rim."]}"#
-                    .to_string(),
-                _ => "I would rather not say.".to_string(),
-            })
-        };
-        let names = ["source".to_string()];
-        let results = remake(&art, &names, &author, &fake, &critic);
-        assert!(landed(&results), "{results:?}");
-        assert_eq!(art.read().machine["source"].kept, Some(1));
-        let rows = rows(&art, "source");
-        assert_eq!(rows["source-1"].0, "pass");
-        assert_eq!(
-            rows["source-1"].1.judged,
-            Some(Judged {
-                key: judged_key(&art.read().style.critic, &read(&art.candidate("source", 1))),
-                critic: Critic {
-                    compound: false,
-                    score: 9,
-                    issues: vec!["Slight glare on the rim.".to_string()],
-                },
-            })
-        );
-        assert_eq!(rows["source-2"].0, "pass");
-        assert_eq!(rows["source-2"].1.judged, None);
-        let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 2);
-        let style = art.read().style;
-        for (images, prompt) in seen.iter() {
-            assert_eq!(*prompt, style.critic);
-            let i = index(images);
-            assert_eq!(
-                *images,
-                vec![
-                    art.judged("source", i),
-                    art.machine("source").join("scaffold.png")
-                ]
-            );
-            let board = open(&images[0]);
-            let scaffold = Scaffold::of(item("source"));
-            let side = scaffold.quad.side.round() as u32;
-            let by = CRITIC_PX.div_ceil(side);
-            assert_eq!((board.width(), board.height()), (side * by, side * by));
-            assert!(
-                board.pixels().all(|p| p[3] == 255),
-                "the board shows through nowhere"
-            );
-            let corner = *board.get_pixel(0, 0);
-            assert!(
-                board.pixels().any(|p| apart(rgb(p), rgb(&corner)) > 0.2),
-                "the sprite is not on the board"
-            );
-        }
-    }
-
-    #[test]
-    fn a_candidate_at_the_target_ends_the_rounds_and_the_best_scored_one_is_kept() {
-        let art = studio("bar", &["source"]);
-        let critic = |images: &[PathBuf], _: &str| {
-            Ok(match index(images) {
-                1 => r#"{"compound": false, "score": 7, "issues": ["The hopper shows its back wall."]}"#,
-                _ => r#"{"compound": false, "score": 8, "issues": []}"#,
-            }
-            .to_string())
-        };
-        let names = ["source".to_string()];
-        assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
-        assert_eq!(art.read().machine["source"].kept, Some(2));
-        let rows = rows(&art, "source");
-        assert_eq!(rows["source-1"].0, "pass");
-        assert_eq!(rows["source-2"].0, "pass");
-        let art = studio("rank", &["source"]);
-        let scaffold = Scaffold::of(item("source"));
-        let measured = |shift: f32| {
-            scaffold
-                .score(&scaffold.register(&fired(&scaffold, &|w| w - Vec2::X * shift)))
-                .rank()
-                .1
-        };
-        let lower = if measured(0.0) < measured(1.0) { 1 } else { 2 };
-        let critic = |images: &[PathBuf], _: &str| {
-            Ok(if index(images) == lower {
-                r#"{"compound": false, "score": 10, "issues": []}"#
-            } else {
-                r#"{"compound": false, "score": 9, "issues": []}"#
-            }
-            .to_string())
-        };
-        assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
-        assert_eq!(art.read().machine["source"].kept, Some(lower));
-    }
-
-    #[test]
-    fn the_best_candidates_issues_rebrief_the_author_then_the_last_round_starts_again() {
-        let art = studio("revise", &["source"]);
-        let direction = "  art direction with a tab\t, a line\nbreak and trailing spaces   ";
-        let mut m = art.read();
-        m.machine.get_mut("source").expect("source").direction = direction.to_string();
-        art.write(&m);
-        let briefs: std::sync::Mutex<Vec<(Vec<PathBuf>, String)>> = std::sync::Mutex::new(vec![]);
-        let author = |images: &[PathBuf], text: &str| {
-            briefs
-                .lock()
-                .unwrap()
-                .push((images.to_vec(), text.to_string()));
-            Ok(format!("a caption from: {}", text.trim()))
-        };
-        let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
-        let painter = |job: &Paint| {
-            if job
-                .images
-                .first()
-                .is_some_and(|image| image.ends_with("scaffold.png"))
-            {
-                prompts
-                    .lock()
-                    .unwrap()
-                    .push(stored(&job.prompt_path).unwrap().unwrap());
-            }
-            fake(job)
-        };
-        let calls = std::sync::atomic::AtomicUsize::new(0);
-        let critic = |images: &[PathBuf], _: &str| {
-            let call = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(if call < 4 {
-                match index(images) {
-                    1 => r#"{"compound": false, "score": 3, "issues": ["Worse first.", "Worse second."]}"#,
-                    _ => r#"{"compound": false, "score": 5, "issues": ["Tipped: the hopper shows its back wall.", "A plate under it.", "Text on the gate."]}"#,
+        let painter = |caption: &Path, out: &Path| {
+            assert_eq!(caption, art.caption("bonder"));
+            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let clean = fired(&scaffold, &|w| w);
+            Ok(match n {
+                1 => {
+                    let side = clean.width() * 5 / 8;
+                    drawn(out, &clean, Some(RgbaImage::from_pixel(side, side, GROUND)))
                 }
-            } else {
-                r#"{"compound": false, "score": 10, "issues": []}"#
-            }
-            .to_string())
-        };
-        let names = ["source".to_string()];
-        let results = remake(&art, &names, &author, &painter, &critic);
-        assert!(landed(&results), "{results:?}");
-        let style = art.read().style;
-        let base = brief("source", &style, direction);
-        let first = format!("a caption from: {}", base.trim());
-        let briefs = briefs.lock().unwrap();
-        let scaffold = art.machine("source").join("scaffold.png");
-        let briefs: Vec<_> = briefs
-            .iter()
-            .filter(|(images, _)| *images == [scaffold.clone()])
-            .collect();
-        assert_eq!(briefs.len(), 3, "{briefs:?}");
-        assert_eq!(briefs[0].1, base);
-        assert!(briefs[0].1.contains(direction));
-        assert!(briefs[0].1.contains("| cobalt |"));
-        assert!(briefs[0].1.contains("| charcoal rubber |"));
-        assert_eq!(
-            briefs[1].1,
-            format!(
-                "{base} The current prompt: \"{first}\" The best candidate has these measured or visual issues, most important first: Tipped: the hopper shows its back wall. A plate under it. Text on the gate. Rewrite the prompt so the next picture fixes them."
-            )
-        );
-        assert_eq!(
-            briefs[2].1,
-            format!(
-                "{base} Write a new prompt from this brief alone: the whole object's straight-down gameplay read and its seat layout come first, and any detail that competes with them is simplified or left out."
-            )
-        );
-        let prompts = prompts.lock().unwrap();
-        assert_eq!(prompts.len(), 6, "{prompts:?}");
-        assert_eq!(&prompts[..2], &[first.clone(), first.clone()]);
-        let second = format!("a caption from: {}", briefs[1].1.trim());
-        assert_eq!(&prompts[2..4], &[second.clone(), second.clone()]);
-        let third = format!("a caption from: {}", briefs[2].1.trim());
-        assert_eq!(&prompts[4..], &[third.clone(), third.clone()]);
-        assert_eq!(
-            stored(&art.prompt("source")).expect("readable").as_deref(),
-            Some(first.as_str())
-        );
-        for (round, prompt) in [(1, &first), (2, &second), (3, &third)] {
-            assert_eq!(
-                stored(&art.round("source", round))
-                    .expect("readable")
-                    .as_deref(),
-                Some(prompt.as_str())
-            );
-        }
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(art.read().machine["source"].direction, direction);
-        assert!(art.read().machine["source"].kept.is_some());
-    }
-
-    #[test]
-    fn three_rounds_then_keep_the_best_of_every_round_with_its_score_and_issues() {
-        let art = studio("rounds", &["source"]);
-        let paints = std::sync::atomic::AtomicUsize::new(0);
-        let prompts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
-        let painter = |job: &Paint| {
-            if job
-                .images
-                .first()
-                .is_some_and(|image| image.ends_with("scaffold.png"))
-            {
-                prompts
-                    .lock()
-                    .unwrap()
-                    .push(stored(&job.prompt_path).unwrap().unwrap());
-            }
-            fake(job)
-        };
-        let painter = counted(&paints, &painter);
-        let calls = std::sync::atomic::AtomicUsize::new(0);
-        let critic = |images: &[PathBuf], _: &str| {
-            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let round = (index(images) - 1) / 2 + 1;
-            Ok(match index(images) {
-                1 => r#"{"compound": false, "score": 5, "issues": ["Low.", "Still tipped."]}"#.to_string(),
-                2 => r#"{"compound": false, "score": 7, "issues": ["Round 1 best.", "Still a plate."]}"#.to_string(),
-                _ => format!(r#"{{"compound": false, "score": 6, "issues": ["Round {round} worse."]}}"#),
+                2 => drawn(out, &turned(&scaffold, 0.3), None),
+                _ => drawn(out, &clean, None),
             })
         };
-        let names = ["source".to_string()];
-        let results = remake(&art, &names, &author, &painter, &critic);
-        assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(art.read().machine["source"].kept, Some(2));
-        assert!(art.machine("source").join("albedo.png").exists());
-        let scored = rows(&art, "source");
-        assert_eq!(scored.len(), 6);
-        for i in 1..=6 {
-            let row = &scored[&format!("source-{i}")];
-            assert_eq!(row.0, "pass", "source-{i}");
-            assert!(row.1.judged.is_some(), "source-{i}");
-        }
-        assert_eq!(scored["source-2"].1.rank().0, 7);
-        assert_eq!(
-            scored["source-2"].1.issues(),
-            ["Round 1 best.", "Still a plate."]
-        );
-        assert_eq!(scored["source-6"].1.issues(), ["Round 3 worse."]);
-        let first = brief("source", &art.read().style, "a source")
-            .trim_end()
-            .to_string();
-        assert_eq!(
-            stored(&art.prompt("source")).expect("readable").as_deref(),
-            Some(first.as_str())
-        );
-        let painted = prompts.lock().unwrap();
-        assert_eq!(painted.len(), 6, "{painted:?}");
-        assert_eq!(&painted[..2], &[first.clone(), first.clone()]);
-        assert!(painted[2..].iter().all(|p| *p != first), "{painted:?}");
-        let third = painted[5].clone();
-        drop(painted);
-        let round = |r: usize| stored(&art.round("source", r)).expect("readable");
-        assert_eq!(round(1).as_deref(), Some(first.as_str()));
-        assert_eq!(round(3).as_deref(), Some(third.as_str()));
-        let results = remake(&art, &names, &author, &painter, &critic);
-        assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(art.read().machine["source"].kept, Some(2));
-        let mut m = art.read();
-        m.machine.get_mut("source").expect("source").kept = Some(5);
-        art.write(&m);
-        let results = remake(&art, &names, &author, &painter, &critic);
-        assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(art.read().machine["source"].kept, Some(5));
-        assert_eq!(round(1).as_deref(), Some(first.as_str()));
-        assert_eq!(round(3).as_deref(), Some(third.as_str()));
-        let mut m = art.read();
-        m.machine.get_mut("source").expect("source").kept = None;
-        art.write(&m);
-        let again = |_: &[PathBuf], brief: &str| Ok(format!("{brief} again"));
-        let results = remake(&art, &names, &again, &painter, &critic);
-        assert!(landed(&results), "{results:?}");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 6);
-        assert_eq!(art.read().machine["source"].kept, Some(2));
-        assert_eq!(round(1).as_deref(), Some(first.as_str()));
-        assert_eq!(round(3).as_deref(), Some(third.as_str()));
-        assert_eq!(
-            stored(&art.prompt("source")).expect("readable").as_deref(),
-            Some(first.as_str())
-        );
-        let art = studio("ties", &["source"]);
-        let critic = |_: &[PathBuf], _: &str| {
-            Ok(r#"{"compound": false, "score": 6, "issues": []}"#.to_string())
-        };
-        assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
-        assert!(art.read().machine["source"].kept.expect("kept") <= 2);
-        assert_eq!(rows(&art, "source").len(), 6);
+        let count = || calls.load(std::sync::atomic::Ordering::SeqCst);
+        let run = || remake(&art, &["bonder".to_string()], &painter);
+        assert!(landed(&run()));
+        assert_eq!(count(), 3);
+        let thresholds = art.read().thresholds;
+        let rows = attempts(&art.machine("bonder"));
+        let verdicts: Vec<String> = rows.values().map(|a| a.verdict(&thresholds)).collect();
+        assert!(verdicts[0].starts_with("matte: "), "{verdicts:?}");
+        assert!(verdicts[1].starts_with("fail off_centre"), "{verdicts:?}");
+        assert_eq!(verdicts[2], "pass");
+        assert_eq!(rows[&3].calls.design, 1.5);
+        assert_eq!(art.read().machine["bonder"].kept, Some(3));
+        assert!(art.machine("bonder").join("relit/albedo.png").exists());
+        assert!(art.dir.join("sheet.png").exists());
+        let again = run();
+        assert!(landed(&again));
+        assert_eq!(again[0].1, Ok(false));
+        assert_eq!(count(), 3);
+        std::fs::write(art.caption("bonder"), "another bonder\n").unwrap();
+        assert!(landed(&run()));
+        assert_eq!(count(), 4);
+        assert_eq!(art.read().machine["bonder"].kept, Some(1));
+        assert_eq!(attempts(&art.machine("bonder")).len(), 1);
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn an_unchanged_candidate_is_never_judged_again_and_a_changed_critic_prompt_is_judged_anew() {
-        let art = studio("judged", &["source"]);
+    fn with_no_attempt_passing_the_one_measured_closest_is_kept() {
+        let art = studio("closest", &["converter-amber"], 3);
+        let scaffold = Scaffold::of(item("converter-amber"));
         let calls = std::sync::atomic::AtomicUsize::new(0);
-        let critic = |images: &[PathBuf], prompt: &str| {
-            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            judge(images, prompt)
+        let painter = |_: &Path, out: &Path| {
+            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(drawn(out, &turned(&scaffold, [0.4, 0.25, 0.3][n]), None))
         };
-        let names = ["source".to_string()];
-        let run = || {
-            calls.store(0, std::sync::atomic::Ordering::SeqCst);
-            assert!(landed(&remake(&art, &names, &author, &fake, &critic)));
-            calls.load(std::sync::atomic::Ordering::SeqCst)
-        };
-        assert_eq!(run(), 2);
-        let judged = |i: u32| {
-            rows(&art, "source")[&format!("source-{i}")]
-                .1
-                .judged
-                .clone()
-        };
-        let first = (judged(1), judged(2));
-        assert!(first.0.is_some() && first.1.is_some());
-        assert_eq!(run(), 0);
-        assert_eq!((judged(1), judged(2)), first);
-        let mut m = art.read();
-        m.style.critic += " Be harsher.";
-        art.write(&m);
-        assert_eq!(run(), 1);
-        let kept = art.read().machine["source"].kept.expect("kept");
-        assert_ne!(
-            judged(kept),
-            if kept == 1 {
-                first.0.clone()
-            } else {
-                first.1.clone()
-            }
-        );
-        assert_eq!(
-            judged(3 - kept),
-            if kept == 1 {
-                first.1.clone()
-            } else {
-                first.0.clone()
-            }
-        );
-        assert_eq!(run(), 0);
-        let kept = art.read().machine["source"].kept.expect("kept");
-        let mut m = art.read();
-        m.machine.get_mut("source").expect("source").kept = Some(3 - kept);
-        art.write(&m);
-        assert_eq!(run(), 1);
-        assert_eq!(run(), 0);
+        assert!(landed(&remake(
+            &art,
+            &["converter-amber".to_string()],
+            &painter
+        )));
+        let thresholds = art.read().thresholds;
+        let rows = attempts(&art.machine("converter-amber"));
+        assert_eq!(rows.len(), 3);
+        assert!(rows.values().all(|a| !a.passes(&thresholds)), "{rows:?}");
+        assert_eq!(art.read().machine["converter-amber"].kept, Some(2));
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn ask_sh_returns_the_message_and_retries_a_failed_call_with_backoff() {
-        let root = std::env::temp_dir().join(format!("ziral-critic-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("bin")).expect("a fake bin");
-        let codex = root.join("bin/codex");
-        std::fs::write(
-            &codex,
-            "#!/bin/sh\n\
-             n=$(cat \"$HOME/attempts\" 2>/dev/null || echo 0)\n\
-             n=$((n + 1))\n\
-             printf %s \"$n\" > \"$HOME/attempts\"\n\
-             printf '%s\\n' \"$@\" > \"$HOME/args-$n\"\n\
-             cp \"$5\" \"$HOME/schema-$n\"\n\
-             [ \"$n\" -ge \"$PASS_ON\" ] || { echo \"codex: boom $n\" >&2; exit 1; }\n\
-             mkdir -p \"$CODEX_HOME/sessions\"\n\
-             jq -n --arg model \"$(cat art/director-model.txt)\" '{type: \"turn_context\", payload: {model: $model}}' > \"$CODEX_HOME/sessions/rollout-test-t1.jsonl\"\n\
-             echo '{\"type\":\"thread.started\",\"thread_id\":\"t1\"}'\n\
-             echo '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"{\\\"score\\\":6,\\\"issues\\\":[\\\"A far wall.\\\"]}\"}}'\n",
-        )
-        .expect("a fake codex");
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        let path = format!(
-            "{}:{}",
-            root.join("bin").display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
-        let image = root.join("board.png");
-        std::fs::write(&image, b"png").expect("an image");
-        let out = std::process::Command::new(Art::shipped().ask_sh())
-            .arg("-i")
-            .arg(&image)
-            .arg(CRITIC_SCHEMA)
-            .arg("Judge this.")
-            .env("PATH", &path)
-            .env("HOME", &root)
-            .env("PASS_ON", "2")
-            .env("CODEX_HOME", root.join(".codex"))
-            .output()
-            .expect("ask.sh runs");
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(out.status.success(), "{stderr}");
-        assert_eq!(
-            String::from_utf8_lossy(&out.stdout),
-            "{\"score\":6,\"issues\":[\"A far wall.\"]}\n"
-        );
-        assert!(stderr.contains("codex: boom 1"), "{stderr}");
-        assert!(
-            stderr.contains("attempt 1 of 4 failed, retrying in 1s"),
-            "{stderr}"
-        );
-        let args = std::fs::read_to_string(root.join("args-2")).expect("the call's args");
-        assert!(args.contains("--output-schema"), "{args}");
-        assert!(
-            args.contains(&format!("--image\n{}", image.display())),
-            "{args}"
-        );
-        assert!(args.lines().any(|l| l == "Judge this."), "{args}");
-        assert_eq!(
-            std::fs::read_to_string(root.join("schema-2")).expect("the call's schema"),
-            format!("{CRITIC_SCHEMA}\n")
-        );
-        let _ = std::fs::remove_file(root.join("attempts"));
-        let out = std::process::Command::new(Art::shipped().ask_sh())
-            .arg(CRITIC_SCHEMA)
-            .arg("Judge this.")
-            .env("PATH", &path)
-            .env("HOME", &root)
-            .env("PASS_ON", "99")
-            .env("CODEX_HOME", root.join(".codex"))
-            .output()
-            .expect("ask.sh runs");
-        assert!(!out.status.success());
-        assert!(
-            String::from_utf8_lossy(&out.stderr).contains("gave up after 4 attempts"),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-    #[test]
-    fn a_critic_that_reads_no_candidate_repaints_nothing_and_keeps_the_keep() {
-        let art = studio("outage", &["source"]);
-        let names = ["source".to_string()];
-        assert!(landed(&remake(&art, &names, &author, &fake, &judge)));
-        let kept = art.read().machine["source"].kept;
-        let mut m = art.read();
-        m.style.critic += " Be harsher.";
-        art.write(&m);
-        let paints = std::sync::atomic::AtomicUsize::new(0);
-        let painter = counted(&paints, &fake);
-        let down = |_: &[PathBuf], _: &str| Err("codex: boom".to_string());
-        let results = remake(&art, &names, &author, &painter, &down);
-        assert!(!landed(&results));
-        let reason = results[0].1.clone().expect_err("source does not land");
-        assert_eq!(reason, "the critic read no candidate; nothing repainted");
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 0);
-        assert_eq!(art.read().machine["source"].kept, kept);
-        assert!(art.candidate("source", 1).exists() && art.candidate("source", 2).exists());
-        let rows = rows(&art, "source");
-        assert_eq!(rows["source-1"].0, "pass");
-        assert!(landed(&remake(&art, &names, &author, &painter, &judge)));
-        assert_eq!(paints.load(std::sync::atomic::Ordering::SeqCst), 0);
-    }
-    #[test]
-    fn direct_sh_prints_the_caption_the_director_writes_even_fenced_and_fails_on_no_caption() {
-        let root = std::env::temp_dir().join(format!("ziral-direct-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("bin")).expect("a fake bin");
-        let codex = root.join("bin/codex");
-        std::fs::write(
-            &codex,
-            "#!/bin/sh\n\
-             printf '%s\\n' \"$@\" > \"$HOME/args\"\n\
-             mkdir -p \"$CODEX_HOME/sessions\"\n\
-             jq -n --arg model \"$(cat art/director-model.txt)\" '{type: \"turn_context\", payload: {model: $model}}' > \"$CODEX_HOME/sessions/rollout-test-t1.jsonl\"\n\
-             echo '{\"type\":\"thread.started\",\"thread_id\":\"t1\"}'\n\
-             printf '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%s}}\\n' \"$REPLY\"\n",
-        )
-        .expect("a fake codex");
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        let path = format!(
-            "{}:{}",
-            root.join("bin").display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
-        let image = root.join("scaffold.png");
-        std::fs::write(&image, b"png").expect("an image");
-        let direct = |reply: &str| {
-            std::process::Command::new(Art::shipped().direct_sh())
-                .arg("-i")
-                .arg(&image)
-                .arg("A source.")
-                .env("PATH", &path)
-                .env("HOME", &root)
-                .env("REPLY", reply)
-                .env("CODEX_HOME", root.join(".codex"))
-                .output()
-                .expect("direct.sh runs")
+    fn a_spent_call_stops_painting_and_failed_calls_use_up_the_attempts() {
+        let art = studio("spent", &["bonder"], 4);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let spent = |_: &Path, _: &Path| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(Refusal::Spent("usage went from 0 to 0.01".to_string()))
         };
-        let out = direct(r#""```json\n{\"prompt\": \"A flat plan.\"}\n```""#);
+        let results = remake(&art, &["bonder".to_string()], &spent);
+        assert!(!landed(&results));
         assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
+            results[0]
+                .1
+                .as_ref()
+                .unwrap_err()
+                .starts_with("stopped: usage"),
+            "{results:?}"
         );
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "A flat plan.\n");
-        let args = std::fs::read_to_string(root.join("args")).expect("the call's args");
-        assert!(args.contains("--output-schema"), "{args}");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(!art.machine("bonder").join("albedo.png").exists());
+        let failed = |_: &Path, _: &Path| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(Refusal::Failed("HTTP 502".to_string()))
+        };
+        let results = remake(&art, &["bonder".to_string()], &failed);
         assert!(
-            args.contains(&format!("--image\n{}", image.display())),
-            "{args}"
+            results[0]
+                .1
+                .as_ref()
+                .unwrap_err()
+                .contains("paint: HTTP 502"),
+            "{results:?}"
         );
-        assert!(
-            args.lines()
-                .any(|l| l.starts_with("You are the art director")
-                    && l.ends_with("Brief: A source.")),
-            "{args}"
-        );
-        for reply in [r#""{\"caption\": \"A flat plan.\"}""#, r#""A flat plan.""#] {
-            let out = direct(reply);
-            assert!(!out.status.success(), "{reply}");
-            assert_eq!(String::from_utf8_lossy(&out.stdout), "", "{reply}");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 5);
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn the_matte_takes_design_colour_under_the_layer_alpha_and_refuses_a_framing_layer() {
+        let root = std::env::temp_dir().join(format!("ziral-matte-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let sprite = RgbaImage::from_fn(200, 200, |x, y| {
+            if (Vec2::new(x as f32, y as f32) - 100.0).length() < 60.0 {
+                Rgba([200, 40, 30, 255])
+            } else {
+                Rgba([0; 4])
+            }
+        });
+        drawn(&root, &sprite, None);
+        let matte = matte(&root).expect("a sprite");
+        assert_eq!(matte.dimensions(), (250, 250));
+        assert_eq!(matte.get_pixel(125, 125).0, [200, 40, 30, 255]);
+        assert_eq!(matte.get_pixel(5, 5)[3], 0);
+        drawn(&root, &sprite, Some(RgbaImage::from_pixel(125, 125, GROUND)));
+        assert!(matte(&root).unwrap_err().contains("covers 1.000"));
+        let mut touching = RgbaImage::new(125, 125);
+        for y in 0..125 {
+            for x in 0..30 {
+                touching.put_pixel(x, y, Rgba([200, 40, 30, 255]));
+            }
         }
+        drawn(&root, &sprite, Some(touching));
+        assert!(matte(&root).unwrap_err().contains("frame edge"));
+        std::fs::remove_file(root.join("layer-2.png")).unwrap();
+        assert!(matte(&root).unwrap_err().contains("one layer"));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -3890,7 +2606,7 @@ mod tests {
             let prompt = art.join(format!("{name}.prompt.txt"));
             assert!(art.join(format!("{png}.png")).exists(), "{png}.png");
             assert!(
-                stored(&prompt).expect("readable").is_some(),
+                std::fs::read_to_string(&prompt).is_ok_and(|text| !text.trim().is_empty()),
                 "{}: no prompt beside the texture",
                 prompt.display()
             );

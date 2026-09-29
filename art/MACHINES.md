@@ -1,59 +1,36 @@
 # Machine textures
 
-[BIBLE.md](BIBLE.md) offers state colours, visual direction and inspiration. [machines/manifest.toml](machines/manifest.toml) supplies directions, fixed thresholds and references. [src/machines.rs](../src/machines.rs) owns registration, measurement, selection and lighting.
+[BIBLE.md](BIBLE.md) offers state colours, visual direction and inspiration. Each machine's `caption.txt` is its brief. [machines/manifest.toml](machines/manifest.toml) holds the attempt budget, the measured thresholds and each machine's rig, sound and particles. [src/machines.rs](../src/machines.rs) owns registration, measurement, selection and relief.
 
-## Inputs and provenance
+## Caption → Design → Design-Layer
 
-A glyph scaffold shows its footprint union in grey over green, with coloured rings and dots locating functional openings. These fills describe the envelope, not paint colours or a backing plate. The [body envelope guide](BIBLE.md#2-language) describes how the machine occupies that guide. Arm scaffolds and their separate shared direction retain the pivot, link and hand treatment.
+A caption is a declarative art director's description of the finished sprite: subject, silhouette in hexagon terms, apertures, materials, ornament, light and what is absent. It draws on the bible for inspiration and adds no gates.
 
-The shared text, machine direction, scaffold and any manifest references reach `art/direct.sh`, which uses `art/ask.sh` to write a declarative image caption. No recipe image or recipe sentence reaches the painter. The shared runner passes the [director model](director-model.txt) explicitly for both direction and judging, and rejects a missing transcript or any turn reporting another model. Painting uses the configured Codex installation.
+`art/ming.sh design` sends the caption unchanged to `inclusionai/ming-image-0.1-design` on OpenRouter, which returns one 2048 px square picture on a plain background. It takes no reference image, so the footprint reaches it only through the caption's words.
 
-Directive: “which uses `art/ask.sh` to write a declarative image caption”; “No recipe image or recipe sentence reaches the painter”.
+`art/ming.sh design-layer` sends that picture with one fixed layer plan to `inclusionai/ming-image-0.1-design-layer`: the complete object with its through-holes empty, the shadow beneath it, the background. It returns 1024 px RGBA layers. The object layer's alpha, scaled to the picture, is the sprite's alpha; its colour is the picture's where the layer is opaque and the layer's own at the soft edge. The shadow and background are discarded: runtime lighting supplies direction through the normal map.
 
-`art/paint.sh` passes the caption unchanged to the image tool and verifies its actual call against that caption and the attached paths and SHA-256 hashes. Each prompt ends with an **Image inputs** section containing those verified inputs. Historical unrecoverable inputs remain explicit as `unknown`. A mismatched caption or attachment, implicit conversation-image reference or non-square return fails the paint. A square return is resized uniformly and quantised. Machine candidates' returned transparency is composited over the green key before measurement; this neither clips nor reshapes the object.
+Both calls check the listed price before and the account usage before and after. A non-zero price or a usage change exits 3 and stops every painter in the run. `OPENROUTER_API_KEY` comes from the environment.
 
-`prompt.txt` records the first round; `candidates/round-N.txt` records round N. These are evidence of their paints, not instructions to restore historical inputs. Regenerating after a shared-brief change authors new captions and paints new candidates; refreshing a hash alone is not repainting.
+## Attempts
 
-## Generate and select
+Inside `nix-shell`, `cargo run -- --gen NAME...` or `--gen --all`. Each machine gets up to `attempts` Design → Design-Layer runs, at most five in flight across machines, and stops at the first that passes:
 
-Inside `nix-shell`, use `cargo run -- --gen bonder` or name multiple entries. `--gen --all` includes arms and textures; a glyph-only change names the glyphs explicitly. Texture colours are repainted separately through `art/textures/gen.sh`; their relief command uses the existing colour image.
+1. **Matte.** A non-square picture, a split with one layer, an object layer covering under 3% or over 90% of its frame, or one that reaches the frame's edge fails the attempt.
+2. **Fit.** The silhouette's bounding centre goes to the footprint centre and one uniform scale makes it the largest that stays inside the union of footprint hexes. Nothing is stretched or rotated.
+3. **Register.** On a machine with seats, the seat rims found near their cells give one translation and one uniform scale by least squares.
+4. **Measure.** `outside` is the farthest a visible pixel lies beyond the footprint, `seat` the rim contrast of the weakest seat, `off_centre` the farthest registered seat from its cell, all in hex circumradii against the manifest thresholds. `palette` is reported and never decides.
 
-1. **Register.** Seat rims supply one translation and one uniform scale. No stretch or rotation is applied.
-2. **Measure.** `outside`, `seat` and `off_centre` are pipeline checks for footprint overflow, readable seats and registration. `palette` is a comparison measurement in the printed report and `scores.tsv`; it neither rejects nor ranks candidates. Distances use hex circumradii. The footprint measures the sprite; it never cuts its silhouette.
-3. **Judge.** The critic sees the cut sprite on board tiles at gameplay scale, magnified without smoothing, beside its scaffold. The fixed rubric weighs overall visual strength, presence, material richness, detail and confidence. Detail counts in favour; bible prohibitions impose no automatic deductions, hard failures or score caps. The required `compound` boolean records whether the sprite reads as atoms joined by bonds; that reading informs the overall judgment and does not reject a candidate. Missing required reply fields fail judgment. Critic calls run sequentially.
-   Historical direction, superseded by the bible’s no-hard-fail Directive:
-   Directive: “Detail counts in favour”; “rejects any glyph that reads as a compound, regardless of score”.
-4. **Repeat and keep.** A passing score of 8 ends painting early. Round two addresses the best candidate's measured or visual issues; round three starts from the brief again. At the three-round cap, keep the best measured, judged candidate, even below 8. A tie uses measured rank, then the earliest candidate. With none passing, generation fails. A critic that reads no measured passing candidate stops the run without another paint round.
-   Directive: “A passing score of 8 ends painting early”; “At the three-round cap, keep the best”.
-5. **Cut and light.** Remove the key into `albedo.png`, derive `normal.png`, compute the six calibration relights, and split only the requested machines into rig parts.
+With no pass, the attempt whose worst measurement is closest to its threshold is kept and its failing verdict stays on the sheet. A run where no attempt made a sprite does not land.
 
-All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a judgment prompt or rubric change invalidates that cache during regeneration. Shipped prompts and score rows retain their original brief and judgment keys as historical evidence; changing guidance, including the bible palette the brief quotes, does not require repainting or rewriting those records.
-
-The painter limits concurrent calls to six. Shell runners retry four times with doubling backoff and retain failure output. `art/machines/rig.sh` splits selected machines into a central circular moving part and its surrounding base, with colour, normal and emissive maps. It accepts entry names; an omitted list selects all entries. It does not interpret manifest masks.
+`attempts.tsv` records every attempt: verdict, the four measurements, the two call times and the cost. The pictures and layers stay in the ignored `attempts/` directory. `painted` in the manifest keys the caption, the budget and the layer plan; a change repaints from attempt one, and an unchanged machine is only re-lit if its albedo changed.
 
 ## Relief
 
-The generator paints albedo only. No generated relight or direction prompt is used. A deterministic shallow height approximation combines the silhouette with 15% luminance variation, blurred by four capture pixels. Central differences produce tangent-space normals. This is approximate relief, not recovered physical geometry: colour changes can contribute small bumps. The kept colour supplies ceramic, brass and rubber detail.
+`albedo.png` is the registered sprite cropped to the machine's quad, 256 px per hex, quantised. A deterministic shallow height approximation combines alpha with 15% luminance variation, blurred by four pixels; central differences produce `normal.png`. This is approximate relief, not recovered geometry.
 
-One renderer shades both machine and analytic grey calibration sphere with `ambient + (1 - ambient) * max(normal · light, 0)`. Every light uses the manifest elevation and facing directly: six directions at 45° elevation. The sphere is part of that same render, never a correction pasted onto a generated relight. Directions and sphere-shape error are measured from the pixels with the unchanged 25° limit. Quantisation can leave a small measured direction error despite exact input directions.
+One renderer shades the machine and an analytic grey calibration sphere with `ambient + (1 - ambient) * max(normal · light, 0)` for the six manifest facings at 45° elevation. `relit/` holds those renders, `lights.txt` the requested and measured directions, and `relit/albedo.png` the six stacked. It is calibration evidence, not a runtime material. The same relief runs for the atom and bond textures.
 
-`relit/master.png` is the unlit colour and sphere. The six named PNGs are computed renders; `lights.txt` records requested and measured directions, angular errors and ambient share. `relit/albedo.png` stacks the six cut renders. The shipped material continues to light the colour image through `normal.png`; the atlas is calibration evidence, not a second runtime material. Old generated-relight attempts in `proofs/` are historical failed evidence.
-
-## Cache keys
-
-| Record | Inputs | Effect of a change |
-|---|---|---|
-| `briefed` | applicable shared text, direction, reference bytes | author a new caption |
-| `painted` | first-round caption, candidate count, scaffold pixels and width, reference bytes | replace the candidate run |
-| critic row | rubric, candidate bytes, judgment prompt | judge again |
-| `relit` | source pixels, relief algorithm, elevation, facings, ambient share | recompute relief |
-
-An unchanged run remeasures its keep. A hand-edited caption under an unchanged brief is input to the next paint, not rewritten provenance. Atom, bond, tile and manual-page prompts remain adjacent to their assets; texture-generation reference conventions remain in their scripts and the bible.
-
-A body without atom-seat landmarks registers from the complete keyed silhouette. Its bounding centre supplies one translation; its greatest hexagonal radius supplies one uniform scale into the complete footprint envelope. No silhouette pixel is clipped, and both axes share the scale. The pipeline checks and fixed critic judge that result.
-
-Static housings keep an empty part list and use the complete albedo. Only articulated machines carry split maps; the portal has no firing rim.
+`art/machines/rig.sh` splits articulated machines into a central circular moving part and its base, with colour, normal and emissive maps; static housings keep an empty part list. `sheet.png` shows every kept sprite on clay with its attempt and verdict.
 
 Directive: outputs do not need holes. An output is a space to place things — a magical acceptor, a table, or similar doodads — with Opus Magnum as the inspiration. No explicit acceptor hole for every atom.
-
-Output briefs describe continuous receiving surfaces. Their scaffold cells describe body coverage, with no per-atom seat landmarks; their simulation cells and acceptance behavior are unchanged.
