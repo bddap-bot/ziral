@@ -70,4 +70,4 @@ Attempts were painted ahead of measurement, so machines whose early attempt woul
 | source-2 | 4 | 3 | fail off_centre 0.152 > 0.1 | 434 | $0 |
 | all 15 | 59 | | 6 pass, 9 kept closest | 5864 | $0 |
 
-Where the seats and the body disagree, seat registration wins and the body overflows its footprint by the recorded `outside`: the model draws apertures closer together than the cells, so matching the seats scales the body past the envelope. Outputs and the portal, registered by silhouette alone, pass.
+Every failing verdict is on a machine registered by its seats; every machine registered by silhouette alone (outputs, portal) passes. Seat registration sets the scale from the model's aperture spacing, and wherever that spacing is tighter than the cells relative to the body, the body lands past its footprint by the recorded `outside`.
