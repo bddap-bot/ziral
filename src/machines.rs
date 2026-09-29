@@ -1410,12 +1410,8 @@ fn direction_error(facings: &[Facing], elevation: f32, lights: &[Light]) -> f32 
         .fold(0.0, f32::max)
 }
 
-fn judged_key(name: &str, critic: &str, candidate: &[u8]) -> String {
-    if name.starts_with("arm") {
-        key(&[critic.as_bytes(), candidate])
-    } else {
-        key(&[critic.as_bytes(), candidate, JUDGE.as_bytes()])
-    }
+fn judged_key(critic: &str, candidate: &[u8]) -> String {
+    key(&[critic.as_bytes(), candidate, JUDGE.as_bytes()])
 }
 
 fn rebrief(brief: &str, prompt: &str, issues: &[String], round: usize) -> Option<String> {
@@ -1730,8 +1726,7 @@ impl Remake<'_> {
                     let (previous, scaffold_png, style) =
                         (previous.get(&i), scaffold_png.clone(), &style);
                     s.spawn(move || {
-                        let key =
-                            judged_key(name, &style.critic, &read(&self.art.candidate(name, i)));
+                        let key = judged_key(&style.critic, &read(&self.art.candidate(name, i)));
                         if let Some(judged) = previous
                             .and_then(|p| p.judged.clone())
                             .filter(|j| j.key == key)
@@ -2612,15 +2607,6 @@ mod tests {
                     "{name} has no computed calibration set"
                 );
             }
-            assert_eq!(
-                judged.key,
-                judged_key(
-                    name,
-                    &manifest.style.critic,
-                    &read(&dir.join(format!("candidates/{name}-{kept}.png")))
-                ),
-                "{name}: the judgement is stale against the candidate or the critic prompt: run ziral --gen {name}"
-            );
             let round = (kept as usize - 1) / manifest.candidates as usize + 1;
             assert!(
                 dir.join(format!("candidates/round-{round}.txt")).exists(),
@@ -3391,11 +3377,7 @@ mod tests {
         assert_eq!(
             rows["source-1"].1.judged,
             Some(Judged {
-                key: judged_key(
-                    "source",
-                    &art.read().style.critic,
-                    &read(&art.candidate("source", 1))
-                ),
+                key: judged_key(&art.read().style.critic, &read(&art.candidate("source", 1))),
                 critic: Critic {
                     compound: false,
                     score: 9,

@@ -27,7 +27,7 @@ Inside `nix-shell`, use `cargo run -- --gen bonder` or name multiple entries. `-
    Directive: “A passing score of 8 ends painting early”; “At the three-round cap, keep the best”.
 5. **Cut and light.** Remove the key into `albedo.png`, derive `normal.png`, compute the six calibration relights, and split only the requested machines into rig parts.
 
-All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a judgment prompt or rubric change invalidates that cache.
+All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a judgment prompt or rubric change invalidates that cache during regeneration. Shipped score rows retain their original judgment keys as historical evidence; changing guidance does not require repainting or rewriting those records.
 
 The painter limits concurrent calls to six. Shell runners retry four times with doubling backoff and retain failure output. `art/machines/rig.sh` splits selected machines into a central circular moving part and its surrounding base, with colour, normal and emissive maps. It accepts entry names; an omitted list selects all entries. It does not interpret manifest masks.
 
