@@ -40,6 +40,7 @@ One reference, the resonator's first Design picture, the same picture its object
 - Layer 1 ("flat albedo") is a smoothed re-render of the body without the brass crest, rivets or crazing, still shaded and glossy: luminance standard deviation 30.1 over its opaque pixels.
 - Layer 2 ("specular only") is the complete detailed object, opaque over the same silhouette: opaque IoU with layer 1 is 0.962.
 - Layer 3 ("light and shadow") is a flat pale wash, RGB (225, 225, 227) at alpha 10 to 79, with no shading structure.
-- Stacking the four layers misses the reference by a mean |ΔRGB| of 20.4 / 25.4 / 24.1, against 4.3 for the object split.
+- Inside the silhouette, layer 2 alone matches the reference within a mean |ΔRGB| of 6.9 / 7.1 / 7.1; the four stacked miss it by 26.7 / 37.8 / 31.8, because layer 1 covers layer 2.
+- The object split of the same picture returns its object layer lighter than the picture (25.9 / 23.0 / 32.9 inside the silhouette), which is why the matte takes colour from the Design picture and only alpha from the layer.
 
 Verdict: Design-Layer splits by object only; it does not separate light terms. Evidence for a later decision, not a stage here.
