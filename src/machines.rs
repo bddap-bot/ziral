@@ -538,7 +538,6 @@ impl Scaffold {
             seat,
             palette,
             off_centre: capture.off_centre,
-            judged: None,
         }
     }
 
@@ -2561,10 +2560,10 @@ mod tests {
             }
         });
         drawn(&root, &sprite, None);
-        let matte = matte(&root).expect("a sprite");
-        assert_eq!(matte.dimensions(), (250, 250));
-        assert_eq!(matte.get_pixel(125, 125).0, [200, 40, 30, 255]);
-        assert_eq!(matte.get_pixel(5, 5)[3], 0);
+        let sprite = matte(&root).expect("a sprite");
+        assert_eq!(sprite.dimensions(), (250, 250));
+        assert_eq!(sprite.get_pixel(125, 125).0, [200, 40, 30, 255]);
+        assert_eq!(sprite.get_pixel(5, 5)[3], 0);
         drawn(&root, &sprite, Some(RgbaImage::from_pixel(125, 125, GROUND)));
         assert!(matte(&root).unwrap_err().contains("covers 1.000"));
         let mut touching = RgbaImage::new(125, 125);
