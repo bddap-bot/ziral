@@ -44,3 +44,30 @@ One reference, the resonator's first Design picture, the same picture its object
 - The object split of the same picture returns its object layer lighter than the picture (25.9 / 23.0 / 32.9 inside the silhouette), which is why the matte takes colour from the Design picture and only alpha from the layer.
 
 Verdict: Design-Layer splits by object only; it does not separate light terms. Evidence for a later decision, not a stage here.
+
+## The set
+
+[art/machines/sheet.png](art/machines/sheet.png) is every kept sprite on clay with its attempt and verdict. [proofs/ming-set-rig-162.png](proofs/ming-set-rig-162.png) is the `rig` shot scene with the new art loaded: the source, bonder and second bond with atoms in their seats, and every machine in the inventory column.
+
+Attempts were painted ahead of measurement, so machines whose early attempt would have ended the run still painted four; `attempts.tsv` records the measured ones. Model time is the sum of both calls' wall times for every attempt painted; the listed price and the account usage read $0 before the first call and after the last.
+
+| machine | attempts painted | kept | verdict of the kept attempt | model time (s) | cost |
+|---|---|---|---|---|---|
+| arm | 4 | 4 | pass | 408 | $0 |
+| arm-2 | 4 | 2 | pass | 304 | $0 |
+| arm-3 | 4 | 2 | fail outside 0.152 > 0.05 | 331 | $0 |
+| bonder | 4 | 1 | fail outside 0.111 > 0.05 | 421 | $0 |
+| converter-amber | 4 | 4 | fail outside 0.431 > 0.05 | 406 | $0 |
+| converter-cobalt | 4 | 1 | fail outside 0.155 > 0.05 | 405 | $0 |
+| output-1 | 4 | 1 | pass | 383 | $0 |
+| output-2 | 4 | 1 | pass | 409 | $0 |
+| output-3 | 4 | 1 | pass | 334 | $0 |
+| portal | 3 | 1 | pass | 392 | $0 |
+| reification | 4 | 4 | fail outside 0.257 > 0.05 | 440 | $0 |
+| resonator | 4 | 4 | fail outside 0.174 > 0.05 | 422 | $0 |
+| second-bond | 4 | 2 | fail outside 0.094 > 0.05 | 382 | $0 |
+| source | 4 | 4 | fail outside 0.133 > 0.05 | 392 | $0 |
+| source-2 | 4 | 3 | fail off_centre 0.152 > 0.1 | 434 | $0 |
+| all 15 | 59 | | 6 pass, 9 kept closest | 5864 | $0 |
+
+Where the seats and the body disagree, seat registration wins and the body overflows its footprint by the recorded `outside`: the model draws apertures closer together than the cells, so matching the seats scales the body past the envelope. Outputs and the portal, registered by silhouette alone, pass.

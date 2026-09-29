@@ -579,7 +579,8 @@ impl Scaffold {
         let sample = |world: Vec2| {
             let p = self.pixel(world);
             let inside = p.min_element() >= 0.0 && p.max_element() < self.canvas as f32;
-            inside.then(|| Vec3::from_array(over_black(candidate.get_pixel(p.x as u32, p.y as u32))))
+            inside
+                .then(|| Vec3::from_array(over_black(candidate.get_pixel(p.x as u32, p.y as u32))))
         };
         let step = SEAT_STEP * HEX;
         let rings = ((SEAT_AROUND[1] - SEAT_DOT) / SEAT_STEP).ceil() as usize;
@@ -1065,7 +1066,12 @@ fn ming(art: &Art, caption: &Path, out: &Path) -> Result<Calls, Refusal> {
     let mut log = ming_sh(art, &["design".as_ref(), design.as_ref(), caption.as_ref()])?;
     log += &ming_sh(
         art,
-        &["design-layer".as_ref(), out.as_ref(), design.as_ref(), plan.as_ref()],
+        &[
+            "design-layer".as_ref(),
+            out.as_ref(),
+            design.as_ref(),
+            plan.as_ref(),
+        ],
     )?;
     std::fs::write(out.join("calls.tsv"), log).map_err(failed)?;
     Calls::read(out).ok_or_else(|| Refusal::Failed(format!("{}: incomplete", out.display())))
@@ -1173,7 +1179,17 @@ impl Attempt {
 
     fn parse(row: &str) -> Option<Attempt> {
         let cols: Vec<&str> = row.split('\t').collect();
-        let [index, verdict, outside, seat, palette, off_centre, design, layer, cost] = cols[..]
+        let [
+            index,
+            verdict,
+            outside,
+            seat,
+            palette,
+            off_centre,
+            design,
+            layer,
+            cost,
+        ] = cols[..]
         else {
             return None;
         };
@@ -1433,8 +1449,8 @@ impl Remake<'_> {
         let (_, thresholds, count, entry) = self.entry(name)?;
         let dir = self.art.machine(name);
         let caption = self.art.caption(name);
-        let text = std::fs::read_to_string(&caption)
-            .map_err(|e| format!("{}: {e}", caption.display()))?;
+        let text =
+            std::fs::read_to_string(&caption).map_err(|e| format!("{}: {e}", caption.display()))?;
         let painted = painted_key(&text, count);
         let mut rows = if entry.painted.as_deref() == Some(painted.as_str()) {
             attempts(&dir)
@@ -1467,8 +1483,7 @@ impl Remake<'_> {
             .filter_map(|a| Some((a.index, a.outcome.as_ref().ok()?.excess(&thresholds))))
             .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
             .ok_or_else(|| {
-                let verdicts: Vec<String> =
-                    rows.values().map(|a| a.verdict(&thresholds)).collect();
+                let verdicts: Vec<String> = rows.values().map(|a| a.verdict(&thresholds)).collect();
                 format!("no attempt made a sprite: {}", verdicts.join("; "))
             })?;
         let capture = scaffold.register(&matte(&self.art.attempt(name, kept))?);
@@ -1486,8 +1501,8 @@ impl Remake<'_> {
         let dir = self.art.machine(name);
         let (_, _, count, entry) = self.entry(name)?;
         let caption = self.art.caption(name);
-        let text = std::fs::read_to_string(&caption)
-            .map_err(|e| format!("{}: {e}", caption.display()))?;
+        let text =
+            std::fs::read_to_string(&caption).map_err(|e| format!("{}: {e}", caption.display()))?;
         let mut changed = false;
         if entry.painted.as_deref() != Some(painted_key(&text, count).as_str())
             || entry.kept.is_none()
@@ -2565,7 +2580,11 @@ mod tests {
         assert_eq!(sprite.dimensions(), (250, 250));
         assert_eq!(sprite.get_pixel(125, 125).0, [200, 40, 30, 255]);
         assert_eq!(sprite.get_pixel(5, 5)[3], 0);
-        drawn(&root, &sprite, Some(RgbaImage::from_pixel(125, 125, GROUND)));
+        drawn(
+            &root,
+            &sprite,
+            Some(RgbaImage::from_pixel(125, 125, GROUND)),
+        );
         assert!(matte(&root).unwrap_err().contains("covers 1.000"));
         let mut touching = RgbaImage::new(125, 125);
         for y in 0..125 {
