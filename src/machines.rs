@@ -463,6 +463,7 @@ impl Scaffold {
             )
         })
     }
+}
 
 struct Capture {
     image: RgbaImage,
