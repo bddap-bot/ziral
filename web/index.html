@@ -17,10 +17,15 @@
     <script src="./records-config.js"></script>
     <script type="module">
       import init from "./ziral.js";
-      init().catch((e) => {
+      const compiler = new Worker(new URL("./compile.js", import.meta.url), {type: "module"});
+      const compiled = new Promise((resolve, reject) => {
+        compiler.onmessage = ({data}) => resolve(data);
+        compiler.onerror = (event) => reject(new Error(event.message));
+      });
+      compiled.then(module => init({module_or_path: module})).catch((e) => {
         if (!String(e).includes("Using exceptions for control flow"))
           document.getElementById("why").textContent = String(e);
-      });
+      }).finally(() => compiler.terminate());
     </script>
   </body>
 </html>

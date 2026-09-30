@@ -26,5 +26,5 @@ CC_wasm32_unknown_unknown=clang NIX_HARDENING_ENABLE='' cargo build --release --
 wasm-bindgen --target web --no-typescript --out-dir "$out" --out-name ziral_records_transport \
   "${CARGO_TARGET_DIR:-$root/web/transport/target}/wasm32-unknown-unknown/release/ziral_records_transport.wasm"
 printf 'globalThis.ZIRAL_RECORDS_ENDPOINT = "%s";\n' "$endpoint" > "$out/records-config.js"
-cp "$here/index.html" "$out/index.html"
+cp "$here/index.html" "$here/compile.js" "$out/"
 echo "web/dist: $(du -sh "$out" | cut -f1)"
