@@ -1,5 +1,7 @@
 # Landing contract
 
+Edit by subtraction: resolve a problem by deleting code; a tactical patch over a symptom is not accepted. One implementation per thing, never two alive.
+
 A landing on `main` is complete only when the `pages` workflow is green on that sha. It runs on push; if it is red, say so rather than re-triggering blindly. The deployed page is whatever `main` last built: https://bddap-bot.github.io/ziral/
 
 `src/sim.rs` is the lockstep simulation and imports no Bevy type. Bevy stays in `src/main.rs`.
