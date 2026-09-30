@@ -505,6 +505,7 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .chain(
             Machine::ALL
                 .into_iter()
+                .filter(|item| crate::rig::parts(*item).is_empty())
                 .map(|item| machine(item).marking.normal()),
         )
         .chain(Machine::ALL.into_iter().flat_map(|item| {
@@ -896,7 +897,8 @@ pub(crate) mod tests {
             all.len(),
             AtomKind::ALL.len()
                 + BondKind::ALL.len()
-                + 2 * Machine::ALL.len()
+                + Machine::ALL.len()
+                + 2
                 + 3 * Machine::ALL
                     .into_iter()
                     .map(|machine| crate::rig::parts(machine).len())
@@ -905,6 +907,25 @@ pub(crate) mod tests {
                 + KEYS.len()
                 + 2
         );
+    }
+
+    #[test]
+    fn rigs_fire_part_maps_without_the_unused_whole_machine_normal() {
+        let all: Vec<_> = skins().collect();
+        for item in Machine::ALL {
+            let normal = machine(item).marking.normal();
+            assert_eq!(
+                all.contains(&normal),
+                matches!(item, Machine::Portal | Machine::Glyph(GlyphKind::Resonator)),
+                "{item:?} whole-machine relief residency"
+            );
+            for part in crate::rig::parts(item) {
+                let (albedo, normal, emissive) = rig(item, &part.name);
+                for skin in [albedo, normal, emissive] {
+                    assert!(all.contains(&skin), "{item:?} needs {skin:?}");
+                }
+            }
+        }
     }
 
     #[test]
