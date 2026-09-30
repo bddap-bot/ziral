@@ -22,7 +22,7 @@ use bevy::math::Affine2;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::render_resource::TextureFormat;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
@@ -4247,10 +4247,7 @@ struct Lit {
     #[texture(3)]
     #[sampler(4)]
     relief: Handle<Image>,
-    #[texture(5)]
-    #[sampler(6)]
-    emissive: Handle<Image>,
-    #[uniform(7)]
+    #[uniform(5)]
     response: Vec4,
 }
 
@@ -4419,42 +4416,30 @@ fn fire_kiln(
             .map(|(_, image, _)| image.clone())
             .unwrap_or_else(|| panic!("{skin:?} was never fired"))
     };
-    let whole = images.add(Image::new_fill(
-        Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[255, 255, 255, 255],
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::RENDER_WORLD,
-    ));
     let lit = Machine::ALL
         .into_iter()
         .flat_map(|item| {
             let parts = rig::parts(item);
             if parts.is_empty() {
                 let look = look::machine(item);
-                vec![(look.skin, look.marking.normal(), None)]
+                vec![(look.skin, look.marking.normal(), true)]
             } else {
                 parts
                     .iter()
                     .map(|part| {
-                        let (skin, normal, emissive) = look::rig(item, &part.name);
-                        (skin, normal, Some(emissive))
+                        let (skin, normal) = look::rig(item, &part.name);
+                        (skin, normal, part.event.is_some())
                     })
                     .collect()
             }
         })
-        .map(|(skin, normal, emissive)| {
+        .map(|(skin, normal, responsive)| {
             let lit = std::array::from_fn(|level| {
                 lits.add(Lit {
                     light: look::light().extend(look::AMBIENT),
                     albedo: image(skin),
                     relief: image(normal),
-                    emissive: emissive.map_or_else(|| whole.clone(), image),
-                    response: response(level),
+                    response: response(if responsive { level } else { 0 }),
                 })
             });
             (skin, lit)
@@ -4784,7 +4769,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
             return;
         }
         for (index, part) in rig::parts(item).iter().enumerate() {
-            let (skin, _, _) = look::rig(item, &part.name);
+            let (skin, _) = look::rig(item, &part.name);
             let pivot = Vec2::new(part.pivot[0], part.pivot[1]) * HEX;
             let (shift, turn, scale) = part
                 .motion
@@ -8727,7 +8712,7 @@ mod tests {
                     .flat_map(|arm| {
                         let item = Machine::Arm(arm.length);
                         rig::parts(item).iter().map(move |part| {
-                            let (skin, _, _) = look::rig(item, &part.name);
+                            let (skin, _) = look::rig(item, &part.name);
                             kiln.lit(skin, arm.energy)
                         })
                     })
@@ -8792,6 +8777,39 @@ mod tests {
         world.sim.arms.push(arm);
         world.viewer.prev = world.sim.clone();
         *app.world_mut().resource_mut::<Game>() = Game::from_world(world);
+        app.add_systems(Last, |kiln: Res<Kiln>, materials: Res<Assets<Lit>>| {
+            for machine in Machine::ALL {
+                let parts = rig::parts(machine);
+                let skins = if parts.is_empty() {
+                    vec![(look::machine(machine).skin, true)]
+                } else {
+                    parts
+                        .iter()
+                        .map(|part| {
+                            (
+                                look::rig(machine, &part.name).0,
+                                part.mask == rig::Mask::Inside,
+                            )
+                        })
+                        .collect()
+                };
+                for (skin, responsive) in skins {
+                    let (_, levels) = kiln
+                        .lit
+                        .iter()
+                        .find(|(candidate, _)| *candidate == skin)
+                        .unwrap();
+                    for (level, handle) in levels.iter().enumerate() {
+                        let expected = if responsive { level as f32 / 3.0 } else { 0.0 };
+                        assert_eq!(
+                            materials.get(handle).unwrap().response.x,
+                            expected,
+                            "{machine:?} {skin:?} level {level}"
+                        );
+                    }
+                }
+            }
+        });
         assert_eq!(app.run(), bevy::app::AppExit::Success);
         let frame = image::open(dir.join("00000.png")).unwrap().into_rgba8();
         std::fs::remove_dir_all(&dir).unwrap();
@@ -8804,11 +8822,11 @@ mod tests {
         let fired = posed_arm(sim::ActivationEnergy::FULL);
         let item = Machine::Arm(ArmLength::One);
         let quad = look::quad(item);
-        let mask = look::rig(item, "hand").2.decode();
+        let mask = look::rig(item, "hand").0.decode();
         let side = mask.width();
         let (mut lo, mut hi) = (UVec2::MAX, UVec2::ZERO);
         for (i, pixel) in mask.data.unwrap().chunks_exact(4).enumerate() {
-            if pixel[3] > 0 && pixel[0] > 0 {
+            if pixel[3] > 0 {
                 let at = UVec2::new(i as u32 % side, i as u32 / side);
                 lo = lo.min(at);
                 hi = hi.max(at);

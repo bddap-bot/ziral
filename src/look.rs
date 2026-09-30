@@ -446,7 +446,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
     }
 }
 
-pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
+pub fn rig(item: Machine, part: &str) -> (Skin, Skin) {
     let name = machine(item).skin.name.split('/').nth(1).unwrap();
     macro_rules! pair {
         ($machine:literal, $part:literal) => {{
@@ -458,11 +458,7 @@ pub fn rig(item: Machine, part: &str) -> (Skin, Skin, Skin) {
                 concat!("machines/", $machine, "/parts/normal-", $part),
                 Finish::Relief
             );
-            let emissive = finish!(
-                concat!("machines/", $machine, "/parts/emissive-", $part),
-                Finish::Sprite
-            );
-            (albedo, normal, emissive)
+            (albedo, normal)
         }};
     }
     match (name, part) {
@@ -510,8 +506,8 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         )
         .chain(Machine::ALL.into_iter().flat_map(|item| {
             crate::rig::parts(item).iter().flat_map(move |part| {
-                let (albedo, normal, emissive) = rig(item, &part.name);
-                [albedo, normal, emissive]
+                let (albedo, normal) = rig(item, &part.name);
+                [albedo, normal]
             })
         }))
         .chain(TILES)
@@ -899,7 +895,7 @@ pub(crate) mod tests {
                 + BondKind::ALL.len()
                 + Machine::ALL.len()
                 + 2
-                + 3 * Machine::ALL
+                + 2 * Machine::ALL
                     .into_iter()
                     .map(|machine| crate::rig::parts(machine).len())
                     .sum::<usize>()
@@ -920,8 +916,8 @@ pub(crate) mod tests {
                 "{item:?} whole-machine relief residency"
             );
             for part in crate::rig::parts(item) {
-                let (albedo, normal, emissive) = rig(item, &part.name);
-                for skin in [albedo, normal, emissive] {
+                let (albedo, normal) = rig(item, &part.name);
+                for skin in [albedo, normal] {
                     assert!(all.contains(&skin), "{item:?} needs {skin:?}");
                 }
             }

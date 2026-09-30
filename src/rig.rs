@@ -196,22 +196,21 @@ mod tests {
     }
 
     #[test]
-    fn every_part_has_equal_sized_maps_and_only_its_firing_feature_is_emissive() {
+    fn every_part_has_equal_sized_maps_and_its_firing_feature_matches_the_split() {
         for machine in Machine::ALL {
             for part in parts(machine) {
-                let (albedo, normal, emissive) = crate::look::rig(machine, &part.name);
+                let (albedo, normal) = crate::look::rig(machine, &part.name);
                 assert_ne!(albedo.name, normal.name);
-                assert_ne!(albedo.name, emissive.name);
+                let moving = part.mask == Mask::Inside;
+                assert_eq!(part.event.is_some(), moving, "{machine:?} {}", part.name);
+                let suffix = if moving { "moving" } else { "base" };
+                assert!(albedo.name.ends_with(&format!("/albedo-{suffix}")));
+                assert!(normal.name.ends_with(&format!("/normal-{suffix}")));
                 let albedo = albedo.decode();
                 let normal = normal.decode();
-                let emissive = emissive.decode();
                 assert_eq!(
                     (albedo.width(), albedo.height()),
                     (normal.width(), normal.height())
-                );
-                assert_eq!(
-                    (albedo.width(), albedo.height()),
-                    (emissive.width(), emissive.height())
                 );
                 assert_eq!(albedo.width(), albedo.height());
                 let visible = albedo
@@ -227,15 +226,6 @@ mod tests {
                     "{machine:?} {} has no transparency",
                     part.name
                 );
-                let albedo_pixels = albedo.data.as_ref().unwrap().chunks_exact(4);
-                let emissive_pixels = emissive.data.as_ref().unwrap().chunks_exact(4);
-                let strength = if part.event.is_some() { 255 } else { 0 };
-                for (albedo, emissive) in albedo_pixels.zip(emissive_pixels) {
-                    assert_eq!(emissive[3], albedo[3]);
-                    if emissive[3] > 0 {
-                        assert_eq!(&emissive[..3], &[strength; 3]);
-                    }
-                }
             }
         }
     }

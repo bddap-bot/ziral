@@ -26,14 +26,12 @@ struct Response {
 @group(#{MATERIAL_BIND_GROUP}) @binding(2) var albedo_sampler: sampler;
 @group(#{MATERIAL_BIND_GROUP}) @binding(3) var relief: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(4) var relief_sampler: sampler;
-@group(#{MATERIAL_BIND_GROUP}) @binding(5) var emissive: texture_2d<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(6) var emissive_sampler: sampler;
-@group(#{MATERIAL_BIND_GROUP}) @binding(7) var<uniform> material: Response;
+@group(#{MATERIAL_BIND_GROUP}) @binding(5) var<uniform> material: Response;
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let base = textureSample(albedo, albedo_sampler, mesh.uv);
-    let energy = material.response.x * textureSample(emissive, emissive_sampler, mesh.uv).r;
+    let energy = material.response.x;
     var local = textureSample(relief, relief_sampler, mesh.uv).xyz * 2.0 - 1.0;
     local += vec3(
         sin(mesh.uv.y * 31.4159),

@@ -29,7 +29,7 @@ Inside `nix-shell`, use `cargo run -- --gen bonder` or name multiple entries. `-
 
 All rounds remain in one candidate directory; indices continue across rounds. `scores.tsv` includes measurements, critic score, rejection reason, issues, judgment key and compound flag. `sheet.png` displays candidates and the keep. A partially painted round is not topped up on resume. An unchanged candidate reuses its matching judgment; a judgment prompt or rubric change invalidates that cache during regeneration. Shipped prompts and score rows retain their original brief and judgment keys as historical evidence; changing guidance, including the bible palette the brief quotes, does not require repainting or rewriting those records.
 
-The painter limits concurrent calls to six. Shell runners retry four times with doubling backoff and retain failure output. `art/machines/rig.sh` splits selected machines into a central circular moving part and its surrounding base, with colour, normal and emissive maps. It accepts entry names; an omitted list selects all entries. It does not interpret manifest masks.
+The painter limits concurrent calls to six. Shell runners retry four times with doubling backoff and retain failure output. `art/machines/rig.sh` splits selected machines into a central circular moving part and its surrounding base, with colour and normal maps. It accepts entry names; an omitted list selects all entries. It does not interpret manifest masks.
 
 ## Relief
 
