@@ -851,7 +851,9 @@ fn finish(
         .cropped(&capture.image)
         .save(&albedo)
         .map_err(|e| e.to_string())?;
-    quantise(&albedo)?;
+    if !conditioned {
+        quantise(&albedo)?;
+    }
     let mut encoded = open(&albedo);
     let (origin, _) = scaffold.crop();
     let mut clipped = false;
@@ -1781,7 +1783,13 @@ mod tests {
             true
         ));
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-        assert_eq!(open(art.machine("bonder").join("albedo.png")), retained);
+        let refitted = open(art.machine("bonder").join("albedo.png"));
+        for ((x, y, before), after) in retained.enumerate_pixels().zip(refitted.pixels()) {
+            assert_eq!(before[3], after[3], "alpha at {x},{y}");
+            if before[3] > 0 {
+                assert_eq!(before, after, "visible colour at {x},{y}");
+            }
+        }
         std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
