@@ -187,7 +187,12 @@ impl Session {
             return;
         }
         if let Ok(text) = serde_json::to_string(&self.record.inputs[self.sent..]) {
-            append_record(&self.record.build, self.record.seed, &text);
+            append_record(
+                &self.record.build,
+                self.record.seed,
+                &text,
+                (self.record.inputs.len() - self.sent) as u32,
+            );
             self.sent = self.record.inputs.len();
             #[cfg(target_arch = "wasm32")]
             {
@@ -209,7 +214,7 @@ extern "C" {
     fn begin_record();
     fn finish_record();
     pub fn bench_record();
-    fn append_record(build: &str, seed: u64, inputs: &str);
+    fn append_record(build: &str, seed: u64, inputs: &str, count: u32);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -219,7 +224,7 @@ fn finish_record() {}
 #[cfg(not(target_arch = "wasm32"))]
 pub fn bench_record() {}
 #[cfg(not(target_arch = "wasm32"))]
-fn append_record(_: &str, _: u64, _: &str) {}
+fn append_record(_: &str, _: u64, _: &str, _: u32) {}
 
 #[cfg(test)]
 mod tests {

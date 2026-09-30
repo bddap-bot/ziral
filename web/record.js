@@ -18,25 +18,38 @@ function name(chunk) {
     return `ziral-record-${chunk.session}-${chunk.start}`;
 }
 
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+let unsealed = new Uint8Array(1 << 15);
+let length = 0;
+
 function seal() {
-    if (!live?.inputs.length) return;
+    if (!live?.count) return;
     attempted = performance.now();
-    const chunk = live;
-    live = {...chunk, start: chunk.start + chunk.inputs.length, inputs: []};
-    const text = JSON.stringify(bench ? {...chunk, bench} : chunk);
+    const {count, ...chunk} = live;
+    live = {...chunk, start: chunk.start + count, count: 0};
+    const header = JSON.stringify(bench ? {...chunk, bench} : chunk);
+    const text = `${header.slice(0, -1)},"inputs":[${decoder.decode(unsealed.subarray(0, length))}]}`;
+    length = 0;
     const key = name(chunk);
     try { localStorage.setItem(key, text); } catch (error) { console.error(error); }
-    database.then(db => {
-        const transaction = db.transaction('records', 'readwrite');
-        transaction.objectStore('records').put(text, key);
-        transaction.oncomplete = () => {
-            try { localStorage.removeItem(key); } catch (error) { console.error(error); }
-        };
-        transaction.onerror = () => console.error(transaction.error);
-    }).catch(console.error);
+    database.then(db => store(db, key, text)).catch(console.error);
     if (bench) return;
-    queue(key, chunk);
+    queue(key, text);
     upload();
+}
+
+function store(db, key, text) {
+    const transaction = db.transaction('records', 'readwrite');
+    transaction.objectStore('records').put(text, key);
+    committed(transaction, key);
+}
+
+function committed(transaction, key) {
+    transaction.oncomplete = () => {
+        try { localStorage.removeItem(key); } catch (error) { console.error(error); }
+    };
+    transaction.onerror = () => console.error(transaction.error);
 }
 
 export function begin_record() {
@@ -55,10 +68,33 @@ export function bench_record() {
     bench = true;
 }
 
-export function append_record(build, seed, inputs) {
-    live ??= {build, seed: Number(seed), session: id, start: 0, inputs: []};
-    live.inputs.push(...JSON.parse(inputs));
+export function append_record(build, seed, inputs, count) {
+    if (!count) return;
+    live ??= {build, seed: Number(seed), session: id, start: 0, count: 0};
+    const items = inputs.slice(1, -1);
+    if (!write(items)) {
+        seal();
+        if (!write(items)) {
+            const kept = unsealed;
+            unsealed = new Uint8Array(items.length * 3);
+            write(items);
+            live.count = count;
+            seal();
+            unsealed = kept;
+            return;
+        }
+    }
+    live.count += count;
     if (performance.now() - attempted >= 5000) seal();
+}
+
+function write(items) {
+    const at = length && length + 1;
+    const {read, written} = encoder.encodeInto(items, unsealed.subarray(at));
+    if (read < items.length) return false;
+    if (length) unsealed[length] = 44;
+    length = at + written;
+    return true;
 }
 
 addEventListener('pagehide', seal);
@@ -102,19 +138,15 @@ export async function send_record(chunk, request = request_record, start = chunk
     return start;
 }
 
-function restore(key, text) {
+function queue(key, text) {
     let chunk;
-    try { chunk = JSON.parse(text); } catch { return; }
-    if (chunk?.bench) return forget(key);
-    queue(key, {start: 0, ...chunk});
-}
-
-function queue(key, chunk) {
-    if (!chunk || !/^[a-f0-9-]{36}$/.test(chunk.session ?? '')
+    try { chunk = {start: 0, ...JSON.parse(text)}; } catch { return; }
+    if (chunk.bench) return forget(key);
+    if (!/^[a-f0-9-]{36}$/.test(chunk.session ?? '')
         || !/^[a-f0-9]{40}$/.test(chunk.build ?? '')
         || chunk.seed !== 0 || !Number.isSafeInteger(chunk.start) || chunk.start < 0
         || !Array.isArray(chunk.inputs) || !chunk.inputs.length) return;
-    pending.set(key, chunk);
+    pending.set(key, {session: chunk.session, start: chunk.start, end: chunk.start + chunk.inputs.length, text});
 }
 
 function forget(key) {
@@ -133,16 +165,16 @@ async function upload() {
     try {
         const blocked = new Set();
         const ordered = [...pending].sort(([, a], [, b]) => a.session.localeCompare(b.session) || a.start - b.start);
-        for (const [key, chunk] of ordered) {
-            if (blocked.has(chunk.session)) continue;
+        for (const [key, entry] of ordered) {
+            if (blocked.has(entry.session)) continue;
             try {
-                const from = Math.max(chunk.start, delivered.get(chunk.session) ?? 0);
-                if (from < chunk.start + chunk.inputs.length) {
-                    delivered.set(chunk.session, await send_record(chunk, request_record, from));
+                const from = Math.max(entry.start, delivered.get(entry.session) ?? 0);
+                if (from < entry.end) {
+                    delivered.set(entry.session, await send_record({start: 0, ...JSON.parse(entry.text)}, request_record, from));
                 }
-                if (pending.get(key) === chunk) forget(key);
+                if (pending.get(key) === entry) forget(key);
             } catch (error) {
-                blocked.add(chunk.session);
+                blocked.add(entry.session);
                 console.error(error);
             }
         }
@@ -180,9 +212,9 @@ export async function saved() {
     return stored;
 }
 
-for (const [key, text] of kept()) restore(key, text);
+for (const [key, text] of kept()) queue(key, text);
 saved().then(stored => {
-    for (const [key, text] of stored) restore(key, text);
+    for (const [key, text] of stored) queue(key, text);
     upload();
 });
 
