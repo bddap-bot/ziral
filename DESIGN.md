@@ -1435,6 +1435,8 @@ This is the smallest design: one vector in the held selection and one subtractio
 
 Tests cover a tile-edge press on either bonder slot, alone and in a pick with an arm and atom, at three zoom scales; the first drag frame, further movement, interrupted turns while moving, the settled turn, and a fresh palette lift after cancellation.
 
+`proofs/grab-point-145.gif` captures the deployed page at `a0ee50b`: a bonder grabbed near its tile edge, carried and turned, then the bonder, portal and output selected together and carried and turned about the same grabbed point. It is an 800 by 525 crop of sampled 1280 by 720 browser frames, played at 12 frames per second. The capture cursor follows the injected pointer coordinates; it is not part of the game. The native and web frame-budget checks each passed both windows with zero over-budget frames (native maximum 7.188 ms, web maximum 11.2 ms).
+
 ## A portal click puts its blueprint in hand
 
 Directive (verbatim):
