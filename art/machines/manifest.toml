@@ -8,7 +8,7 @@ off_centre = 0.1
 generator = "ming"
 kept = 1
 painted = "ffd31c91e0bf328e"
-relief = "71d0bb9c763dcd3a"
+relief = "79d4bb058264f503"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -51,7 +51,7 @@ event = "rotated"
 generator = "ming"
 kept = 1
 painted = "ce66d9d7e4754b14"
-relief = "34bab22cd26227e1"
+relief = "d5caaaf75f1a7fea"
 
 [machine.arm-2.instrument]
 voice = "brass"
@@ -94,7 +94,7 @@ event = "rotated"
 generator = "ming"
 kept = 1
 painted = "589ba01f3586fc70"
-relief = "b8a6c7de4bf7a89e"
+relief = "9d8bc924155ea7a8"
 
 [machine.arm-3.instrument]
 voice = "brass"
@@ -137,7 +137,7 @@ event = "rotated"
 generator = "ming"
 kept = 1
 painted = "a3e79a9ed7848b48"
-relief = "1855a66a35943424"
+relief = "d2263d1b6ea582eb"
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -181,7 +181,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "3d84fbc8b0021bce"
-relief = "4449b9e943c7d787"
+relief = "5a68d943977181dd"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -217,7 +217,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "afb37dec0201374d"
-relief = "b5dc244c538fc610"
+relief = "0775182d7d102de0"
 
 [machine.converter-cobalt.instrument]
 voice = "ceramic"
@@ -261,7 +261,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "a33d06dd57714157"
-relief = "9599cb6f58a9ef83"
+relief = "f4fcf62f15859d66"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -297,7 +297,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "14190467f38f6581"
-relief = "96701647b12d2d1c"
+relief = "d3b1ef1965fd2fe8"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -333,7 +333,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "84905264043c1600"
-relief = "0740e459a1305b14"
+relief = "36abe24091a4e225"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -369,7 +369,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "482be0d8cf88ef38"
-relief = "6c12bf74bff7801f"
+relief = "279db526796ab179"
 motion = "dilate"
 parts = []
 
@@ -389,7 +389,7 @@ energy_scaled = false
 generator = "ming"
 kept = 1
 painted = "ed15bf67ea8db0df"
-relief = "20ce76f018f17cb3"
+relief = "3300cdfee896c71e"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -425,7 +425,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "237a168113ebefcb"
-relief = "258a85dca0df1817"
+relief = "4effd647f509e0de"
 motion = "dilate"
 parts = []
 
@@ -445,7 +445,7 @@ energy_scaled = true
 generator = "ming"
 kept = 1
 painted = "aea89684d16bffb2"
-relief = "733b9e2e690d9d8d"
+relief = "3a010194ed673c4b"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -489,7 +489,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "83aecc8138c2a0a4"
-relief = "9a54fda5df8a2995"
+relief = "fdfe021898a54a54"
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -525,7 +525,7 @@ event = "fired"
 generator = "ming"
 kept = 1
 painted = "646314740f840f35"
-relief = "f2e1907e666ad796"
+relief = "044043885dc911ce"
 
 [machine.source-2.instrument]
 voice = "ceramic"

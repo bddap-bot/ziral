@@ -1,88 +1,63 @@
-# Art pipeline: full-set regeneration and guaranteed hex bounds
+# Hex bodies and registered seats
 
-The branch replaces geometry retry rounds with a generator interface followed by deterministic fitting, exact hex clipping and runtime-map production. The default remains Ming, with the same captions and visual direction. This is a branch-only pipeline improvement; main is unchanged and no merge is part of this result.
+The machine pipeline owns topology. Every generator supplies material colour and surface variation; deterministic construction supplies hex plates, brass rims, rivets and circular seat apertures. Ming remains the default and its zero-spend guard is unchanged. The generator interface, bounded call-failure retries and worker limit are unchanged. There are no critic calls or geometric repaint rounds.
+
+This deliberately changes the composition of the generated art. The previous detailed silhouettes cannot guarantee either the number of seats or their registration. They are replaced by consistent hex plates with generated material variation. An opaque material patch supplies mirrored surface grain; seatless machines retain the generated interior artwork beneath the hex rims. The comparison sheet exposes the visual tradeoff; branch review remains required before any main merge.
+
+## Geometry contract
+
+Each simulation footprint cell contributes a full hexagon. Their union is the only allowed body outline. Every interior pixel is opaque except an intentional seat aperture, and every exterior pixel is transparent. The same simulation cell coordinates place atoms, apertures and concentric seat rings. Body-only cells have no seats. Arms include their pivot and hand centres.
+
+The encoded PNG is measured independently of construction. Its aperture centroid and ring-detector displacement must both be at most **6 asset pixels**. The asset scale is 256 pixels per 20-world-pixel hex radius, so this tolerance is **0.469 world pixels**, 0.938 screen pixels at the rig's two-screen-pixels-per-world-pixel scale. The detector's search grid is 5.12 asset pixels. Regression checks independently require analytic aperture centroids within one asset pixel. Missing holes or rims fail; they never trigger another model call. Bounds retain zero tolerance.
+
+The regression fixture covers every machine with black, white and saturated generator images carrying an unrelated silhouette. It checks the entire raster against the exact hex union minus seat apertures, measures aperture centroids and runs the rim detector. Shipped assets are remeasured rather than trusting their recorded offsets.
+
+## Reproduction and dependencies
 
 ```sh
 nix-shell --run 'art/regenerate.sh --generator ming --jobs 3'
 ```
 
-The command regenerates all 15 machine sprites, albedo/normal/rig maps, the [contact sheet](art/machines/sheet.png), and the [in-game rig screenshot](proofs/machine-set-rig.png). A custom generator uses `--generator ./path/to/executable`: it receives `CAPTION_FILE OUTPUT_PNG` and returns a square RGBA cutout. Exit 3 stops on policy refusal; ordinary call failures have the manifest's bounded retry budget. All downstream geometry is shared. [The interface and stage contracts](art/MACHINES.md) include the exact command and failure behavior.
+The command includes both release builds, all fresh model calls, deterministic construction, palette encoding, normal maps, articulated maps, the complete labelled sheet and the in-game rig screenshot. Existing dependencies remain: Rust/image for construction and measurement, Bevy for rendering, ImageMagick for packing and rig masks, pngquant for palette encoding, curl/jq for Ming transport and accounting, and coreutils timeout for external generators. No package or account was added. Silhouette boundary extraction, binary-search fitting and bilinear registration were deleted.
 
-## Bounds and seats
+## Fresh full-set measurements
 
-Every nonzero-alpha edge participates in body fitting. Pixels outside the exact union of footprint hexes are zeroed, including a post-quantisation check. The former least-squares seat transform and configurable outside tolerance are deleted. A successful generator image is processed once; weak seats do not cause another model call. Body containment wins when seat alignment conflicts with it.
+All 15 machines passed exact bounds on their first generated candidate. Thirty model calls cost $0 in the recorded ledger. Per-machine worst offsets below are the maximum of the encoded aperture centroid and image rim displacement.
 
-The sheet labels bounds separately from seat quality. Offsets below are the worst detected seat displacement per machine at 256 asset pixels per hex circumradius. The rim detector searches locally and resolves positions on a 5.12 px grid; these are image estimates rather than semantic matching of apertures. Outputs and portal have no seats. Game cell and atom positions are unchanged.
+| Machine | Outside pixels | Worst seat offset (asset px) | Generator wall time (s) |
+|---|---:|---:|---:|
 
-All 15 freshly generated machines have zero outside pixels.
+| arm-2 | 0 | 0.06 | 61.776 |
+| arm | 0 | 0.05 | 63.771 |
+| arm-3 | 0 | 0.09 | 71.099 |
+| bonder | 0 | 0.05 | 69.329 |
+| converter-cobalt | 0 | 0.04 | 90.715 |
+| converter-amber | 0 | 0.04 | 111.126 |
+| output-1 | 0 | 0.00 | 62.676 |
+| output-2 | 0 | 0.00 | 76.762 |
+| output-3 | 0 | 0.00 | 97.596 |
+| portal | 0 | 0.00 | 87.549 |
+| resonator | 0 | 0.05 | 66.831 |
+| reification | 0 | 0.03 | 113.113 |
+| second-bond | 0 | 0.04 | 100.331 |
+| source | 0 | 0.05 | 78.343 |
+| source-2 | 0 | 0.06 | 104.354 |
 
-| Machine | Bounds | Worst detected seat offset (px) | Generator wall time (s) |
-|---|---|---:|---:|
-| arm | pass, zero overflow | 76.80 | 76.708 |
-| arm-2 | pass, zero overflow | 110.29 | 74.736 |
-| arm-3 | pass, zero overflow | 62.29 | 78.121 |
-| bonder | pass, zero overflow | 112.64 | 100.628 |
-| converter-amber | pass, zero overflow | 112.64 | 88.293 |
-| converter-cobalt | pass, zero overflow | 103.55 | 101.547 |
-| output-1 | pass, zero overflow | 0.00 | 74.126 |
-| output-2 | pass, zero overflow | 0.00 | 69.306 |
-| output-3 | pass, zero overflow | 0.00 | 80.295 |
-| portal | pass, zero overflow | 0.00 | 81.105 |
-| reification | pass, zero overflow | 133.12 | 94.171 |
-| resonator | pass, zero overflow | 66.56 | 70.191 |
-| second-bond | pass, zero overflow | 94.13 | 108.251 |
-| source | pass, zero overflow | 56.32 | 116.818 |
-| source-2 | pass, zero overflow | 100.85 | 82.989 |
+The visible composition changes are intentional: seated machines become hex assemblies with circular apertures; mirrored surface patches may repeat ornamental motifs. The portal and outputs preserve more of the generated interior illustration. These images are branch review evidence, not approval of the revised appearance.
 
-## Simplification, measured against main
+## Complete-command timing
 
-Baseline is main at `7b143b9`. Counts are physical lines including blanks and tests, from `git show 7b143b9:PATH` and the branch files. The listed machine-pipeline code and transport fixtures shrink from **4,169 to 2,380 lines: 1,789 removed net (42.9%)**. The Rust production portions before their test modules shrink from 2,358 to 1,267 lines; this is not just deleted tests.
+**Outer wall time: 894.604 seconds (14.91 minutes), exit 0.** The wrapper reports 888 seconds; the outer timer also includes entering the build environment. Release dependencies were already built. Every machine was freshly generated; no retained candidate or preview asset was reused. The wrapper's stages were:
 
-| File | Main | This branch |
-|---|---:|---:|
-| `src/machines.rs` | 3907 | 1771 |
-| `src/machines/ming.rs` | 0 | 243 |
-| `art/direct.sh` | 16 | 0 |
-| `art/ask.sh` | 48 | 0 |
-| `art/tests/ask.sh` | 64 | 0 |
-| `art/paint.sh` | 103 | 103 |
-| `art/ming.sh` | 0 | 108 |
-| `art/tests/ming.sh` | 0 | 99 |
-| `art/regenerate.sh` | 0 | 25 |
-| `art/machines/rig.sh` | 31 | 31 |
-
-Six removed operations account for the simplification: scaffold/reference raster preparation for the machine painter; director/rebrief calls; critic calls and ranked selection; chroma-key removal; palette diagnostics; and calibration relight rendering/measurement. The geometry-driven repaint loop added by the initial Ming experiment is also gone. The replacement has caption → generator RGBA → body fit/hex clip → normals/rig maps → sheet/real-game render. Ming internally needs two model calls to supply RGBA; another implementation can supply it in one. Seat diagnostics remain informational.
-
-The retained `paint.sh` serves reference-based tiles and manual-page art, so deleting it would break a live consumer. Normals and rig maps are loaded by the game and remain necessary. No package was added by this change: curl/jq already support the branch's Ming transport, ImageMagick packs and splits, pngquant encodes palettes, and the existing image/Bevy code handles pixels and rendering. The initial Ming branch had explicitly added curl and jq to the Nix environment.
-
-## Speed, measured end to end
-
-The complete command ran on one shared host with three bounded workers and fresh generation for every machine. Its outer timer includes Nix entry, both release builds, all API calls and credit checks, fitting, clipping, normals, rig splitting, sheet packing and the real game screenshot. Dependencies were already built. Each worker finishes its own rig maps, avoiding a serial rig-splitting tail.
-
-**Full 15-machine command: 1046.03 seconds (17.43 minutes), exit 0.**
-
-| Stage | Wall time |
+| Stage | Wall seconds |
 |---|---:|
-| initial-build | 45 s |
-| generation-and-packing | 785 s |
-| embed-updated-art | 189 s |
-| render | 21 s |
+| Initial release build | 64 |
+| Generation, construction, maps and sheet | 531 |
+| Embed updated art | 118 |
+| In-game render, including GPU admission wait | 175 |
 
-The fixed-subset comparison regenerated `portal` on each pipeline on the same host, with release binaries built beforehand. Main used `ziral --gen portal`; this branch used `ziral --gen portal --generator ming --jobs 1`. The original main caption and candidate cache were invalidated. Neither run reused old generated candidates. These times include caption preparation where applicable, API calls, fitting and measurement, albedo/normals, main's calibration renders, and each pipeline's normal whole-set review sheet (candidate grids on main, 15 retained sprites here). They exclude compilation and the in-game screenshot on both sides. Main retained portal-7 after 12 paints across all three critic rounds; its capped critic score was 7. A full main repaint was avoided because of that call count and duration.
+The renderer waited 160 seconds for a shared GPU reservation. Clippy ran concurrently during that wait; this was not an isolated performance benchmark. The previous complete run took 1,046.03 seconds (17.43 minutes). This run is 151.43 seconds shorter including its GPU wait, but host and model latency vary, so no stable speed multiplier is inferred. An earlier invocation lacked the generator credential and failed before making any model request; its 79.578 seconds are excluded from the successful run. The key was loaded from the existing account for this run.
 
-| Fixed subset | Wall time | Exit |
-|---|---:|---:|
-| Main, portal | 593.79 s | 0 |
-| New pipeline, portal | 96.08 s | 0 |
+The sheet and screenshot were both viewed. In the rig, the bonder's two atoms and second-bond's two occupied seats are centred in their apertures; the empty second-bond seat remains clearly visible. The source's atom also sits in its aperture. Every body follows the occupied hex cells. The comparison shows the previous sheet on the left and this run on the right, using the same machine order.
 
-The new pipeline was **6.18× faster on this measured subset**. The full new set is measured above; no full-set speed multiplier is inferred. These are single wall-clock samples under shared-host load, not an isolated throughput benchmark. The subset benchmark's temporary portal was archived separately, then the complete command's original assets and sheet were restored; the review images show that full-set run.
-
-## Cost, validation and limitations
-
-The final run's per-call ledger and before/after account checks record $0: the zero-spend guard remains in force. No new account or paid signup was used. The default model and caption set remain Ming, so no alternative-style comparison is claimed.
-
-The regression suite covers every alpha level against every footprint, exact containment of every shipped albedo, matching normals/rig maps, a replacement executable generator, call-failure retry limits, policy refusal, no geometry/critic retries, and no generator retry after a downstream rig failure. Offline shell fixtures cover unavailable/nonzero credit usage, changed pricing, invalid costs, failed requests, malformed image data and the shared parallel stop signal. The landing map additionally requires formatting, clippy with warnings denied, the full Rust suite, native/web release builds and the native/browser frame benchmark.
-
-An initial full run produced all art and a screenshot but returned 1 because the wrapper misclassified audio-buffer errors as graphics failures. The wrapper now checks graphics errors specifically and verifies the screenshot exists; the full command was rerun for the successful measurements and images above. Long sheet labels were also shortened before that rerun. These were pipeline defects fixed during validation, not artistic retry rounds.
-
-Bounds are guaranteed; semantic seat placement is not. Detected offsets and low rim contrast stay visible in the records, with containment taking priority. Strong painted shading remains part of the approved Ming look. The earlier [lighting-split probe](proofs/ming-light-split-162.png) separated objects rather than clean lighting terms, so it is not a production stage. Symbols, pips, atoms, bonds, board tiles and the reference-based manual page retain their existing assets and workflows. Main and its deployment are unchanged; these images are for branch review before any merge.
+The renderer emitted an audio buffer-underrun warning, but no graphics error; it saved the screenshot and exited successfully. The regeneration wrapper verifies that the screenshot exists and fails on shader, pipeline, wgpu, naga or renderer errors.
