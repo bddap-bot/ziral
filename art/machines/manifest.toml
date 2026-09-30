@@ -177,7 +177,7 @@ event = "fired"
 [machine.converter-amber]
 kept = 4
 painted = "7ec241a6e8361bcd"
-relief = "70b18593c47ab4b5"
+relief = "9d7e70bd25d8fd79"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -290,7 +290,7 @@ event = "fired"
 [machine.output-2]
 kept = 1
 painted = "c0d9287aec95e124"
-relief = "114d397721a69656"
+relief = "e174972ecc0557a2"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -325,7 +325,7 @@ event = "fired"
 [machine.output-3]
 kept = 1
 painted = "d2aee20dfa073a93"
-relief = "5cd9705deb8cecb1"
+relief = "3bc81baf2ff91a65"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -379,7 +379,7 @@ energy_scaled = false
 [machine.reification]
 kept = 3
 painted = "894fb0a7192ec596"
-relief = "79649611c17b4a60"
+relief = "7a51d875ee9b53e7"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -433,7 +433,7 @@ energy_scaled = true
 [machine.second-bond]
 kept = 2
 painted = "3db8f2ba1f8075a9"
-relief = "cebe057ccda23e7b"
+relief = "6ceda83910be4d25"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -476,7 +476,7 @@ event = "fired"
 [machine.source]
 kept = 4
 painted = "14ecf7b877984f8f"
-relief = "8ef7c20859ee94af"
+relief = "7adfec3e610310e7"
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -511,7 +511,7 @@ event = "fired"
 [machine.source-2]
 kept = 3
 painted = "f1cda46e4bfc9600"
-relief = "a6410dceb0a1dd25"
+relief = "dde3d697570a0b07"
 
 [machine.source-2.instrument]
 voice = "ceramic"
