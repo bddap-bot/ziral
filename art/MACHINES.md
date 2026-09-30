@@ -30,7 +30,7 @@ The Rust interface is equally small: caption path and attempt directory in, `Res
 
 Ming reads `OPENROUTER_API_KEY` from the environment. Its transport in `art/ming.sh` verifies zero endpoint price and zero account usage before calls, and verifies usage immediately after every request, including failures. A nonzero cost or unavailable accounting exits 3. A shared stop file prevents subsequent stages from starting after another worker observes a policy refusal; requests already in flight finish their accounting checks. The parent awaits every worker. Switching generators does not silently grant permission to incur new charges.
 
-## Deterministic downstream stages
+## Default deterministic downstream stages
 
 1. **Material extraction and hex construction.** The generator supplies colour and fine surface variation, not topology. Sample its opaque pixels for the saturated material palette and choose an opaque surface patch for mirrored texture. Seatless machines retain their generated interior artwork beneath the hex rims. Construct every footprint cell as a full hex plate with a brass bevel and rivets. This replaces silhouette scaling: generated rhombi, octagons, extra holes and displaced rings cannot survive as body geometry. Ming remains the default, but the assembly changes its composition; compare the review sheets before a merge.
 2. **Seats and exact bounds.** Construct circular apertures and concentric brass/glaze rings at the simulation's marked cell centres, including pivots and hands. No generated aperture is retained. Every pixel outside the exact hex union is transparent; every interior pixel is opaque except the intentional apertures. Check again after palette encoding. Bounds have zero tolerance.
@@ -42,4 +42,14 @@ There is no critic, judge, geometry repaint loop or best-candidate selection. Up
 
 ## Dependencies
 
-No new package is required. Rust and `image` implement geometry and pixels; Bevy renders the real game screenshot. `curl` and `jq` carry and validate Ming requests. ImageMagick packs the sheet and splits the runtime rig maps. pngquant keeps the established compact palette format. The external adapter uses the existing coreutils `timeout` to bound an arbitrary executable. The retained `paint.sh` still serves reference-based assets outside the machine set. Each dependency has a current consumer; model selection introduces no second fitting or registration path.
+No new package is required. Rust and `image` implement geometry and pixels; Bevy renders the real game screenshot. `curl` and `jq` carry and validate Ming requests. ImageMagick packs the sheet and splits the runtime rig maps. pngquant keeps the established compact palette format. The external adapter uses the existing coreutils `timeout` to bound an arbitrary executable. The retained `paint.sh` serves reference-based assets and the opt-in image-conditioned machine adapter. Each dependency has a current consumer.
+
+## Image-conditioned comparison
+
+`--generator layout:./art/layout-paint.sh` opts into painting the supplied layout with the existing image tool. Other executables can use the same `layout:` prefix. The two positional arguments stay unchanged; `layout.png` is written beside `OUTPUT_PNG` before the call. It depicts the complete padded square canvas, exact footprint and simulation seats. The caption remains the machine's existing caption. The adapter records its augmented prompt and verified attachment hash through `paint.sh`.
+
+For this opt-in path, uniform canvas resampling and exact footprint clipping replace material extraction and hex construction. The generated interior pixels, ornament and seat positions survive. No seat is moved or reconstructed. The same post-encoding aperture-centroid and rim detector reports offsets; missing apertures report infinity. Offsets above 6 asset pixels remain visible in the sheet and attempt ledger instead of aborting or triggering another paint. Bounds remain mandatory. This is a comparison mode, not a seat-quality guarantee. The default `ming` path retains its deterministic hex bodies and exact seats.
+
+No package is added to the application. The image adapter uses the existing image tool, ImageMagick and pngquant. A local structural-conditioning experiment can implement the same executable interface without adding its inference stack to the game.
+
+The four-machine comparison found stronger arm and bonder character from the image-tool adapter, but their seat offsets exceeded tolerance. The local ControlNet probe retained hex structure without transparent seat apertures. Neither is an exact-geometry replacement for the default. The `machine-layout` screenshot fixture shows the arm, bonder, reification housing and first output together, with atoms at the simulation's bonder and reification seats. Render it after embedding a chosen subset with `ziral --shot review.png machine-layout 8`.

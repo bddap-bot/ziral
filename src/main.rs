@@ -5789,7 +5789,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 62] = [
+    pub const SCENES: [&str; 63] = [
         "portal-copy-109",
         "portal",
         "source-upgrade",
@@ -5835,6 +5835,7 @@ mod shot {
         "converter-sheet",
         "reification",
         "rig",
+        "machine-layout",
         "particles",
         "sound",
         "cards",
@@ -6312,6 +6313,30 @@ mod shot {
                     Hex::new(4, 0),
                 );
                 world.sim = sim;
+            }
+            "machine-layout" => {
+                let mut sim = Sim::empty();
+                sim.arms
+                    .push(Arm::new(ArmLength::One, Hex::new(-3, 2), 0, vec![]));
+                for (kind, at) in [
+                    (GlyphKind::Bonder, Hex::new(3, 2)),
+                    (GlyphKind::Reification, Hex::new(-1, -3)),
+                    (GlyphKind::Output(sim::Tier::One), Hex::new(5, -3)),
+                ] {
+                    let glyph = Glyph::new(kind, at, 0);
+                    if kind == GlyphKind::Bonder || kind == GlyphKind::Reification {
+                        for pos in glyph.slots() {
+                            sim.spawn(Atom {
+                                kind: AtomKind::Base,
+                                pos,
+                            });
+                        }
+                    }
+                    sim.glyphs.push(Some(glyph));
+                }
+                world.sim = sim;
+                world.prev = world.sim.clone();
+                world.period = TICK_MS / 1000.0;
             }
             "rig" | "particles" => {
                 let mut sim = Sim::empty();

@@ -243,6 +243,22 @@ impl Scaffold {
         }
     }
 
+    fn conditioned(&self, candidate: &RgbaImage) -> Capture {
+        let mut image = image::imageops::resize(
+            candidate,
+            self.canvas,
+            self.canvas,
+            image::imageops::FilterType::Lanczos3,
+        );
+        for (x, y, pixel) in image.enumerate_pixels_mut() {
+            if !self.covered(self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5))) {
+                *pixel = Rgba([0; 4]);
+            }
+        }
+        let off_centre = self.seat_offset(&image);
+        Capture { image, off_centre }
+    }
+
     fn register(&self, candidate: &RgbaImage) -> Capture {
         let image = self.fit(candidate);
         let off_centre = self.seat_offset(&image);
@@ -822,7 +838,12 @@ fn finish(
 ) -> Result<Entry, String> {
     let (index, seconds) = attempt;
     let scaffold = Scaffold::of(item(name));
-    let capture = scaffold.register(image);
+    let conditioned = entry.generator.starts_with("layout:");
+    let capture = if conditioned {
+        scaffold.conditioned(image)
+    } else {
+        scaffold.register(image)
+    };
     let stage = art.attempt(name, index);
     std::fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
     let albedo = stage.join("albedo.png");
@@ -853,7 +874,7 @@ fn finish(
         image: mounted.clone(),
         off_centre,
     });
-    if score.off_centre * PX_PER_HEX > 6.0 {
+    if !conditioned && score.off_centre * PX_PER_HEX > 6.0 {
         return Err(format!(
             "encoded seat offset exceeds 6 asset pixels: {}",
             score.off_centre * PX_PER_HEX
@@ -911,6 +932,11 @@ fn generate_one(
     let mut rows = Vec::new();
     if fit {
         let image = open(art.machine(name).join("albedo.png"));
+        let image = if entry.generator.starts_with("layout:") {
+            Scaffold::of(item(name)).mount(&image)
+        } else {
+            image
+        };
         entry = finish(
             art,
             name,
@@ -1144,7 +1170,7 @@ pub fn configure(args: &[String]) -> Option<i32> {
         || manifest.attempts == 0
     {
         eprintln!(
-            "usage: ziral --gen [--generator ming|EXECUTABLE] [--jobs 1..16] [--fit] NAME...|--all"
+            "usage: ziral --gen [--generator ming|EXECUTABLE|layout:EXECUTABLE] [--jobs 1..16] [--fit] NAME...|--all"
         );
         return Some(2);
     }
@@ -1153,6 +1179,18 @@ pub fn configure(args: &[String]) -> Option<i32> {
     let painter = |caption: &Path, out: &Path| {
         if generator == "ming" {
             ming::generate(&art, caption, out)
+        } else if let Some(script) = generator.strip_prefix("layout:") {
+            let name = caption
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| Refusal::Failed("caption has no machine name".into()))?;
+            let scaffold = Scaffold::of(item(name));
+            let layout = scaffold.fit(&RgbaImage::from_pixel(8, 8, Rgba([96, 132, 134, 255])));
+            layout
+                .save(out.join("layout.png"))
+                .map_err(|e| Refusal::Failed(e.to_string()))?;
+            external(Path::new(script), caption, out)
         } else {
             external(Path::new(&generator), caption, out)
         }
@@ -1389,6 +1427,37 @@ mod tests {
                 "{score:?} against {k} tolerances"
             );
         }
+    }
+
+    #[test]
+    fn machines_conditioned_art_preserves_pixels_and_reports_bad_seats() {
+        let scaffold = Scaffold::of(item("bonder"));
+        let raw = RgbaImage::from_fn(scaffold.canvas, scaffold.canvas, |x, y| {
+            Rgba([(x % 251) as u8, (y % 239) as u8, 91, 255])
+        });
+        let capture = scaffold.conditioned(&raw);
+        assert!(capture.off_centre.is_infinite());
+        for (x, y, pixel) in capture.image.enumerate_pixels() {
+            let inside =
+                scaffold.covered(scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)));
+            if inside {
+                assert_eq!(pixel, raw.get_pixel(x, y));
+            } else {
+                assert_eq!(pixel[3], 0);
+            }
+        }
+        let aligned = scaffold.fit(&raw);
+        let retained = scaffold.cropped(&aligned);
+        let remounted = scaffold.mount(&retained);
+        assert_eq!(
+            scaffold.cropped(&scaffold.conditioned(&remounted).image),
+            retained
+        );
+        assert!(scaffold.conditioned(&aligned).off_centre * PX_PER_HEX <= 6.0);
+        let shifted =
+            image::imageops::crop_imm(&aligned, 0, 0, aligned.width() - 64, aligned.height() - 64)
+                .to_image();
+        assert!(scaffold.conditioned(&shifted).off_centre * PX_PER_HEX > 6.0);
     }
 
     #[test]
@@ -1672,6 +1741,48 @@ mod tests {
         }
         art.write(&manifest);
         art
+    }
+
+    #[test]
+    fn machines_conditioned_failures_are_kept_without_repainting_or_refit_drift() {
+        let art = studio("conditioned-retention", &["bonder"], 3);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let painter = |_: &Path, _: &Path| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(RgbaImage::from_fn(128, 128, |x, y| {
+                if x == 0 || y == 0 {
+                    Rgba([0; 4])
+                } else if x < 70 {
+                    Rgba([180, 60, 30, 255])
+                } else {
+                    Rgba([30, 110, 130, 255])
+                }
+            }))
+        };
+        let names = ["bonder".to_string()];
+        assert!(generate_set(
+            &art,
+            &names,
+            "layout:fixture",
+            &painter,
+            1,
+            false
+        ));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let rows = attempts(&art.machine("bonder"));
+        assert!(rows[&1].outcome.as_ref().unwrap().off_centre.is_infinite());
+        let retained = open(art.machine("bonder").join("albedo.png"));
+        assert!(generate_set(
+            &art,
+            &names,
+            "layout:fixture",
+            &painter,
+            1,
+            true
+        ));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(open(art.machine("bonder").join("albedo.png")), retained);
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
     #[test]
