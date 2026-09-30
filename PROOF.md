@@ -102,3 +102,9 @@ Recovery also found an interrupted rig split: both sources and three second-bond
 The machine suite exposed a fitting defect on asymmetric footprints: the average cell position differs from the centre of the footprint bounds. Fitting now aligns bounding centres before seat registration. The existing clean/translated-seat test caught the defect; it remains in the suite. Measurement-only tests score unnormalised captures, and retry tests inspect failing measurements rather than the precedence of diagnostic labels. A focused review caught and corrected a variable-shadowing mistake in the scale bracket before asset regeneration.
 
 The lighting probe's wall time and the original parallel generation's end-to-end elapsed time were not recovered; model times are summed request wall times.
+
+## Validation
+
+All 12 mapped checks passed on `ef6fab404d494453bb88d385d2ddaac5dee3a328`: shell lint and offline transport fixtures, machine tests, retained-painter fixtures, Nix parsing, native/test and web/release builds, formatting, clippy with warnings denied, the full Rust suite, and the native/browser frame benchmark. The machine suite passed 22 tests plus its matching integration test. All four benchmark windows recorded zero over-budget frames (native maximum 6.083 ms; browser maximum 14.4 ms).
+
+The final screenshot was rendered with lavapipe from the regenerated set and visually inspected. It loaded successfully without a shader error. The only subsequent changes are this validation note and the screenshot. The final credits read still reported `total_usage: 0`.
