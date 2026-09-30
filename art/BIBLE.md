@@ -25,7 +25,7 @@ Eight glazes identify states; material and ornament colours are free. The table 
 | amber | `#E0A458` | 34° | 0.43 | the amber atom; saturated gold |
 | plum | `#7D5BA6` | 267° | 0.15 | the second-bond glyph; the double bond |
 | cobalt | `#3657A7` | 220° | 0.10 | the cobalt atom; its converter path |
-| ivory | `#F4EDE4` | — | 0.85 | the output cup; the pick and stall marks; instruction letters |
+| ivory | `#F4EDE4` | — | 0.85 | the output surface; the pick and stall marks; instruction letters |
 | charcoal rubber | `#423B37` | 22° | 0.05 | matte hand rubber; material colour, never state |
 
 Directive: the arm brief is not authored taste and may be changed artistically; the arm and hand as painted are approved. No rigid reading of the eight-glaze rule against them.
@@ -110,9 +110,9 @@ These tables describe current painted features as examples, not requirements for
 
 | item | glaze | shape | marking |
 |---|---|---|---|
-| arm, length one | dark brass, terracotta hand | radial: pivot disc and one-cell link | hand |
-| arm, length two | dark brass, blue-green inlay, terracotta hand | radial: pivot disc and two-cell link | hand |
-| arm, length three | dark brass, blue-green inlays, terracotta hand | radial: pivot disc and three-cell link | hand |
+| arm, length one | dark brass | radial: pivot disc and one-cell link | hand |
+| arm, length two | dark brass, blue-green inlay | radial: pivot disc and two-cell link | hand |
+| arm, length three | dark brass, blue-green inlays | radial: pivot disc and three-cell link | hand |
 | portal | plum | one-cell housing | ivory and brass aperture with mineral depth |
 | source, first tier | blue-green | six-cell housing open to the right | five feeds around one central outlet |
 | source, second tier | blue-green | six-cell housing in two staggered columns | two side-by-side outlets |
@@ -122,13 +122,11 @@ These tables describe current painted features as examples, not requirements for
 | resonator | plum | two-cell housing | equal amber-lined seats and a shared brass resonant crest |
 | cobalt converter | cobalt | four-cell rhombus | opposite input and output openings; a cobalt path through two body cells |
 | reification | amber | nineteen-cell hexagon | two rings of seats and channels around a central receiving cup |
-| output, first tier | ivory | seven-cell well, hexagon | seven cups with brass rims, rails from the centre cup |
-| output, second tier | ivory | nineteen-cell well, hexagon | the first tier ringed by twelve cups and a brass ring |
-| output, third tier | ivory | thirty-seven-cell well, hexagon | the second tier ringed by eighteen cups and a second brass ring |
+| output, first tier | ivory | seven-cell hexagon | continuous receiving surface |
+| output, second tier | ivory | nineteen-cell hexagon | continuous receiving surface |
+| output, third tier | ivory | thirty-seven-cell hexagon | continuous receiving surface |
 
 Arm reach and output capacity offer useful visual differences to explore.
-
-Directive: “The output tiers have seven, nineteen and thirty-seven seats”.
 
 ## 4. Reference
 
