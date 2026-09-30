@@ -1,14 +1,14 @@
 attempts = 4
 
 [thresholds]
-outside = 0.05
 seat = 0.1
 off_centre = 0.1
 
 [machine.arm]
-kept = 4
-painted = "8f5d5190b75d698d"
-relief = "32a156052a4f23f1"
+generator = "ming"
+kept = 1
+painted = "ffd31c91e0bf328e"
+relief = "71d0bb9c763dcd3a"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -48,9 +48,10 @@ pivot = [
 event = "rotated"
 
 [machine.arm-2]
-kept = 2
-painted = "50759197e0af069f"
-relief = "c14641fcc2c1863c"
+generator = "ming"
+kept = 1
+painted = "ce66d9d7e4754b14"
+relief = "34bab22cd26227e1"
 
 [machine.arm-2.instrument]
 voice = "brass"
@@ -90,9 +91,10 @@ pivot = [
 event = "rotated"
 
 [machine.arm-3]
-kept = 2
-painted = "ac178952bed618e3"
-relief = "880105d3942ef5eb"
+generator = "ming"
+kept = 1
+painted = "589ba01f3586fc70"
+relief = "b8a6c7de4bf7a89e"
 
 [machine.arm-3.instrument]
 voice = "brass"
@@ -132,9 +134,10 @@ pivot = [
 event = "rotated"
 
 [machine.bonder]
+generator = "ming"
 kept = 1
-painted = "1650505b2b9f6fdb"
-relief = "1843eaf2bc61f84f"
+painted = "a3e79a9ed7848b48"
+relief = "1855a66a35943424"
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -175,9 +178,10 @@ motion = "clamp"
 event = "fired"
 
 [machine.converter-amber]
-kept = 4
-painted = "7ec241a6e8361bcd"
-relief = "9d7e70bd25d8fd79"
+generator = "ming"
+kept = 1
+painted = "3d84fbc8b0021bce"
+relief = "4449b9e943c7d787"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -210,9 +214,10 @@ motion = "turn"
 event = "fired"
 
 [machine.converter-cobalt]
+generator = "ming"
 kept = 1
-painted = "e16e8026152d32d8"
-relief = "aae4fb565e22b451"
+painted = "afb37dec0201374d"
+relief = "b5dc244c538fc610"
 
 [machine.converter-cobalt.instrument]
 voice = "ceramic"
@@ -253,9 +258,10 @@ motion = "dilate"
 event = "fired"
 
 [machine.output-1]
+generator = "ming"
 kept = 1
-painted = "512b9cb815833a4e"
-relief = "00b2d91e442dcdde"
+painted = "a33d06dd57714157"
+relief = "9599cb6f58a9ef83"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -288,9 +294,10 @@ motion = "dilate"
 event = "fired"
 
 [machine.output-2]
+generator = "ming"
 kept = 1
-painted = "c0d9287aec95e124"
-relief = "e174972ecc0557a2"
+painted = "14190467f38f6581"
+relief = "96701647b12d2d1c"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -323,9 +330,10 @@ motion = "dilate"
 event = "fired"
 
 [machine.output-3]
+generator = "ming"
 kept = 1
-painted = "d2aee20dfa073a93"
-relief = "3bc81baf2ff91a65"
+painted = "84905264043c1600"
+relief = "0740e459a1305b14"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -358,9 +366,10 @@ motion = "dilate"
 event = "fired"
 
 [machine.portal]
+generator = "ming"
 kept = 1
-painted = "2fca36b2c326842b"
-relief = "ff6dc0bcf085169d"
+painted = "482be0d8cf88ef38"
+relief = "6c12bf74bff7801f"
 motion = "dilate"
 parts = []
 
@@ -377,9 +386,10 @@ layer = "on"
 energy_scaled = false
 
 [machine.reification]
-kept = 3
-painted = "894fb0a7192ec596"
-relief = "7a51d875ee9b53e7"
+generator = "ming"
+kept = 1
+painted = "ed15bf67ea8db0df"
+relief = "20ce76f018f17cb3"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -412,9 +422,10 @@ motion = "dilate"
 event = "fired"
 
 [machine.resonator]
-kept = 4
-painted = "5ec9b3492275632a"
-relief = "2d711b15ef48daa0"
+generator = "ming"
+kept = 1
+painted = "237a168113ebefcb"
+relief = "258a85dca0df1817"
 motion = "dilate"
 parts = []
 
@@ -431,9 +442,10 @@ layer = "on"
 energy_scaled = true
 
 [machine.second-bond]
-kept = 2
-painted = "3db8f2ba1f8075a9"
-relief = "6ceda83910be4d25"
+generator = "ming"
+kept = 1
+painted = "aea89684d16bffb2"
+relief = "733b9e2e690d9d8d"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -474,9 +486,10 @@ motion = "turn"
 event = "fired"
 
 [machine.source]
-kept = 4
-painted = "14ecf7b877984f8f"
-relief = "7adfec3e610310e7"
+generator = "ming"
+kept = 1
+painted = "83aecc8138c2a0a4"
+relief = "9a54fda5df8a2995"
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -509,9 +522,10 @@ motion = "dilate"
 event = "fired"
 
 [machine.source-2]
-kept = 3
-painted = "f1cda46e4bfc9600"
-relief = "dde3d697570a0b07"
+generator = "ming"
+kept = 1
+painted = "646314740f840f35"
+relief = "f2e1907e666ad796"
 
 [machine.source-2.instrument]
 voice = "ceramic"

@@ -1,3 +1,5 @@
+mod ming;
+
 use crate::look::{self, Cell, Glaze, HEX, Quad, Role, px};
 use crate::sim::Machine;
 use crate::sim::Slot;
@@ -25,13 +27,14 @@ struct Manifest {
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 struct Thresholds {
-    outside: f32,
     seat: f32,
     off_centre: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Entry {
+    #[serde(default = "default_generator")]
+    generator: String,
     kept: Option<u32>,
     painted: Option<String>,
     relief: Option<String>,
@@ -43,6 +46,10 @@ struct Entry {
     rig_emitter: Option<crate::particles::Emitter>,
     #[serde(default)]
     parts: Vec<crate::rig::Part>,
+}
+
+fn default_generator() -> String {
+    "ming".to_string()
 }
 
 struct Art {
@@ -237,42 +244,7 @@ impl Scaffold {
     }
 
     fn register(&self, candidate: &RgbaImage) -> Capture {
-        let fitted = self.fit(candidate);
-        let cells: Vec<Vec2> = self.marked().map(|c| px(c.at)).collect();
-        if cells.is_empty() {
-            return Capture {
-                image: fitted,
-                off_centre: 0.0,
-            };
-        }
-        let seats: Option<Vec<Vec2>> = self.marked().map(|c| self.seat(&fitted, c)).collect();
-        let Some(seats) = seats else {
-            return Capture {
-                image: fitted,
-                off_centre: f32::INFINITY,
-            };
-        };
-        let n = cells.len() as f32;
-        let (c0, s0) = (
-            cells.iter().sum::<Vec2>() / n,
-            seats.iter().sum::<Vec2>() / n,
-        );
-        let spread: f32 = cells.iter().map(|c| (*c - c0).length_squared()).sum();
-        let k = if spread > 0.0 {
-            cells
-                .iter()
-                .zip(&seats)
-                .map(|(c, s)| (*c - c0).dot(*s - s0))
-                .sum::<f32>()
-                / spread
-        } else {
-            1.0
-        };
-        let onto = |w: Vec2| s0 + k * (w - c0);
-        let image = RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
-            let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
-            bilinear(&fitted, self.pixel(onto(world)))
-        });
+        let image = self.fit(candidate);
         let off_centre = self
             .marked()
             .map(|c| {
@@ -285,8 +257,8 @@ impl Scaffold {
 
     fn fit(&self, candidate: &RgbaImage) -> RgbaImage {
         let (width, height) = candidate.dimensions();
-        let step = (width.max(height) / FIT_GRID).max(1);
-        let solid = |x: u32, y: u32| x < width && y < height && candidate.get_pixel(x, y)[3] >= 128;
+        let step = 1;
+        let solid = |x: u32, y: u32| x < width && y < height && candidate.get_pixel(x, y)[3] > 0;
         let mut lo = Vec2::splat(f32::INFINITY);
         let mut hi = Vec2::splat(f32::NEG_INFINITY);
         let mut edge = Vec::new();
@@ -335,7 +307,11 @@ impl Scaffold {
             }
         }
         RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
-            let w = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)) - target;
+            let world = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+            if !self.covered(world) {
+                return Rgba([0; 4]);
+            }
+            let w = world - target;
             let p = centre + Vec2::new(w.x, -w.y) * large;
             if p.x < 0.0 || p.y < 0.0 || p.x >= width as f32 || p.y >= height as f32 {
                 Rgba([0; 4])
@@ -490,8 +466,8 @@ struct Score {
 
 impl Score {
     fn measured(&self, t: &Thresholds) -> Option<String> {
-        if self.outside > t.outside {
-            Some(format!("outside {:.3} > {}", self.outside, t.outside))
+        if self.outside > 0.0 {
+            Some(format!("outside {:.3} > 0", self.outside))
         } else if self.seat < t.seat {
             Some(format!("seat {:.3} < {}", self.seat, t.seat))
         } else if self.off_centre > t.off_centre {
@@ -502,16 +478,6 @@ impl Score {
         } else {
             None
         }
-    }
-
-    fn passes(&self, t: &Thresholds) -> bool {
-        self.measured(t).is_none()
-    }
-
-    fn excess(&self, t: &Thresholds) -> f32 {
-        (self.outside / t.outside)
-            .max(t.seat / self.seat)
-            .max(self.off_centre / t.off_centre)
     }
 }
 
@@ -620,54 +586,11 @@ fn open(path: impl AsRef<Path>) -> RgbaImage {
         .into_rgba8()
 }
 
+#[cfg(test)]
 fn save(image: &RgbaImage, path: &Path) {
     image
         .save(path)
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-}
-
-const FIT_GRID: u32 = 512;
-const COVER: [f32; 2] = [0.03, 0.9];
-const FRAME_EDGE: f32 = 0.01;
-const EDGE_ALPHA: f32 = 0.02;
-const NOISE: f32 = 8.0 / 255.0;
-const PLAN: &str = "Decompose this image into 3 layers with the following specifications:\n\nNumber of layers: 3\nLayer 1: The complete object, every part and fitting of it, with any hole cut through it left empty.\nLayer 2: The soft shadow beneath the object, if any.\nLayer 3: The plain background.\n";
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-struct Calls {
-    design: f32,
-    layer: f32,
-    cost: f64,
-}
-
-impl Calls {
-    fn logged(out: &Path) -> Option<(Calls, [bool; 2])> {
-        let text = std::fs::read_to_string(out.join("calls.tsv")).ok()?;
-        let mut calls = Calls::default();
-        let mut seen = [false; 2];
-        for line in text.lines() {
-            let cols: Vec<&str> = line.split('\t').collect();
-            let [model, seconds, cost, ..] = cols[..] else {
-                return None;
-            };
-            let (seconds, cost): (f32, f64) = (seconds.parse().ok()?, cost.parse().ok()?);
-            match model {
-                "design" => (calls.design, seen[0]) = (seconds, true),
-                "design-layer" => (calls.layer, seen[1]) = (seconds, true),
-                _ => return None,
-            }
-            calls.cost += cost;
-        }
-        Some((calls, seen))
-    }
-
-    fn read(out: &Path) -> Option<Calls> {
-        let (calls, seen) = Self::logged(out)?;
-        (seen == [true, true]
-            && out.join("design.png").exists()
-            && out.join("layer-1.png").exists())
-        .then_some(calls)
-    }
 }
 
 enum Refusal {
@@ -675,134 +598,42 @@ enum Refusal {
     Failed(String),
 }
 
-type Painter<'a> = &'a dyn Fn(&Path, &Path) -> Result<Calls, Refusal>;
+type Painter<'a> = &'a (dyn Fn(&Path, &Path) -> Result<RgbaImage, Refusal> + Sync);
 
-fn ming(art: &Art, caption: &Path, out: &Path) -> Result<Calls, Refusal> {
-    let failed = |e: std::io::Error| Refusal::Failed(format!("{}: {e}", out.display()));
-    std::fs::create_dir_all(out).map_err(failed)?;
-    let plan = out.join("plan.txt");
-    std::fs::write(&plan, PLAN).map_err(failed)?;
-    let design = out.join("design.png");
-    let log = out.join("calls.tsv");
-    ming_sh(
-        art,
-        &["design".as_ref(), design.as_ref(), caption.as_ref()],
-        &log,
-    )?;
-    ming_sh(
-        art,
-        &[
-            "design-layer".as_ref(),
-            out.as_ref(),
-            design.as_ref(),
-            plan.as_ref(),
-        ],
-        &log,
-    )?;
-    Calls::read(out).ok_or_else(|| Refusal::Failed(format!("{}: incomplete", out.display())))
-}
-
-fn ming_sh(art: &Art, args: &[&std::ffi::OsStr], log: &Path) -> Result<(), Refusal> {
-    use std::io::Write;
-    let script = art.ming_sh();
-    let output = std::process::Command::new(&script)
-        .args(args)
+fn external(script: &Path, caption: &Path, out: &Path) -> Result<RgbaImage, Refusal> {
+    let image = out.join("image.png");
+    let output = std::process::Command::new("timeout")
+        .arg("900")
+        .arg(script)
+        .args([caption, &image])
         .stdin(std::process::Stdio::null())
         .output()
-        .map_err(|e| Refusal::Failed(format!("{}: {e}", script.display())))?;
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log)
-        .and_then(|mut file| file.write_all(&output.stdout))
-        .map_err(|e| {
-            let why = format!(
-                "{}: {e}; {}",
-                log.display(),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            if output.status.code() == Some(3) {
-                Refusal::Spent(why)
-            } else {
-                Refusal::Failed(why)
-            }
-        })?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
-        eprintln!("{line}");
-    }
-    let last = stderr
-        .lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("ming.sh failed without a word")
-        .to_string();
-    match output.status.code() {
-        Some(0) => Ok(()),
-        Some(3) => Err(Refusal::Spent(last)),
-        _ => Err(Refusal::Failed(last)),
-    }
-}
-
-fn matte(out: &Path) -> Result<RgbaImage, String> {
-    let design = image::open(out.join("design.png"))
-        .map_err(|e| format!("design: {e}"))?
-        .into_rgba8();
-    let (w, h) = design.dimensions();
-    if w != h {
-        return Err(format!("the design is {w}x{h}, not square"));
-    }
-    if !out.join("layer-2.png").exists() {
-        return Err("the split returned one layer".to_string());
-    }
-    let object = image::open(out.join("layer-1.png"))
-        .map_err(|e| format!("object: {e}"))?
-        .into_rgba8();
-    let (ow, oh) = object.dimensions();
-    let cover = object.pixels().map(alpha).sum::<f32>() / (ow * oh) as f32;
-    if !(COVER[0]..=COVER[1]).contains(&cover) {
-        return Err(format!("the object layer covers {cover:.3} of the frame"));
-    }
-    let band = ((ow.min(oh) as f32 * FRAME_EDGE).ceil() as u32).max(1);
-    let mut edge = Mean::default();
-    for (x, y, p) in object.enumerate_pixels() {
-        if x < band || y < band || x >= ow - band || y >= oh - band {
-            edge.add(alpha(p));
-        }
-    }
-    if edge.value() > EDGE_ALPHA {
-        return Err(format!(
-            "the object layer reaches the frame edge at {:.3} alpha",
-            edge.value()
-        ));
-    }
-    if ow != oh {
-        return Err(format!("the object layer is {ow}x{oh}, not square"));
-    }
-    let mask = image::imageops::resize(
-        &image::GrayImage::from_fn(ow, oh, |x, y| image::Luma([object.get_pixel(x, y)[3]])),
-        w,
-        h,
-        image::imageops::FilterType::CatmullRom,
+        .map_err(|e| Refusal::Failed(e.to_string()))?;
+    let why = String::from_utf8_lossy(&output.stderr).to_string();
+    let logged = std::fs::write(
+        out.join("generator.log"),
+        [&output.stdout[..], &output.stderr[..]].concat(),
     );
-    Ok(RgbaImage::from_fn(w, h, |x, y| {
-        let a = f32::from(mask.get_pixel(x, y)[0]) / 255.0;
-        rgba(rgb(design.get_pixel(x, y)), a * f32::from(a >= NOISE))
-    }))
+    if output.status.code() == Some(3) {
+        return Err(Refusal::Spent(why));
+    }
+    logged.map_err(|e| Refusal::Failed(e.to_string()))?;
+    if !output.status.success() {
+        return Err(Refusal::Failed(format!("{}: {why}", output.status)));
+    }
+    image::open(image)
+        .map(|i| i.into_rgba8())
+        .map_err(|e| Refusal::Failed(e.to_string()))
 }
 
 #[derive(Debug, Clone, PartialEq)]
 struct Attempt {
     index: u32,
-    calls: Calls,
+    seconds: f32,
     outcome: Result<Score, String>,
 }
 
 impl Attempt {
-    fn passes(&self, t: &Thresholds) -> bool {
-        self.outcome.as_ref().is_ok_and(|s| s.passes(t))
-    }
-
     fn verdict(&self, t: &Thresholds) -> String {
         match &self.outcome {
             Ok(score) => score
@@ -817,28 +648,16 @@ impl Attempt {
             format!("{}\t{}\t{}", s.outside, s.seat, s.off_centre)
         });
         format!(
-            "{}\t{}\t{measured}\t{:.1}\t{:.1}\t{}",
+            "{}\t{}\t{measured}\t{:.3}",
             self.index,
             self.verdict(t),
-            self.calls.design,
-            self.calls.layer,
-            self.calls.cost
+            self.seconds
         )
     }
 
     fn parse(row: &str) -> Option<Attempt> {
         let cols: Vec<&str> = row.split('\t').collect();
-        let [
-            index,
-            verdict,
-            outside,
-            seat,
-            off_centre,
-            design,
-            layer,
-            cost,
-        ] = cols[..]
-        else {
+        let [index, verdict, outside, seat, off_centre, seconds] = cols[..] else {
             return None;
         };
         let outcome = if outside == "-" {
@@ -852,11 +671,7 @@ impl Attempt {
         };
         Some(Attempt {
             index: index.parse().ok()?,
-            calls: Calls {
-                design: design.parse().ok()?,
-                layer: layer.parse().ok()?,
-                cost: cost.parse().ok()?,
-            },
+            seconds: seconds.parse().ok()?,
             outcome,
         })
     }
@@ -879,8 +694,12 @@ fn key(parts: &[&[u8]]) -> String {
     format!("{h:016x}")
 }
 
-fn painted_key(caption: &str, attempts: u32) -> String {
-    key(&[caption.as_bytes(), &attempts.to_le_bytes(), PLAN.as_bytes()])
+fn painted_key(caption: &str, generator: &str) -> String {
+    key(&[
+        caption.as_bytes(),
+        generator.as_bytes(),
+        b"rgba-generator-v1",
+    ])
 }
 
 fn relief_key(albedo: &[u8]) -> String {
@@ -912,278 +731,371 @@ fn attempts(dir: &Path) -> BTreeMap<u32, Attempt> {
         .collect()
 }
 
-struct Remake<'a> {
-    art: &'a Art,
-    manifest: Manifest,
-    painter: Painter<'a>,
-    spent: Option<String>,
-    redraw: bool,
+fn generated_image(image: &RgbaImage) -> Result<(), String> {
+    let (w, h) = image.dimensions();
+    if w == 0 || w != h || !image.pixels().any(|p| p[3] > 0) || !image.pixels().any(|p| p[3] == 0) {
+        return Err(format!(
+            "generator must return a nonempty square RGBA cutout, got {w}x{h}"
+        ));
+    }
+    Ok(())
 }
 
-impl Remake<'_> {
-    fn entry(&self, name: &str) -> Result<(Thresholds, u32, Entry), String> {
-        let m = &self.manifest;
-        let entry = m
-            .machine
-            .get(name)
-            .ok_or_else(|| format!("manifest has no [machine.{name}]"))?;
-        Ok((m.thresholds, m.attempts, entry.clone()))
-    }
-
-    fn record(&mut self, name: &str, patch: impl FnOnce(&mut Entry)) {
-        let m = &mut self.manifest;
-        let entry = m.machine.get_mut(name).expect("the entry read above");
-        let before = entry.clone();
-        patch(entry);
-        if *entry != before {
-            self.art.write(m);
+fn finish(
+    art: &Art,
+    name: &str,
+    image: &RgbaImage,
+    mut entry: Entry,
+    attempt: (u32, f32),
+    rows: &mut Vec<Attempt>,
+    thresholds: &Thresholds,
+) -> Result<Entry, String> {
+    let (index, seconds) = attempt;
+    let scaffold = Scaffold::of(item(name));
+    let capture = scaffold.register(image);
+    let stage = art.attempt(name, index);
+    std::fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
+    let albedo = stage.join("albedo.png");
+    scaffold
+        .cropped(&capture.image)
+        .save(&albedo)
+        .map_err(|e| e.to_string())?;
+    quantise(&albedo)?;
+    let mut encoded = open(&albedo);
+    let (origin, _) = scaffold.crop();
+    let mut clipped = false;
+    for (x, y, pixel) in encoded.enumerate_pixels_mut() {
+        let world = scaffold.world(Vec2::new(
+            (x + origin) as f32 + 0.5,
+            (y + origin) as f32 + 0.5,
+        ));
+        if pixel[3] > 0 && !scaffold.covered(world) {
+            pixel[3] = 0;
+            clipped = true;
         }
     }
+    if clipped {
+        encoded.save(&albedo).map_err(|e| e.to_string())?;
+    }
+    let mounted = scaffold.mount(&encoded);
+    let off_centre = scaffold
+        .marked()
+        .map(|c| {
+            scaffold
+                .seat(&mounted, c)
+                .map_or(f32::INFINITY, |s| s.distance(px(c.at)) / HEX)
+        })
+        .fold(0.0, f32::max);
+    let score = scaffold.score(&Capture {
+        image: mounted.clone(),
+        off_centre,
+    });
+    if score.outside != 0.0 {
+        return Err(format!(
+            "encoded sprite escaped footprint: {}",
+            score.outside
+        ));
+    }
+    println!(
+        "{name}\tbounds pass\tworst seat offset {:.2}px\tgenerator {:.3}s",
+        score.off_centre * PX_PER_HEX,
+        seconds
+    );
+    rows.push(Attempt {
+        index,
+        seconds,
+        outcome: Ok(score),
+    });
+    scaffold
+        .cropped(&scaffold.surface_normals(&mounted))
+        .save(stage.join("normal.png"))
+        .map_err(|e| e.to_string())?;
+    for file in ["albedo.png", "normal.png"] {
+        std::fs::rename(stage.join(file), art.machine(name).join(file))
+            .map_err(|e| e.to_string())?;
+    }
+    std::fs::write(
+        art.machine(name).join("attempts.tsv"),
+        rows.iter()
+            .map(|a| a.row(thresholds) + "\n")
+            .collect::<String>(),
+    )
+    .map_err(|e| e.to_string())?;
+    entry.kept = Some(index);
+    entry.relief = Some(relief_key(encoded.as_raw()));
+    Ok(entry)
+}
 
-    fn attempt(
-        &mut self,
-        name: &str,
-        index: u32,
-        scaffold: &Scaffold,
-        thresholds: &Thresholds,
-    ) -> Result<Attempt, String> {
-        let out = self.art.attempt(name, index);
-        let calls = match Calls::read(&out) {
-            Some(calls) => calls,
-            None => {
-                let result = {
-                    if let Some(why) = self.spent.clone() {
-                        return Err(format!("stopped: {why}"));
-                    }
-                    let _ = std::fs::remove_dir_all(&out);
-                    (self.painter)(&self.art.caption(name), &out)
-                };
-                match result {
-                    Ok(calls) => calls,
-                    Err(Refusal::Spent(why)) => {
-                        self.spent = Some(why.clone());
-                        return Err(format!("stopped: {why}"));
-                    }
-                    Err(Refusal::Failed(why)) => {
-                        return Ok(Attempt {
-                            index,
-                            calls: Calls::logged(&out).map_or(Calls::default(), |(calls, _)| calls),
-                            outcome: Err(format!("paint: {why}")),
-                        });
-                    }
+fn generate_one(
+    art: &Art,
+    name: &str,
+    manifest: &Manifest,
+    generator: &str,
+    painter: Painter,
+    stopped: &std::sync::Mutex<Option<String>>,
+    fit: bool,
+) -> Result<Entry, String> {
+    let started = std::time::Instant::now();
+    let mut entry = manifest.machine[name].clone();
+    let caption = art.caption(name);
+    let text = std::fs::read_to_string(&caption).map_err(|e| e.to_string())?;
+    let mut rows = Vec::new();
+    if fit {
+        let image = open(art.machine(name).join("albedo.png"));
+        entry = finish(
+            art,
+            name,
+            &image,
+            entry.clone(),
+            (entry.kept.ok_or("no retained image")?, 0.0),
+            &mut rows,
+            &manifest.thresholds,
+        )?;
+    } else {
+        entry.generator = generator.to_string();
+        entry.painted = Some(painted_key(&text, generator));
+        std::fs::remove_dir_all(art.machine(name).join("attempts"))
+            .or_else(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        let mut success = None;
+        for index in 1..=manifest.attempts {
+            if let Some(why) = stopped.lock().unwrap().as_ref() {
+                return Err(format!("stopped: {why}"));
+            }
+            let out = art.attempt(name, index);
+            std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+            let call = std::time::Instant::now();
+            let generated = painter(&caption, &out).and_then(|image| {
+                generated_image(&image)
+                    .map(|()| image)
+                    .map_err(Refusal::Failed)
+            });
+            let seconds = call.elapsed().as_secs_f32();
+            match generated {
+                Ok(image) => {
+                    success = Some(finish(
+                        art,
+                        name,
+                        &image,
+                        entry,
+                        (index, seconds),
+                        &mut rows,
+                        &manifest.thresholds,
+                    )?);
+                    break;
+                }
+                Err(Refusal::Spent(why)) => {
+                    *stopped.lock().unwrap() = Some(why.clone());
+                    return Err(format!("stopped: {why}"));
+                }
+                Err(Refusal::Failed(why)) => {
+                    eprintln!(
+                        "{name}: generator attempt {index}/{} failed: {why}",
+                        manifest.attempts
+                    );
+                    rows.push(Attempt {
+                        index,
+                        seconds,
+                        outcome: Err(why),
+                    });
+                    std::fs::write(
+                        art.machine(name).join("attempts.tsv"),
+                        rows.iter()
+                            .map(|a| a.row(&manifest.thresholds) + "\n")
+                            .collect::<String>(),
+                    )
+                    .map_err(|e| e.to_string())?;
                 }
             }
-        };
-        let outcome = matte(&out)
-            .map(|sprite| scaffold.score(&scaffold.register(&sprite)))
-            .map_err(|why| format!("matte: {why}"));
-        let attempt = Attempt {
-            index,
-            calls,
-            outcome,
-        };
-        println!("{name}\t{}", attempt.row(thresholds));
-        Ok(attempt)
+        }
+        entry = success
+            .ok_or_else(|| format!("generator failed all {} attempts", manifest.attempts))?;
     }
+    if !art.split(manifest, &[name.to_string()]) {
+        return Err("rig splitting failed".to_string());
+    }
+    println!("{name}\tcomplete\t{:.3}s", started.elapsed().as_secs_f32());
+    Ok(entry)
+}
 
-    fn paint(&mut self, name: &str, scaffold: &Scaffold, painted: &str) -> Result<(), String> {
-        let (thresholds, count, entry) = self.entry(name)?;
-        let dir = self.art.machine(name);
-        let mut rows = if entry.painted.as_deref() == Some(painted) {
-            attempts(&dir)
-        } else {
-            let _ = std::fs::remove_dir_all(dir.join("attempts"));
-            let _ = std::fs::remove_file(dir.join("attempts.tsv"));
-            self.record(name, |e| {
-                e.painted = Some(painted.to_string());
-                e.kept = None;
+fn generate_set(
+    art: &Art,
+    names: &[String],
+    generator: &str,
+    painter: Painter,
+    jobs: usize,
+    fit: bool,
+) -> bool {
+    let mut manifest = art.read();
+    let stop_file = art
+        .dir
+        .join(format!(".generation-stop-{}", std::process::id()));
+    let _ = std::fs::remove_file(&stop_file);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let results = std::sync::Mutex::new(Vec::new());
+    let stopped = std::sync::Mutex::new(None);
+    std::thread::scope(|scope| {
+        for _ in 0..jobs.min(names.len()) {
+            let (next, results, stopped, manifest) = (&next, &results, &stopped, &manifest);
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(name) = names.get(index) else { break };
+                    let result =
+                        generate_one(art, name, manifest, generator, painter, stopped, fit);
+                    results.lock().unwrap().push((name.clone(), result));
+                }
             });
-            BTreeMap::new()
+        }
+    });
+    let mut ok = true;
+    for (name, result) in results.into_inner().unwrap() {
+        match result {
+            Ok(entry) => {
+                manifest.machine.insert(name, entry);
+            }
+            Err(why) => {
+                eprintln!("{name}: generation failed: {why}");
+                ok = false;
+            }
+        }
+    }
+    let _ = std::fs::remove_file(stop_file);
+    art.write(&manifest);
+    if let Err(why) = sheet(art, &manifest) {
+        eprintln!("sheet: {why}");
+        ok = false;
+    }
+    ok
+}
+
+fn sheet(art: &Art, m: &Manifest) -> Result<(), String> {
+    let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
+    for item in Machine::ALL {
+        let name = name(item);
+        let dir = art.machine(name);
+        let (Some(kept), true) = (
+            m.machine.get(name).and_then(|e| e.kept),
+            dir.join("albedo.png").exists(),
+        ) else {
+            continue;
         };
-        rows.retain(|i, a| {
-            *i <= count
-                && (a.outcome.is_err() || Calls::read(&self.art.attempt(name, *i)).is_some())
+        let verdict = attempts(&dir).get(&kept).map_or("-".to_string(), |a| {
+            let offset = a
+                .outcome
+                .as_ref()
+                .map_or(f32::INFINITY, |s| s.off_centre * PX_PER_HEX);
+            let bounds = a.outcome.as_ref().is_ok_and(|s| s.outside == 0.0);
+            format!(
+                "bounds {}; worst seat offset {:.1}px",
+                if bounds { "pass" } else { "FAIL" },
+                offset,
+            )
         });
-        for index in 1..=count {
-            if rows.values().any(|a| a.passes(&thresholds)) {
-                break;
-            }
-            if rows.contains_key(&index) {
-                continue;
-            }
-            let attempt = self.attempt(name, index, scaffold, &thresholds)?;
-            rows.insert(index, attempt);
-            let table: Vec<String> = rows.values().map(|a| a.row(&thresholds)).collect();
-            std::fs::write(dir.join("attempts.tsv"), table.join("\n") + "\n")
-                .map_err(|e| e.to_string())?;
-        }
-        let (kept, _) = rows
-            .values()
-            .filter_map(|a| Some((a.index, a.outcome.as_ref().ok()?.excess(&thresholds))))
-            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
-            .ok_or_else(|| {
-                let verdicts: Vec<String> = rows.values().map(|a| a.verdict(&thresholds)).collect();
-                format!("no attempt made a sprite: {}", verdicts.join("; "))
-            })?;
-        let capture = scaffold.register(&matte(&self.art.attempt(name, kept))?);
-        let albedo = dir.join("albedo.png");
-        save(&scaffold.cropped(&capture.image), &albedo);
-        quantise(&albedo)?;
-        self.record(name, |e| e.kept = Some(kept));
-        self.redraw = true;
-        Ok(())
+        args.push("-label".into());
+        args.push(format!("{name}  attempt {kept}/{}\n{verdict}", m.attempts).into());
+        args.push(dir.join("albedo.png").into());
     }
-
-    fn machine(&mut self, name: &str) -> Result<bool, String> {
-        let started = std::time::Instant::now();
-        let scaffold = Scaffold::of(item(name));
-        let dir = self.art.machine(name);
-        let (_, count, entry) = self.entry(name)?;
-        let caption = self.art.caption(name);
-        let text =
-            std::fs::read_to_string(&caption).map_err(|e| format!("{}: {e}", caption.display()))?;
-        let painted = painted_key(&text, count);
-        let mut changed = false;
-        if entry.painted.as_deref() != Some(painted.as_str())
-            || entry.kept.is_none()
-            || !dir.join("albedo.png").exists()
-        {
-            self.paint(name, &scaffold, &painted)?;
-            changed = true;
-        }
-        let (_, _, entry) = self.entry(name)?;
-        let albedo = open(dir.join("albedo.png"));
-        let relief = relief_key(albedo.as_raw());
-        if entry.relief.as_deref() != Some(relief.as_str()) || !dir.join("normal.png").exists() {
-            let normal = scaffold.surface_normals(&scaffold.mount(&albedo));
-            save(&scaffold.cropped(&normal), &dir.join("normal.png"));
-            self.record(name, |e| e.relief = Some(relief.clone()));
-            changed = true;
-        }
-        println!(
-            "{name}\t{}\tkept attempt {}\t{:.0}s",
-            if changed { "landed" } else { "up to date" },
-            entry.kept.map_or("-".to_string(), |k| k.to_string()),
-            started.elapsed().as_secs_f32()
-        );
-        Ok(changed)
+    if args.len() == 1 {
+        return Ok(());
     }
-
-    fn sheet(&self) -> Result<(), String> {
-        let m = &self.manifest;
-        let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
-        for item in Machine::ALL {
-            let name = name(item);
-            let dir = self.art.machine(name);
-            let (Some(kept), true) = (
-                m.machine.get(name).and_then(|e| e.kept),
-                dir.join("albedo.png").exists(),
-            ) else {
-                continue;
-            };
-            let verdict = attempts(&dir)
-                .get(&kept)
-                .map_or("-".to_string(), |a| a.verdict(&m.thresholds));
-            args.push("-label".into());
-            args.push(format!("{name}  attempt {kept}/{}  {verdict}", m.attempts).into());
-            args.push(dir.join("albedo.png").into());
-        }
-        if args.len() == 1 {
-            return Ok(());
-        }
-        let part = self.art.dir.join("sheet.png.part");
-        args.extend(
-            [
-                "-tile",
-                "5x",
-                "-geometry",
-                "400x400+8+8",
-                "-background",
-                "#D8C3A5",
-                "-fill",
-                "#423B37",
-                "-font",
-                "DejaVu-Sans",
-                "-pointsize",
-                "13",
-            ]
-            .map(Into::into),
-        );
-        args.push(format!("png:{}", part.display()).into());
-        let status = std::process::Command::new("magick")
-            .args(&args)
-            .status()
-            .map_err(|e| format!("magick: {e}"))?;
-        if !status.success() {
-            return Err(format!("magick montage {status}"));
-        }
-        quantise(&part)?;
-        std::fs::rename(&part, self.art.dir.join("sheet.png")).map_err(|e| e.to_string())
+    let part = art.dir.join("sheet.png.part");
+    args.extend(
+        [
+            "-tile",
+            "5x",
+            "-geometry",
+            "400x400+8+8",
+            "-background",
+            "#D8C3A5",
+            "-fill",
+            "#423B37",
+            "-font",
+            "DejaVu-Sans",
+            "-pointsize",
+            "13",
+        ]
+        .map(Into::into),
+    );
+    args.push(format!("png:{}", part.display()).into());
+    let status = std::process::Command::new("magick")
+        .args(&args)
+        .status()
+        .map_err(|e| format!("magick: {e}"))?;
+    if !status.success() {
+        return Err(format!("magick montage {status}"));
     }
-}
-
-fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<bool, String>)> {
-    let mut remake = Remake {
-        art,
-        manifest: art.read(),
-        painter,
-        spent: None,
-        redraw: false,
-    };
-    let mut names: Vec<&String> = names.iter().collect();
-    names.sort();
-    names.dedup();
-    let mut results: Vec<_> = names
-        .into_iter()
-        .map(|name| {
-            let result = match &remake.spent {
-                Some(why) => Err(format!("stopped: {why}")),
-                None => remake.machine(name),
-            };
-            (name.to_string(), result)
-        })
-        .collect();
-    let sheet = art.dir.join("sheet.png");
-    if (!sheet.exists() || remake.redraw)
-        && let Err(e) = remake.sheet()
-    {
-        results.push(("sheet".to_string(), Err(e)));
-    }
-    results
-}
-
-fn landed(results: &[(String, Result<bool, String>)]) -> bool {
-    let mut landed = true;
-    for (name, result) in results {
-        if let Err(e) = result {
-            landed = false;
-            eprintln!("{name}: did not land: {e}");
-        }
-    }
-    landed
+    quantise(&part)?;
+    std::fs::rename(&part, art.dir.join("sheet.png")).map_err(|e| e.to_string())
 }
 
 pub fn configure(args: &[String]) -> Option<i32> {
-    const USAGE: &str = "usage: ziral --gen NAME... | ziral --gen --all";
-    let art = Art::shipped();
     if args.get(1).map(String::as_str) != Some("--gen") {
         return None;
     }
-    let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
+    let started = std::time::Instant::now();
+    let art = Art::shipped();
     let manifest = art.read();
-    let known = |n: &str| manifest.machine.contains_key(n);
-    let painter = |caption: &Path, out: &Path| ming(&art, caption, out);
-    let names: Vec<String> = match rest.as_slice() {
-        ["--all"] => manifest.machine.keys().cloned().collect(),
-        [_, ..] if rest.iter().all(|n| known(n)) => rest.iter().map(|n| n.to_string()).collect(),
-        _ => {
-            eprintln!("{USAGE}");
-            return Some(2);
+    if args.get(2).map(String::as_str) == Some("--sheet") && args.len() == 3 {
+        return Some(match sheet(&art, &manifest) {
+            Ok(()) => 0,
+            Err(why) => {
+                eprintln!("sheet: {why}");
+                1
+            }
+        });
+    }
+    let mut generator = default_generator();
+    let mut jobs = 3;
+    let mut fit = false;
+    let mut names = Vec::new();
+    let mut rest = args.iter().skip(2);
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--generator" => generator = rest.next().cloned().unwrap_or_default(),
+            "--jobs" => jobs = rest.next().and_then(|n| n.parse().ok()).unwrap_or(0),
+            "--fit" => fit = true,
+            "--all" => names.extend(manifest.machine.keys().cloned()),
+            name if manifest.machine.contains_key(name) => names.push(name.to_string()),
+            _ => {
+                eprintln!("unknown generator argument: {arg}");
+                return Some(2);
+            }
+        }
+    }
+    if names.is_empty()
+        || !(1..=16).contains(&jobs)
+        || generator.is_empty()
+        || manifest.attempts == 0
+    {
+        eprintln!(
+            "usage: ziral --gen [--generator ming|EXECUTABLE] [--jobs 1..16] [--fit] NAME...|--all"
+        );
+        return Some(2);
+    }
+    names.sort();
+    names.dedup();
+    let painter = |caption: &Path, out: &Path| {
+        if generator == "ming" {
+            ming::generate(&art, caption, out)
+        } else {
+            external(Path::new(&generator), caption, out)
         }
     };
-    let generated = landed(&remake(&art, &names, &painter));
-    let split = art.split(&manifest, &names);
-    Some(i32::from(!(generated && split)))
+    let ok = generate_set(&art, &names, &generator, &painter, jobs, fit);
+    println!(
+        "set\t{} machines\t{:.3}s\t{}",
+        names.len(),
+        started.elapsed().as_secs_f32(),
+        if ok { "complete" } else { "FAILED" }
+    );
+    Some(i32::from(!ok))
 }
 
 #[cfg(test)]
@@ -1293,6 +1205,27 @@ mod tests {
     }
 
     #[test]
+    fn machines_clip_every_alpha_level_to_the_exact_footprint() {
+        for item in Machine::ALL {
+            let scaffold = Scaffold::of(item);
+            let candidate = RgbaImage::from_fn(65, 65, |x, y| {
+                Rgba([150, 90, 60, if x == 0 || y == 0 { 1 } else { 255 }])
+            });
+            let fitted = scaffold.fit(&candidate);
+            assert!(fitted.pixels().any(|p| p[3] == 255));
+            for (x, y, pixel) in fitted.enumerate_pixels() {
+                if pixel[3] > 0 {
+                    assert!(
+                        scaffold.covered(scaffold.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5))),
+                        "{} at {x},{y}",
+                        name(item)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn machines_output_surfaces_keep_their_full_footprints_without_seats() {
         use crate::sim::{GlyphKind, Tier};
 
@@ -1363,10 +1296,10 @@ mod tests {
         assert!(score.outside <= SEAT_STEP, "{score:?}");
         let face = px(scaffold.cells[0].at) - Vec2::X * HEX * 3f32.sqrt() / 2.0;
         let dot = 2.0;
-        for (k, ok) in [(0.5, true), (1.5, false)] {
-            let at = face - Vec2::X * k * thresholds.outside * HEX;
+        for (k, ok) in [(0.5, false), (1.5, false)] {
+            let at = face - Vec2::X * k * 0.05 * HEX;
             assert!(
-                (scaffold.outside(at) - k * thresholds.outside).abs() < SEAT_STEP,
+                (scaffold.outside(at) - k * 0.05).abs() < SEAT_STEP,
                 "{at} lies {} beyond the footprint",
                 scaffold.outside(at)
             );
@@ -1383,7 +1316,7 @@ mod tests {
             });
             assert_eq!(score.measured(&thresholds).is_none(), ok, "{score:?}");
             assert!(
-                (score.outside - k * thresholds.outside).abs() <= SEAT_STEP,
+                (score.outside - k * 0.05).abs() <= SEAT_STEP,
                 "{score:?} against {k} tolerances"
             );
         }
@@ -1554,7 +1487,6 @@ mod tests {
                 sorted
             }
         );
-        let t = &manifest.thresholds;
         for item in Machine::ALL {
             let name = name(item);
             let entry = &manifest.machine[name];
@@ -1563,7 +1495,7 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{name}/caption.txt: {e}"));
             assert_eq!(
                 entry.painted.as_deref(),
-                Some(painted_key(&caption, manifest.attempts).as_str()),
+                Some(painted_key(&caption, &entry.generator).as_str()),
                 "{name}: the art is stale against its caption: run ziral --gen {name}"
             );
             let kept = entry
@@ -1578,15 +1510,6 @@ mod tests {
                 .get(&kept)
                 .and_then(|a| a.outcome.clone().ok())
                 .unwrap_or_else(|| panic!("{name}: attempts.tsv has no sprite for attempt {kept}"));
-            for row in rows.values() {
-                if let Ok(score) = &row.outcome {
-                    assert!(
-                        score.excess(t) >= recorded.excess(t),
-                        "{name}: attempt {} measures better than the kept {kept}",
-                        row.index
-                    );
-                }
-            }
             let scaffold = Scaffold::of(item);
             let (_, side) = scaffold.crop();
             let albedo = open(dir.join("albedo.png"));
@@ -1596,6 +1519,10 @@ mod tests {
                 image: mounted.clone(),
                 off_centre: recorded.off_centre,
             });
+            assert_eq!(
+                score.outside, 0.0,
+                "{name}: nonzero alpha outside footprint"
+            );
             assert!(
                 (score.outside - recorded.outside).abs() <= SHIPPED,
                 "{name}: albedo.png measures {score:?}, attempts.tsv records {recorded:?}"
@@ -1653,283 +1580,160 @@ mod tests {
         }
     }
 
-    fn studio(tag: &str, machines: &[&str], attempts: u32) -> Art {
-        let shipped = Art::shipped().read();
+    fn studio(tag: &str, names: &[&str], attempts: u32) -> Art {
         let root = std::env::temp_dir().join(format!("ziral-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let art = Art {
             dir: root.join("machines"),
         };
-        for name in machines {
-            std::fs::create_dir_all(art.machine(name)).expect("a studio is creatable");
-            std::fs::write(art.caption(name), format!("a {name}\n")).expect("a caption");
+        let mut manifest = Art::shipped().read();
+        manifest.attempts = attempts;
+        manifest
+            .machine
+            .retain(|name, _| names.contains(&name.as_str()));
+        for name in names {
+            std::fs::create_dir_all(art.machine(name)).unwrap();
+            std::fs::write(art.caption(name), format!("a {name}")).unwrap();
+            manifest.machine.get_mut(*name).unwrap().parts.clear();
         }
-        art.write(&Manifest {
-            attempts,
-            thresholds: shipped.thresholds,
-            machine: machines
-                .iter()
-                .map(|name| {
-                    (
-                        name.to_string(),
-                        Entry {
-                            kept: None,
-                            painted: None,
-                            relief: None,
-                            motion: None,
-                            instrument: crate::sound::instrument(item(name)),
-                            emitter: crate::rig::entry(item(name)).emitter,
-                            rig_emitter: crate::rig::entry(item(name)).rig_emitter,
-                            parts: Vec::new(),
-                        },
-                    )
-                })
-                .collect(),
-        });
+        art.write(&manifest);
         art
     }
 
-    const GROUND: Rgba<u8> = Rgba([180, 180, 178, 255]);
-
-    fn drawn(out: &Path, sprite: &RgbaImage, layer: Option<RgbaImage>) -> Calls {
-        std::fs::create_dir_all(out).expect("an attempt dir");
-        let side = sprite.width() * 5 / 4;
-        let offset = i64::from((side - sprite.width()) / 2);
-        let mut design = RgbaImage::from_pixel(side, side, GROUND);
-        image::imageops::overlay(&mut design, sprite, offset, offset);
-        let mut object = RgbaImage::new(side, side);
-        image::imageops::replace(&mut object, sprite, offset, offset);
-        let half = |image: &RgbaImage| {
-            image::imageops::resize(
-                image,
-                side / 2,
-                side / 2,
-                image::imageops::FilterType::Triangle,
-            )
-        };
-        save(&design, &out.join("design.png"));
-        save(
-            &layer.unwrap_or_else(|| half(&object)),
-            &out.join("layer-1.png"),
-        );
-        save(
-            &half(&RgbaImage::from_pixel(side, side, GROUND)),
-            &out.join("layer-2.png"),
-        );
-        std::fs::write(
-            out.join("calls.tsv"),
-            "design\t1.5\t0\t0\t0\ndesign-layer\t2.5\t0\t0\t0\n",
-        )
-        .expect("calls.tsv");
-        Calls::read(out).expect("a complete attempt")
-    }
-
-    fn turned(scaffold: &Scaffold, angle: f32) -> RgbaImage {
-        let centre = scaffold.quad.centre;
-        let turn = Vec2::from_angle(angle);
-        fired(scaffold, &|w| centre + turn.rotate(w - centre))
-    }
-
     #[test]
-    fn attempts_run_until_one_passes_and_an_unchanged_caption_paints_nothing() {
-        let art = studio("attempts", &["bonder"], 4);
-        let scaffold = Scaffold::of(item("bonder"));
+    fn machines_retry_generator_failures_but_never_retry_seat_quality() {
+        let art = studio("generator-retry", &["bonder"], 3);
         let calls = std::sync::atomic::AtomicUsize::new(0);
-        let painter = |caption: &Path, out: &Path| {
-            assert_eq!(caption, art.caption("bonder"));
-            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-            let clean = fired(&scaffold, &|w| w);
-            Ok(match n {
-                1 => {
-                    let side = clean.width() * 5 / 8;
-                    drawn(out, &clean, Some(RgbaImage::from_pixel(side, side, GROUND)))
-                }
-                2 => drawn(out, &turned(&scaffold, 0.3), None),
-                _ => drawn(out, &clean, None),
-            })
-        };
-        let count = || calls.load(std::sync::atomic::Ordering::SeqCst);
-        let run = || remake(&art, &["bonder".to_string()], &painter);
-        assert!(landed(&run()));
-        assert_eq!(count(), 3);
-        let thresholds = art.read().thresholds;
-        let rows = attempts(&art.machine("bonder"));
-        let verdicts: Vec<String> = rows.values().map(|a| a.verdict(&thresholds)).collect();
-        assert!(verdicts[0].starts_with("matte: "), "{verdicts:?}");
-        assert!(!rows[&2].passes(&thresholds), "{verdicts:?}");
-        assert!(
-            rows[&2].outcome.as_ref().unwrap().off_centre > thresholds.off_centre,
-            "{verdicts:?}"
-        );
-        assert_eq!(verdicts[2], "pass");
-        assert_eq!(rows[&3].calls.design, 1.5);
-        assert_eq!(art.read().machine["bonder"].kept, Some(3));
-        assert!(art.machine("bonder").join("normal.png").exists());
-        assert!(art.dir.join("sheet.png").exists());
-        let again = run();
-        assert!(landed(&again));
-        assert_eq!(again[0].1, Ok(false));
-        assert_eq!(count(), 3);
-        std::fs::write(art.caption("bonder"), "another bonder\n").unwrap();
-        assert!(landed(&run()));
-        assert_eq!(count(), 4);
-        assert_eq!(art.read().machine["bonder"].kept, Some(1));
-        assert_eq!(attempts(&art.machine("bonder")).len(), 1);
-        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
-    }
-
-    #[test]
-    fn with_no_attempt_passing_the_one_measured_closest_is_kept() {
-        let art = studio("closest", &["converter-amber"], 3);
-        let scaffold = Scaffold::of(item("converter-amber"));
-        let calls = std::sync::atomic::AtomicUsize::new(0);
-        let painter = |_: &Path, out: &Path| {
-            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(drawn(out, &turned(&scaffold, [0.4, 0.25, 0.3][n]), None))
-        };
-        assert!(landed(&remake(
-            &art,
-            &["converter-amber".to_string()],
-            &painter
-        )));
-        let thresholds = art.read().thresholds;
-        let rows = attempts(&art.machine("converter-amber"));
-        assert_eq!(rows.len(), 3);
-        assert!(rows.values().all(|a| !a.passes(&thresholds)), "{rows:?}");
-        assert_eq!(art.read().machine["converter-amber"].kept, Some(3));
-        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
-    }
-
-    #[test]
-    fn a_spent_call_stops_every_machine_and_failed_calls_use_up_the_attempts() {
-        let names = ["bonder".to_string(), "resonator".to_string()];
-        let art = studio("spent", &["bonder", "resonator"], 4);
-        let calls = std::sync::atomic::AtomicUsize::new(0);
-        let spent = |_: &Path, _: &Path| {
+        let painter = |_: &Path, _: &Path| {
             if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
-                Err(Refusal::Spent("usage went from 0 to 0.01".to_string()))
-            } else {
                 Err(Refusal::Failed("HTTP 502".to_string()))
+            } else {
+                Ok(RgbaImage::from_fn(65, 65, |x, y| {
+                    if (8..56).contains(&x) && (8..56).contains(&y) {
+                        Rgba([150, 90, 60, 255])
+                    } else {
+                        Rgba([0; 4])
+                    }
+                }))
             }
         };
-        let results = remake(&art, &names, &spent);
-        assert!(!landed(&results));
-        for (name, result) in &results {
-            assert!(
-                result.as_ref().unwrap_err().starts_with("stopped: usage"),
-                "{name}: {result:?}"
-            );
-            assert!(!art.machine(name).join("albedo.png").exists());
-        }
+        assert!(generate_set(
+            &art,
+            &["bonder".to_string()],
+            "fixture",
+            &painter,
+            1,
+            false
+        ));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let rows = attempts(&art.machine("bonder"));
+        assert!(rows[&1].outcome.is_err());
+        assert_eq!(rows[&2].outcome.as_ref().unwrap().outside, 0.0);
+        assert!(
+            rows[&2]
+                .outcome
+                .as_ref()
+                .unwrap()
+                .measured(&art.read().thresholds)
+                .is_some()
+        );
+        assert_eq!(art.read().machine["bonder"].kept, Some(2));
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn machines_stop_on_policy_refusal_and_bound_failed_calls() {
+        let art = studio("generator-stop", &["bonder", "resonator"], 3);
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let refusal = |_: &Path, _: &Path| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(Refusal::Spent("usage is nonzero".to_string()))
+        };
+        let names = vec!["bonder".to_string(), "resonator".to_string()];
+        assert!(!generate_set(&art, &names, "fixture", &refusal, 1, false));
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         calls.store(0, std::sync::atomic::Ordering::SeqCst);
-        let failed = |_: &Path, _: &Path| {
+        let failure = |_: &Path, _: &Path| {
             calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Err(Refusal::Failed("HTTP 502".to_string()))
         };
-        let results = remake(&art, &names[..1], &failed);
-        assert!(
-            results[0]
-                .1
-                .as_ref()
-                .unwrap_err()
-                .contains("paint: HTTP 502"),
-            "{results:?}"
-        );
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+        assert!(!generate_set(
+            &art,
+            &names[..1],
+            "fixture",
+            &failure,
+            1,
+            false
+        ));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
         std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
     #[cfg(unix)]
     #[test]
-    fn real_painter_persists_partial_calls_and_preserves_spend_on_log_failure() {
+    fn machines_downstream_failure_never_retries_the_generator() {
         use std::os::unix::fs::PermissionsExt;
-        let art = studio("call-log", &["bonder"], 1);
-        let script = art.ming_sh();
-        std::fs::write(
-            &script,
-            "#!/usr/bin/env bash\nprintf '%s\\t12\\t0\\n' \"$1\"\n[ \"$1\" = design ]\n",
-        )
-        .unwrap();
+        let art = studio("rig-failure", &["bonder"], 4);
+        let mut manifest = art.read();
+        manifest.machine.get_mut("bonder").unwrap().parts =
+            Art::shipped().read().machine["arm"].parts.clone();
+        art.write(&manifest);
+        let script = art.dir.join("rig.sh");
+        std::fs::write(&script, "#!/usr/bin/env bash\nexit 7\n").unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let out = art.attempt("bonder", 1);
-        assert!(matches!(
-            ming(&art, &art.caption("bonder"), &out),
-            Err(Refusal::Failed(_))
-        ));
-        let (calls, seen) = Calls::logged(&out).unwrap();
-        assert_eq!(seen, [true, true]);
-        assert_eq!(calls.design, 12.0);
-        assert_eq!(calls.layer, 12.0);
-        std::fs::write(
-            &script,
-            "#!/usr/bin/env bash\necho 'account usage is nonzero' >&2\nexit 3\n",
-        )
-        .unwrap();
-        assert!(matches!(ming_sh(&art, &[], &out), Err(Refusal::Spent(_))));
-        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
-    }
-
-    #[test]
-    fn failed_layer_keeps_design_time_and_sheet_failure_fails_the_run() {
-        let art = studio("partial", &["bonder"], 1);
-        let failed = |_: &Path, out: &Path| {
-            std::fs::create_dir_all(out).unwrap();
-            std::fs::write(out.join("calls.tsv"), "design\t12\t0\ndesign-layer\t3\t0\n").unwrap();
-            Err(Refusal::Failed("HTTP 502".to_string()))
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let painter = |_: &Path, _: &Path| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(RgbaImage::from_fn(32, 32, |x, y| {
+                if (4..28).contains(&x) && (4..28).contains(&y) {
+                    Rgba([120, 70, 50, 255])
+                } else {
+                    Rgba([0; 4])
+                }
+            }))
         };
-        assert!(!landed(&remake(&art, &["bonder".to_string()], &failed)));
-        let row = &attempts(&art.machine("bonder"))[&1];
-        assert_eq!(row.calls.design, 12.0);
-        assert_eq!(row.calls.layer, 3.0);
-        assert!(row.outcome.is_err());
-        std::fs::write(art.caption("bonder"), "a new caption").unwrap();
-        std::fs::create_dir(art.dir.join("sheet.png")).unwrap();
-        let scaffold = Scaffold::of(item("bonder"));
-        let painter = |_: &Path, out: &Path| Ok(drawn(out, &fired(&scaffold, &|w| w), None));
-        let results = remake(&art, &["bonder".to_string()], &painter);
-        assert!(!landed(&results));
-        assert!(
-            results
-                .iter()
-                .any(|(name, result)| name == "sheet" && result.is_err())
-        );
+        assert!(!generate_set(
+            &art,
+            &["bonder".to_string()],
+            "fixture",
+            &painter,
+            1,
+            false
+        ));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
-    fn the_matte_takes_design_colour_under_the_layer_alpha_and_refuses_a_framing_layer() {
-        let root = std::env::temp_dir().join(format!("ziral-matte-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let sprite = RgbaImage::from_fn(200, 200, |x, y| {
-            if (Vec2::new(x as f32, y as f32) - 100.0).length() < 60.0 {
-                Rgba([200, 40, 30, 255])
-            } else {
-                Rgba([0; 4])
-            }
-        });
-        drawn(&root, &sprite, None);
-        let sprite = matte(&root).expect("a sprite");
-        assert_eq!(sprite.dimensions(), (250, 250));
-        assert_eq!(sprite.get_pixel(125, 125).0, [200, 40, 30, 255]);
-        assert_eq!(sprite.get_pixel(5, 5)[3], 0);
-        drawn(
-            &root,
-            &sprite,
-            Some(RgbaImage::from_pixel(125, 125, GROUND)),
+    fn machines_external_generator_contract_and_policy_exit() {
+        use std::os::unix::fs::PermissionsExt;
+        let art = studio("generator-contract", &["portal"], 1);
+        let script = art.dir.join("fixture.sh");
+        let source = art.dir.join("fixture.png");
+        save(
+            &RgbaImage::from_fn(16, 16, |x, y| {
+                if x > 2 && y > 2 && x < 13 && y < 13 {
+                    Rgba([120, 70, 50, 255])
+                } else {
+                    Rgba([0; 4])
+                }
+            }),
+            &source,
         );
-        assert!(matte(&root).unwrap_err().contains("covers 1.000"));
-        let mut touching = RgbaImage::new(125, 125);
-        for y in 0..125 {
-            for x in 0..30 {
-                touching.put_pixel(x, y, Rgba([200, 40, 30, 255]));
-            }
-        }
-        drawn(&root, &sprite, Some(touching));
-        assert!(matte(&root).unwrap_err().contains("frame edge"));
-        std::fs::remove_file(root.join("layer-2.png")).unwrap();
-        assert!(matte(&root).unwrap_err().contains("one layer"));
-        std::fs::remove_dir_all(&root).unwrap();
+        std::fs::write(&script, "#!/usr/bin/env bash\nset -eu\ntest -s \"$1\"\ncp \"$(dirname \"$0\")/fixture.png\" \"$2\"\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let out = art.attempt("portal", 1);
+        std::fs::create_dir_all(&out).unwrap();
+        let generated = external(&script, &art.caption("portal"), &out)
+            .unwrap_or_else(|_| panic!("external generator failed"));
+        assert_eq!(generated, open(source));
+        std::fs::write(&script, "#!/usr/bin/env bash\necho policy >&2\nexit 3\n").unwrap();
+        assert!(matches!(
+            external(&script, &art.caption("portal"), &out),
+            Err(Refusal::Spent(_))
+        ));
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
     #[test]

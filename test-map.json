@@ -19,6 +19,15 @@
     },
     {
       "paths": [
+        "art/regenerate.sh"
+      ],
+      "tests": [
+        "nix-shell --run 'shellcheck art/regenerate.sh'"
+      ],
+      "why": "the entry point builds the generator, regenerates every machine, rebuilds embedded sprites and renders the rig; the live model run is separately timed in PROOF.md"
+    },
+    {
+      "paths": [
         "art/tests/ming.sh"
       ],
       "tests": [

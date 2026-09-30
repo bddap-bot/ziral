@@ -1,110 +1,88 @@
-# Ming-Image art workflow (#162)
+# Art pipeline: full-set regeneration and guaranteed hex bounds
 
-Every machine sprite on this branch comes from one chain: `caption.txt` → Ming-Image Design → Ming-Image Design-Layer → matte → fit and register → measure → `albedo.png` → relief and rig maps. [art/MACHINES.md](art/MACHINES.md) describes the stages.
+The branch replaces geometry retry rounds with a generator interface followed by deterministic fitting, exact hex clipping and runtime-map production. The default remains Ming, with the same captions and visual direction. This is a branch-only pipeline improvement; main is unchanged and no merge is part of this result.
 
-## The asset contract
-
-What the game loads per machine, read from `src/look.rs`, `src/rig.rs` and `src/main.rs` before generating:
-
-| file | contract |
-|---|---|
-| `art/machines/<name>/albedo.png` | RGBA, square, side = the machine's quad at 256 px per hex (portal 512, arm/bonder/resonator 955, second-bond/amber converter 1024, cobalt converter 1280, arm-2/output-1 1399, source/source-2 1481, arm-3 1842, reification/output-2 2286, output-3 3172); alpha is the silhouette; seats sit on their cell centres |
-| `art/machines/<name>/normal.png` | same size, tangent-space normal in RGB, alpha = the albedo's |
-| `art/machines/<name>/parts/{albedo,normal,emissive}-{base,moving}.png` | only for machines whose manifest lists parts; same size; emissive alpha = albedo alpha |
-| `art/machines/manifest.toml` | parsed at build time by `src/rig.rs` and `src/sound.rs` for parts, motion, emitters and instruments |
-
-Names come from `look::machine`; every PNG is compiled in with `include_bytes!`, so a missing file fails the build.
-
-## Deleted
-
-- `art/direct.sh`, `art/ask.sh`, `art/director-model.txt`, `art/tests/ask.sh`: the director and critic model calls; a caption file per machine and measured retries replace them.
-- The critic loop in `src/machines.rs`: rounds, rebriefs, judged boards, scores rows with critic columns, the rubric and threshold.
-- Chroma-key removal (`KEY`, spill and unspill): Design-Layer returns real alpha.
-- The calibration relights (`relit/` for every machine, atom and bond; the sphere renderer and its solver; `style.facings`, `style.elevation`, `thresholds.sphere`, the `[texture.*]` entries): their lighting measurements evaluated an analytic sphere rather than the sprite, and nothing at runtime loads them.
-- The palette measurement: it was reported and never decided.
-- `proofs/rounds/`: renders of deleted critic rounds.
-- Per machine: `prompt.txt`, `candidates/`, `scores.tsv`, `scaffold.png` (the painter no longer takes a reference), `second-bond/recipe.png`.
-- Manifest: `candidates`, `style.shared`, `style.arm`, `style.critic`, `thresholds.critic`, every `direction`, `references` and `briefed`.
-
-## Kept
-
-- `art/machines/manifest.toml`: the one source of rig parts, motion, particles, instruments, thresholds and cache keys.
-- Registration and measurement in `src/machines.rs`: now the retry policy for the model's shape liberties.
-- Surface normals from the albedo (`normal.png`): the shader lights the sprite through them.
-- `art/machines/rig.sh`: the game loads split part maps; the layer split separates by object, not by moving part.
-- The sheet builder (`--gen` writes `art/machines/sheet.png`): the one view of the whole set.
-- The game-side loaders (`src/look.rs`, `src/rig.rs`): unchanged; the chain writes their contract.
-- `art/paint.sh` and `art/textures/gen.sh`: the tiles and ethereal surface are painted over the grout template and the manual page is an edit of a supplied page, reference images Design cannot take. Symbols and pips are vector sources rendered by script at exact slot geometry; a raster model does not beat them. Atoms and bonds are not regenerated in this pass and keep their `paint.sh` textures; moving them is the one swap left open.
-
-## Lighting-split probe
-
-One reference, the resonator's first Design picture, the same picture its object split used. The Design-Layer plan asked for four layers: flat albedo with no shading or highlights, specular highlights only, directional light and shadow only, and the background (reference, returned layers and recomposite in [proofs/ming-light-split-162.png](proofs/ming-light-split-162.png), last tile the recomposite).
-
-
-```text
-Decompose this image into 4 layers with the following specifications:
-
-Number of layers: 4
-Layer 1: Flat albedo: the object with its true surface colours only, evenly lit, with no shading, no highlights and no shadows.
-Layer 2: Specular highlights only: the glossy reflections and bright glints on the glaze and brass, and nothing else.
-Layer 3: Directional light and shadow only: the shading across the object from the overhead light, darker where surfaces turn away, and nothing else.
-Layer 4: The plain background.
+```sh
+nix-shell --run 'art/regenerate.sh --generator ming --jobs 3'
 ```
 
-- Layer 1 ("flat albedo") is a smoothed re-render of the body without the brass crest, rivets or crazing, still shaded and glossy: luminance standard deviation 30.1 over its opaque pixels.
-- Layer 2 ("specular only") is the complete detailed object, opaque over the same silhouette: opaque IoU with layer 1 is 0.962.
-- Layer 3 ("light and shadow") is a flat pale wash, RGB (225, 225, 227) at alpha 10 to 79, with no shading structure.
-- Inside the silhouette, layer 2 alone matches the reference within a mean |ΔRGB| of 6.9 / 7.1 / 7.1; the four stacked miss it by 26.7 / 37.8 / 31.8, because layer 1 covers layer 2.
-- The object split of the same picture returns its object layer lighter than the picture (25.9 / 23.0 / 32.9 inside the silhouette), which is why the matte takes colour from the Design picture and only alpha from the layer.
+The command regenerates all 15 machine sprites, albedo/normal/rig maps, the [contact sheet](art/machines/sheet.png), and the [in-game rig screenshot](proofs/machine-set-rig.png). A custom generator uses `--generator ./path/to/executable`: it receives `CAPTION_FILE OUTPUT_PNG` and returns a square RGBA cutout. Exit 3 stops on policy refusal; ordinary call failures have the manifest's bounded retry budget. All downstream geometry is shared. [The interface and stage contracts](art/MACHINES.md) include the exact command and failure behavior.
 
-Verdict: in this probe, Design-Layer splits by object only; it does not separate light terms. Evidence for a later decision, not a stage here.
+## Bounds and seats
 
-## The set
+Every nonzero-alpha edge participates in body fitting. Pixels outside the exact union of footprint hexes are zeroed, including a post-quantisation check. The former least-squares seat transform and configurable outside tolerance are deleted. A successful generator image is processed once; weak seats do not cause another model call. Body containment wins when seat alignment conflicts with it.
 
-[art/machines/sheet.png](art/machines/sheet.png) is every kept sprite on clay with its attempt and verdict. [proofs/ming-set-rig-162.png](proofs/ming-set-rig-162.png) is the `rig` shot scene with the new art loaded: the source, bonder and second bond with atoms in their seats, and every machine in the inventory column.
+The sheet labels bounds separately from seat quality. Offsets below are the worst detected seat displacement per machine at 256 asset pixels per hex circumradius. The rim detector searches locally and resolves positions on a 5.12 px grid; these are image estimates rather than semantic matching of apertures. Outputs and portal have no seats. Game cell and atom positions are unchanged.
 
-This run painted attempts ahead of measurement, so machines whose early attempt ended the run still painted more; the committed loop measures each attempt before painting the next, and `attempts.tsv` records the measured ones. Model time is the sum of both calls' wall times for every attempt painted; the recorded prices and costs were $0. Account total_usage was 0 before generation, after the run, and on recovery. The script checked credits around each successful call; the revised script checks immediately after failed calls too. The run made 59 two-stage attempts for 15 machine assets; its summed request wall time is listed below. The final fitting correction reprocessed every cached design without an API key and made no model calls. Cached processing times below are rounded per-machine wall times for registration, selection and normals; sheet assembly and rig splitting are additional.
+All 15 freshly generated machines have zero outside pixels.
 
-| machine | attempts painted | kept | verdict of the kept attempt | model time (s) | cached processing (s) | cost |
-|---|---|---|---|---|---|---|
-| arm | 4 | 4 | pass | 408.3 | 3 | $0 |
-| arm-2 | 4 | 2 | pass | 303.8 | 3 | $0 |
-| arm-3 | 4 | 2 | fail outside 0.152 > 0.05 | 331.3 | 5 | $0 |
-| bonder | 4 | 1 | fail outside 0.111 > 0.05 | 420.7 | 4 | $0 |
-| converter-amber | 4 | 4 | fail outside 0.413 > 0.05 | 406.3 | 4 | $0 |
-| converter-cobalt | 4 | 1 | fail outside 0.155 > 0.05 | 405.3 | 4 | $0 |
-| output-1 | 4 | 1 | pass | 383.1 | 1 | $0 |
-| output-2 | 4 | 1 | pass | 409.4 | 3 | $0 |
-| output-3 | 4 | 1 | pass | 333.9 | 6 | $0 |
-| portal | 3 | 1 | pass | 392.2 | 1 | $0 |
-| reification | 4 | 3 | fail outside 0.198 > 0.05 | 440.3 | 14 | $0 |
-| resonator | 4 | 4 | fail outside 0.174 > 0.05 | 421.5 | 4 | $0 |
-| second-bond | 4 | 2 | fail outside 0.090 > 0.05 | 382.2 | 4 | $0 |
-| source | 4 | 4 | fail outside 0.175 > 0.05 | 391.8 | 5 | $0 |
-| source-2 | 4 | 3 | fail seat 0.073 < 0.1 | 433.9 | 6 | $0 |
-| all 15 | 59 | | 6 pass, 9 kept closest | 5864.0 | 67 | $0 |
+| Machine | Bounds | Worst detected seat offset (px) | Generator wall time (s) |
+|---|---|---:|---:|
+| arm | pass, zero overflow | 76.80 | 76.708 |
+| arm-2 | pass, zero overflow | 110.29 | 74.736 |
+| arm-3 | pass, zero overflow | 62.29 | 78.121 |
+| bonder | pass, zero overflow | 112.64 | 100.628 |
+| converter-amber | pass, zero overflow | 112.64 | 88.293 |
+| converter-cobalt | pass, zero overflow | 103.55 | 101.547 |
+| output-1 | pass, zero overflow | 0.00 | 74.126 |
+| output-2 | pass, zero overflow | 0.00 | 69.306 |
+| output-3 | pass, zero overflow | 0.00 | 80.295 |
+| portal | pass, zero overflow | 0.00 | 81.105 |
+| reification | pass, zero overflow | 133.12 | 94.171 |
+| resonator | pass, zero overflow | 66.56 | 70.191 |
+| second-bond | pass, zero overflow | 94.13 | 108.251 |
+| source | pass, zero overflow | 56.32 | 116.818 |
+| source-2 | pass, zero overflow | 100.85 | 82.989 |
 
-Every failing verdict is on a machine registered by its seats; every machine registered by silhouette alone (outputs, portal) passes. Seat registration sets the scale from the model's aperture spacing, and wherever that spacing is tighter than the cells relative to the body, the body lands past its footprint by the recorded `outside`.
+## Simplification, measured against main
 
+Baseline is main at `7b143b9`. Counts are physical lines including blanks and tests, from `git show 7b143b9:PATH` and the branch files. The listed machine-pipeline code and transport fixtures shrink from **4,169 to 2,380 lines: 1,789 removed net (42.9%)**. The Rust production portions before their test modules shrink from 2,358 to 1,267 lines; this is not just deleted tests.
 
-## Review and scope
+| File | Main | This branch |
+|---|---:|---:|
+| `src/machines.rs` | 3907 | 1771 |
+| `src/machines/ming.rs` | 0 | 243 |
+| `art/direct.sh` | 16 | 0 |
+| `art/ask.sh` | 48 | 0 |
+| `art/tests/ask.sh` | 64 | 0 |
+| `art/paint.sh` | 103 | 103 |
+| `art/ming.sh` | 0 | 108 |
+| `art/tests/ming.sh` | 0 | 99 |
+| `art/regenerate.sh` | 0 | 25 |
+| `art/machines/rig.sh` | 31 | 31 |
 
-The retained tile painter accepts reference images for the grout and manual page. The Ming machine painter has one retry loop; removing its nested HTTP retries and serialising generation eliminates a second budget loop, admission races and concurrent full-resolution image buffers. `curl` carries HTTP, `jq` builds and validates JSON, ImageMagick assembles the sheet and rig masks, and pngquant writes the existing compact sprite format. All are used by a retained stage.
+Six removed operations account for the simplification: scaffold/reference raster preparation for the machine painter; director/rebrief calls; critic calls and ranked selection; chroma-key removal; palette diagnostics; and calibration relight rendering/measurement. The geometry-driven repaint loop added by the initial Ming experiment is also gone. The replacement has caption → generator RGBA → body fit/hex clip → normals/rig maps → sheet/real-game render. Ming internally needs two model calls to supply RGBA; another implementation can supply it in one. Seat diagnostics remain informational.
 
-The first review found delayed credit checks, lost failed-stage timing, an admission race, and a swallowed sheet error. The corrections check credits immediately after every request, preserve stage logs, process one machine at a time, and propagate sheet failure. Offline transport fixtures cover nonzero or unavailable credits, changed price, charged responses, HTTP failures and malformed image data without making API calls.
+The retained `paint.sh` serves reference-based tiles and manual-page art, so deleting it would break a live consumer. Normals and rig maps are loaded by the game and remain necessary. No package was added by this change: curl/jq already support the branch's Ming transport, ImageMagick packs and splits, pngquant encodes palettes, and the existing image/Bevy code handles pixels and rendering. The initial Ming branch had explicitly added curl and jq to the Nix environment.
 
-The set is a branch experiment. Nine best candidates still miss the existing geometry thresholds; those verdicts remain on the sheet. Strong painted shading remains visible. The exact slot-aligned instruction vectors, inventory pips and reference-aligned manual overlay remain; no controlled model comparison was generated for these optional classes. Atoms, bonds and board tiles remain outside this machine-generation pass. No main-branch or deployment claim is made.
+## Speed, measured end to end
 
-Review scores before corrections: correctness 7/10, premise/design 7/10, security/prose 6/10. The semantic-delta security/correctness review reached 8.5/10 and then 9/10 after spend classification survived log-write failure and invalid costs were refused. The final `false`/`null` cost cases now have explicit refusal fixtures. The mutation pass killed removal of the preflight credits check, post-call credits check and price guard (baseline exit 0, each mutant exit 1). It first exposed an ineffective negated-grep assertion, which was corrected. Rust fixtures also exercise real stage-log persistence and propagation of a sheet-write failure.
+The complete command ran on one shared host with three bounded workers and fresh generation for every machine. Its outer timer includes Nix entry, both release builds, all API calls and credit checks, fitting, clipping, normals, rig splitting, sheet packing and the real game screenshot. Dependencies were already built. Each worker finishes its own rig maps, avoiding a serial rig-splitting tail.
 
-Recovery also found an interrupted rig split: both sources and three second-bond maps still described the preceding sprites. Regenerating all articulated maps repaired them. The shipped-asset test now checks part colours and combined alpha against each current whole albedo and normal map, so a partial rig update cannot silently pass.
+**Full 15-machine command: 1046.03 seconds (17.43 minutes), exit 0.**
 
-The machine suite exposed a fitting defect on asymmetric footprints: the average cell position differs from the centre of the footprint bounds. Fitting now aligns bounding centres before seat registration. The existing clean/translated-seat test caught the defect; it remains in the suite. Measurement-only tests score unnormalised captures, and retry tests inspect failing measurements rather than the precedence of diagnostic labels. A focused review caught and corrected a variable-shadowing mistake in the scale bracket before asset regeneration.
+| Stage | Wall time |
+|---|---:|
+| initial-build | 45 s |
+| generation-and-packing | 785 s |
+| embed-updated-art | 189 s |
+| render | 21 s |
 
-The lighting probe's wall time and the original parallel generation's end-to-end elapsed time were not recovered; model times are summed request wall times.
+The fixed-subset comparison regenerated `portal` on each pipeline on the same host, with release binaries built beforehand. Main used `ziral --gen portal`; this branch used `ziral --gen portal --generator ming --jobs 1`. The original main caption and candidate cache were invalidated. Neither run reused old generated candidates. These times include caption preparation where applicable, API calls, fitting and measurement, albedo/normals, main's calibration renders, and each pipeline's normal whole-set review sheet (candidate grids on main, 15 retained sprites here). They exclude compilation and the in-game screenshot on both sides. Main retained portal-7 after 12 paints across all three critic rounds; its capped critic score was 7. A full main repaint was avoided because of that call count and duration.
 
-## Validation
+| Fixed subset | Wall time | Exit |
+|---|---:|---:|
+| Main, portal | 593.79 s | 0 |
+| New pipeline, portal | 96.08 s | 0 |
 
-All 12 mapped checks passed on `ef6fab404d494453bb88d385d2ddaac5dee3a328`: shell lint and offline transport fixtures, machine tests, retained-painter fixtures, Nix parsing, native/test and web/release builds, formatting, clippy with warnings denied, the full Rust suite, and the native/browser frame benchmark. The machine suite passed 22 tests plus its matching integration test. All four benchmark windows recorded zero over-budget frames (native maximum 6.083 ms; browser maximum 14.4 ms).
+The new pipeline was **6.18× faster on this measured subset**. The full new set is measured above; no full-set speed multiplier is inferred. These are single wall-clock samples under shared-host load, not an isolated throughput benchmark. The subset benchmark's temporary portal was archived separately, then the complete command's original assets and sheet were restored; the review images show that full-set run.
 
-The final screenshot was rendered with lavapipe from the regenerated set and visually inspected. It loaded successfully without a shader error. The only subsequent changes are this validation note and the screenshot. The final credits read still reported `total_usage: 0`.
+## Cost, validation and limitations
+
+The final run's per-call ledger and before/after account checks record $0: the zero-spend guard remains in force. No new account or paid signup was used. The default model and caption set remain Ming, so no alternative-style comparison is claimed.
+
+The regression suite covers every alpha level against every footprint, exact containment of every shipped albedo, matching normals/rig maps, a replacement executable generator, call-failure retry limits, policy refusal, no geometry/critic retries, and no generator retry after a downstream rig failure. Offline shell fixtures cover unavailable/nonzero credit usage, changed pricing, invalid costs, failed requests, malformed image data and the shared parallel stop signal. The landing map additionally requires formatting, clippy with warnings denied, the full Rust suite, native/web release builds and the native/browser frame benchmark.
+
+An initial full run produced all art and a screenshot but returned 1 because the wrapper misclassified audio-buffer errors as graphics failures. The wrapper now checks graphics errors specifically and verifies the screenshot exists; the full command was rerun for the successful measurements and images above. Long sheet labels were also shortened before that rerun. These were pipeline defects fixed during validation, not artistic retry rounds.
+
+Bounds are guaranteed; semantic seat placement is not. Detected offsets and low rim contrast stay visible in the records, with containment taking priority. Strong painted shading remains part of the approved Ming look. The earlier [lighting-split probe](proofs/ming-light-split-162.png) separated objects rather than clean lighting terms, so it is not a production stage. Symbols, pips, atoms, bonds, board tiles and the reference-based manual page retain their existing assets and workflows. Main and its deployment are unchanged; these images are for branch review before any merge.

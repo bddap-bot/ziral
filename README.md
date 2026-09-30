@@ -2,6 +2,8 @@
 
 A Bevy game. Design in progress: see DESIGN.md.
 
+Regenerate the complete machine art set with `nix-shell --run 'art/regenerate.sh --generator ming --jobs 3'`. It produces the runtime maps, contact sheet and in-game rig screenshot. See [the generator interface](art/MACHINES.md) for credentials, custom models and deterministic footprint containment, and [the measured results](PROOF.md) for timings and images.
+
 Toy 1 runs at https://bddap-bot.github.io/ziral/ and natively with `nix-shell --run 'cargo run'`.
 
 Sessions record automatically in the shipped page. Open a record with the existing import action to replay it. The build SHA must match; keep the checkout for that SHA when analyzing an older record.

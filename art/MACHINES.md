@@ -1,34 +1,45 @@
-# Machine textures
+# Machine art pipeline
 
-[BIBLE.md](BIBLE.md) offers state colours, visual direction and inspiration. Each machine's `caption.txt` is its brief. [machines/manifest.toml](machines/manifest.toml) holds the attempt budget, the measured thresholds and each machine's rig, sound and particles. [src/machines.rs](../src/machines.rs) owns registration, measurement, selection and relief.
+[BIBLE.md](BIBLE.md) supplies visual direction; each machine's `caption.txt` supplies its prompt. The manifest lists the 15 machines, call-attempt limit, seat-quality measurements and runtime rig metadata.
 
-## Caption → Design → Design-Layer
+## Regenerate
 
-A caption is a declarative art director's description of the finished sprite: subject, silhouette in hexagon terms, apertures, materials, ornament, light and what is absent. It draws on the bible for inspiration and adds no gates.
+Inside the repository, with the generator's credentials in the environment:
 
-`art/ming.sh design` sends the caption unchanged to `inclusionai/ming-image-0.1-design` on OpenRouter, which returns one 2048 px square picture on a plain background. It takes no reference image, so the footprint reaches it only through the caption's words.
+```sh
+nix-shell --run 'art/regenerate.sh --generator ming --jobs 3'
+```
 
-`art/ming.sh design-layer` sends that picture with one fixed layer plan to `inclusionai/ming-image-0.1-design-layer`: the complete object with its through-holes empty, the shadow beneath it, the background. It returns 1024 px RGBA layers. The object layer's alpha, scaled to the picture with values under 8/255 dropped as the layer's background noise, is the sprite's alpha; the colour is the picture's. The shadow and background are discarded: runtime lighting supplies direction through the normal map.
+This builds the tool, generates all 15 machines, fits and clips their bodies, writes albedo and normal maps, splits articulated rig parts, assembles `art/machines/sheet.png`, rebuilds the embedded assets, and renders `proofs/machine-set-rig.png`. It prints each stage's elapsed time and the total. A failed machine or stage exits nonzero; a failed render is not reported as a completed set. The screenshot uses the game's headless renderer and requires a Vulkan driver, including a software driver if no GPU is available.
 
-Both calls check the listed price before and the account usage before and immediately after, a failed call included. A non-zero price, a non-zero reported cost, non-zero account usage, or unverifiable credits exits 3 and stops the run before another request; any other failure is a failed attempt. Each stage records its wall time even when the other stage fails. There is one retry loop, in the generator. `OPENROUTER_API_KEY` comes from the environment.
+`ziral --gen --sheet` repacks the current sprites and diagnostic labels without generator calls.
 
-## Attempts
+`ziral --gen NAME... --generator ming --jobs 3` regenerates a subset. Every ordinary invocation generates fresh images. `--fit` instead reprocesses the retained sprites without generator calls; it cannot recover pixels already cropped from an old sprite. Symbols, pips, board tiles and the reference-based manual overlay retain their existing sources and are outside this machine command.
 
-Inside `nix-shell`, `cargo run -- --gen NAME...` or `--gen --all`. Each machine gets up to `attempts` Design → Design-Layer runs, one machine at a time, and stops at the first that passes:
+## Generator interface
 
-1. **Matte.** A non-square picture or object layer, a split with one layer, an object layer covering under 3% or over 90% of its frame, or one that reaches the frame's edge fails the attempt.
-2. **Fit.** The silhouette's bounding centre goes to the footprint's bounding centre and one uniform scale makes it the largest that stays inside the union of footprint hexes. Nothing is stretched or rotated.
-3. **Register.** On a machine with seats, the seat rims found near their cells give one translation and one uniform scale by least squares.
-4. **Measure.** `outside` is the farthest a visible pixel lies beyond the footprint, `seat` the rim contrast of the weakest seat, `off_centre` the farthest registered seat from its cell, all in hex circumradii against the manifest thresholds.
+Select `--generator ming` or `--generator ./art/my-generator.sh`. An external implementation is an executable called as:
 
-With no pass, the attempt whose worst measurement is closest to its threshold is kept and its failing verdict stays on the sheet. A run where no attempt made a sprite does not land.
+```text
+./art/my-generator.sh CAPTION_FILE OUTPUT_PNG
+```
 
-`attempts.tsv` records every measured attempt: verdict, the three measurements, the two call times and the cost. The pictures and layers stay in the ignored `attempts/` directory. `painted` in the manifest keys the caption, the budget and the layer plan; a change repaints from attempt one.
+Read the UTF-8 caption file; write one square RGBA PNG cutout at the output path. It must contain both visible pixels and transparent background. Exit 0 on success, 3 for a policy refusal that must stop the run, or another nonzero status for a retryable failure. Stdout and stderr are saved beside the attempt as `generator.log`. Calls have a 900-second timeout. No downstream code changes are needed to try another implementation.
 
-## Relief
+The Rust interface is equally small: caption path and attempt directory in, `Result<RgbaImage, Refusal>` out. The built-in Ming implementation lives in `src/machines/ming.rs`. It sends the caption to Design, sends that image to Design-Layer, and combines Design's colour with the object layer's alpha. Design cannot receive a reference image. Non-square, empty, opaque framing or incomplete layer responses are unusable generator results and fail the call. The shadow and background layers do not enter the sprite. Tiny alpha noise below 8/255 is removed inside this implementation.
 
-`albedo.png` is the registered sprite cropped to the machine's quad, 256 px per hex, quantised. A deterministic shallow height approximation combines alpha with 15% luminance variation, blurred by four pixels; central differences produce `normal.png`, keyed to the albedo by `relief` in the manifest. This is approximate relief, not recovered geometry; the shader lights it.
+Ming reads `OPENROUTER_API_KEY` from the environment. Its transport in `art/ming.sh` verifies zero endpoint price and zero account usage before calls, and verifies usage immediately after every request, including failures. A nonzero cost or unavailable accounting exits 3. A shared stop file prevents subsequent stages from starting after another worker observes a policy refusal; requests already in flight finish their accounting checks. The parent awaits every worker. Switching generators does not silently grant permission to incur new charges.
 
-`art/machines/rig.sh` splits articulated machines into a central circular moving part and its base, with colour, normal and emissive maps; static housings keep an empty part list. `sheet.png` shows every kept sprite on clay with its attempt and verdict.
+## Deterministic downstream stages
 
-Directive: outputs do not need holes. An output is a space to place things — a magical acceptor, a table, or similar doodads — with Opus Magnum as the inspiration. No explicit acceptor hole for every atom.
+1. **Body fit.** The silhouette's bounding centre maps to the footprint's bounding centre. One uniform scale fits every nonzero-alpha edge into the footprint's hex union. There is no seat-driven enlargement, stretch or rotation.
+2. **Exact clip.** Pixels whose centres lie outside the exact hex union become fully transparent. The encoded image is checked and clipped again after palette quantisation. Bounds have no tolerance: any nonzero-alpha pixel outside is an error.
+3. **Measurement.** Report the weakest seat contrast and the worst detected seat offset, while preserving the contained body if seat alignment conflicts with it. These diagnostics never trigger repainting. The sheet separates bounds from seat quality. Offsets are asset pixels at 256 px per hex circumradius; the local rim detector's final search pitch is 5.12 px. Missing detections report infinity, not zero. This is an image estimate, not semantic correspondence. The actual game cells and atom centres stay fixed.
+4. **Runtime maps.** Each worker finishes its own machine, including rig splitting, before taking another job. A shallow height approximation from alpha and 15% luminance variation, blurred by four pixels, yields `normal.png`. `art/machines/rig.sh` derives the game's base/moving albedo, normal and emissive maps. Static housings have no split parts.
+5. **Review.** Pack the sheet and render the rig with the new embedded art.
+
+There is no critic, judge, geometry repaint loop or best-candidate selection. Up to the manifest's `attempts` generator calls are allowed only when the call fails or returns an unusable image. The first usable image proceeds once through deterministic processing. A downstream failure is loud and names its machine; it never spends another model call. `--jobs` bounds concurrent machines from 1 to 16, default 3. Model diagnostics remain in ignored `attempts/` directories. `attempts.tsv` records index, seat-quality verdict, outside distance, seat contrast, offset in hex circumradii and generator seconds. The manifest records the selected generator, caption key, retained attempt and normal-map key.
+
+## Dependencies
+
+No new package is required. Rust and `image` implement geometry and pixels; Bevy renders the real game screenshot. `curl` and `jq` carry and validate Ming requests. ImageMagick packs the sheet and splits the runtime rig maps. pngquant keeps the established compact palette format. The external adapter uses the existing coreutils `timeout` to bound an arbitrary executable. The retained `paint.sh` still serves reference-based assets outside the machine set. Each dependency has a current consumer; model selection introduces no second fitting or registration path.

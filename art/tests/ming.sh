@@ -59,9 +59,11 @@ MOCK
 chmod +x "$scratch/bin/curl"
 export PATH="$scratch/bin:$PATH" OPENROUTER_API_KEY=test-only
 export TRACE="$scratch/trace" CASE
+export ZIRAL_GENERATOR_STOP="$scratch/stop"
 printf 'a glazed object\n' > "$scratch/caption.txt"
 for CASE in pre-spent pre-unknown price post-spent post-unknown cost invalid-cost invalid-false invalid-null http bad-image success; do
   : > "$TRACE"
+  rm -f "$ZIRAL_GENERATOR_STOP"
   rm -f "$scratch/out.png"
   rc=0
   "$here/../ming.sh" design "$scratch/out.png" "$scratch/caption.txt" > "$scratch/log" 2> "$scratch/err" || rc=$?
@@ -82,6 +84,16 @@ for CASE in pre-spent pre-unknown price post-spent post-unknown cost invalid-cos
     [ "$(cat "$scratch/out.png")" = x ]
     [ "$(tail -1 "$TRACE")" = credits ] ;;
   esac
+  if [ "$rc" -eq 3 ]; then [ -s "$ZIRAL_GENERATOR_STOP" ]; fi
   if [ "$CASE" != success ]; then [ ! -e "$scratch/out.png" ]; fi
   printf '%s: pass\n' "$CASE"
 done
+
+: > "$TRACE"
+printf 'stopped\n' > "$ZIRAL_GENERATOR_STOP"
+rc=0
+"$here/../ming.sh" design "$scratch/blocked.png" "$scratch/caption.txt" > "$scratch/log" 2> "$scratch/err" || rc=$?
+[ "$rc" -eq 3 ]
+[ ! -s "$TRACE" ]
+[ ! -e "$scratch/blocked.png" ]
+echo 'shared-stop: pass'

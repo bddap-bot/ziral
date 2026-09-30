@@ -15,7 +15,23 @@ model=$1
 api=https://openrouter.ai/api/v1
 mkdir -p "$scratch_parent"
 scratch=$(mktemp -d "$scratch_parent/.ming.XXXXXX")
-trap 'rm -rf "$scratch"' EXIT
+finish() {
+  local rc=$?
+  if [ "$rc" -eq 3 ] && [ -n "${ZIRAL_GENERATOR_STOP:-}" ]; then
+    printf 'zero-spend policy stopped generation\n' > "$ZIRAL_GENERATOR_STOP" || true
+  fi
+  rm -rf "$scratch"
+  exit "$rc"
+}
+trap finish EXIT
+
+admit() {
+  if [ -n "${ZIRAL_GENERATOR_STOP:-}" ] && [ -e "$ZIRAL_GENERATOR_STOP" ]; then
+    echo 'ming: another request stopped generation' >&2
+    exit 3
+  fi
+}
+admit
 
 get() {
   curl -sS --fail --max-time 60 -H "Authorization: Bearer $OPENROUTER_API_KEY" "$api/$1"
@@ -54,6 +70,7 @@ design-layer)
   ;;
 esac
 started=$SECONDS
+admit
 code=$(curl -sS --max-time 900 -o "$scratch/reply.json" -w '%{http_code}' -X POST "$api/images" \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" -H "Content-Type: application/json" \
   --data-binary @"$scratch/body.json") || code=000
