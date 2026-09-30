@@ -211,6 +211,7 @@ impl Glaze {
         }
     }
 
+    #[cfg(test)]
     pub fn rgb(self) -> [f32; 3] {
         let c = self.color().to_srgba();
         [c.red, c.green, c.blue]

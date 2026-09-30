@@ -477,11 +477,6 @@ fn encode(v: Vec3, alpha: f32) -> Rgba<u8> {
     )
 }
 
-fn decode(p: &Rgba<u8>) -> Vec3 {
-    let c = rgb(p);
-    Vec3::new(c[0] * 2.0 - 1.0, c[1] * 2.0 - 1.0, c[2] * 2.0 - 1.0)
-}
-
 #[derive(Debug, Clone, PartialEq)]
 struct Score {
     outside: f32,
@@ -1521,6 +1516,11 @@ mod tests {
 
     const SHIPPED: f32 = 0.02;
 
+    fn decode(p: &Rgba<u8>) -> Vec3 {
+        let c = rgb(p);
+        Vec3::new(c[0] * 2.0 - 1.0, c[1] * 2.0 - 1.0, c[2] * 2.0 - 1.0)
+    }
+
     #[test]
     fn every_machine_ships_its_caption_its_best_attempt_and_the_relief_of_its_albedo() {
         let art = Art::shipped();
@@ -1645,7 +1645,6 @@ mod tests {
                     )
                 })
                 .collect(),
-            texture: BTreeMap::new(),
         });
         art
     }
