@@ -1597,6 +1597,30 @@ mod tests {
                 let aspect = png.width() as f32 / png.height() as f32 / (placed.x / placed.y);
                 assert!((aspect - 1.0).abs() <= ASPECT, "{name}/{map}.png");
                 assert_eq!(png.dimensions(), (side, side), "{name}/{map}.png");
+                if !entry.parts.is_empty() {
+                    let base = open(dir.join(format!("parts/{map}-base.png")));
+                    let moving = open(dir.join(format!("parts/{map}-moving.png")));
+                    assert_eq!(base.dimensions(), png.dimensions(), "{name}/{map} base");
+                    assert_eq!(moving.dimensions(), png.dimensions(), "{name}/{map} moving");
+                    for ((whole, base), moving) in
+                        png.pixels().zip(base.pixels()).zip(moving.pixels())
+                    {
+                        let sum = u16::from(base[3]) + u16::from(moving[3]);
+                        assert!(
+                            sum.abs_diff(u16::from(whole[3])) <= 1,
+                            "{name}/{map}: stale part alpha"
+                        );
+                        for part in [base, moving] {
+                            if part[3] > 0 {
+                                assert_eq!(
+                                    &part.0[..3],
+                                    &whole.0[..3],
+                                    "{name}/{map}: stale part colour"
+                                );
+                            }
+                        }
+                    }
+                }
             }
             let shipped_normal = open(dir.join("normal.png"));
             let tilted = shipped_normal
