@@ -378,7 +378,12 @@ pub fn play_actions(commands: &mut Commands, bank: &mut Bank, cues: &[ActionCue]
             .and_then(|machine| Machine::ALL.iter().position(|kind| *kind == machine))
             .unwrap_or(Machine::ALL.len());
         let (gain, speed) = cue.settings(bank.serial, gain);
-        out::emit(commands, &bank.actions[kind][cue.action as usize], gain, speed);
+        out::emit(
+            commands,
+            &bank.actions[kind][cue.action as usize],
+            gain,
+            speed,
+        );
     }
 }
 
@@ -393,9 +398,14 @@ pub struct Bank {
 
 fn bank(mut clip: impl FnMut(&[i16]) -> out::Clip) -> Bank {
     Bank {
-        actions: Machine::ALL.into_iter().map(Some).chain([None]).map(|machine| {
-            Action::ALL.map(|action| clip(&action_samples(action_instrument(machine, action))))
-        }).collect(),
+        actions: Machine::ALL
+            .into_iter()
+            .map(Some)
+            .chain([None])
+            .map(|machine| {
+                Action::ALL.map(|action| clip(&action_samples(action_instrument(machine, action))))
+            })
+            .collect(),
         serial: 0,
         voices: Machine::ALL
             .into_iter()
@@ -639,7 +649,13 @@ actions = { pickup = { voice = "wood", note = 60 } }
             0.5,
         );
         state.apply(&mut world);
-        assert_eq!(world.query::<&bevy::audio::AudioPlayer>().iter(&world).count(), 1);
+        assert_eq!(
+            world
+                .query::<&bevy::audio::AudioPlayer>()
+                .iter(&world)
+                .count(),
+            1
+        );
     }
 
     #[test]
