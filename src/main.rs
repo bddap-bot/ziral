@@ -7114,6 +7114,24 @@ mod shot {
         app
     }
 
+    static RENDER_INSTANCE: std::sync::OnceLock<bevy::render::renderer::RenderInstance> =
+        std::sync::OnceLock::new();
+
+    struct RetainRenderInstance;
+
+    impl Plugin for RetainRenderInstance {
+        fn build(&self, _: &mut App) {}
+
+        fn finish(&self, app: &mut App) {
+            RENDER_INSTANCE.get_or_init(|| {
+                app.sub_app(bevy::render::RenderApp)
+                    .world()
+                    .resource::<bevy::render::renderer::RenderInstance>()
+                    .clone()
+            });
+        }
+    }
+
     pub(crate) fn headless(app: &mut App, synchronous_pipeline_compilation: bool) {
         app.add_plugins(
             DefaultPlugins
@@ -7131,7 +7149,24 @@ mod shot {
                 })
                 .disable::<bevy::winit::WinitPlugin>(),
         )
-        .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO));
+        .add_plugins((
+            RetainRenderInstance,
+            ScheduleRunnerPlugin::run_loop(Duration::ZERO),
+        ));
+    }
+
+    #[test]
+    fn headless_teardown_keeps_the_driver_instance_alive() {
+        let mut app = App::new();
+        headless(&mut app, true);
+        while app.plugins_state() != bevy::app::PluginsState::Ready {
+            bevy::tasks::tick_global_task_pools_on_main_thread();
+        }
+        app.finish();
+        app.cleanup();
+        let instance = std::sync::Arc::downgrade(&RENDER_INSTANCE.get().unwrap().0);
+        drop(app);
+        assert!(instance.upgrade().is_some());
     }
 
     fn spawn_offscreen_camera(
