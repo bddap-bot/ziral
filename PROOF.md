@@ -20,7 +20,7 @@ Names come from `look::machine`; every PNG is compiled in with `include_bytes!`,
 - `art/direct.sh`, `art/ask.sh`, `art/director-model.txt`, `art/tests/ask.sh`: the director and critic model calls; a caption file per machine and measured retries replace them.
 - The critic loop in `src/machines.rs`: rounds, rebriefs, judged boards, scores rows with critic columns, the rubric and threshold.
 - Chroma-key removal (`KEY`, spill and unspill): Design-Layer returns real alpha.
-- The calibration relights (`relit/` for every machine, atom and bond; the sphere renderer and its solver; `style.facings`, `style.elevation`, `thresholds.sphere`, the `[texture.*]` entries): they lit and measured only an analytic sphere, never the sprite, and nothing at runtime loads them.
+- The calibration relights (`relit/` for every machine, atom and bond; the sphere renderer and its solver; `style.facings`, `style.elevation`, `thresholds.sphere`, the `[texture.*]` entries): their lighting measurements evaluated an analytic sphere rather than the sprite, and nothing at runtime loads them.
 - The palette measurement: it was reported and never decided.
 - `proofs/rounds/`: renders of deleted critic rounds.
 - Per machine: `prompt.txt`, `candidates/`, `scores.tsv`, `scaffold.png` (the painter no longer takes a reference), `second-bond/recipe.png`.
@@ -46,31 +46,42 @@ One reference, the resonator's first Design picture, the same picture its object
 - Inside the silhouette, layer 2 alone matches the reference within a mean |ΔRGB| of 6.9 / 7.1 / 7.1; the four stacked miss it by 26.7 / 37.8 / 31.8, because layer 1 covers layer 2.
 - The object split of the same picture returns its object layer lighter than the picture (25.9 / 23.0 / 32.9 inside the silhouette), which is why the matte takes colour from the Design picture and only alpha from the layer.
 
-Verdict: Design-Layer splits by object only; it does not separate light terms. Evidence for a later decision, not a stage here.
+Verdict: in this probe, Design-Layer splits by object only; it does not separate light terms. Evidence for a later decision, not a stage here.
 
 ## The set
 
 [art/machines/sheet.png](art/machines/sheet.png) is every kept sprite on clay with its attempt and verdict. [proofs/ming-set-rig-162.png](proofs/ming-set-rig-162.png) is the `rig` shot scene with the new art loaded: the source, bonder and second bond with atoms in their seats, and every machine in the inventory column.
 
-This run painted attempts ahead of measurement, so machines whose early attempt ended the run still painted more; the committed loop measures each attempt before painting the next, and `attempts.tsv` records the measured ones. Model time is the sum of both calls' wall times for every attempt painted; the listed price and the account usage read $0 before the first call and after the last.
+This run painted attempts ahead of measurement, so machines whose early attempt ended the run still painted more; the committed loop measures each attempt before painting the next, and `attempts.tsv` records the measured ones. Model time is the sum of both calls' wall times for every attempt painted; the recorded prices and costs were $0. Account total_usage was 0 before generation, after the run, and on recovery. The script checked credits around each successful call; the revised script checks immediately after failed calls too. The run made 59 two-stage attempts for 15 machine assets; its summed request wall time is listed below. Cached registration/rig regeneration took 508 seconds wall time for the final pass; it made no new model calls.
 
 | machine | attempts painted | kept | verdict of the kept attempt | model time (s) | cost |
 |---|---|---|---|---|---|
-| arm | 4 | 4 | pass | 408 | $0 |
-| arm-2 | 4 | 2 | pass | 304 | $0 |
-| arm-3 | 4 | 2 | fail outside 0.152 > 0.05 | 331 | $0 |
-| bonder | 4 | 1 | fail outside 0.111 > 0.05 | 421 | $0 |
-| converter-amber | 4 | 4 | fail outside 0.431 > 0.05 | 406 | $0 |
-| converter-cobalt | 4 | 1 | fail outside 0.155 > 0.05 | 405 | $0 |
-| output-1 | 4 | 1 | pass | 383 | $0 |
-| output-2 | 4 | 1 | pass | 409 | $0 |
-| output-3 | 4 | 1 | pass | 334 | $0 |
-| portal | 3 | 1 | pass | 392 | $0 |
-| reification | 4 | 4 | fail outside 0.257 > 0.05 | 440 | $0 |
-| resonator | 4 | 4 | fail outside 0.174 > 0.05 | 422 | $0 |
-| second-bond | 4 | 2 | fail outside 0.094 > 0.05 | 382 | $0 |
-| source | 4 | 4 | fail outside 0.133 > 0.05 | 392 | $0 |
-| source-2 | 4 | 3 | fail off_centre 0.152 > 0.1 | 434 | $0 |
-| all 15 | 59 | | 6 pass, 9 kept closest | 5864 | $0 |
+| arm | 4 | 4 | pass | 408.3 | $0 |
+| arm-2 | 4 | 2 | pass | 303.8 | $0 |
+| arm-3 | 4 | 2 | fail outside 0.152 > 0.05 | 331.3 | $0 |
+| bonder | 4 | 1 | fail outside 0.111 > 0.05 | 420.7 | $0 |
+| converter-amber | 4 | 4 | fail outside 0.431 > 0.05 | 406.3 | $0 |
+| converter-cobalt | 4 | 1 | fail outside 0.155 > 0.05 | 405.3 | $0 |
+| output-1 | 4 | 1 | pass | 383.1 | $0 |
+| output-2 | 4 | 1 | pass | 409.4 | $0 |
+| output-3 | 4 | 1 | pass | 333.9 | $0 |
+| portal | 3 | 1 | pass | 392.2 | $0 |
+| reification | 4 | 3 | fail outside 0.198 > 0.05 | 440.3 | $0 |
+| resonator | 4 | 4 | fail outside 0.174 > 0.05 | 421.5 | $0 |
+| second-bond | 4 | 2 | fail outside 0.094 > 0.05 | 382.2 | $0 |
+| source | 4 | 4 | fail outside 0.133 > 0.05 | 391.8 | $0 |
+| source-2 | 4 | 3 | fail off_centre 0.152 > 0.1 | 433.9 | $0 |
+| all 15 | 59 | | 6 pass, 9 kept closest | 5864.0 | $0 |
 
 Every failing verdict is on a machine registered by its seats; every machine registered by silhouette alone (outputs, portal) passes. Seat registration sets the scale from the model's aperture spacing, and wherever that spacing is tighter than the cells relative to the body, the body lands past its footprint by the recorded `outside`.
+
+
+## Review and scope
+
+The retained tile painter accepts reference images for the grout and manual page. The Ming machine painter has one retry loop; removing its nested HTTP retries and serialising generation eliminates a second budget loop, admission races and concurrent full-resolution image buffers. `curl` carries HTTP, `jq` builds and validates JSON, ImageMagick assembles the sheet and rig masks, and pngquant writes the existing compact sprite format. All are used by a retained stage.
+
+The first review found delayed credit checks, lost failed-stage timing, an admission race, and a swallowed sheet error. The corrections check credits immediately after every request, preserve stage logs, process one machine at a time, and propagate sheet failure. Offline transport fixtures cover nonzero or unavailable credits, changed price, charged responses, HTTP failures and malformed image data without making API calls.
+
+The set is a branch experiment. Nine best candidates still miss the existing geometry thresholds; those verdicts remain on the sheet. Strong painted shading remains visible. The model did not establish a better replacement for exact vector instruction symbols and inventory pips, or the reference-aligned manual overlay, so those assets remain. Atoms, bonds and board tiles remain outside this machine-generation pass. No main-branch or deployment claim is made.
+
+Review scores before corrections: correctness 7/10, premise/design 7/10, security/prose 6/10. The semantic-delta security/correctness review reached 8.5/10 and then 9/10 after spend classification survived log-write failure and invalid costs were refused. The final `false`/`null` cost cases now have explicit refusal fixtures. The mutation pass killed removal of the preflight credits check, post-call credits check and price guard (baseline exit 0, each mutant exit 1). It first exposed an ineffective negated-grep assertion, which was corrected. Rust fixtures also exercise real stage-log persistence and propagation of a sheet-write failure.

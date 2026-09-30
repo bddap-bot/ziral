@@ -1,9 +1,14 @@
 {
   "about": "Touched-path to test-suite map, read by `botq test-map`. First matching rule wins. `tests: []` means consciously untested and carries its why. Commands run from the repo root. An `exclusive` command runs one copy at a time on the machine: the frame-budget benchmark times frames against spare CPU, so a second copy would measure the first. The builds it measures run as their own command before it, so only the measurement holds the machine.",
-  "exclusive": ["nix-shell --run 'node web/bench.mjs'"],
+  "exclusive": [
+    "nix-shell --run 'node web/bench.mjs'"
+  ],
   "rules": [
     {
-      "paths": ["records/**", "default.nix"],
+      "paths": [
+        "records/**",
+        "default.nix"
+      ],
       "tests": [
         "nix-shell --run 'cargo fmt --manifest-path records/Cargo.toml --check'",
         "nix-shell --run 'cargo clippy --manifest-path records/Cargo.toml --all-targets -- --deny warnings'",
@@ -13,57 +18,100 @@
       "why": "the standalone receiver has its own lockfile, storage and relay tests"
     },
     {
-      "paths": ["art/paint.sh", "art/textures/gen.sh", "art/tests/**"],
+      "paths": [
+        "art/tests/ming.sh"
+      ],
+      "tests": [
+        "nix-shell --run 'shellcheck art/ming.sh art/tests/ming.sh && art/tests/ming.sh'"
+      ],
+      "why": "offline transport fixtures prove zero-spend refusal before requests and accounting before response decoding"
+    },
+    {
+      "paths": [
+        "art/paint.sh",
+        "art/textures/gen.sh",
+        "art/tests/**"
+      ],
       "tests": [
         "nix-shell --run 'shellcheck art/paint.sh art/textures/gen.sh art/tests/paint.sh && art/tests/paint.sh'"
       ],
       "why": "the recorded image call supplies both caption and input hashes; mismatched attachments must fail before a record is replaced"
     },
     {
-      "paths": ["**/*.md", ".gitignore"],
+      "paths": [
+        "**/*.md",
+        ".gitignore"
+      ],
       "tests": [],
       "why": "prose; nothing executes it"
     },
     {
-      "paths": ["proofs/*.png", "proofs/*.gif", "proofs/*.mp4"],
+      "paths": [
+        "proofs/*.png",
+        "proofs/*.gif",
+        "proofs/*.mp4"
+      ],
       "tests": [],
       "why": "visual proof assets are inspected at their native dimensions"
     },
     {
-      "paths": ["docs/*.jpg"],
+      "paths": [
+        "docs/*.jpg"
+      ],
       "tests": [],
       "why": "source figures are inspected at their native dimensions"
     },
     {
-      "paths": ["art/symbols/**", "art/overlay/**"],
-      "tests": ["nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && cargo test every_symbol_letter_matches_its_binding_and_shift_state && cargo test every_instruction_symbol_is_transparent_at_all_four_shipped_size_corners && cargo test every_display_site_uses_one_renderer_and_exposes_all_four_instruction_symbol_corners && git diff --exit-code -- art/symbols/*.png proofs/tape-case-73.png'"],
+      "paths": [
+        "art/symbols/**",
+        "art/overlay/**"
+      ],
+      "tests": [
+        "nix-shell --run 'shellcheck art/symbols/gen.sh art/overlay/*.sh && art/symbols/gen.sh && cargo test every_symbol_letter_matches_its_binding_and_shift_state && cargo test every_instruction_symbol_is_transparent_at_all_four_shipped_size_corners && cargo test every_display_site_uses_one_renderer_and_exposes_all_four_instruction_symbol_corners && git diff --exit-code -- art/symbols/*.png proofs/tape-case-73.png'"
+      ],
       "why": "one vector source regenerates every symbol and its shipped-size proof; runtime displays place those same alpha-blended textures"
     },
     {
-      "paths": ["art/textures/*.prompt.txt", "art/overlay/*.prompt.txt"],
-      "tests": ["nix-shell --run 'cargo test every_painted_texture_has_the_prompt -- --test-threads=2'"],
+      "paths": [
+        "art/textures/*.prompt.txt",
+        "art/overlay/*.prompt.txt"
+      ],
+      "tests": [
+        "nix-shell --run 'cargo test every_painted_texture_has_the_prompt -- --test-threads=2'"
+      ],
       "why": "every shipped texture must keep the prompt that painted it beside it"
     },
     {
-      "paths": ["art/machines/**", "art/ming.sh"],
+      "paths": [
+        "art/machines/**",
+        "art/ming.sh"
+      ],
       "tests": [
-        "nix-shell --run 'shellcheck art/ming.sh art/machines/rig.sh'",
+        "nix-shell --run 'shellcheck art/ming.sh art/machines/rig.sh art/tests/ming.sh && art/tests/ming.sh'",
         "nix-shell --run 'cargo test machines -- --test-threads=2'"
       ],
       "why": "the machine sprites are painted by ziral --gen through ming.sh from each machine's caption; the tests check the shipped captions, kept attempts, normal maps and keys against the manifest"
     },
     {
-      "paths": ["art/**/*.sh"],
-      "tests": ["nix-shell --run 'shellcheck art/*.sh art/*/*.sh'"],
+      "paths": [
+        "art/**/*.sh"
+      ],
+      "tests": [
+        "nix-shell --run 'shellcheck art/*.sh art/*/*.sh'"
+      ],
       "why": "the art scripts drive the image tool and the shot renderer; shellcheck is the one static check they have"
     },
     {
-      "paths": ["art/**"],
+      "paths": [
+        "art/**"
+      ],
       "tests": [],
       "why": "art direction documents and raster assets; the scripts among them have their own rule above"
     },
     {
-      "paths": ["web/**"],
+      "paths": [
+        "web/**"
+      ],
       "tests": [
         "nix-shell --run 'shellcheck web/build.sh'",
         "node --test web/record.test.mjs",
@@ -75,12 +123,16 @@
       "why": "running the web build is the only thing that compiles the wasm module and checks the wasm-bindgen pin; the frame-budget benchmark runs the busy scene on every target"
     },
     {
-      "paths": [".github/workflows/**"],
+      "paths": [
+        ".github/workflows/**"
+      ],
       "tests": [],
       "why": "GitHub is the only runner; the push that lands a workflow is the run that checks it"
     },
     {
-      "paths": ["shell.nix"],
+      "paths": [
+        "shell.nix"
+      ],
       "tests": [
         "nix-instantiate --parse shell.nix",
         "nix-shell --run 'cargo build --tests'",
@@ -90,7 +142,9 @@
       "why": "a parse catches syntax; a build inside the shell catches a missing package; the compiler and browser it pins move frame times, so the frame-budget benchmark runs too"
     },
     {
-      "paths": ["src/*.wgsl"],
+      "paths": [
+        "src/*.wgsl"
+      ],
       "tests": [
         "nix-shell --run 'shellcheck art/machines/proof.sh && art/machines/proof.sh'",
         "nix-shell --run './web/build.sh && cargo build --release'",
@@ -99,7 +153,12 @@
       "why": "a shader only compiles when a scene is drawn; the proof shot draws lit machines at two turns and fails on a shader error; the frame-budget benchmark runs the busy scene on every target"
     },
     {
-      "paths": ["**/*.rs", "Cargo.toml", "Cargo.lock", ".cargo/config.toml"],
+      "paths": [
+        "**/*.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        ".cargo/config.toml"
+      ],
       "tests": [
         "nix-shell --run 'cargo fmt --check'",
         "nix-shell --run 'cargo clippy --all-targets -- --deny warnings'",

@@ -8,6 +8,7 @@ off_centre = 0.1
 [machine.arm]
 kept = 4
 painted = "8f5d5190b75d698d"
+relief = "32a156052a4f23f1"
 
 [machine.arm.instrument]
 voice = "brass"
@@ -49,6 +50,7 @@ event = "rotated"
 [machine.arm-2]
 kept = 2
 painted = "50759197e0af069f"
+relief = "c14641fcc2c1863c"
 
 [machine.arm-2.instrument]
 voice = "brass"
@@ -90,6 +92,7 @@ event = "rotated"
 [machine.arm-3]
 kept = 2
 painted = "ac178952bed618e3"
+relief = "880105d3942ef5eb"
 
 [machine.arm-3.instrument]
 voice = "brass"
@@ -131,6 +134,7 @@ event = "rotated"
 [machine.bonder]
 kept = 1
 painted = "1650505b2b9f6fdb"
+relief = "1843eaf2bc61f84f"
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -173,6 +177,7 @@ event = "fired"
 [machine.converter-amber]
 kept = 4
 painted = "7ec241a6e8361bcd"
+relief = "70b18593c47ab4b5"
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -207,6 +212,7 @@ event = "fired"
 [machine.converter-cobalt]
 kept = 1
 painted = "e16e8026152d32d8"
+relief = "aae4fb565e22b451"
 
 [machine.converter-cobalt.instrument]
 voice = "ceramic"
@@ -249,6 +255,7 @@ event = "fired"
 [machine.output-1]
 kept = 1
 painted = "512b9cb815833a4e"
+relief = "00b2d91e442dcdde"
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -283,6 +290,7 @@ event = "fired"
 [machine.output-2]
 kept = 1
 painted = "c0d9287aec95e124"
+relief = "114d397721a69656"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -317,6 +325,7 @@ event = "fired"
 [machine.output-3]
 kept = 1
 painted = "d2aee20dfa073a93"
+relief = "5cd9705deb8cecb1"
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -351,6 +360,7 @@ event = "fired"
 [machine.portal]
 kept = 1
 painted = "2fca36b2c326842b"
+relief = "ff6dc0bcf085169d"
 motion = "dilate"
 parts = []
 
@@ -367,8 +377,9 @@ layer = "on"
 energy_scaled = false
 
 [machine.reification]
-kept = 4
+kept = 3
 painted = "894fb0a7192ec596"
+relief = "79649611c17b4a60"
 
 [machine.reification.instrument]
 voice = "wood"
@@ -403,6 +414,7 @@ event = "fired"
 [machine.resonator]
 kept = 4
 painted = "5ec9b3492275632a"
+relief = "2d711b15ef48daa0"
 motion = "dilate"
 parts = []
 
@@ -421,6 +433,7 @@ energy_scaled = true
 [machine.second-bond]
 kept = 2
 painted = "3db8f2ba1f8075a9"
+relief = "cebe057ccda23e7b"
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -463,6 +476,7 @@ event = "fired"
 [machine.source]
 kept = 4
 painted = "14ecf7b877984f8f"
+relief = "8ef7c20859ee94af"
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -497,6 +511,7 @@ event = "fired"
 [machine.source-2]
 kept = 3
 painted = "f1cda46e4bfc9600"
+relief = "a6410dceb0a1dd25"
 
 [machine.source-2.instrument]
 voice = "ceramic"

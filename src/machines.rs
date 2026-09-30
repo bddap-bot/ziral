@@ -622,7 +622,6 @@ fn save(image: &RgbaImage, path: &Path) {
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
 }
 
-const PAINTERS: usize = 5;
 const FIT_GRID: u32 = 512;
 const COVER: [f32; 2] = [0.03, 0.9];
 const FRAME_EDGE: f32 = 0.01;
@@ -638,10 +637,7 @@ struct Calls {
 }
 
 impl Calls {
-    fn read(out: &Path) -> Option<Calls> {
-        if !out.join("design.png").exists() || !out.join("layer-1.png").exists() {
-            return None;
-        }
+    fn logged(out: &Path) -> Option<(Calls, [bool; 2])> {
         let text = std::fs::read_to_string(out.join("calls.tsv")).ok()?;
         let mut calls = Calls::default();
         let mut seen = [false; 2];
@@ -658,7 +654,15 @@ impl Calls {
             }
             calls.cost += cost;
         }
-        (seen == [true, true]).then_some(calls)
+        Some((calls, seen))
+    }
+
+    fn read(out: &Path) -> Option<Calls> {
+        let (calls, seen) = Self::logged(out)?;
+        (seen == [true, true]
+            && out.join("design.png").exists()
+            && out.join("layer-1.png").exists())
+        .then_some(calls)
     }
 }
 
@@ -667,7 +671,7 @@ enum Refusal {
     Failed(String),
 }
 
-type Painter<'a> = &'a (dyn Fn(&Path, &Path) -> Result<Calls, Refusal> + Sync);
+type Painter<'a> = &'a dyn Fn(&Path, &Path) -> Result<Calls, Refusal>;
 
 fn ming(art: &Art, caption: &Path, out: &Path) -> Result<Calls, Refusal> {
     let failed = |e: std::io::Error| Refusal::Failed(format!("{}: {e}", out.display()));
@@ -675,22 +679,50 @@ fn ming(art: &Art, caption: &Path, out: &Path) -> Result<Calls, Refusal> {
     let plan = out.join("plan.txt");
     std::fs::write(&plan, PLAN).map_err(failed)?;
     let design = out.join("design.png");
-    let mut log = ming_sh(art, &["design".as_ref(), design.as_ref(), caption.as_ref()])?;
-    log += &ming_sh(
+    let log = out.join("calls.tsv");
+    ming_sh(
         art,
-        &["design-layer".as_ref(), out.as_ref(), design.as_ref(), plan.as_ref()],
+        &["design".as_ref(), design.as_ref(), caption.as_ref()],
+        &log,
     )?;
-    std::fs::write(out.join("calls.tsv"), log).map_err(failed)?;
+    ming_sh(
+        art,
+        &[
+            "design-layer".as_ref(),
+            out.as_ref(),
+            design.as_ref(),
+            plan.as_ref(),
+        ],
+        &log,
+    )?;
     Calls::read(out).ok_or_else(|| Refusal::Failed(format!("{}: incomplete", out.display())))
 }
 
-fn ming_sh(art: &Art, args: &[&std::ffi::OsStr]) -> Result<String, Refusal> {
+fn ming_sh(art: &Art, args: &[&std::ffi::OsStr], log: &Path) -> Result<(), Refusal> {
+    use std::io::Write;
     let script = art.ming_sh();
     let output = std::process::Command::new(&script)
         .args(args)
         .stdin(std::process::Stdio::null())
         .output()
         .map_err(|e| Refusal::Failed(format!("{}: {e}", script.display())))?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)
+        .and_then(|mut file| file.write_all(&output.stdout))
+        .map_err(|e| {
+            let why = format!(
+                "{}: {e}; {}",
+                log.display(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if output.status.code() == Some(3) {
+                Refusal::Spent(why)
+            } else {
+                Refusal::Failed(why)
+            }
+        })?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
         eprintln!("{line}");
@@ -702,14 +734,16 @@ fn ming_sh(art: &Art, args: &[&std::ffi::OsStr]) -> Result<String, Refusal> {
         .unwrap_or("ming.sh failed without a word")
         .to_string();
     match output.status.code() {
-        Some(0) => Ok(String::from_utf8_lossy(&output.stdout).into_owned()),
+        Some(0) => Ok(()),
         Some(3) => Err(Refusal::Spent(last)),
         _ => Err(Refusal::Failed(last)),
     }
 }
 
 fn matte(out: &Path) -> Result<RgbaImage, String> {
-    let design = open(out.join("design.png"));
+    let design = image::open(out.join("design.png"))
+        .map_err(|e| format!("design: {e}"))?
+        .into_rgba8();
     let (w, h) = design.dimensions();
     if w != h {
         return Err(format!("the design is {w}x{h}, not square"));
@@ -717,7 +751,9 @@ fn matte(out: &Path) -> Result<RgbaImage, String> {
     if !out.join("layer-2.png").exists() {
         return Err("the split returned one layer".to_string());
     }
-    let object = open(out.join("layer-1.png"));
+    let object = image::open(out.join("layer-1.png"))
+        .map_err(|e| format!("object: {e}"))?
+        .into_rgba8();
     let (ow, oh) = object.dimensions();
     let cover = object.pixels().map(alpha).sum::<f32>() / (ow * oh) as f32;
     if !(COVER[0]..=COVER[1]).contains(&cover) {
@@ -788,7 +824,16 @@ impl Attempt {
 
     fn parse(row: &str) -> Option<Attempt> {
         let cols: Vec<&str> = row.split('\t').collect();
-        let [index, verdict, outside, seat, off_centre, design, layer, cost] = cols[..]
+        let [
+            index,
+            verdict,
+            outside,
+            seat,
+            off_centre,
+            design,
+            layer,
+            cost,
+        ] = cols[..]
         else {
             return None;
         };
@@ -810,38 +855,6 @@ impl Attempt {
             },
             outcome,
         })
-    }
-}
-
-struct Cap {
-    free: std::sync::Mutex<usize>,
-    freed: std::sync::Condvar,
-}
-
-struct Permit<'a>(&'a Cap);
-
-impl Drop for Permit<'_> {
-    fn drop(&mut self) {
-        *self.0.free.lock().expect("the cap is unpoisoned") += 1;
-        self.0.freed.notify_one();
-    }
-}
-
-impl Cap {
-    fn new(n: usize) -> Cap {
-        Cap {
-            free: std::sync::Mutex::new(n),
-            freed: std::sync::Condvar::new(),
-        }
-    }
-
-    fn take(&self) -> Permit<'_> {
-        let mut free = self.free.lock().expect("the cap is unpoisoned");
-        while *free == 0 {
-            free = self.freed.wait(free).expect("the cap is unpoisoned");
-        }
-        *free -= 1;
-        Permit(self)
     }
 }
 
@@ -897,16 +910,15 @@ fn attempts(dir: &Path) -> BTreeMap<u32, Attempt> {
 
 struct Remake<'a> {
     art: &'a Art,
-    manifest: std::sync::Mutex<Manifest>,
+    manifest: Manifest,
     painter: Painter<'a>,
-    cap: Cap,
-    spent: std::sync::Mutex<Option<String>>,
-    redraw: std::sync::atomic::AtomicBool,
+    spent: Option<String>,
+    redraw: bool,
 }
 
 impl Remake<'_> {
     fn entry(&self, name: &str) -> Result<(Thresholds, u32, Entry), String> {
-        let m = self.manifest.lock().expect("the manifest is unpoisoned");
+        let m = &self.manifest;
         let entry = m
             .machine
             .get(name)
@@ -914,18 +926,18 @@ impl Remake<'_> {
         Ok((m.thresholds, m.attempts, entry.clone()))
     }
 
-    fn record(&self, name: &str, patch: impl FnOnce(&mut Entry)) {
-        let mut m = self.manifest.lock().expect("the manifest is unpoisoned");
+    fn record(&mut self, name: &str, patch: impl FnOnce(&mut Entry)) {
+        let m = &mut self.manifest;
         let entry = m.machine.get_mut(name).expect("the entry read above");
         let before = entry.clone();
         patch(entry);
         if *entry != before {
-            self.art.write(&m);
+            self.art.write(m);
         }
     }
 
     fn attempt(
-        &self,
+        &mut self,
         name: &str,
         index: u32,
         scaffold: &Scaffold,
@@ -936,8 +948,7 @@ impl Remake<'_> {
             Some(calls) => calls,
             None => {
                 let result = {
-                    let _permit = self.cap.take();
-                    if let Some(why) = self.spent.lock().expect("unpoisoned").clone() {
+                    if let Some(why) = self.spent.clone() {
                         return Err(format!("stopped: {why}"));
                     }
                     let _ = std::fs::remove_dir_all(&out);
@@ -946,13 +957,13 @@ impl Remake<'_> {
                 match result {
                     Ok(calls) => calls,
                     Err(Refusal::Spent(why)) => {
-                        *self.spent.lock().expect("unpoisoned") = Some(why.clone());
+                        self.spent = Some(why.clone());
                         return Err(format!("stopped: {why}"));
                     }
                     Err(Refusal::Failed(why)) => {
                         return Ok(Attempt {
                             index,
-                            calls: Calls::default(),
+                            calls: Calls::logged(&out).map_or(Calls::default(), |(calls, _)| calls),
                             outcome: Err(format!("paint: {why}")),
                         });
                     }
@@ -971,7 +982,7 @@ impl Remake<'_> {
         Ok(attempt)
     }
 
-    fn paint(&self, name: &str, scaffold: &Scaffold, painted: &str) -> Result<(), String> {
+    fn paint(&mut self, name: &str, scaffold: &Scaffold, painted: &str) -> Result<(), String> {
         let (thresholds, count, entry) = self.entry(name)?;
         let dir = self.art.machine(name);
         let mut rows = if entry.painted.as_deref() == Some(painted) {
@@ -985,7 +996,10 @@ impl Remake<'_> {
             });
             BTreeMap::new()
         };
-        rows.retain(|i, _| *i <= count && Calls::read(&self.art.attempt(name, *i)).is_some());
+        rows.retain(|i, a| {
+            *i <= count
+                && (a.outcome.is_err() || Calls::read(&self.art.attempt(name, *i)).is_some())
+        });
         for index in 1..=count {
             if rows.values().any(|a| a.passes(&thresholds)) {
                 break;
@@ -1004,8 +1018,7 @@ impl Remake<'_> {
             .filter_map(|a| Some((a.index, a.outcome.as_ref().ok()?.excess(&thresholds))))
             .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
             .ok_or_else(|| {
-                let verdicts: Vec<String> =
-                    rows.values().map(|a| a.verdict(&thresholds)).collect();
+                let verdicts: Vec<String> = rows.values().map(|a| a.verdict(&thresholds)).collect();
                 format!("no attempt made a sprite: {}", verdicts.join("; "))
             })?;
         let capture = scaffold.register(&matte(&self.art.attempt(name, kept))?);
@@ -1013,18 +1026,18 @@ impl Remake<'_> {
         save(&scaffold.cropped(&capture.image), &albedo);
         quantise(&albedo)?;
         self.record(name, |e| e.kept = Some(kept));
-        self.redraw.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.redraw = true;
         Ok(())
     }
 
-    fn machine(&self, name: &str) -> Result<bool, String> {
+    fn machine(&mut self, name: &str) -> Result<bool, String> {
         let started = std::time::Instant::now();
         let scaffold = Scaffold::of(item(name));
         let dir = self.art.machine(name);
         let (_, count, entry) = self.entry(name)?;
         let caption = self.art.caption(name);
-        let text = std::fs::read_to_string(&caption)
-            .map_err(|e| format!("{}: {e}", caption.display()))?;
+        let text =
+            std::fs::read_to_string(&caption).map_err(|e| format!("{}: {e}", caption.display()))?;
         let painted = painted_key(&text, count);
         let mut changed = false;
         if entry.painted.as_deref() != Some(painted.as_str())
@@ -1053,7 +1066,7 @@ impl Remake<'_> {
     }
 
     fn sheet(&self) -> Result<(), String> {
-        let m = self.manifest.lock().expect("the manifest is unpoisoned");
+        let m = &self.manifest;
         let mut args: Vec<std::ffi::OsString> = vec!["montage".into()];
         for item in Machine::ALL {
             let name = name(item);
@@ -1106,37 +1119,31 @@ impl Remake<'_> {
 }
 
 fn remake(art: &Art, names: &[String], painter: Painter) -> Vec<(String, Result<bool, String>)> {
-    let remake = Remake {
+    let mut remake = Remake {
         art,
-        manifest: std::sync::Mutex::new(art.read()),
+        manifest: art.read(),
         painter,
-        cap: Cap::new(PAINTERS),
-        spent: std::sync::Mutex::new(None),
-        redraw: std::sync::atomic::AtomicBool::new(false),
+        spent: None,
+        redraw: false,
     };
     let mut names: Vec<&String> = names.iter().collect();
     names.sort();
     names.dedup();
-    let remake = &remake;
-    let results: Vec<(String, Result<bool, String>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = names
-            .into_iter()
-            .map(|name| {
-                s.spawn(move || {
-                    (name.to_string(), remake.machine(name))
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().expect("a machine returns"))
-            .collect()
-    });
+    let mut results: Vec<_> = names
+        .into_iter()
+        .map(|name| {
+            let result = match &remake.spent {
+                Some(why) => Err(format!("stopped: {why}")),
+                None => remake.machine(name),
+            };
+            (name.to_string(), result)
+        })
+        .collect();
     let sheet = art.dir.join("sheet.png");
-    if (!sheet.exists() || remake.redraw.load(std::sync::atomic::Ordering::SeqCst))
+    if (!sheet.exists() || remake.redraw)
         && let Err(e) = remake.sheet()
     {
-        eprintln!("sheet: {e}");
+        results.push(("sheet".to_string(), Err(e)));
     }
     results
 }
@@ -1777,7 +1784,7 @@ mod tests {
             );
             assert!(!art.machine(name).join("albedo.png").exists());
         }
-        assert!(calls.load(std::sync::atomic::Ordering::SeqCst) <= 2);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         calls.store(0, std::sync::atomic::Ordering::SeqCst);
         let failed = |_: &Path, _: &Path| {
             calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1793,6 +1800,63 @@ mod tests {
             "{results:?}"
         );
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_painter_persists_partial_calls_and_preserves_spend_on_log_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        let art = studio("call-log", &["bonder"], 1);
+        let script = art.ming_sh();
+        std::fs::write(
+            &script,
+            "#!/usr/bin/env bash\nprintf '%s\\t12\\t0\\n' \"$1\"\n[ \"$1\" = design ]\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let out = art.attempt("bonder", 1);
+        assert!(matches!(
+            ming(&art, &art.caption("bonder"), &out),
+            Err(Refusal::Failed(_))
+        ));
+        let (calls, seen) = Calls::logged(&out).unwrap();
+        assert_eq!(seen, [true, true]);
+        assert_eq!(calls.design, 12.0);
+        assert_eq!(calls.layer, 12.0);
+        std::fs::write(
+            &script,
+            "#!/usr/bin/env bash\necho 'account usage is nonzero' >&2\nexit 3\n",
+        )
+        .unwrap();
+        assert!(matches!(ming_sh(&art, &[], &out), Err(Refusal::Spent(_))));
+        std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn failed_layer_keeps_design_time_and_sheet_failure_fails_the_run() {
+        let art = studio("partial", &["bonder"], 1);
+        let failed = |_: &Path, out: &Path| {
+            std::fs::create_dir_all(out).unwrap();
+            std::fs::write(out.join("calls.tsv"), "design\t12\t0\ndesign-layer\t3\t0\n").unwrap();
+            Err(Refusal::Failed("HTTP 502".to_string()))
+        };
+        assert!(!landed(&remake(&art, &["bonder".to_string()], &failed)));
+        let row = &attempts(&art.machine("bonder"))[&1];
+        assert_eq!(row.calls.design, 12.0);
+        assert_eq!(row.calls.layer, 3.0);
+        assert!(row.outcome.is_err());
+        std::fs::write(art.caption("bonder"), "a new caption").unwrap();
+        std::fs::create_dir(art.dir.join("sheet.png")).unwrap();
+        let scaffold = Scaffold::of(item("bonder"));
+        let painter = |_: &Path, out: &Path| Ok(drawn(out, &fired(&scaffold, &|w| w), None));
+        let results = remake(&art, &["bonder".to_string()], &painter);
+        assert!(!landed(&results));
+        assert!(
+            results
+                .iter()
+                .any(|(name, result)| name == "sheet" && result.is_err())
+        );
         std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 

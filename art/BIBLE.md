@@ -138,7 +138,7 @@ Asset directories, relative to this document:
 
 - [reference/](reference/) contains concepts, their historical prompt log and gameplay proofs. These are references rather than shipped textures.
 - [textures/](textures/) contains atoms, bonds, the grout template and twenty-four tiles beside their paint prompts. The template originates in hex-scaffold.svg; all tiles use the template’s grout at runtime.
-- [machines/](machines/) contains each machine’s caption, attempt record, albedo, normal map and relight evidence. [MACHINES.md](MACHINES.md) explains their provenance and regeneration.
+- [machines/](machines/) contains each machine’s caption, attempt record, albedo and normal map. [MACHINES.md](MACHINES.md) explains their provenance and regeneration.
 - [overlay/](overlay/) contains the painted manual page; runtime composition places the instruction pictures in its slots.
 - [symbols/](symbols/) contains the vector source and generated instruction pictures described in [SYMBOLS.md](SYMBOLS.md).
 

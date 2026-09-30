@@ -10,11 +10,11 @@ A caption is a declarative art director's description of the finished sprite: su
 
 `art/ming.sh design-layer` sends that picture with one fixed layer plan to `inclusionai/ming-image-0.1-design-layer`: the complete object with its through-holes empty, the shadow beneath it, the background. It returns 1024 px RGBA layers. The object layer's alpha, scaled to the picture with values under 8/255 dropped as the layer's background noise, is the sprite's alpha; the colour is the picture's. The shadow and background are discarded: runtime lighting supplies direction through the normal map.
 
-Both calls check the listed price before and the account usage before and after, a failed call included. A non-zero price, a non-zero reported cost or a usage change exits 3 and stops every painter in the run; any other failure is a failed attempt. `OPENROUTER_API_KEY` comes from the environment.
+Both calls check the listed price before and the account usage before and immediately after, a failed call included. A non-zero price, a non-zero reported cost, non-zero account usage, or unverifiable credits exits 3 and stops the run before another request; any other failure is a failed attempt. Each stage records its wall time even when the other stage fails. There is one retry loop, in the generator. `OPENROUTER_API_KEY` comes from the environment.
 
 ## Attempts
 
-Inside `nix-shell`, `cargo run -- --gen NAME...` or `--gen --all`. Each machine gets up to `attempts` Design → Design-Layer runs, at most five in flight across machines, and stops at the first that passes:
+Inside `nix-shell`, `cargo run -- --gen NAME...` or `--gen --all`. Each machine gets up to `attempts` Design → Design-Layer runs, one machine at a time, and stops at the first that passes:
 
 1. **Matte.** A non-square picture or object layer, a split with one layer, an object layer covering under 3% or over 90% of its frame, or one that reaches the frame's edge fails the attempt.
 2. **Fit.** The silhouette's bounding centre goes to the footprint centre and one uniform scale makes it the largest that stays inside the union of footprint hexes. Nothing is stretched or rotated.
