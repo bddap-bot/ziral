@@ -1,5 +1,4 @@
 let live;
-let id = crypto.randomUUID();
 let attempted = 0;
 let bench = false;
 const database = new Promise((resolve, reject) => {
@@ -52,10 +51,9 @@ function committed(transaction, key) {
     transaction.onerror = () => console.error(transaction.error);
 }
 
-export function begin_record() {
+export function begin_record(build, seed) {
     seal();
-    live = undefined;
-    id = crypto.randomUUID();
+    live = {build, seed: Number(seed), session: crypto.randomUUID(), start: 0, count: 0};
     attempted = 0;
 }
 
@@ -68,16 +66,14 @@ export function bench_record() {
     bench = true;
 }
 
-export function append_record(build, seed, inputs, count) {
+export function append_record(inputs, count) {
     if (!count) return;
-    live ??= {build, seed: Number(seed), session: id, start: 0, count: 0};
-    const items = inputs.slice(1, -1);
-    if (!write(items)) {
+    if (!write(inputs)) {
         seal();
-        if (!write(items)) {
+        if (!write(inputs)) {
             const kept = unsealed;
-            unsealed = new Uint8Array(items.length * 3);
-            write(items);
+            unsealed = new Uint8Array(inputs.length);
+            write(inputs);
             live.count = count;
             seal();
             unsealed = kept;
@@ -88,12 +84,12 @@ export function append_record(build, seed, inputs, count) {
     if (performance.now() - attempted >= 5000) seal();
 }
 
-function write(items) {
+function write(inputs) {
     const at = length && length + 1;
-    const {read, written} = encoder.encodeInto(items, unsealed.subarray(at));
-    if (read < items.length) return false;
+    if (at + inputs.length > unsealed.length) return false;
     if (length) unsealed[length] = 44;
-    length = at + written;
+    unsealed.set(inputs, at);
+    length = at + inputs.length;
     return true;
 }
 
@@ -114,7 +110,6 @@ async function request_record(bytes) {
 }
 
 export async function send_record(chunk, request = request_record, start = chunk.start) {
-    const encoder = new TextEncoder();
     const limit = chunk.start + chunk.inputs.length;
     while (start < limit) {
         let end = Math.min(start + 512, limit);

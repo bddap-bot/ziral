@@ -62,6 +62,7 @@ const PALETTE_WIDTH: f32 = 2.0
     + PALETTE_GAP_PX;
 const CARD_PAD: f32 = 12.0;
 const CARD: RenderLayers = RenderLayers::layer(1);
+const ATOMS: RenderLayers = RenderLayers::layer(2);
 const CARD_PITCH: f32 = 1024.0;
 const CARD_BORDER_PX: f32 = 2.0;
 const HOVER_SLOT: usize = 0;
@@ -74,8 +75,13 @@ fn atom_index(kind: sim::AtomKind) -> usize {
         .unwrap()
 }
 
-fn atom_layer(kind: sim::AtomKind) -> RenderLayers {
-    RenderLayers::layer(2 + atom_index(kind))
+fn atom_rect(kind: sim::AtomKind) -> Rect {
+    let min = Vec2::new(atom_index(kind) as f32 * PALETTE_PX, 0.0);
+    Rect::from_corners(min, min + Vec2::splat(PALETTE_PX))
+}
+
+fn atom_at(kind: sim::AtomKind) -> Vec2 {
+    atom_rect(kind).center() - Vec2::new(sim::AtomKind::ALL.len() as f32, 1.0) * PALETTE_PX / 2.0
 }
 
 #[cfg(test)]
@@ -2837,12 +2843,7 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
             entry.spawn((ImageNode::new(kiln.image(skin)), square, field));
         }
         Item::Atom(kind) => {
-            entry.spawn((
-                AtomPreview(kind),
-                ImageNode::new(kiln.atom(kind)),
-                square,
-                field,
-            ));
+            entry.spawn((kiln.atom(kind), square, field));
         }
         Item::Token(instr) => {
             entry.spawn((InstructionSymbol::Ui(instr), square, field));
@@ -4221,19 +4222,20 @@ struct Kiln {
     glaze: [Handle<ColorMaterial>; 8],
     patina: Handle<ColorMaterial>,
     card: [Handle<ColorMaterial>; 2],
-    atoms: [Handle<Image>; 4],
+    atoms: Handle<Image>,
     skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
     lit: Vec<(Skin, [Handle<Lit>; 4])>,
 }
 
 impl Kiln {
-    fn atom(&self, kind: sim::AtomKind) -> Handle<Image> {
-        self.atoms[atom_index(kind)].clone()
+    fn atom(&self, kind: sim::AtomKind) -> ImageNode {
+        ImageNode {
+            image: self.atoms.clone(),
+            rect: Some(atom_rect(kind)),
+            ..default()
+        }
     }
 }
-
-#[derive(Clone, Copy, Component)]
-struct AtomPreview(sim::AtomKind);
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 struct Lit {
@@ -4458,26 +4460,22 @@ fn fire_kiln(
             (skin, lit)
         })
         .collect();
-    let atoms = sim::AtomKind::ALL.map(|kind| {
-        let image = images.add(Image::new_target_texture(
-            PALETTE_PX as u32,
-            PALETTE_PX as u32,
-            TextureFormat::Rgba8UnormSrgb,
-            None,
-        ));
-        commands.spawn((
-            AtomPreview(kind),
-            Camera2d,
-            Camera {
-                order: -1,
-                clear_color: ClearColorConfig::Custom(Color::NONE),
-                ..default()
-            },
-            RenderTarget::Image(image.clone().into()),
-            atom_layer(kind),
-        ));
-        image
-    });
+    let atoms = images.add(Image::new_target_texture(
+        PALETTE_PX as u32 * sim::AtomKind::ALL.len() as u32,
+        PALETTE_PX as u32,
+        TextureFormat::Rgba8UnormSrgb,
+        None,
+    ));
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: -1,
+            clear_color: ClearColorConfig::Custom(Color::NONE),
+            ..default()
+        },
+        RenderTarget::Image(atoms.clone().into()),
+        ATOMS,
+    ));
     commands.insert_resource(Kiln {
         circle: meshes.add(Circle::new(1.0)),
         hexagon: meshes.add(RegularPolygon::new(1.0, 6)),
@@ -5278,7 +5276,6 @@ fn draw(
     mut commands: Commands,
     kiln: Res<Kiln>,
     mut placed: Placed,
-    previews: Query<(&AtomPreview, &RenderLayers), With<Camera>>,
 ) {
     let mut strokes = Vec::new();
     let (canvas, meshes, ..) = &mut placed;
@@ -5394,17 +5391,17 @@ fn draw(
             p.gizmos.rect_2d(centre, (pointer - from).abs(), IVORY);
         }
     }
-    for (atom, layers) in &previews {
+    for kind in sim::AtomKind::ALL {
         let mut preview = Painter {
             gizmos: &mut gizmos,
             strokes: &mut strokes,
             floor: &mut floor,
             kiln: &kiln,
-            layers: layers.clone(),
-            shift: Vec2::ZERO,
+            layers: ATOMS,
+            shift: atom_at(kind),
             scale: 1.0,
         };
-        preview.bead(Vec2::ZERO, look::atom(atom.0), layer::BEAD);
+        preview.bead(Vec2::ZERO, look::atom(kind), layer::BEAD);
     }
     let mut p = Painter {
         gizmos: &mut card_gizmos,
@@ -11638,20 +11635,27 @@ mod tests {
         app.add_systems(
             Last,
             |kiln: Res<Kiln>,
-             pictures: Query<(&AtomPreview, &ImageNode), Without<Camera>>,
-             fills: Query<(&RenderLayers, &Mesh2d), With<Fill>>| {
+             pictures: Query<(&ChildOf, &ImageNode)>,
+             rows: Query<&PaletteRow>,
+             fills: Query<(&RenderLayers, &Mesh2d, &Transform), With<Fill>>| {
                 for kind in sim::AtomKind::ALL {
                     let images: Vec<&ImageNode> = pictures
                         .iter()
-                        .filter(|(preview, _)| preview.0 == kind)
+                        .filter(|(parent, _)| {
+                            rows.get(parent.parent())
+                                .is_ok_and(|row| row.0 == Item::Atom(kind))
+                        })
                         .map(|(_, image)| image)
                         .collect();
                     assert_eq!(images.len(), 1);
-                    assert_eq!(images[0].image, kiln.atom(kind));
+                    assert_eq!(images[0].image, kiln.atoms);
+                    assert_eq!(images[0].rect, Some(atom_rect(kind)));
                     let meshes: Vec<&Handle<Mesh>> = fills
                         .iter()
-                        .filter(|(layers, _)| **layers == atom_layer(kind))
-                        .map(|(_, mesh)| &mesh.0)
+                        .filter(|(layers, _, transform)| {
+                            **layers == ATOMS && transform.translation.truncate() == atom_at(kind)
+                        })
+                        .map(|(_, mesh, _)| &mesh.0)
                         .collect();
                     assert_eq!(meshes.len(), 2);
                     assert!(meshes.contains(&&kiln.circle));

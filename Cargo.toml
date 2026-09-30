@@ -58,3 +58,8 @@ debug = 1
 opt-level = 3
 debug-assertions = true
 overflow-checks = true
+
+[patch.crates-io]
+bevy_render = { path = "vendor/bevy_render" }
+bevy_core_pipeline = { path = "vendor/bevy_core_pipeline" }
+bevy_gizmos_render = { path = "vendor/bevy_gizmos_render" }

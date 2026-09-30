@@ -18,6 +18,7 @@ function page(overrides) {
         ...overrides,
     });
     vm.runInContext(source, context);
+    context.begin_record(build, 0n);
     return context;
 }
 
@@ -32,7 +33,22 @@ function storage() {
     }};
 }
 
+function append(context, inputs, count) {
+    context.append_record(new TextEncoder().encode(inputs.slice(1, -1)), count);
+}
+
 const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('append keeps inputs after the wasm source memory is reused', async () => {
+    const {saved, localStorage} = storage();
+    const context = page({performance: {now: () => 0}, localStorage});
+    const bytes = new TextEncoder().encode('[0,"Refill"]');
+    context.append_record(bytes, 1);
+    bytes.fill(0);
+    context.finish_record();
+    await settle();
+    assert.deepEqual([...saved.values()].map(text => JSON.parse(text).inputs), [[[0, 'Refill']]]);
+});
 
 test('sessions survive reload and pagehide preserves the final inputs without IndexedDB', async () => {
     const stored = new Map();
@@ -45,9 +61,9 @@ test('sessions survive reload and pagehide preserves the final inputs without In
             localStorage: {setItem: (key, value) => stored.set(key, value)},
             addEventListener: (name, callback) => events.set(name, callback),
         });
-        vm.runInContext(`append_record('build', 0n, '[[0.1,{"f":0.1}]]', 1)`, context);
+        append(context, '[[0.1,{"f":0.1}]]', 1);
         now += 1;
-        vm.runInContext(`append_record('build', 0n, '[[0.2,{"f":0.1}]]', 1)`, context);
+        append(context, '[[0.2,{"f":0.1}]]', 1);
         events.get('pagehide')?.();
         await settle();
         const first = JSON.parse(stored.get(`ziral-record-${id}-0`));
@@ -64,10 +80,10 @@ test('each seal stores only the inputs appended since the previous seal', async 
     let now = 6000;
     const context = page({performance: {now: () => now}, localStorage});
     context.request_record = () => new Promise(() => {});
-    context.append_record(build, 0, JSON.stringify([[0, {f: 0}]]), 1);
+    append(context, JSON.stringify([[0, {f: 0}]]), 1);
     for (let frame = 1; frame <= 2000; frame++) {
         now += 5;
-        context.append_record(build, 0, JSON.stringify([[frame, {f: 0.005}]]), 1);
+        append(context, JSON.stringify([[frame, {f: 0.005}]]), 1);
     }
     await settle();
     const chunks = [...saved.values()].map(text => JSON.parse(text));
@@ -94,7 +110,7 @@ test('a sealed chunk stays in localStorage only until IndexedDB commits it', asy
     }};
     opening.onsuccess();
     context.request_record = () => new Promise(() => {});
-    context.append_record(build, 0, '[[0,"Refill"]]', 1);
+    append(context, '[[0,"Refill"]]', 1);
     await settle();
     assert.deepEqual([...saved.keys()], [`ziral-record-${session}-0`]);
     assert.deepEqual([...disk.keys()], [`ziral-record-${session}-0`]);
@@ -108,10 +124,10 @@ test('a full buffer seals, and an input larger than the buffer still records who
     const context = page({performance: {now: () => 0}, localStorage});
     context.request_record = () => new Promise(() => {});
     const pointer = {Pointer: {viewport: {cam: [-187.86006, -244.66663], size: [1280, 720], scale: 1.8104166}}};
-    for (let frame = 0; frame < 1000; frame++) context.append_record(build, 0, JSON.stringify([[frame, pointer], [frame, {f: 0.005}]]), 2);
-    const paste = [1000, {Paste: 'x'.repeat(100000)}];
-    context.append_record(build, 0, JSON.stringify([paste]), 1);
-    for (let frame = 1001; frame < 2000; frame++) context.append_record(build, 0, JSON.stringify([[frame, pointer], [frame, {f: 0.005}]]), 2);
+    for (let frame = 0; frame < 1000; frame++) append(context, JSON.stringify([[frame, pointer], [frame, {f: 0.005}]]), 2);
+    const paste = [1000, {Paste: 'xé漢😀'.repeat(20000)}];
+    append(context, JSON.stringify([paste]), 1);
+    for (let frame = 1001; frame < 2000; frame++) append(context, JSON.stringify([[frame, pointer], [frame, {f: 0.005}]]), 2);
     context.finish_record();
     await settle();
     const texts = [...saved.values()].sort((a, b) => JSON.parse(a).start - JSON.parse(b).start);
@@ -134,7 +150,10 @@ test('recording reset keeps deferred database writes under their original sessio
         crypto: {randomUUID: () => `session-${next++}`},
         indexedDB: {open: () => opening},
     });
-    vm.runInContext(`begin_record(); append_record('build', 0n, '[[0.1,{"f":0.1}]]', 1); begin_record(); append_record('build', 0n, '[[0.2,{"f":0.2}]]', 1);`, context);
+    context.begin_record(build, 0n);
+    append(context, '[[0.1,{"f":0.1}]]', 1);
+    context.begin_record(build, 0n);
+    append(context, '[[0.2,{"f":0.2}]]', 1);
     opening.result = {
         transaction: () => ({objectStore: () => ({put: (text, id) => stored.set(id, text)})}),
     };
@@ -215,12 +234,12 @@ test('an acknowledgment forgets only the chunks it covers, and a failed upload k
     })})};
     opening.onsuccess();
     context.request_record = (...args) => connection(...args);
-    context.append_record(build, 0, '[[0,"Refill"]]', 1);
+    append(context, '[[0,"Refill"]]', 1);
     await settle();
     assert.deepEqual([...saved.keys()], [`ziral-record-${session}-0`]);
     assert.deepEqual([...disk.keys()], [`ziral-record-${session}-0`]);
     clock.now = 12000;
-    context.append_record(build, 0, '[[0,"Refill"]]', 1);
+    append(context, '[[0,"Refill"]]', 1);
     await settle();
     assert.equal(saved.size, 2);
     connection = async () => ({error: 'record upload rejected'});
@@ -304,7 +323,7 @@ test('the public page records and uploads without a fragment or credential', asy
         sent.push(batch);
         return {next: batch.start + batch.inputs.length};
     };
-    context.append_record(build, 0, '[[0,"Refill"]]', 1);
+    append(context, '[[0,"Refill"]]', 1);
     await settle();
     assert.equal(sent.length, 1);
     assert.equal(sent[0].session, session);
@@ -322,22 +341,22 @@ test('a bench session stores its chunks, never uploads them, and the next load f
     let now = 6000;
     const context = page({localStorage, performance: {now: () => now}});
     context.request_record = receiver;
-    context.append_record(build, 0, '[[0,"Refill"]]', 1);
+    append(context, '[[0,"Refill"]]', 1);
     now += 1;
-    context.append_record(build, 0, '[[1,"Refill"]]', 1);
+    append(context, '[[1,"Refill"]]', 1);
     context.bench_record();
     now += 5000;
-    context.append_record(build, 0, '[[2,"Refill"]]', 1);
+    append(context, '[[2,"Refill"]]', 1);
     now += 5000;
-    context.append_record(build, 0, '[[3,"Refill"]]', 1);
+    append(context, '[[3,"Refill"]]', 1);
     await settle();
     await context.upload();
     assert.deepEqual(sent, [0, 1]);
     assert.deepEqual([...saved.keys()], [`ziral-record-${session}-2`, `ziral-record-${session}-3`]);
     assert.deepEqual([...saved.values()].map(text => JSON.parse(text).bench), [true, true]);
     context.crypto.randomUUID = () => 'c'.repeat(36);
-    context.begin_record();
-    context.append_record(build, 0, '[[4,"Refill"]]', 1);
+    context.begin_record(build, 0n);
+    append(context, '[[4,"Refill"]]', 1);
     await settle();
     await context.upload();
     assert.deepEqual(sent, [0, 1]);
