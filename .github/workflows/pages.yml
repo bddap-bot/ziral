@@ -26,6 +26,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: wasm
+      - run: |
+          curl -fsSL https://github.com/WebAssembly/binaryen/releases/download/version_131/binaryen-version_131-x86_64-linux.tar.gz -o binaryen.tar.gz
+          echo 'b5bf1f0eaf17c63ee588ff7a5954dc8f6ce2c26989051c66f24dfe9ece3e46db  binaryen.tar.gz' | sha256sum -c -
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_131/bin" >> "$GITHUB_PATH"
       - run: ./web/build.sh
         env:
           CC_wasm32_unknown_unknown: clang

@@ -24,6 +24,7 @@ pkgs.mkShell {
     wayland
     lld
     wasm-bindgen-cli
+    binaryen
     imagemagick
     pngquant
     dejavu_fonts
