@@ -38,7 +38,18 @@ Names come from `look::machine`; every PNG is compiled in with `include_bytes!`,
 
 ## Lighting-split probe
 
-One reference, the resonator's first Design picture, the same picture its object split used. The Design-Layer plan asked for four layers: flat albedo with no shading or highlights, specular highlights only, directional light and shadow only, and the background (plan and outputs in [proofs/ming-light-split-162.png](proofs/ming-light-split-162.png), last tile the recomposite).
+One reference, the resonator's first Design picture, the same picture its object split used. The Design-Layer plan asked for four layers: flat albedo with no shading or highlights, specular highlights only, directional light and shadow only, and the background (reference, returned layers and recomposite in [proofs/ming-light-split-162.png](proofs/ming-light-split-162.png), last tile the recomposite).
+
+
+```text
+Decompose this image into 4 layers with the following specifications:
+
+Number of layers: 4
+Layer 1: Flat albedo: the object with its true surface colours only, evenly lit, with no shading, no highlights and no shadows.
+Layer 2: Specular highlights only: the glossy reflections and bright glints on the glaze and brass, and nothing else.
+Layer 3: Directional light and shadow only: the shading across the object from the overhead light, darker where surfaces turn away, and nothing else.
+Layer 4: The plain background.
+```
 
 - Layer 1 ("flat albedo") is a smoothed re-render of the body without the brass crest, rivets or crazing, still shaded and glossy: luminance standard deviation 30.1 over its opaque pixels.
 - Layer 2 ("specular only") is the complete detailed object, opaque over the same silhouette: opaque IoU with layer 1 is 0.962.
