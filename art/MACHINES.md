@@ -17,7 +17,7 @@ Both calls check the listed price before and the account usage before and immedi
 Inside `nix-shell`, `cargo run -- --gen NAME...` or `--gen --all`. Each machine gets up to `attempts` Design → Design-Layer runs, one machine at a time, and stops at the first that passes:
 
 1. **Matte.** A non-square picture or object layer, a split with one layer, an object layer covering under 3% or over 90% of its frame, or one that reaches the frame's edge fails the attempt.
-2. **Fit.** The silhouette's bounding centre goes to the footprint centre and one uniform scale makes it the largest that stays inside the union of footprint hexes. Nothing is stretched or rotated.
+2. **Fit.** The silhouette's bounding centre goes to the footprint's bounding centre and one uniform scale makes it the largest that stays inside the union of footprint hexes. Nothing is stretched or rotated.
 3. **Register.** On a machine with seats, the seat rims found near their cells give one translation and one uniform scale by least squares.
 4. **Measure.** `outside` is the farthest a visible pixel lies beyond the footprint, `seat` the rim contrast of the weakest seat, `off_centre` the farthest registered seat from its cell, all in hex circumradii against the manifest thresholds.
 

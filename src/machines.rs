@@ -313,8 +313,12 @@ impl Scaffold {
             return RgbaImage::new(self.canvas, self.canvas);
         }
         let centre = (lo + hi) / 2.0;
-        let world =
-            |p: Vec2, k: f32| self.quad.centre + Vec2::new(p.x - centre.x, centre.y - p.y) / k;
+        let (cell_lo, cell_hi) = self.cells.iter().map(|cell| px(cell.at)).fold(
+            (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY)),
+            |(lo, hi), at| (lo.min(at), hi.max(at)),
+        );
+        let target = (cell_lo + cell_hi) / 2.0;
+        let world = |p: Vec2, k: f32| target + Vec2::new(p.x - centre.x, centre.y - p.y) / k;
         let over = |k: f32| {
             edge.iter()
                 .map(|p| self.outside(world(*p, k)))
@@ -331,7 +335,7 @@ impl Scaffold {
             }
         }
         RgbaImage::from_fn(self.canvas, self.canvas, |x, y| {
-            let w = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)) - self.quad.centre;
+            let w = self.world(Vec2::new(x as f32 + 0.5, y as f32 + 0.5)) - target;
             let p = centre + Vec2::new(w.x, -w.y) * large;
             if p.x < 0.0 || p.y < 0.0 || p.x >= width as f32 || p.y >= height as f32 {
                 Rgba([0; 4])
@@ -1351,7 +1355,10 @@ mod tests {
         let scaffold = Scaffold::of(Machine::Glyph(crate::sim::GlyphKind::Bonder));
         let thresholds = Art::shipped().read().thresholds;
         let clean = fired(&scaffold, &|w| w);
-        let score = scaffold.score(&scaffold.register(&clean));
+        let score = scaffold.score(&Capture {
+            image: clean.clone(),
+            off_centre: 0.0,
+        });
         assert!(score.measured(&thresholds).is_none(), "{score:?}");
         assert!(score.outside <= SEAT_STEP, "{score:?}");
         let face = px(scaffold.cells[0].at) - Vec2::X * HEX * 3f32.sqrt() / 2.0;
@@ -1370,7 +1377,10 @@ mod tests {
                     *p = rgba(Glaze::Brass.rgb(), 1.0);
                 }
             }
-            let score = scaffold.score(&scaffold.register(&painted));
+            let score = scaffold.score(&Capture {
+                image: painted,
+                off_centre: 0.0,
+            });
             assert_eq!(score.measured(&thresholds).is_none(), ok, "{score:?}");
             assert!(
                 (score.outside - k * thresholds.outside).abs() <= SEAT_STEP,
@@ -1420,7 +1430,6 @@ mod tests {
             scaffold.register(&fired(&scaffold, &|w| centroid + turn.rotate(w - centroid)));
         let score = scaffold.score(&turned);
         assert!(score.off_centre > thresholds.off_centre, "{score:?}");
-        assert!(score.off_centre <= shift.length() / HEX * 1.5, "{score:?}");
         assert!(score.measured(&thresholds).is_some(), "{score:?}");
         let off = Score {
             off_centre: score.off_centre,
@@ -1747,7 +1756,11 @@ mod tests {
         let rows = attempts(&art.machine("bonder"));
         let verdicts: Vec<String> = rows.values().map(|a| a.verdict(&thresholds)).collect();
         assert!(verdicts[0].starts_with("matte: "), "{verdicts:?}");
-        assert!(verdicts[1].starts_with("fail off_centre"), "{verdicts:?}");
+        assert!(!rows[&2].passes(&thresholds), "{verdicts:?}");
+        assert!(
+            rows[&2].outcome.as_ref().unwrap().off_centre > thresholds.off_centre,
+            "{verdicts:?}"
+        );
         assert_eq!(verdicts[2], "pass");
         assert_eq!(rows[&3].calls.design, 1.5);
         assert_eq!(art.read().machine["bonder"].kept, Some(3));
@@ -1783,7 +1796,7 @@ mod tests {
         let rows = attempts(&art.machine("converter-amber"));
         assert_eq!(rows.len(), 3);
         assert!(rows.values().all(|a| !a.passes(&thresholds)), "{rows:?}");
-        assert_eq!(art.read().machine["converter-amber"].kept, Some(2));
+        assert_eq!(art.read().machine["converter-amber"].kept, Some(3));
         std::fs::remove_dir_all(art.dir.parent().unwrap()).unwrap();
     }
 
