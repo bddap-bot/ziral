@@ -1617,3 +1617,17 @@ A world-machine tutorial appears only after the pointer rests on its target for 
 The simplest design gates the existing hover input at the live pointer. The card renderer, tutorial playback and recorded hover events stay unchanged; there is no second animation or persistent preference. A paused player still gets the existing visual demonstration, with no added on-screen text. Tests exercise the delay, travel across a target, camera movement and a fresh pause after working.
 
 `proofs/hover-pause-140.gif` samples 35 game-only frames from deployed Pages build `196a0c9` at 1280 by 720, played at four frames per second. It sweeps across machines, pauses to reveal the bonder tutorial, then carries two atoms onto the bonder and forms a bond without a tutorial during construction. A final pause reveals the tutorial again. The browser record verifies the deployed build, both atom drags, the completed bond and the fresh 0.8-second pauses; every published frame was inspected. The rendered gallery is unchanged.
+
+## A machine turn has its own curve
+
+Directive (verbatim):
+
+> machine rotations about the cursor are smooth (nice). they are currently using the arm's animation curve, i would like a different animation curve for rotating machines
+
+Two curves stand beside each other in `src/main.rs`: `Swing`, the arm's creep, release, run and ring-out, and `Twist`, the machine turn's. A turn of a machine or a group, on the board or held at the pointer, samples `TWIST` through the same frame tween, the same pivot about the cursor and the same moving part of the tick; only the curve changed. `Twist` leaves at full speed the moment the key is pressed, passes its rest facing once by about five percent and settles on it at the end of the motion, with no wind-up and no ringing. It is one cubic with one constant, the overshoot, and shares no constant with `Swing`. The turn is no longer varied by the cell it happens in, so the tween drops the cell it carried.
+
+This is the dumbest design satisfying the directive because it replaces one function call and removes one field. A second tween, clock or pivot for turns was rejected: the pivot and the retargeting of an interrupted turn were already right, and the directive asked only for the curve.
+
+Superseded: from Toy 1 turns a machine through its facing, "the same cell-specific `Swing` curve used by simulation motion draw the turn".
+
+Tests: `TWIST` starts at 0, ends at exactly 1, holds 1 past the end and overshoots on the way; a machine turn's progress equals `TWIST` at every sampled phase and differs from the arm's `Swing`. The existing turn tests (mid-sweep angle strictly between rest facings, six presses landing exactly on the start facing, grabbed-point turns) pass unchanged.

@@ -263,7 +263,6 @@ enum TurnTarget {
 struct FacingTween {
     target: TurnTarget,
     centre: Vec2,
-    cell: Hex,
     from: Vec<Pose>,
     angle: f32,
     resume: Option<f32>,
@@ -271,7 +270,7 @@ struct FacingTween {
 
 impl FacingTween {
     fn progress(&self, t: f32) -> f32 {
-        Swing::from_cell(self.cell).at(t)
+        TWIST.at(t)
     }
 
     fn poses(&self, t: f32, centre: Vec2) -> Vec<Pose> {
@@ -1823,7 +1822,6 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         self.turn = Some(FacingTween {
             target,
             centre,
-            cell: hex_at(centre),
             from,
             angle: remaining + angle,
             resume,
@@ -5178,6 +5176,20 @@ impl Swing {
         let after = t - self.arrival();
         let wave = (omega * after).sin() - after / duration * (omega * duration).sin();
         1.0 + speed / omega * (-self.decay * after).exp() * wave
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Twist {
+    overshoot: f32,
+}
+
+const TWIST: Twist = Twist { overshoot: 1.2 };
+
+impl Twist {
+    fn at(&self, t: f32) -> f32 {
+        let v = t.min(1.0) - 1.0;
+        1.0 + (self.overshoot + 1.0) * v * v * v + self.overshoot * v * v
     }
 }
 
@@ -9785,6 +9797,29 @@ mod tests {
         assert!(end < angle && angle < start, "{end} < {angle} < {start}");
         w.advance(w.period * TURN_MOTION);
         assert!((w.since - w.period * 0.4).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_machine_turn_follows_the_twist_not_the_arm_swing() {
+        assert_eq!(TWIST.at(0.0), 0.0);
+        assert_eq!(TWIST.at(1.0), 1.0);
+        assert_eq!(TWIST.at(1.5), 1.0);
+        assert!(
+            (0..=100)
+                .map(|i| TWIST.at(i as f32 / 100.0))
+                .any(|e| e > 1.0)
+        );
+        let mut w = lone(vec![bonder(ORIGIN, 0)], vec![]);
+        w.running = false;
+        w.since = w.period;
+        w.focus = picked(&[Id::Glyph(0)]);
+        w.key(KeyCode::KeyD, false);
+        let turn = w.turn.as_ref().unwrap();
+        for i in 1..10 {
+            let t = i as f32 / 10.0;
+            assert_eq!(turn.progress(t), TWIST.at(t));
+            assert_ne!(turn.progress(t), Swing::from_cell(ORIGIN).at(t));
+        }
     }
 
     #[test]
