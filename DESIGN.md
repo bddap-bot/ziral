@@ -633,6 +633,8 @@ Disposed: "Toy 1 walks"'s ring, "W is the upper-left neighbour, then clockwise E
 
 Tests: the six move keys ring the arm clockwise from where it points, W, E, C, X, Z, Q writing tokens 0 to 5, and sum to nothing; at each of the six turns Shift W moves the base by the hand's offset and Shift X by its negation; the shifted keys write those tokens to a focused tape; every symbol's letter matches its key and shift state. Mutation: swapping Shift W's token to 4 fails both ring and walk tests, and restoring it passes.
 
+`proofs/arm-walk-facing-147.gif` is the deployed page at `67a40f4`, a 640 by 600 crop of 1280 by 720 frames: an arm placed two turns off its rest facing has its tape focused, Shift W, Shift W, Shift X and Shift X typed, and then walks two cells along its pointing direction and two back, repeatedly. The browser record verifies the deployed build, the restored arm's turn and the four shifted key presses.
+
 ### Tape symbols show shift in case
 
 Directive (verbatim): "Some of those key shortcuts are activated by pressing shift and a letter. Some are not. We can display difference by using lowercase to represent a button that is not pressed with shift."
