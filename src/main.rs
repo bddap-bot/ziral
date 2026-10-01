@@ -2305,7 +2305,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
                     ArrowRight => (cursor + 1).min(len),
                     Home => 0,
                     End => len,
-                    KeyZ | Backspace if cursor > 0 => {
+                    KeyZ | Backspace if cursor > 0 && !shift => {
                         let erased = sim.arms[arm].tape.remove(cursor - 1);
                         if self.encountered.is_none() {
                             sim.receive(Item::Token(erased));
@@ -10519,16 +10519,23 @@ mod tests {
     fn the_shifted_keys_write_the_six_moves_to_a_focused_tape() {
         let mut w = armed(vec![Instr::Wait]);
         w.focus_tape(0);
-        for key in [KeyCode::KeyW, KeyCode::KeyC, KeyCode::KeyQ] {
+        use KeyCode::*;
+        for key in [KeyW, KeyE, KeyC, KeyX, KeyZ, KeyQ] {
             w.key(key, true);
         }
         assert_eq!(
             w.sim.arms[0].tape,
-            vec![Instr::Wait, Instr::Move(0), Instr::Move(2), Instr::Move(5)]
+            [Instr::Wait]
+                .into_iter()
+                .chain((0..6).map(Instr::Move))
+                .collect::<Vec<_>>()
         );
-        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 4 }));
-        w.key(KeyCode::KeyF, false);
-        assert_eq!(w.sim.arms[0].tape[4], Instr::Grab);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 7 }));
+        w.key(KeyF, false);
+        assert_eq!(w.sim.arms[0].tape[7], Instr::Grab);
+        w.key(KeyZ, false);
+        assert_eq!(w.sim.arms[0].tape.len(), 7);
+        assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 7 }));
     }
 
     #[test]
