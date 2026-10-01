@@ -187,6 +187,8 @@ This supersedes the fixed-pixel sizing above. A pin owns its world scale as well
 
 The simplest design removes the fixed-pixel projection and the viewport-dependent resize ceiling. A fixed world-scale range of 0.05 through 8 keeps resizing independent of camera zoom, so a grow gesture cannot shrink a card that became larger than the screen. No dependency, on-screen text, or second placement state is added. Tests check constant world dimensions through pan and zoom, projected hit bounds, wheel routing, and card-camera sizing.
 
+[Deployed capture](proofs/pinned-world-scale-135.gif), from Pages build `9d3380c7adb92defab890ca0756ebfc142f29330`: the world zooms out and back, then the pinned card grows and shrinks while the board stays fixed. Browser input records confirm board scale changes from 0.5 to 0.7841561 and back, followed by card scale changes from 1 to 1.5683122 and back with the board scale unchanged.
+
 
 Directive (verbatim): "right now, we can't over over an atom and see how it's made, let us make it so hovering over an atom, or pinning its card shows the machine that makes the atom"
 
