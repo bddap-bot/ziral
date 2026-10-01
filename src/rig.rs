@@ -6,8 +6,6 @@ use std::sync::OnceLock;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Motion {
-    Clamp,
-    Turn,
     Dilate,
 }
 
@@ -17,13 +15,6 @@ pub enum Event {
     Fired,
     Rotated,
     Copied,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum Mask {
-    Outside,
-    Inside,
 }
 
 impl Event {
@@ -39,22 +30,11 @@ impl Event {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct Part {
-    pub name: String,
-    pub mask: Mask,
-    pub pivot: [f32; 2],
-    pub motion: Option<Motion>,
-    pub event: Option<Event>,
-}
-
 #[derive(Deserialize)]
 pub struct Entry {
     pub motion: Option<Motion>,
     pub emitter: crate::particles::Emitter,
     pub rig_emitter: Option<crate::particles::Emitter>,
-    #[serde(default)]
-    pub parts: Vec<Part>,
 }
 
 #[derive(Deserialize)]
@@ -70,10 +50,6 @@ fn manifest() -> &'static Manifest {
     })
 }
 
-pub fn parts(machine: Machine) -> &'static [Part] {
-    &entry(machine).parts
-}
-
 pub fn entry(machine: Machine) -> &'static Entry {
     let name = crate::look::machine(machine)
         .skin
@@ -85,28 +61,12 @@ pub fn entry(machine: Machine) -> &'static Entry {
         .machine
         .get(name)
         .unwrap_or_else(|| panic!("machine {name} has no rig"));
-    let parts = &entry.parts;
     let activation = entry.emitter.event;
     if let Some(emitter) = entry.rig_emitter {
         assert_eq!(
             emitter.event, activation,
             "machine {name} emitters disagree"
         );
-    }
-    assert!(
-        parts.is_empty() || (2..=4).contains(&parts.len()),
-        "machine {name} rig has {} parts",
-        parts.len()
-    );
-    for part in parts {
-        assert!(
-            part.motion.is_none() || part.event.is_some(),
-            "machine {name} part {} has motion without an event",
-            part.name
-        );
-        if let Some(event) = part.event {
-            assert_eq!(event, activation, "machine {name} part events disagree");
-        }
     }
     entry
 }
@@ -116,11 +76,9 @@ pub fn activation(machine: Machine) -> Event {
 }
 
 impl Motion {
-    pub fn pose(self, pulse: f32) -> ([f32; 2], f32, f32) {
+    pub fn scale(self, pulse: f32) -> f32 {
         match self {
-            Self::Clamp => ([-0.16 * pulse, 0.0], 0.0, 1.0),
-            Self::Turn => ([0.0, 0.0], 0.35 * pulse, 1.0),
-            Self::Dilate => ([0.0, 0.0], 0.0, 1.0 + 0.12 * pulse),
+            Self::Dilate => 1.0 + 0.12 * pulse,
         }
     }
 }
@@ -136,100 +94,6 @@ pub fn pulse(fired: bool, phase: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::ArmLength;
-
-    #[test]
-    fn every_machine_has_static_art_or_two_to_four_parts_and_every_motion_resolves_to_a_tick_event()
-    {
-        for machine in Machine::ALL {
-            let parts = parts(machine);
-            assert_eq!(
-                parts.is_empty(),
-                matches!(
-                    machine,
-                    Machine::Portal | Machine::Glyph(crate::sim::GlyphKind::Resonator)
-                )
-            );
-            if parts.is_empty() {
-                continue;
-            }
-            assert!((2..=4).contains(&parts.len()));
-            assert!(parts.iter().any(|part| part.motion.is_none()));
-            for part in parts {
-                assert!(part.motion.is_none() || part.event.is_some());
-                if let Some(event) = part.event {
-                    let sample = match event {
-                        Event::Copied => TickEvent::Copied {
-                            portal: 7,
-                            at: crate::sim::ORIGIN,
-                        },
-                        Event::Fired => TickEvent::Fired {
-                            glyph: 7,
-                            machine,
-                            at: crate::sim::ORIGIN,
-                        },
-                        Event::Rotated => {
-                            let Machine::Arm(length) = machine else {
-                                unreachable!("only an arm rotates")
-                            };
-                            TickEvent::Rotated {
-                                arm: 7,
-                                length,
-                                spin: crate::sim::Spin::Cw,
-                                at: crate::sim::ORIGIN,
-                            }
-                        }
-                    };
-                    assert!(event.matches(&sample, 7));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn an_arm_has_no_part_rotation_beside_its_frame_sweep() {
-        assert!(
-            parts(Machine::Arm(ArmLength::One))
-                .iter()
-                .all(|part| part.motion.is_none())
-        );
-    }
-
-    #[test]
-    fn every_part_has_equal_sized_maps_and_its_firing_feature_matches_the_split() {
-        for machine in Machine::ALL {
-            for part in parts(machine) {
-                let (albedo, normal) = crate::look::rig(machine, &part.name);
-                assert_ne!(albedo.name, normal.name);
-                let moving = part.mask == Mask::Inside;
-                assert_eq!(part.event.is_some(), moving, "{machine:?} {}", part.name);
-                let suffix = if moving { "moving" } else { "base" };
-                assert!(albedo.name.ends_with(&format!("/albedo-{suffix}")));
-                assert!(normal.name.ends_with(&format!("/normal-{suffix}")));
-                let albedo = albedo.decode();
-                let normal = normal.decode();
-                assert_eq!(
-                    (albedo.width(), albedo.height()),
-                    (normal.width(), normal.height())
-                );
-                assert_eq!(albedo.width(), albedo.height());
-                let visible = albedo
-                    .data
-                    .as_ref()
-                    .expect("a decoded part has pixels")
-                    .chunks_exact(4)
-                    .filter(|pixel| pixel[3] > 0)
-                    .count();
-                assert!(visible > 10, "{machine:?} {} is empty", part.name);
-                assert!(
-                    visible < (albedo.width() * albedo.height()) as usize,
-                    "{machine:?} {} has no transparency",
-                    part.name
-                );
-            }
-        }
-    }
-
     #[test]
     fn motion_exists_only_for_its_event_and_returns_to_rest_inside_the_tick() {
         assert_eq!(pulse(false, 0.5), 0.0);

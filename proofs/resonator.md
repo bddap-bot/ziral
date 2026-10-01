@@ -6,7 +6,7 @@ The resonator requires two lone amber atoms. Missing, wrong-kind or bonded input
 
 The housing is generated with `nix-shell --run 'cargo run -- --gen resonator'`. The director's captions, verified image inputs, candidates, scores and selected lighting maps are in `art/machines/resonator/`. The fixed critic, compound rejection and measurement thresholds are unchanged. Arms retain their distinct body exception.
 
-Selection retained candidate 6 at 7/10 after three rounds; the final round's candidates exceeded the unchanged footprint limit. The computed calibration error is 7.094°, below 25°.
+Selection retained candidate 6 at 7/10 after three rounds; the final round's candidates exceeded the unchanged footprint limit.
 
 Capture commands, from the repository root inside `nix-shell`:
 

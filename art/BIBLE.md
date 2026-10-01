@@ -34,7 +34,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory reads chiefly by 
 
 ## 2. Language
 
-**Materials and light.** Glazed clay, rubbed brass and matte rubber offer a tactile starting point; other materials are welcome. Technical note: capture albedo under even, diffuse light because runtime normal-map lighting supplies direction; baked highlights and shadows would compete with it. [MACHINES.md](MACHINES.md#relief) describes the relief approximation and calibration relights.
+**Materials and light.** Glazed clay, rubbed brass and matte rubber offer a tactile starting point; other materials are welcome. [MACHINES.md](MACHINES.md) describes sprite generation.
 
 Directive: “Every machine body, including arms, has rich material: glaze variation, shading and depth are expected”; “The complete arm creeps, overshoots, and rings out”.
 
@@ -136,7 +136,7 @@ Asset directories, relative to this document:
 
 - [reference/](reference/) contains concepts, their historical prompt log and gameplay proofs. These are references rather than shipped textures.
 - [textures/](textures/) contains atoms, bonds, the grout template and twenty-four tiles beside their paint prompts. The template originates in hex-scaffold.svg; all tiles use the template’s grout at runtime.
-- [machines/](machines/) contains each machine’s scaffold, paint prompts, candidates, scores, albedo, normal map and relight evidence. [MACHINES.md](MACHINES.md) explains their provenance and regeneration.
+- [machines/](machines/) contains each machine’s scaffold, paint prompts, candidates, scores and albedo. [MACHINES.md](MACHINES.md) explains their provenance and regeneration.
 - [overlay/](overlay/) contains the painted manual page; runtime composition places the instruction pictures in its slots.
 - [symbols/](symbols/) contains the vector source and generated instruction pictures described in [SYMBOLS.md](SYMBOLS.md).
 

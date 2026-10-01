@@ -2,7 +2,7 @@ use crate::sim::Machine;
 use crate::sim::{Arm, ArmLength, AtomKind, BondKind, DIRS, GlyphKind, Hex, ORIGIN, Slot, Tier};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
-use bevy::math::{Vec2, Vec3};
+use bevy::math::Vec2;
 use bevy::prelude::Color;
 use std::ops::RangeInclusive;
 
@@ -55,11 +55,6 @@ pub fn grout(tile: &mut Image, template: &Image) {
         }
     }
 }
-pub fn light() -> Vec3 {
-    Vec3::new(-1.0, 1.0, 1.4).normalize()
-}
-
-pub const AMBIENT: f32 = 0.25;
 
 pub fn px(h: Hex) -> Vec2 {
     let q = h.q as f32;
@@ -222,7 +217,6 @@ pub enum Finish {
     Plain,
     Grouted,
     Sprite,
-    Relief,
 }
 
 #[derive(Clone, Copy)]
@@ -322,24 +316,13 @@ pub enum Shape {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MachineMark {
-    Hand(Glaze, Skin),
-    Sprite(Skin),
-}
-
-impl MachineMark {
-    pub fn normal(self) -> Skin {
-        match self {
-            MachineMark::Hand(_, normal) | MachineMark::Sprite(normal) => normal,
-        }
-    }
+    Hand(Glaze),
+    Sprite,
 }
 
 macro_rules! machine {
     ($name:literal) => {
-        (
-            finish!(concat!("machines/", $name, "/albedo"), Finish::Sprite),
-            finish!(concat!("machines/", $name, "/normal"), Finish::Relief),
-        )
+        finish!(concat!("machines/", $name, "/albedo"), Finish::Sprite)
     };
 }
 
@@ -396,16 +379,16 @@ pub fn bond(kind: BondKind) -> Look<()> {
 pub fn machine(item: Machine) -> Look<MachineMark> {
     let kind = match item {
         Machine::Portal => {
-            let (skin, normal) = machine!("portal");
+            let skin = machine!("portal");
             return Look {
                 glaze: Glaze::Plum,
                 skin,
                 shape: Shape::Cells(1),
-                marking: MachineMark::Sprite(normal),
+                marking: MachineMark::Sprite,
             };
         }
         Machine::Arm(length) => {
-            let (skin, normal) = match length {
+            let skin = match length {
                 ArmLength::One => machine!("arm"),
                 ArmLength::Two => machine!("arm-2"),
                 ArmLength::Three => machine!("arm-3"),
@@ -414,12 +397,12 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
                 glaze: Glaze::Brass,
                 skin,
                 shape: Shape::Radial(length),
-                marking: MachineMark::Hand(Glaze::Terracotta, normal),
+                marking: MachineMark::Hand(Glaze::Terracotta),
             };
         }
         Machine::Glyph(kind) => kind,
     };
-    let (glaze, (skin, normal)) = match kind {
+    let (glaze, skin) = match kind {
         GlyphKind::Source => (Glaze::BlueGreen, machine!("source")),
         GlyphKind::SourceTwo => (Glaze::BlueGreen, machine!("source-2")),
         GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
@@ -442,53 +425,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
             GlyphKind::Converter(atom) => Shape::Converter(atom),
             _ => Shape::Cells(kind.rule().slots.len()),
         },
-        marking: MachineMark::Sprite(normal),
-    }
-}
-
-pub fn rig(item: Machine, part: &str) -> (Skin, Skin) {
-    let name = machine(item).skin.name.split('/').nth(1).unwrap();
-    macro_rules! pair {
-        ($machine:literal, $part:literal) => {{
-            let albedo = finish!(
-                concat!("machines/", $machine, "/parts/albedo-", $part),
-                Finish::Sprite
-            );
-            let normal = finish!(
-                concat!("machines/", $machine, "/parts/normal-", $part),
-                Finish::Relief
-            );
-            (albedo, normal)
-        }};
-    }
-    match (name, part) {
-        ("arm", "base") => pair!("arm", "base"),
-        ("arm", "hand") => pair!("arm", "moving"),
-        ("arm-2", "base") => pair!("arm-2", "base"),
-        ("arm-2", "hand") => pair!("arm-2", "moving"),
-        ("arm-3", "base") => pair!("arm-3", "base"),
-        ("arm-3", "hand") => pair!("arm-3", "moving"),
-        ("bonder", "base") => pair!("bonder", "base"),
-        ("bonder", "bar") => pair!("bonder", "moving"),
-        ("converter-amber", "base") => pair!("converter-amber", "base"),
-        ("converter-amber", "ring") => pair!("converter-amber", "moving"),
-        ("converter-cobalt", "base") => pair!("converter-cobalt", "base"),
-        ("converter-cobalt", "flow") => pair!("converter-cobalt", "moving"),
-        ("output-1", "base") => pair!("output-1", "base"),
-        ("output-1", "rim") => pair!("output-1", "moving"),
-        ("output-2", "base") => pair!("output-2", "base"),
-        ("output-2", "rim") => pair!("output-2", "moving"),
-        ("output-3", "base") => pair!("output-3", "base"),
-        ("output-3", "rim") => pair!("output-3", "moving"),
-        ("reification", "base") => pair!("reification", "base"),
-        ("reification", "rim") => pair!("reification", "moving"),
-        ("second-bond", "base") => pair!("second-bond", "base"),
-        ("second-bond", "ring") => pair!("second-bond", "moving"),
-        ("source-2", "base") => pair!("source-2", "base"),
-        ("source-2", "rim") => pair!("source-2", "moving"),
-        ("source", "base") => pair!("source", "base"),
-        ("source", "rim") => pair!("source", "moving"),
-        _ => panic!("machine {name} has no part {part}"),
+        marking: MachineMark::Sprite,
     }
 }
 
@@ -498,18 +435,6 @@ pub fn skins() -> impl Iterator<Item = Skin> {
         .map(|k| atom(k).skin)
         .chain(BondKind::ALL.into_iter().map(|k| bond(k).skin))
         .chain(Machine::ALL.into_iter().map(|item| machine(item).skin))
-        .chain(
-            Machine::ALL
-                .into_iter()
-                .filter(|item| crate::rig::parts(*item).is_empty())
-                .map(|item| machine(item).marking.normal()),
-        )
-        .chain(Machine::ALL.into_iter().flat_map(|item| {
-            crate::rig::parts(item).iter().flat_map(move |part| {
-                let (albedo, normal) = rig(item, &part.name);
-                [albedo, normal]
-            })
-        }))
         .chain(TILES)
         .chain([ETHEREAL])
         .chain(crate::KEYS.iter().map(|k| k.symbol))
@@ -894,34 +819,10 @@ pub(crate) mod tests {
             AtomKind::ALL.len()
                 + BondKind::ALL.len()
                 + Machine::ALL.len()
-                + 2
-                + 2 * Machine::ALL
-                    .into_iter()
-                    .map(|machine| crate::rig::parts(machine).len())
-                    .sum::<usize>()
                 + TILES.len()
                 + KEYS.len()
                 + 2
         );
-    }
-
-    #[test]
-    fn rigs_fire_part_maps_without_the_unused_whole_machine_normal() {
-        let all: Vec<_> = skins().collect();
-        for item in Machine::ALL {
-            let normal = machine(item).marking.normal();
-            assert_eq!(
-                all.contains(&normal),
-                matches!(item, Machine::Portal | Machine::Glyph(GlyphKind::Resonator)),
-                "{item:?} whole-machine relief residency"
-            );
-            for part in crate::rig::parts(item) {
-                let (albedo, normal) = rig(item, &part.name);
-                for skin in [albedo, normal] {
-                    assert!(all.contains(&skin), "{item:?} needs {skin:?}");
-                }
-            }
-        }
     }
 
     #[test]

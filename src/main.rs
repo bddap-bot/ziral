@@ -4255,15 +4255,10 @@ impl Kiln {
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 struct Lit {
-    #[uniform(0)]
-    light: Vec4,
     #[texture(1)]
     #[sampler(2)]
     albedo: Handle<Image>,
-    #[texture(3)]
-    #[sampler(4)]
-    relief: Handle<Image>,
-    #[uniform(5)]
+    #[uniform(3)]
     response: Vec4,
 }
 
@@ -4310,7 +4305,7 @@ impl Kiln {
             .iter()
             .find(|(s, _)| *s == skin)
             .map(|(_, lit)| &lit[energy.level()])
-            .unwrap_or_else(|| panic!("{skin:?} carries no relief"))
+            .unwrap_or_else(|| panic!("{skin:?} has no material"))
     }
 }
 
@@ -4338,10 +4333,6 @@ fn fire(mut image: Image, skin: Skin) -> Image {
         TextureFormat::Rgba8UnormSrgb,
         "{skin:?} must decode to rgba8"
     );
-    let relief = skin.finish == Finish::Relief;
-    if relief {
-        image.texture_descriptor.format = TextureFormat::Rgba8Unorm;
-    }
     let linear: [f32; 256] = std::array::from_fn(|b| to_linear(b as u8));
     let (mut w, mut h) = (image.width() as usize, image.height() as usize);
     let mut data = image
@@ -4359,7 +4350,7 @@ fn fire(mut image: Image, skin: Skin) -> Image {
                 for c in 0..4 {
                     let at = |dx: usize, dy: usize| level[((2 * y + dy) * w + 2 * x + dx) * 4 + c];
                     let four = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
-                    next.push(if c == 3 || relief {
+                    next.push(if c == 3 {
                         (four.iter().map(|a| u32::from(*a)).sum::<u32>() / 4) as u8
                     } else {
                         to_srgb(four.iter().map(|a| linear[usize::from(*a)]).sum::<f32>() / 4.0)
@@ -4434,28 +4425,12 @@ fn fire_kiln(
     };
     let lit = Machine::ALL
         .into_iter()
-        .flat_map(|item| {
-            let parts = rig::parts(item);
-            if parts.is_empty() {
-                let look = look::machine(item);
-                vec![(look.skin, look.marking.normal(), true)]
-            } else {
-                parts
-                    .iter()
-                    .map(|part| {
-                        let (skin, normal) = look::rig(item, &part.name);
-                        (skin, normal, part.event.is_some())
-                    })
-                    .collect()
-            }
-        })
-        .map(|(skin, normal, responsive)| {
+        .map(|item| {
+            let skin = look::machine(item).skin;
             let lit = std::array::from_fn(|level| {
                 lits.add(Lit {
-                    light: look::light().extend(look::AMBIENT),
                     albedo: image(skin),
-                    relief: image(normal),
-                    response: response(if responsive { level } else { 0 }),
+                    response: response(level),
                 })
             });
             (skin, lit)
@@ -4767,42 +4742,19 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         let quad = look::quad(item);
         let kiln = self.kiln;
         let pulse = rig::pulse(response.0, response.1);
-        if rig::parts(item).is_empty() {
-            let look = look::machine(item);
-            let (shift, turn, scale) = rig::entry(item)
-                .motion
-                .map_or(([0.0, 0.0], 0.0, 1.0), |motion| motion.pose(pulse));
-            let centre =
-                origin + Vec2::from_angle(angle).rotate(quad.centre + Vec2::from(shift) * HEX);
-            self.fill(
-                &kiln.bar,
-                kiln.lit(look.skin, response.2),
-                centre,
-                angle + turn,
-                quad.size() * scale,
-                z,
-            );
-            return;
-        }
-        for (index, part) in rig::parts(item).iter().enumerate() {
-            let (skin, _) = look::rig(item, &part.name);
-            let pivot = Vec2::new(part.pivot[0], part.pivot[1]) * HEX;
-            let (shift, turn, scale) = part
-                .motion
-                .map_or(([0.0, 0.0], 0.0, 1.0), |motion| motion.pose(pulse));
-            let shift = Vec2::from(shift) * HEX;
-            let local = Vec2::from_angle(turn).rotate(quad.centre - pivot) + pivot + shift;
-            let at = origin + Vec2::from_angle(angle).rotate(local);
-            let part_z = z + index as f32 * 0.0001;
-            self.fill(
-                &kiln.bar,
-                kiln.lit(skin, response.2),
-                at,
-                angle + turn,
-                quad.size() * scale,
-                part_z,
-            );
-        }
+        let look = look::machine(item);
+        let scale = rig::entry(item)
+            .motion
+            .map_or(1.0, |motion| motion.scale(pulse));
+        let centre = origin + Vec2::from_angle(angle).rotate(quad.centre);
+        self.fill(
+            &kiln.bar,
+            kiln.lit(look.skin, response.2),
+            centre,
+            angle,
+            quad.size() * scale,
+            z,
+        );
     }
 
     fn arm(
@@ -4817,7 +4769,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         self.rig(item, pivot, (hand - pivot).to_angle(), z, motion);
         let look = look::machine(item);
         match look.marking {
-            MachineMark::Hand(glaze, _) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
+            MachineMark::Hand(glaze) => self.horseshoe(hand, HEX * ring, pivot - hand, glaze),
             _ => unworn(look),
         };
     }
@@ -4832,15 +4784,15 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
     ) {
         let look = look::machine(item);
         match (item, look.marking) {
-            (Machine::Arm(length), MachineMark::Hand(_, _)) => {
+            (Machine::Arm(length), MachineMark::Hand(_)) => {
                 let hand =
                     at + Vec2::from_angle(angle) * px(DIRS[0]).length() * length.cells() as f32;
                 self.arm(item, at, hand, RING_OPEN, z, response);
             }
-            (Machine::Portal, MachineMark::Sprite(_)) => {
+            (Machine::Portal, MachineMark::Sprite) => {
                 self.portal(at, z, rig::pulse(response.0, response.1));
             }
-            (Machine::Glyph(_), MachineMark::Sprite(_)) => {
+            (Machine::Glyph(_), MachineMark::Sprite) => {
                 self.rig(item, at, angle, z, response);
             }
             _ => unworn(look),
@@ -4849,9 +4801,9 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
 
     fn portal(&mut self, at: Vec2, z: f32, pulse: f32) {
         let look = look::machine(Machine::Portal);
-        let (shift, turn, scale) = rig::entry(Machine::Portal)
+        let scale = rig::entry(Machine::Portal)
             .motion
-            .map_or(([0.0, 0.0], 0.0, 1.0), |motion| motion.pose(pulse));
+            .map_or(1.0, |motion| motion.scale(pulse));
         self.strokes.push(Stroke {
             ink: Ink::Sprite(Sprite {
                 image: self.kiln.image(look.skin),
@@ -4859,10 +4811,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
                 ..default()
             }),
             layers: self.layers.clone(),
-            transform: Transform::from_translation(
-                ((at + Vec2::from(shift) * HEX) * self.scale + self.shift).extend(z),
-            )
-            .with_rotation(Quat::from_rotation_z(turn)),
+            transform: Transform::from_translation((at * self.scale + self.shift).extend(z)),
         });
     }
 
@@ -5381,7 +5330,7 @@ fn draw(
             }
             if set.atom_at(ORIGIN).is_some() {
                 let look = look::machine(Machine::Arm(ArmLength::One));
-                let MachineMark::Hand(glaze, _) = look.marking else {
+                let MachineMark::Hand(glaze) = look.marking else {
                     unworn(look)
                 };
                 p.horseshoe(pointer, HEX * RING_CLOSED, Vec2::Y, glaze);
@@ -7535,10 +7484,10 @@ mod tests {
         assert!(rig::activation(Machine::Portal).matches(event, 0));
         assert!(!rig::activation(Machine::Portal).matches(event, 1));
         let phase = elapsed / (TICK_MS / 1000.0);
-        let (_, _, scale) = rig::entry(Machine::Portal)
+        let scale = rig::entry(Machine::Portal)
             .motion
             .unwrap()
-            .pose(rig::pulse(true, phase));
+            .scale(rig::pulse(true, phase));
         assert!(scale > 1.1);
         let (emitter, count) = particles::burst(
             Machine::Portal,
@@ -8818,18 +8767,12 @@ mod tests {
                     .shown()
                     .arms
                     .iter()
-                    .flat_map(|arm| {
-                        let item = Machine::Arm(arm.length);
-                        rig::parts(item).iter().map(move |part| {
-                            let (skin, _) = look::rig(item, &part.name);
-                            kiln.lit(skin, arm.energy)
-                        })
-                    })
+                    .map(|arm| kiln.lit(look::machine(arm.machine()).skin, arm.energy))
                     .collect();
                 assert_eq!(
                     actual.len(),
                     expected.len(),
-                    "every displayed rig part keeps its lit material"
+                    "every displayed machine keeps its material"
                 );
                 for material in &expected {
                     assert_eq!(
@@ -8863,116 +8806,6 @@ mod tests {
                 "{actual} vs {expected}"
             );
         }
-    }
-
-    fn posed_arm(energy: sim::ActivationEnergy) -> image::RgbaImage {
-        let _render = RENDER_TEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = std::env::temp_dir().join(format!(
-            "ziral-activation-{}-{}",
-            energy.level(),
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut app = shot::still("rotation", dir.clone(), 1);
-        lit_plugin(&mut app);
-        let mut world = World::new(Sim::empty());
-        world.viewer.period = f32::INFINITY;
-        world.viewer.running = false;
-        let mut arm = Arm::new(ArmLength::One, ORIGIN, 0, Vec::new());
-        arm.energy = energy;
-        world.sim.arms.push(arm);
-        world.viewer.prev = world.sim.clone();
-        *app.world_mut().resource_mut::<Game>() = Game::from_world(world);
-        app.add_systems(Last, |kiln: Res<Kiln>, materials: Res<Assets<Lit>>| {
-            for machine in Machine::ALL {
-                let parts = rig::parts(machine);
-                let skins = if parts.is_empty() {
-                    vec![(look::machine(machine).skin, true)]
-                } else {
-                    parts
-                        .iter()
-                        .map(|part| {
-                            (
-                                look::rig(machine, &part.name).0,
-                                part.mask == rig::Mask::Inside,
-                            )
-                        })
-                        .collect()
-                };
-                for (skin, responsive) in skins {
-                    let (_, levels) = kiln
-                        .lit
-                        .iter()
-                        .find(|(candidate, _)| *candidate == skin)
-                        .unwrap();
-                    for (level, handle) in levels.iter().enumerate() {
-                        let expected = if responsive { level as f32 / 3.0 } else { 0.0 };
-                        assert_eq!(
-                            materials.get(handle).unwrap().response.x,
-                            expected,
-                            "{machine:?} {skin:?} level {level}"
-                        );
-                    }
-                }
-            }
-        });
-        assert_eq!(app.run(), bevy::app::AppExit::Success);
-        let frame = image::open(dir.join("00000.png")).unwrap().into_rgba8();
-        std::fs::remove_dir_all(&dir).unwrap();
-        frame
-    }
-
-    #[test]
-    fn activation_energy_changes_only_the_firing_feature() {
-        let rest = posed_arm(sim::ActivationEnergy::default());
-        let fired = posed_arm(sim::ActivationEnergy::FULL);
-        let item = Machine::Arm(ArmLength::One);
-        let quad = look::quad(item);
-        let mask = look::rig(item, "hand").0.decode();
-        let side = mask.width();
-        let (mut lo, mut hi) = (UVec2::MAX, UVec2::ZERO);
-        for (i, pixel) in mask.data.unwrap().chunks_exact(4).enumerate() {
-            if pixel[3] > 0 {
-                let at = UVec2::new(i as u32 % side, i as u32 / side);
-                lo = lo.min(at);
-                hi = hi.max(at);
-            }
-        }
-        assert!(
-            lo.cmple(hi).all(),
-            "the firing feature has no responsive texel"
-        );
-        let screen = |texel: UVec2| {
-            let uv = texel.as_vec2() / side as f32;
-            let world = quad.centre + (uv - 0.5) * Vec2::new(1.0, -1.0) * quad.side;
-            (world - px(FOCUS)) * Vec2::new(1.0, -1.0) / MICRO_SCALE
-                + Vec2::new(rest.width() as f32, rest.height() as f32) / 2.0
-        };
-        let margin = Vec2::splat(6.0);
-        let (near, far) = (screen(lo), screen(hi));
-        let (min, max) = (near.min(far) - margin, near.max(far) + margin);
-        let mut responding = 0;
-        let mut inert = Vec::new();
-        for (x, y, before) in rest.enumerate_pixels() {
-            if before == fired.get_pixel(x, y) {
-                continue;
-            }
-            responding += 1;
-            let at = Vec2::new(x as f32, y as f32);
-            if at.cmplt(min).any() || at.cmpgt(max).any() {
-                inert.push((x, y));
-            }
-        }
-        assert!(responding > 100, "activation is invisible");
-        assert!(
-            inert.is_empty(),
-            "{} inert pixels respond to activation, first {:?}",
-            inert.len(),
-            &inert[..inert.len().min(8)]
-        );
     }
 
     fn still_frames(view: &str, n: u32) -> Vec<image::RgbaImage> {
@@ -11954,11 +11787,7 @@ mod tests {
             );
             assert_eq!(
                 at(layer::GLYPHS + layer::LIFT).len(),
-                sim.glyphs
-                    .iter()
-                    .flatten()
-                    .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len().max(1))
-                    .sum::<usize>(),
+                sim.glyphs.iter().flatten().count(),
                 "{name} glyphs"
             );
             assert_eq!(
@@ -11989,14 +11818,7 @@ mod tests {
                 })
                 .map(|(p, s)| (p.truncate(), *s))
                 .collect();
-            assert_eq!(
-                arms.len(),
-                sim.arms
-                    .iter()
-                    .map(|arm| rig::parts(arm.machine()).len())
-                    .sum::<usize>(),
-                "{name} arms"
-            );
+            assert_eq!(arms.len(), sim.arms.len(), "{name} arms");
             for arm in &sim.arms {
                 let quad = look::quad(arm.machine());
                 let angle = (px(arm.hand()) - px(arm.pivot)).to_angle();
@@ -12024,23 +11846,13 @@ mod tests {
             );
             assert_eq!(
                 fills.len(),
-                2 + rig::parts(machine).len().max(1)
-                    + bars(&recipe)
+                3 + bars(&recipe)
                     + 2 * recipe.atoms.len()
                     + playfield(machine).len()
-                    + sim
-                        .glyphs
-                        .iter()
-                        .flatten()
-                        .map(|glyph| rig::parts(Machine::Glyph(glyph.kind)).len().max(1))
-                        .sum::<usize>()
+                    + sim.glyphs.iter().flatten().count()
                     + bars(&sim)
                     + 2 * atoms.len()
-                    + sim
-                        .arms
-                        .iter()
-                        .map(|arm| rig::parts(arm.machine()).len())
-                        .sum::<usize>(),
+                    + sim.arms.len(),
                 "{name}: something else on the card"
             );
         }
