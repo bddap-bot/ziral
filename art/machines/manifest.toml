@@ -179,10 +179,10 @@ layer = "on"
 energy_scaled = false
 
 [machine.output-2]
-direction = "One substantial pale-ivory ceramic receiving tray fills its nineteen-cell hexagonal footprint, slightly inset from the guide. A broad uninterrupted glazed surface carries a flowing blue-green mineral inlay within an ornate darkened-brass perimeter, a magical acceptor field spacious enough for a whole arrangement. Recessed brass scrollwork, riveted corner fittings and inward-pointing sculpted shoulders belong to one continuous body. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself."
-kept = 6
-briefed = "1950064662af71b5"
-painted = "7643f53adea32311"
+direction = "One substantial pale-ivory ceramic receiving tray fills its nineteen-cell hexagonal footprint, slightly inset from the guide. A broad uninterrupted receiving surface carries deep blue-green mineral rivers flowing all the way through its centre, alternating with wide warm ivory ceramic islands. The inlay occupies substantial areas rather than hairline veins; dark mineral edges and restrained highlights keep the centre richly structured even in a 64-pixel inventory picture. An ornate darkened-brass perimeter frames this magical acceptor field spacious enough for a whole arrangement. Recessed brass scrollwork, riveted corner fittings and inward-pointing sculpted shoulders belong to one continuous body. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself."
+kept = 5
+briefed = "32d94ce35f232e25"
+painted = "d211d4e7579cf1f5"
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -197,10 +197,10 @@ layer = "on"
 energy_scaled = false
 
 [machine.output-3]
-direction = "One monumental pale-ivory ceramic receiving table fills its thirty-seven-cell hexagonal footprint, slightly inset from the guide. Its expansive uninterrupted glazed face is a magical acceptor field, with flowing blue-green mineral veins and generous darkened-brass inlay. A substantial scalloped perimeter, ornamental service plates and rivets give the table workshop character; the radial shoulders point toward the broad open centre. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself."
+direction = "One monumental pale-ivory ceramic receiving table fills its thirty-seven-cell hexagonal footprint, slightly inset from the guide. Its expansive uninterrupted glazed face is a magical acceptor field of warm ivory ceramic crossed through its centre by broad darkened-brass inlay and deep blue-green mineral bands. Large interlocking material areas, dark recessed boundaries and restrained highlights retain visible structure in a 64-pixel inventory picture; the centre has no blank white expanse or luminous wash. The inlays lie flush in the continuous receiving surface. A substantial scalloped perimeter, ornamental service plates and rivets give the table workshop character; the radial shoulders point toward the broad open centre. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself."
 kept = 5
-briefed = "e2dccb5653aee950"
-painted = "98103093074e6828"
+briefed = "6741426dea9abe26"
+painted = "d350ebf10af5c2eb"
 
 [machine.output-3.instrument]
 voice = "brass"

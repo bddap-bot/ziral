@@ -34,7 +34,7 @@ Hue is sRGB hue; luminance is linear relative luminance. Ivory reads chiefly by 
 
 ## 2. Language
 
-**Materials and light.** Glazed clay, rubbed brass and matte rubber offer a tactile starting point; other materials are welcome. [MACHINES.md](MACHINES.md) describes sprite generation.
+**Materials and light.** Glazed clay, rubbed brass and matte rubber offer a tactile starting point; other materials are welcome. Large output receiving fields carry broad mineral inlay through their centres, with dark material boundaries and restrained ivory highlights that remain legible in small inventory pictures. Hairline veins alone disappear under reduction. [MACHINES.md](MACHINES.md) describes sprite generation.
 
 Directive: “Every machine body, including arms, has rich material: glaze variation, shading and depth are expected”; “The complete arm creeps, overshoots, and rings out”.
 
