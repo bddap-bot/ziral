@@ -3,7 +3,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 scratch="$here/.gen"
-names=(f r a d q e x shift-w shift-e shift-f shift-c shift-x shift-a)
+names=(f r a d q e x shift-w shift-e shift-c shift-x shift-z shift-q)
 inputs=()
 thumbs=()
 trap 'rm -rf "$scratch"' EXIT

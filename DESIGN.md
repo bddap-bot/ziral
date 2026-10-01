@@ -619,6 +619,20 @@ This is the dumbest design satisfying the directive because one function combine
 
 Tests place one move-driven blueprint at every turn and require the cells reached on every tick to be the corresponding rotated image, then turn a placed arm and require its next move to turn with it. Removing the base turn from move resolution breaks both comparisons. `proofs/arm-local-move-81.gif` (`art/gif.sh proofs/arm-local-move-81.gif arm-local-move-81 8 1280:720:0:0`) shows the blueprint pasted at two turns and running side by side at the shipped size.
 
+### Toy 1 moves walk where the arm points
+
+Directive (verbatim): "shift w on the arm should move it in the direction the arm is pointing. shift-x, the opposite, ect"
+
+The six move keys are the two rows Q W E and Z X C, read as the arm seen from behind with its pointing direction up the keyboard: Shift W moves the base the way the hand points and Shift X straight away from it, Shift E and Shift Q the two cells ahead to the right and left, Shift C and Shift Z the two cells behind to the right and left. Clockwise from where the arm points the ring is W, E, C, X, Z, Q, so the key's place in that ring is its token, `Instr::Move(0)` to `Instr::Move(5)`, and `Instr::posed` still adds the arm's turn to it; the hand lies at `DIRS[dir]` from the pivot, so Shift W's token 0 is exactly the hand's direction at every turn. Nothing else about moves changed: one function resolves a token against the arm, and no world direction is stored.
+
+Why those four. With ahead at the top of the keyboard a hexagon has no cell directly left or right, only two ahead and two behind at 60° and 120° to either side, and on the staggered keyboard the keys on those bearings around W and X are E and C on the right and Q and Z on the left. F and A, which the previous ring used for right and left, would put a left and a right neighbour at the side of the arm, where the hex has none; D is the same. Q and Z were free with Shift: unshifted Q pivots and unshifted Z deletes a picked machine, and Shift already separates X from Shift X and C from Shift C in the same way. Shift F and Shift A are unbound.
+
+The symbols are drawn in the arm's rest facing, its hand pointing right, the facing a newly placed arm takes: each arrow is the token's direction at turn 0, rotated 60° per ring step, so Shift W's arrow points right and Shift X's left, and a placed arm turned from rest turns its moves with it. The arrows and letters come from `art/symbols/source.svg` through `art/symbols/gen.sh`, which writes the six move symbols and the symbol sheet; the manual card, `MANUAL_SLOTS`, places them in two columns, Shift Q, W and E down the left and Shift Z, X and C down the right, so each row pairs a key with the one opposite. Each key keeps its recipe where it had one, Shift Q taking the former Shift F's and Shift Z the former Shift A's. The fragment text letters follow the keys, and an older fragment's moves read with the new keys' meanings, with no compatibility path.
+
+Disposed: "Toy 1 walks"'s ring, "W is the upper-left neighbour, then clockwise E upper-right, F right, C lower-right, X lower-left, A left", its "Z is not used", and the key-to-direction table "W 4, E 5, F 0, C 1, X 2, A 3".
+
+Tests: the six move keys ring the arm clockwise from where it points, W, E, C, X, Z, Q writing tokens 0 to 5, and sum to nothing; at each of the six turns Shift W moves the base by the hand's offset and Shift X by its negation; the shifted keys write those tokens to a focused tape; every symbol's letter matches its key and shift state. Mutation: swapping Shift W's token to 4 fails both ring and walk tests, and restoring it passes.
+
 ### Tape symbols show shift in case
 
 Directive (verbatim): "Some of those key shortcuts are activated by pressing shift and a letter. Some are not. We can display difference by using lowercase to represent a button that is not pressed with shift."
@@ -866,7 +880,7 @@ Tests press G and S with empty inventory and with stocked tokens, require the ca
 
 Directive (verbatim): "each tape symbol becomes a B2 plus some minimal structure to differentiate. goal is for them to be easy to craft manually. i expect the first automation players will set up will be "make B2""
 
-Every token recipe contains exactly one cobalt atom, `C`, plus the least connected structure that keeps all thirteen recipes distinct through every turn and mirror. F is cobalt alone and R is the single-bonded cobalt/base pair. Q, E and X are two base atoms bonded around cobalt at 60°, 120° and 180°. A and D close the 60° form into a triangle, with D distinguished by doubling its base/base bond. The six move keys are chains with cobalt at one end: Shift W, E and F use single bonds and open through 60°, 120° and 180°, while Shift A, X and C repeat those three shapes with only the base/base bond doubled. Thus one recipe has one atom, one has two atoms, and the remaining eleven need three; no recipe needs more than three bonds or one second-bond act. Every double bond joins two base atoms, the only pair the second-bond applicator accepts.
+Every token recipe contains exactly one cobalt atom, `C`, plus the least connected structure that keeps all thirteen recipes distinct through every turn and mirror. F is cobalt alone and R is the single-bonded cobalt/base pair. Q, E and X are two base atoms bonded around cobalt at 60°, 120° and 180°. A and D close the 60° form into a triangle, with D distinguished by doubling its base/base bond. The six move keys are chains with cobalt at one end: Shift W, E and Q use single bonds and open through 60°, 120° and 180°, while Shift Z, X and C repeat those three shapes with only the base/base bond doubled. Thus one recipe has one atom, one has two atoms, and the remaining eleven need three; no recipe needs more than three bonds or one second-bond act. Every double bond joins two base atoms, the only pair the second-bond applicator accepts.
 
 The cobalt requirement puts token minting after the plum-tier route that makes cobalt, turning that route into the first shared automation target instead of thirteen unrelated material costs. The row and column families make the table learnable from the keyboard while bond strength, cobalt position and opening angle keep mirror images from collapsing two keys. This is the dumbest design satisfying the directive because it replaces the thirteen rows in the one recipe table and relies on the existing matcher, bonder, second-bond applicator, card renderer and key table. The arm recipe with the act drawn on it was rejected: it takes up to four atoms, is hard to craft by hand, and makes the token price describe the machine that executes it rather than the shared cobalt rung.
 
@@ -879,12 +893,12 @@ The cobalt requirement puts token minting after the plum-tier route that makes c
 | Q, pivot counterclockwise | `B0,0 B0,1 C1,0 0,0-1,0 0,1-1,0` |
 | E, pivot clockwise | `B0,0 C0,1 B1,1 0,0-0,1 0,1-1,1` |
 | X, wait | `B0,0 C0,1 B0,2 0,0-0,1 0,1-0,2` |
-| Shift W, move upper left | `B0,0 B0,1 C1,0 0,0-0,1 0,1-1,0` |
-| Shift E, move upper right | `B0,0 B0,1 C1,1 0,0-0,1 0,1-1,1` |
-| Shift F, move right | `B0,0 B0,1 C0,2 0,0-0,1 0,1-0,2` |
-| Shift C, move lower right | `B0,0 B0,1 C0,2 0,0=0,1 0,1-0,2` |
-| Shift X, move lower left | `B0,0 B0,1 C1,1 0,0=0,1 0,1-1,1` |
-| Shift A, move left | `B0,0 B0,1 C1,0 0,0=0,1 0,1-1,0` |
+| Shift W, move ahead | `B0,0 B0,1 C1,0 0,0-0,1 0,1-1,0` |
+| Shift E, move ahead right | `B0,0 B0,1 C1,1 0,0-0,1 0,1-1,1` |
+| Shift C, move back right | `B0,0 B0,1 C0,2 0,0=0,1 0,1-0,2` |
+| Shift X, move back | `B0,0 B0,1 C1,1 0,0=0,1 0,1-1,1` |
+| Shift Z, move back left | `B0,0 B0,1 C1,0 0,0=0,1 0,1-1,0` |
+| Shift Q, move ahead left | `B0,0 B0,1 C0,2 0,0-0,1 0,1-0,2` |
 
 The cards need no token-specific drawing path: each already draws the table form beside the same 26 px symbol used by the tape. The proof sheet pins all thirteen cards at their shipped size in table order, so the symbol and the priced compound are visible together without scaling either.
 

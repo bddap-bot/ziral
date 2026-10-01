@@ -911,6 +911,7 @@ pub(crate) mod tests {
                 KeyCode::KeyR => 'r',
                 KeyCode::KeyW => 'w',
                 KeyCode::KeyX => 'x',
+                KeyCode::KeyZ => 'z',
                 code => panic!("{code:?} is not a letter binding"),
             };
             let expected = if key.shifted() {

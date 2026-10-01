@@ -61,31 +61,31 @@
   <g id="shift-w" transform="translate(3584 0)">
     <use href="#tile"/>
     <text class="letter" x="155" y="434">W</text>
-    <g class="mark" transform="rotate(240 380 146)"><use href="#right"/></g>
+    <g class="mark"><use href="#right"/></g>
   </g>
   <g id="shift-e" transform="translate(4096 0)">
     <use href="#tile"/>
     <text class="letter" x="142" y="434">E</text>
-    <g class="mark" transform="rotate(300 380 146)"><use href="#right"/></g>
-  </g>
-  <g id="shift-f" transform="translate(4608 0)">
-    <use href="#tile"/>
-    <text class="letter" x="142" y="434">F</text>
-    <g class="mark"><use href="#right"/></g>
-  </g>
-  <g id="shift-c" transform="translate(5120 0)">
-    <use href="#tile"/>
-    <text class="letter" x="146" y="434">C</text>
     <g class="mark" transform="rotate(60 380 146)"><use href="#right"/></g>
   </g>
-  <g id="shift-x" transform="translate(5632 0)">
+  <g id="shift-c" transform="translate(4608 0)">
     <use href="#tile"/>
-    <text class="letter" x="146" y="434">X</text>
+    <text class="letter" x="146" y="434">C</text>
     <g class="mark" transform="rotate(120 380 146)"><use href="#right"/></g>
   </g>
-  <g id="shift-a" transform="translate(6144 0)">
+  <g id="shift-x" transform="translate(5120 0)">
     <use href="#tile"/>
-    <text class="letter" x="146" y="434">A</text>
+    <text class="letter" x="146" y="434">X</text>
     <g class="mark" transform="rotate(180 380 146)"><use href="#right"/></g>
+  </g>
+  <g id="shift-z" transform="translate(5632 0)">
+    <use href="#tile"/>
+    <text class="letter" x="146" y="434">Z</text>
+    <g class="mark" transform="rotate(240 380 146)"><use href="#right"/></g>
+  </g>
+  <g id="shift-q" transform="translate(6144 0)">
+    <use href="#tile"/>
+    <text class="letter" x="151" y="434">Q</text>
+    <g class="mark" transform="rotate(300 380 146)"><use href="#right"/></g>
   </g>
 </svg>

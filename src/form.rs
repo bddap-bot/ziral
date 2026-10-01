@@ -72,28 +72,28 @@ pub const RECIPES: [(Item, &str); 27] = [
     ),
     (Item::Token(Instr::Wait), "B0,0 C0,1 B0,2 0,0-0,1 0,1-0,2"),
     (
-        Item::Token(Instr::Move(4)),
+        Item::Token(Instr::Move(0)),
         "B0,0 B0,1 C1,0 0,0-0,1 0,1-1,0",
     ),
     (
-        Item::Token(Instr::Move(5)),
+        Item::Token(Instr::Move(1)),
         "B0,0 B0,1 C1,1 0,0-0,1 0,1-1,1",
     ),
     (
-        Item::Token(Instr::Move(0)),
-        "B0,0 B0,1 C0,2 0,0-0,1 0,1-0,2",
-    ),
-    (
-        Item::Token(Instr::Move(1)),
+        Item::Token(Instr::Move(2)),
         "B0,0 B0,1 C0,2 0,0=0,1 0,1-0,2",
     ),
     (
-        Item::Token(Instr::Move(2)),
+        Item::Token(Instr::Move(3)),
         "B0,0 B0,1 C1,1 0,0=0,1 0,1-1,1",
     ),
     (
-        Item::Token(Instr::Move(3)),
+        Item::Token(Instr::Move(4)),
         "B0,0 B0,1 C1,0 0,0=0,1 0,1-1,0",
+    ),
+    (
+        Item::Token(Instr::Move(5)),
+        "B0,0 B0,1 C0,2 0,0-0,1 0,1-0,2",
     ),
     (
         Item::Machine(Machine::Portal),
@@ -453,12 +453,12 @@ fn instruction_letter(instr: Instr) -> char {
         Instr::Pivot(Spin::Ccw) => 'Q',
         Instr::Pivot(Spin::Cw) => 'E',
         Instr::Wait => 'X',
-        Instr::Move(4) => 'w',
-        Instr::Move(5) => 'e',
-        Instr::Move(0) => 'f',
-        Instr::Move(1) => 'c',
-        Instr::Move(2) => 'x',
-        Instr::Move(3) => 'a',
+        Instr::Move(0) => 'w',
+        Instr::Move(1) => 'e',
+        Instr::Move(2) => 'c',
+        Instr::Move(3) => 'x',
+        Instr::Move(4) => 'z',
+        Instr::Move(5) => 'q',
         Instr::Move(_) => unreachable!("six move directions"),
     }
 }
@@ -472,12 +472,12 @@ fn instruction(letter: char) -> Option<Instr> {
         'Q' => Some(Instr::Pivot(Spin::Ccw)),
         'E' => Some(Instr::Pivot(Spin::Cw)),
         'X' => Some(Instr::Wait),
-        'w' => Some(Instr::Move(4)),
-        'e' => Some(Instr::Move(5)),
-        'f' => Some(Instr::Move(0)),
-        'c' => Some(Instr::Move(1)),
-        'x' => Some(Instr::Move(2)),
-        'a' => Some(Instr::Move(3)),
+        'w' => Some(Instr::Move(0)),
+        'e' => Some(Instr::Move(1)),
+        'c' => Some(Instr::Move(2)),
+        'x' => Some(Instr::Move(3)),
+        'z' => Some(Instr::Move(4)),
+        'q' => Some(Instr::Move(5)),
         _ => None,
     }
 }
@@ -963,7 +963,7 @@ mod tests {
         assert_eq!(read.0.atoms.iter().flatten().count(), 2);
         assert_eq!(read.0.arms[0].pc, 17);
         assert_eq!(read.0.arms[0].tape, sim.arms[0].tape);
-        assert!(text.lines().any(|line| line.contains(" FwD 17")));
+        assert!(text.lines().any(|line| line.contains(" FzD 17")));
         let empty_tape = "arm 1 0,0 0 - 23".parse::<Fragment>().unwrap();
         assert!(empty_tape.0.arms[0].tape.is_empty());
         assert_eq!(empty_tape.0.arms[0].pc, 23);

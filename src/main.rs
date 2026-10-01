@@ -134,8 +134,6 @@ impl Key {
     }
 }
 
-const UPPER_LEFT: usize = 4;
-
 pub const KEYS: [Key; 13] = [
     Key::new(KeyCode::KeyF, Instr::Grab, skin!("symbols/f")),
     Key::new(KeyCode::KeyR, Instr::Drop, skin!("symbols/r")),
@@ -144,36 +142,12 @@ pub const KEYS: [Key; 13] = [
     Key::new(KeyCode::KeyQ, Instr::Pivot(Spin::Ccw), skin!("symbols/q")),
     Key::new(KeyCode::KeyE, Instr::Pivot(Spin::Cw), skin!("symbols/e")),
     Key::new(KeyCode::KeyX, Instr::Wait, skin!("symbols/x")),
-    Key::new(
-        KeyCode::KeyW,
-        Instr::Move(UPPER_LEFT),
-        skin!("symbols/shift-w"),
-    ),
-    Key::new(
-        KeyCode::KeyE,
-        Instr::Move((UPPER_LEFT + 1) % 6),
-        skin!("symbols/shift-e"),
-    ),
-    Key::new(
-        KeyCode::KeyF,
-        Instr::Move((UPPER_LEFT + 2) % 6),
-        skin!("symbols/shift-f"),
-    ),
-    Key::new(
-        KeyCode::KeyC,
-        Instr::Move((UPPER_LEFT + 3) % 6),
-        skin!("symbols/shift-c"),
-    ),
-    Key::new(
-        KeyCode::KeyX,
-        Instr::Move((UPPER_LEFT + 4) % 6),
-        skin!("symbols/shift-x"),
-    ),
-    Key::new(
-        KeyCode::KeyA,
-        Instr::Move((UPPER_LEFT + 5) % 6),
-        skin!("symbols/shift-a"),
-    ),
+    Key::new(KeyCode::KeyW, Instr::Move(0), skin!("symbols/shift-w")),
+    Key::new(KeyCode::KeyE, Instr::Move(1), skin!("symbols/shift-e")),
+    Key::new(KeyCode::KeyC, Instr::Move(2), skin!("symbols/shift-c")),
+    Key::new(KeyCode::KeyX, Instr::Move(3), skin!("symbols/shift-x")),
+    Key::new(KeyCode::KeyZ, Instr::Move(4), skin!("symbols/shift-z")),
+    Key::new(KeyCode::KeyQ, Instr::Move(5), skin!("symbols/shift-q")),
 ];
 
 const MANUAL_SLOTS: [(Instr, f32, f32); 13] = [
@@ -184,12 +158,12 @@ const MANUAL_SLOTS: [(Instr, f32, f32); 13] = [
     (Instr::Pivot(Spin::Ccw), 96.0, 336.0),
     (Instr::Pivot(Spin::Cw), 544.0, 336.0),
     (Instr::Wait, 96.0, 472.0),
-    (Instr::Move(UPPER_LEFT), 96.0, 608.0),
-    (Instr::Move((UPPER_LEFT + 1) % 6), 544.0, 608.0),
-    (Instr::Move((UPPER_LEFT + 2) % 6), 96.0, 744.0),
-    (Instr::Move((UPPER_LEFT + 3) % 6), 544.0, 744.0),
-    (Instr::Move((UPPER_LEFT + 4) % 6), 96.0, 880.0),
-    (Instr::Move((UPPER_LEFT + 5) % 6), 544.0, 880.0),
+    (Instr::Move(5), 96.0, 608.0),
+    (Instr::Move(4), 544.0, 608.0),
+    (Instr::Move(0), 96.0, 744.0),
+    (Instr::Move(3), 544.0, 744.0),
+    (Instr::Move(1), 96.0, 880.0),
+    (Instr::Move(2), 544.0, 880.0),
 ];
 
 fn instruction_symbol(instr: Instr) -> Skin {
@@ -10545,12 +10519,12 @@ mod tests {
     fn the_shifted_keys_write_the_six_moves_to_a_focused_tape() {
         let mut w = armed(vec![Instr::Wait]);
         w.focus_tape(0);
-        for key in [KeyCode::KeyW, KeyCode::KeyC, KeyCode::KeyF] {
+        for key in [KeyCode::KeyW, KeyCode::KeyC, KeyCode::KeyQ] {
             w.key(key, true);
         }
         assert_eq!(
             w.sim.arms[0].tape,
-            vec![Instr::Wait, Instr::Move(4), Instr::Move(1), Instr::Move(0)]
+            vec![Instr::Wait, Instr::Move(0), Instr::Move(2), Instr::Move(5)]
         );
         assert_eq!(w.focus, Some(Focus::Tape { arm: 0, cursor: 4 }));
         w.key(KeyCode::KeyF, false);
@@ -10558,7 +10532,7 @@ mod tests {
     }
 
     #[test]
-    fn the_six_move_keys_ring_the_pivot_clockwise_from_the_upper_left_and_sum_to_nothing() {
+    fn the_six_move_keys_ring_the_arm_clockwise_from_where_it_points() {
         let moves: Vec<(KeyCode, usize)> = KEYS
             .iter()
             .filter_map(|k| match k.instr {
@@ -10568,15 +10542,24 @@ mod tests {
             .collect();
         let (codes, dirs): (Vec<KeyCode>, Vec<usize>) = moves.into_iter().unzip();
         use KeyCode::*;
-        assert_eq!(codes, [KeyW, KeyE, KeyF, KeyC, KeyX, KeyA]);
-        assert_eq!(dirs, [4, 5, 0, 1, 2, 3]);
-        for pair in dirs.windows(2) {
-            assert_eq!(pair[1], Spin::Cw.turn(pair[0]));
-        }
-        assert_eq!(px(DIRS[dirs[0]]).x.signum(), -1.0);
-        assert_eq!(px(DIRS[dirs[0]]).y.signum(), 1.0);
+        assert_eq!(codes, [KeyW, KeyE, KeyC, KeyX, KeyZ, KeyQ]);
+        assert_eq!(dirs, [0, 1, 2, 3, 4, 5]);
         let sum = dirs.iter().fold(ORIGIN, |h, d| h.add(DIRS[*d]));
         assert_eq!(sum, ORIGIN);
+    }
+
+    #[test]
+    fn shift_w_walks_a_turned_arm_the_way_it_points_and_shift_x_back() {
+        for turn in 0..6 {
+            let arm = Arm::new(ArmLength::One, Hex::new(2, -1), turn, Vec::new());
+            let ahead = arm.hand().sub(arm.pivot);
+            let walk = |code| {
+                let instr = instr_of(code, true).unwrap();
+                instr.posed(arm.pivot, arm.dir).0.sub(arm.pivot)
+            };
+            assert_eq!(walk(KeyCode::KeyW), ahead);
+            assert_eq!(walk(KeyCode::KeyX), ORIGIN.sub(ahead));
+        }
     }
 
     #[test]
