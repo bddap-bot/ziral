@@ -1593,3 +1593,13 @@ The swing strip keeps all sixty native-scale frames in eight columns. A 180-pixe
 The palette critic still loses the pale machine relief at 48 pixels after backing contrast passes. Removing machine-row horizontal padding gives that space to the picture. This increases real interface detail without widening the inventory, shrinking atoms, stretching an aspect ratio, or adding another layout.
 
 Gallery output encodes each scene once and hashes those same bytes. The large composite uses lossless fast PNG compression with a fixed filter: adaptive filtering spends time choosing a smaller file without changing any rendered pixel. Scene hashes, mechanical checks and the shared render deadline remain unchanged.
+
+## Tutorials wait for a pause
+
+Report (verbatim):
+
+> the new feature where hovering mouse over a machine in the world showed the tutorial card for that machine. nice idea, it will help noobs i think. it does however hurt my brain to have it flashing up with its animation when i'm trying to work on molecules.
+
+A world-machine tutorial appears only after the pointer rests on its target for 0.8 seconds. Pointer movement, camera movement, a mouse or keyboard action, placement, a held object or a card drag hides it immediately and requires a fresh pause. Active editing suppresses automatic cards from inventory and card items too. Their existing route navigation remains immediate when idle; the pause belongs to discovering machines on the board. Leaving the window clears the pending world pause.
+
+The simplest design gates the existing hover input at the live pointer. The card renderer, tutorial playback and recorded hover events stay unchanged; there is no second animation or persistent preference. A paused player still gets the existing visual demonstration, with no added on-screen text. Tests exercise the delay, travel across a target, camera movement and a fresh pause after working.

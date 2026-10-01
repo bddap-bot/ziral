@@ -3960,16 +3960,39 @@ type EditUi<'w, 's> = (
     Query<'w, 's, &'static Interaction, With<SaveAction>>,
 );
 
+#[derive(Default)]
+struct HoverPause {
+    candidate: Option<(Item, Vec2, Vec2)>,
+    since: f64,
+}
+
+impl HoverPause {
+    fn update(&mut self, candidate: Option<(Item, Vec2, Vec2)>, now: f64) -> Option<Item> {
+        if self.candidate != candidate {
+            self.candidate = candidate;
+            self.since = now;
+        }
+        candidate
+            .filter(|_| now - self.since >= 0.8)
+            .map(|(item, _, _)| item)
+    }
+}
+
 fn edit(
     mut world: ResMut<Game>,
     mut session: ResMut<session::Session>,
-    mut drag_start: Local<Option<Vec2>>,
-    input: (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>),
+    locals: (Local<Option<Vec2>>, Local<HoverPause>),
+    input: (
+        Res<ButtonInput<KeyCode>>,
+        Res<ButtonInput<MouseButton>>,
+        Res<Time>,
+    ),
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Transform, &Projection), With<IsDefaultUiCamera>>,
     edit_ui: EditUi,
 ) {
-    let (keys, buttons) = input;
+    let (keys, buttons, time) = input;
+    let (mut drag_start, mut hover_pause) = locals;
     if session.replaying() {
         for key in [KeyCode::Space, KeyCode::KeyG, KeyCode::KeyS] {
             if keys.just_pressed(key) {
@@ -4100,25 +4123,32 @@ fn edit(
     for key in pressed {
         session.send(&mut world, session::Input::Key(key, shift));
     }
-    if screen.is_some() {
-        let item = if let Some(target) = target {
-            Some(target.item)
-        } else if !over_ui {
+    let busy = force
+        || buttons.get_pressed().next().is_some()
+        || keys.get_pressed().next().is_some()
+        || world.down.is_some()
+        || world.holding()
+        || world.card_drag.is_some();
+    let candidate = screen
+        .zip(point)
+        .filter(|_| !busy && !over_ui)
+        .and_then(|(screen, point)| {
             let frame = Frame::between(&world.prev, world.shown(), world.phase());
-            if world.down.is_none() && !world.holding() {
-                world
-                    .pointer
-                    .and_then(|point| world.target_item(point, &frame))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        if world.hover != item.map(card_item) {
-            let input = target.map_or(session::Input::Hover(item), ItemTarget::hover);
-            session.send(&mut world, input);
-        }
+            world
+                .target_item(point, &frame)
+                .map(|item| (item, screen, point))
+        });
+    let paused = hover_pause.update(candidate, time.elapsed_secs_f64());
+    let item = if busy {
+        None
+    } else {
+        target.map(|target| target.item).or(paused)
+    };
+    if screen.is_some() && world.hover != item.map(card_item) {
+        let input = target
+            .filter(|_| !busy)
+            .map_or(session::Input::Hover(item), ItemTarget::hover);
+        session.send(&mut world, input);
     }
 }
 
@@ -12183,6 +12213,29 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, sim::TickEvent::Fired { glyph: 0, .. }))
         }));
+    }
+
+    #[test]
+    fn tutorial_requires_a_fresh_stationary_pause_after_motion_or_work() {
+        let mut pause = HoverPause::default();
+        let item = Item::Machine(Machine::Arm(ArmLength::One));
+        let target = Some((item, Vec2::ZERO, Vec2::ZERO));
+        assert_eq!(pause.update(target, 1.0), None);
+        assert_eq!(pause.update(target, 1.79), None);
+        assert_eq!(pause.update(target, 1.81), Some(item));
+        for step in 1..20 {
+            let moving = Some((item, Vec2::splat(step as f32), Vec2::ZERO));
+            assert_eq!(pause.update(moving, 2.0 + step as f64), None);
+        }
+        assert_eq!(pause.update(target, 30.0), None);
+        assert_eq!(pause.update(target, 30.81), Some(item));
+        assert_eq!(pause.update(None, 31.0), None);
+        assert_eq!(pause.update(None, 40.0), None);
+        assert_eq!(pause.update(target, 41.0), None);
+        assert_eq!(pause.update(target, 41.81), Some(item));
+        let panned = Some((item, Vec2::ZERO, Vec2::ONE));
+        assert_eq!(pause.update(panned, 42.0), None);
+        assert_eq!(pause.update(panned, 42.81), Some(item));
     }
 
     #[test]
