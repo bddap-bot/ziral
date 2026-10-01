@@ -66,7 +66,7 @@ Directive: “Every atom and bond wears a diffusion-generated macro of its mater
 
 Directive: “A glyph never reads as a compound”; “Arms retain their distinct pivot, link and hand silhouette”.
 
-**UI.** The current interface uses brass framing and clay fields; [SYMBOLS.md](SYMBOLS.md) describes instruction pictures and inventory pips.
+**UI.** Two machine columns and one consumable column retain native-size pictures; machine pictures occupy the former horizontal row padding, with machine pictures on light brass–clay circles and atom pictures on ivory circles. Draw order breaks equal-depth ties at translucent edges. The interface uses brass framing and clay card fields; [SYMBOLS.md](SYMBOLS.md) describes instruction pictures and inventory pips.
 
 Directive: “an atom is the board’s circular bead with its brass rim”; “the item, its recipe in atoms and bonds, and fixture playback on the board’s clay”; “Cards carry no writing apart from the key letters inside instruction pictures”; “Tab holds up the painted manual page with those same instruction pictures and no other writing”; “the bead within its circular body, or the machine at the same cell outside it”.
 

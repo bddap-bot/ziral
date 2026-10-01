@@ -1552,3 +1552,42 @@ Correctness, premise and simplicity review before painting: the pale radial inve
 Correctness, premise and simplicity review after selection: both output sprites retain the existing whole-image registration and alpha pipeline, with no code change. The native inventory and card captures retain broad dark material through both centres. The output-2 generator exhausted three rounds and kept candidate 5 at 6/10; its remaining weakness is decorative marbling and soft material construction. Output-3 kept candidate 5 at 8/10 in round two. All new failed candidates and scores remain beside the selected sprites, under the unchanged machine rubric and thresholds. The first tray's capped score is a limitation, not a passing art verdict. Arm joint contrast and the open hand overlapping a fixture remain outside this material repair.
 
 [`proofs/output-material-5814.png`](proofs/output-material-5814.png) is one unscaled 1280 by 720 capture of the ordinary output-2 card and inventory with both repainted trays. The same complete sprites supply the card, its running example and the inventory; no separate small-picture implementation is needed.
+### Rendered gallery gates
+
+Directive (verbatim): "Be critical about the set of things that needs to run and spend tokens on every push. Consider what might be wasteful, what should be dropped, what you might want to run only on diff."
+
+The gallery uses the shipped headless renderer at 1280 by 720, fixed simulation time, and the same pictures, plates, cameras and materials as play. One scene list supplies the command and the tests. Each run writes its frames and one unscaled sheet to ignored scratch. A second render must match byte-for-byte; one committed text file stores scene hashes without storing golden pictures.
+
+Mechanical checks measure the rendered palette contrast, atom silhouettes and colour separation, touching glaze separation, and the arm's settling angle. The browser input trigger set receives a separate executable check because a still image cannot demonstrate audio context resumption. These are measurable failures; composition, material readability and visual coherence remain judgements under a fixed rubric. Overlapping atom texture checks give way to rendered checks rather than adding a second authority.
+
+The dumbest design extends the existing screenshot path and compares hashes before invoking a fresh critic. Only changed scenes enter that process, and each needs a score of at least eight before hashes can be accepted. Unchanged scenes consume no critic tokens. A second software renderer would test an imitation of the shipped pixels, and a path-based change detector would guess what the frame hash can establish. A whole-gallery critic repeats judgement on unchanged evidence and is omitted.
+
+The rendered contrast floor is 1.5, required at the upper quartile of foreground-pixel contrast against a second capture of their actual backing with pictures hidden. Machine pictures share the existing brass–clay mixture at 0.7, while atom pictures retain ivory. Pale ceramic merges into ivory, clay misses the output picture contrast floor, and the amber bead loses contrast on the intermediate field. The existing item variants carry this distinction; no per-machine style table or source-colour selector is needed. The remaining gates use a 0.94 disc-mask agreement, a 0.12 hue/chroma-plane distance between atoms, a 0.03 distance between every pair of rendered glaze materials, and a final arm-angle tolerance of 0.08 radians. Earlier weighted bounce remains part of the swing; its final resting window must converge.
+
+The gallery uses the existing wordless tape rows.
+
+World scene images exclude the inventory column at native scale. Otherwise one changed inventory picture changes every machine frame and repeatedly charges the critic for the same UI change. The palette and hover scenes retain that UI; the swing strip contains every arm frame and the ghost image pairs the two world views. The complete uncut captures remain in scratch for mechanical measurements.
+
+Glaze samples sit beside shipped beads, bonds and a ceramic machine, so the measured colours have material context. The amber converter includes empty seats beside its valid input and fired result. Live and ghost comparisons use the same simulation tick, events and interpolation; only the genuine projection tally differs. Warmup freezes simulation time while render resources settle, then restores the scene clock. The current game resource remains the only render path.
+
+The expanded machine set overflows one 720-pixel inventory column. Two machine columns and one consumable column leave room for the save controls. Machine pictures use the row’s former horizontal padding, growing from 48 to 64 pixels without widening the column; atoms keep their 48-pixel capture slots. Shrinking pictures would weaken native-size readability. Bounds are checked before converting screen coordinates to unsigned pixels, so pictures above the viewport cannot masquerade as visible rows. Every manifest rule includes the gallery check, deduplicated by the resolver, unless it already runs the complete native suite. Unrelated native tests remain selected by their existing path rules.
+
+The rendered bounds gate replaces the fixed two-column width assertion. Inventory count geometry keeps its separate concentric-ring contract.
+
+The glaze scene uses an occupied fixture for material adjacency. Detached copies of all four atoms repeat the dedicated atom scene at the same scale and on the same clay, adding no adjacency evidence while doubling changed-atom review cost. That extra row is removed; atom silhouette and colour gates, the dedicated atom scene, all eight glaze probes, and the rubric remain unchanged.
+
+Flat glaze probes are measurement geometry, not game art. The first glaze capture retains all eight probes for the numerical gate; the second hides those probes and supplies the occupied fixture to the critic. This keeps artificial test apparatus out of aesthetic judgement without removing a material gate or changing the rubric.
+
+`proofs/gallery-70-5718-ef20ca623b56.png` is the native-scale composited gallery.
+
+Transparent machine edges overlap at shared footprint seams. Equal depth leaves blend order to recycled render entities and can change a colour channel by one level between identical frames. The canvas now sorts strokes stably by depth and advances tied depths by the next representable value, carrying that order through adjacent values. This removes entity lifetime from compositing. Separate glyph depth slots would repeat the rule while leaving portals and other strokes ambiguous; a fixed epsilon would depend on scene size. The rendered equality gate keeps exact pixels with no tolerance.
+
+The live/ghost pair uses ten identical simulation ticks on both sides. One projection mark sits at the crop edge and gives too little evidence of the state difference. Ten ticks expose two complete groups of the existing tally marks at native size, without adding a label, enlarging art, or changing the interface.
+
+The browser audio mixer already owns its context and input listeners. Its unchanged module moves from an inline binding to one source file so the executable trigger check uses the shipped path. A constructor proxy would duplicate context ownership and is removed. The current renderer buffer reuse, cached portal geometry and complete machine sprites remain in the capture path.
+
+A critic run removes its previous approval artifact before checking inputs, so failure cannot leave an apparent approval. The gallery derives pixel centers from the capture dimensions and glaze samples from their scene positions.
+
+The swing strip keeps all sixty native-scale frames in eight columns. A 180-pixel crop encloses the pivot and the complete swept hand path, removing unused floor to the left and below the arm. The former 260-pixel crop repeats more empty grout than motion and widens the strip beyond common image-viewer dimensions. No frame is omitted or resized.
+
+The palette critic still loses the pale machine relief at 48 pixels after backing contrast passes. Removing machine-row horizontal padding gives that space to the picture. This increases real interface detail without widening the inventory, shrinking atoms, stretching an aspect ratio, or adding another layout.

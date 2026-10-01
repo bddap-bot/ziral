@@ -2,6 +2,7 @@
 mod analysis;
 mod bench;
 mod form;
+mod gallery;
 mod look;
 #[cfg(not(target_arch = "wasm32"))]
 mod machines;
@@ -57,9 +58,9 @@ const PALETTE_GAP_PX: f32 = 8.0;
 const PALETTE_ROW_GAP_PX: f32 = 6.0;
 const PALETTE_ROW_PAD_X: f32 = 8.0;
 const BORDER_PX: f32 = 1.0;
-const PALETTE_WIDTH: f32 = 2.0
+const PALETTE_WIDTH: f32 = 3.0
     * (PALETTE_PX + PALETTE_ROW_GAP_PX + TALLY_PX + 2.0 * (PALETTE_ROW_PAD_X + BORDER_PX))
-    + PALETTE_GAP_PX;
+    + 2.0 * PALETTE_GAP_PX;
 const CARD_PAD: f32 = 12.0;
 const CARD: RenderLayers = RenderLayers::layer(1);
 const ATOMS: RenderLayers = RenderLayers::layer(2);
@@ -2797,6 +2798,10 @@ fn main() {
     if let Some(status) = shot::sound(&args) {
         std::process::exit(status);
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    if gallery::command(&args) {
+        return;
+    }
     let mut app = match shot::parse(&args) {
         Some((world, shot)) => shot::app(world, shot),
         None => {
@@ -2941,30 +2946,21 @@ fn picture(entry: &mut ChildSpawnerCommands, kiln: &Kiln, item: Item) {
 }
 
 fn picture_square(item: Item) -> (Node, BackgroundColor) {
-    let side = match item {
-        Item::Machine(_) => PALETTE_PX,
-        Item::Atom(_) => PALETTE_PX,
-        Item::Token(_) => SYMBOL_PX,
+    let (side, field) = match item {
+        Item::Machine(_) => (PALETTE_PX + 2.0 * PALETTE_ROW_PAD_X, brass(0.7)),
+        Item::Atom(_) => (PALETTE_PX, Glaze::Ivory.color()),
+        Item::Token(_) => (SYMBOL_PX, Color::NONE),
     };
-    let world = matches!(item, Item::Machine(_) | Item::Atom(_));
     (
         Node {
             width: Val::Px(side),
             height: Val::Px(side),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
-            border_radius: if world {
-                BorderRadius::MAX
-            } else {
-                BorderRadius::default()
-            },
+            border_radius: BorderRadius::MAX,
             ..default()
         },
-        BackgroundColor(if world {
-            Glaze::Clay.color()
-        } else {
-            Color::NONE
-        }),
+        BackgroundColor(field),
     )
 }
 
@@ -3598,7 +3594,8 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
             },
         ))
         .with_children(|palette| {
-            for items in [machines, consumables] {
+            let split = machines.len().div_ceil(2);
+            for items in [&machines[..split], &machines[split..], &consumables[..]] {
                 palette
                     .spawn(Node {
                         flex_direction: FlexDirection::Column,
@@ -3606,11 +3603,18 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                         ..default()
                     })
                     .with_children(|col| {
-                        for item in items {
+                        for &item in items {
                             col.spawn((
                                 PaletteRow(item),
                                 button(Node {
-                                    padding: UiRect::axes(Val::Px(PALETTE_ROW_PAD_X), Val::Px(2.0)),
+                                    padding: UiRect::axes(
+                                        Val::Px(if matches!(item, Item::Machine(_)) {
+                                            0.0
+                                        } else {
+                                            PALETTE_ROW_PAD_X
+                                        }),
+                                        Val::Px(2.0),
+                                    ),
                                     ..row(PALETTE_ROW_GAP_PX)
                                 }),
                             ))
@@ -5256,7 +5260,19 @@ impl Canvas {
             .clone()
     }
 
-    fn commit(strokes: Vec<Stroke>, commands: &mut Commands, placed: &mut Placed) {
+    fn commit(mut strokes: Vec<Stroke>, commands: &mut Commands, placed: &mut Placed) {
+        strokes.sort_by(|a, b| {
+            a.transform
+                .translation
+                .z
+                .total_cmp(&b.transform.translation.z)
+        });
+        let mut previous = f32::NEG_INFINITY;
+        for stroke in &mut strokes {
+            let z = &mut stroke.transform.translation.z;
+            *z = z.max(previous.next_up());
+            previous = *z;
+        }
         let (canvas, _, spots, colors, lits, sprites, symbols) = placed;
         let mut used = [0; Ink::POOLS];
         for Stroke {
@@ -7160,16 +7176,41 @@ mod shot {
         app
     }
 
+    pub fn gallery(world: World) -> App {
+        capture_app(
+            world,
+            Shot {
+                path: PathBuf::new(),
+                clip: Some(1),
+                frame: Frame::Micro,
+                script: Vec::new(),
+                warm: WARM,
+                frames: 0,
+                target: None,
+                moving_view: false,
+            },
+        )
+    }
+
+    pub fn target(shot: Res<Shot>) -> Handle<Image> {
+        shot.target.clone().unwrap()
+    }
+
     pub fn app(world: World, shot: Shot) -> App {
+        let mut app = capture_app(world, shot);
+        app.add_systems(Update, move_sound_view.before(view))
+            .add_systems(Update, capture.after(run_ticks).before(edit));
+        app
+    }
+
+    fn capture_app(world: World, shot: Shot) -> App {
         let mut app = super::app(world);
         if shot.clip.is_some() {
             app.insert_resource(TimeUpdateStrategy::ManualDuration(FRAME));
         }
         headless(&mut app, true);
         app.insert_resource(shot)
-            .add_systems(Startup, spawn_offscreen_camera)
-            .add_systems(Update, move_sound_view.before(view))
-            .add_systems(Update, capture.after(run_ticks).before(edit));
+            .add_systems(Startup, spawn_offscreen_camera);
         app
     }
 
@@ -11564,9 +11605,60 @@ mod tests {
     }
 
     #[test]
+    fn coplanar_strokes_keep_painter_order_when_the_canvas_recycles_entities() {
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>();
+        app.add_systems(
+            Update,
+            |mut commands: Commands, mut placed: Placed, mut frame: Local<u32>| {
+                let depths = [0.2_f32, 0.1, 0.1, 0.1_f32.next_up()];
+                let mut strokes: Vec<_> = depths
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, z)| Stroke {
+                        ink: match i {
+                            0 => Ink::Color(default(), default()),
+                            1 => Ink::Lit(default(), default()),
+                            2 => Ink::Sprite(default()),
+                            _ => Ink::Symbol(Instr::Wait),
+                        },
+                        layers: RenderLayers::default(),
+                        transform: Transform::from_xyz(i as f32, 0.0, z),
+                    })
+                    .collect();
+                if *frame == 1 {
+                    let mut stroke = strokes.remove(1);
+                    stroke.transform.translation = Vec3::new(4.0, 0.0, 0.2);
+                    strokes = vec![stroke];
+                }
+                Canvas::commit(strokes, &mut commands, &mut placed);
+                *frame += 1;
+            },
+        );
+        for count in [4, 1, 4] {
+            app.update();
+            let mut placed: Vec<_> = app
+                .world_mut()
+                .query_filtered::<&Transform, With<Fill>>()
+                .iter(app.world())
+                .map(|at| (at.translation.x as usize, at.translation.z))
+                .collect();
+            placed.sort_by_key(|(i, _)| *i);
+            assert_eq!(placed.len(), count);
+            if count == 1 {
+                assert_eq!(placed, [(4, 0.2)]);
+            } else {
+                assert_eq!(placed[0], (0, 0.2));
+                assert_eq!(placed[1], (1, 0.1));
+                assert_eq!(placed[2], (2, 0.1_f32.next_up()));
+                assert_eq!(placed[3], (3, 0.1_f32.next_up().next_up()));
+            }
+        }
+    }
+
+    #[test]
     fn every_count_has_one_fixed_concentric_ring_footprint() {
         assert_eq!(TALLY_PX, 26.0);
-        assert_eq!(PALETTE_WIDTH, 204.0);
         for (k, diameter, inset) in [(0, 2.75, 11.625), (3, 11.0, 7.5), (8, 24.75, 0.625)] {
             assert_eq!(
                 ring_geometry(k, 1.0),
@@ -11705,20 +11797,6 @@ mod tests {
     }
 
     #[test]
-    fn world_pictures_in_inventory_rows_have_one_circular_clay_field() {
-        for item in palette() {
-            let (node, field) = picture_square(item);
-            if matches!(item, Item::Machine(_) | Item::Atom(_)) {
-                assert_eq!(field.0, Glaze::Clay.color());
-                assert_eq!(node.border_radius, BorderRadius::MAX);
-            } else {
-                assert_eq!(field.0, Color::NONE);
-                assert_eq!(node.border_radius, BorderRadius::default());
-            }
-        }
-    }
-
-    #[test]
     fn every_display_site_uses_one_renderer_and_exposes_all_four_instruction_symbol_corners() {
         let _render = render_test::lock();
         let dir =
@@ -11794,13 +11872,13 @@ mod tests {
         assert_surface_at_corners(
             &frame,
             "palette",
-            [(123, 147), (148, 147), (123, 172), (148, 172)],
+            [(229, 147), (254, 147), (229, 172), (254, 172)],
             strip,
         );
         assert_surface_at_corners(
             &frame,
             "tape",
-            [(355, 642), (380, 642), (355, 667), (380, 667)],
+            [(461, 642), (486, 642), (461, 667), (486, 667)],
             strip,
         );
         assert_surface_at_corners(
@@ -11832,50 +11910,6 @@ mod tests {
                 [100, 67, 23],
             ],
         );
-    }
-
-    #[test]
-    fn inventory_atoms_use_the_world_bead_circle_and_rim() {
-        let _render = render_test::lock();
-        let dir =
-            std::env::temp_dir().join(format!("ziral-inventory-atoms-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut app = shot::still("start", dir.clone(), 1);
-        lit_plugin(&mut app);
-        app.add_systems(
-            Last,
-            |kiln: Res<Kiln>,
-             pictures: Query<(&ChildOf, &ImageNode)>,
-             rows: Query<&PaletteRow>,
-             fills: Query<(&RenderLayers, &Mesh2d, &Transform), With<Fill>>| {
-                for kind in sim::AtomKind::ALL {
-                    let images: Vec<&ImageNode> = pictures
-                        .iter()
-                        .filter(|(parent, _)| {
-                            rows.get(parent.parent())
-                                .is_ok_and(|row| row.0 == Item::Atom(kind))
-                        })
-                        .map(|(_, image)| image)
-                        .collect();
-                    assert_eq!(images.len(), 1);
-                    assert_eq!(images[0].image, kiln.atoms);
-                    assert_eq!(images[0].rect, Some(atom_rect(kind)));
-                    let meshes: Vec<&Handle<Mesh>> = fills
-                        .iter()
-                        .filter(|(layers, _, transform)| {
-                            **layers == ATOMS && transform.translation.truncate() == atom_at(kind)
-                        })
-                        .map(|(_, mesh, _)| &mesh.0)
-                        .collect();
-                    assert_eq!(meshes.len(), 2);
-                    assert!(meshes.contains(&&kiln.circle));
-                    assert!(meshes.contains(&&kiln.rim));
-                }
-            },
-        );
-        assert_eq!(app.run(), bevy::app::AppExit::Success);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn spawn(w: &mut World, q: i32, r: i32) -> usize {

@@ -23,3 +23,5 @@ dependencies, exposing names and versions rather than internals. Give shared ser
 neutral project-owned names. Exclude deployment-specific paths, addresses, service
 or queue names, credentials, camera frames and private renders. Before landing,
 inspect the diff for undeclared project references and deployment details.
+
+Every landing runs the deterministic rendered gallery and its mechanical gates in `cargo test`; the manifest retains the complete native suite where its covering rule requires it. If `gallery/hashes.txt` differs from `.gallery/test/hashes.txt`, run `nix-shell --run 'gallery/critic.sh .gallery/test'`, resolve every changed scene below eight, and copy `.gallery/test/approved-hashes.txt` to `gallery/hashes.txt` in the same change. Repeat the tests after updating the hashes. Quote only changed scenes and their scores in the landing comment; with no changed frames, use `gallery unchanged`. Never invoke the critic for unchanged frames. Judgements persist in ignored `.gallery/reviews`, keyed by scene content and the fixed rubric, so retries do not pay again for unchanged evidence.

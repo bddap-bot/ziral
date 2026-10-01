@@ -8,6 +8,7 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     cargo
     gdb
+    nodejs
     rustc
     clippy
     clang_multi

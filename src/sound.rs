@@ -37,69 +37,7 @@ mod native {
 mod web {
     use super::*;
 
-    #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
-const mixer = `registerProcessor("mixer", class extends AudioWorkletProcessor {
-    clips = [];
-    voices = [];
-    constructor() {
-        super();
-        this.port.onmessage = ({ data }) => {
-            if (data.samples) this.clips[data.clip] = data.samples;
-            else if (this.clips[data[0]]) this.voices.push({ samples: this.clips[data[0]], gain: data[1], speed: data[2], at: 0 });
-        };
-    }
-    process(_, [[out]]) {
-        for (let v = this.voices.length - 1; v >= 0; v--) {
-            const voice = this.voices[v];
-            const end = Math.min(out.length, Math.ceil((voice.samples.length - voice.at) / voice.speed));
-            for (let i = 0; i < end; i++) {
-                const at = voice.at + i * voice.speed;
-                const whole = Math.floor(at);
-                const a = voice.samples[whole];
-                const b = voice.samples[whole + 1] ?? 0;
-                out[i] += voice.gain * (a + (b - a) * (at - whole));
-            }
-            voice.at += end * voice.speed;
-            if (voice.at >= voice.samples.length) this.voices[v] = this.voices[this.voices.length - 1], this.voices.pop();
-        }
-        return true;
-    }
-});`;
-const inputEvents = ["pointerdown", "pointerup", "keydown", "touchend"];
-let context;
-let port;
-let ready;
-let clips = 0;
-function resume() {
-    context.resume().then(() => {
-        if (context.state === "running")
-            for (const type of inputEvents)
-                globalThis.removeEventListener(type, resume, { capture: true });
-    });
-}
-function open(rate) {
-    context = new AudioContext({ sampleRate: rate });
-    for (const type of inputEvents)
-        globalThis.addEventListener(type, resume, { capture: true });
-    const url = URL.createObjectURL(new Blob([mixer], { type: "text/javascript" }));
-    ready = context.audioWorklet.addModule(url).then(() => {
-        URL.revokeObjectURL(url);
-        const node = new AudioWorkletNode(context, "mixer", { numberOfInputs: 0, outputChannelCount: [1] });
-        node.connect(context.destination);
-        return port = node.port;
-    });
-}
-export function add_clip(samples, rate) {
-    if (!context) open(rate);
-    const clip = clips++;
-    const copy = samples.slice();
-    ready.then(port => port.postMessage({ clip, samples: copy }, [copy.buffer]));
-    return clip;
-}
-export function play_clip(clip, gain, speed) {
-    if (context.state === "running") port?.postMessage([clip, gain, speed]);
-}
-"#)]
+    #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/sound.js")]
     extern "C" {
         fn add_clip(samples: &[f32], rate: u32) -> u32;
         fn play_clip(clip: u32, gain: f32, speed: f32);
@@ -795,5 +733,45 @@ actions = { pickup = { voice = "wood", note = 60 } }
         let close = gain(crate::sim::ORIGIN, view(0.5)).unwrap();
         let wide = gain(crate::sim::ORIGIN, view(2.0)).unwrap();
         assert!(close > wide);
+    }
+}
+
+#[cfg(test)]
+mod browser_tests {
+    #[test]
+    fn browser_audio_unlock_receives_keyboard_and_pointer_events() {
+        let source = include_str!("sound.js").replace("export function", "function");
+        for event in ["keydown", "pointerdown", "pointerup", "touchend"] {
+            let program = format!(
+                r#"
+const listeners = new Map();
+let resumed = 0;
+globalThis.AudioContext = class {{
+    state = "suspended";
+    audioWorklet = {{ addModule() {{ return new Promise(() => {{}}); }} }};
+    resume() {{ resumed++; this.state = "running"; return Promise.resolve(); }}
+}};
+globalThis.addEventListener = (type, callback) => listeners.set(type, callback);
+globalThis.removeEventListener = type => listeners.delete(type);
+{source}
+add_clip(new Float32Array([0]), 48000);
+const trigger = listeners.get("{event}");
+if (!trigger) throw Error("missing {event} unlock listener");
+trigger();
+if (resumed !== 1 || context.state !== "running") throw Error("{event} did not resume audio");
+"#
+            );
+            let result = std::process::Command::new("node")
+                .arg("--input-type=module")
+                .arg("-e")
+                .arg(program)
+                .output()
+                .expect("node executes the shipped browser unlock module");
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
     }
 }
