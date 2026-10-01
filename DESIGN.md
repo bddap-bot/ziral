@@ -1443,6 +1443,20 @@ Tests cover a tile-edge press on either bonder slot, alone and in a pick with an
 
 `proofs/grab-point-145.gif` captures the deployed page at `a0ee50b`: a bonder grabbed near its tile edge, carried and turned, then the bonder, portal and output selected together and carried and turned about the same grabbed point. It is an 800 by 525 crop of sampled 1280 by 720 browser frames, played at 12 frames per second. The capture cursor follows the injected pointer coordinates; it is not part of the game. The native and web frame-budget checks each passed both windows with zero over-budget frames (native maximum 7.188 ms, web maximum 11.2 ms).
 
+## Quiet sounds for building
+
+Directive (verbatim):
+
+> id like sound effects for user actions that affect the world. eg, picking up a machine, dropping a machine, rotating a machine. sound changes for an array of machines. leave room for giving each machine custom sounds. the sounds can't be annoying or sound too reppetitive since they'll be playing all the time.
+
+The shared editor's successful lift, placement, turn and deletion emit one action cue for the whole set, including atoms. The same path handles a palette object, a pasted blueprint and a picked group. Tape edits, changed inventory caps, refill, imports and a successful backward step also sound; simulation steps, source upgrades and portal crossings retain their existing music. Selection, camera motion and refused edits add no building cue.
+
+Each cue chooses the most numerous machine kind, with a stable tie break, and lowers its pitch with group size, offset slightly by the number of machine kinds. It never creates a voice per object. A machine may set `actions.pickup`, `actions.drop`, `actions.rotate`, `actions.delete` or `actions.edit` beside its `instrument` in the machine manifest, each with the same `voice` and `note` fields. Omitted entries use five distinct soft ceramic defaults. The manifest writer preserves these overrides.
+
+The simplest design keeps cues at the shared editor mutations, rather than comparing or copying the world on every input or attaching sound to mouse and keyboard call sites. Samples have a rounded attack and release and are synthesized once at startup as 90 ms clips. Playback varies speed and gain over a long deterministic sequence, with action gain between 0.09 and 0.115 beneath the tick music. Group size changes pitch rather than volume. Each frame drains at most eight cues through the same output as tick music; browser playback stays on the audio thread, and finished native voices despawn. Idle frames synthesize nothing and allocate no action buffers. No text is added to the game.
+
+A record’s initial snapshot establishes its world silently; a player’s file import uses the existing import input and emits an edit cue. Seeking a replay discards historical action cues along with its historical tick score.
+
 ## A portal click puts its blueprint in hand
 
 Directive (verbatim):
@@ -1524,16 +1538,3 @@ The simplest design retains the pressed machine's identity until release. A comp
 The regression measures the laid-out tape and cursor on the first click after placement, paste and selection, with empty and programmed tapes at three board scales. It fails on the collapsed row before the fix. Existing group-drag tests continue to require every selected machine to move together.
 
 `proofs/first-click-tape-148.gif` samples nine game-only frames from deployed Pages build `26ca6c3`: an arm is dragged from inventory, placed, clicked once, and given two instructions. The empty tape opens at full height on that click's release, without deselection or a second click. The capture's recorded build identifier matches the deployed commit; every animation frame was inspected before publication.
-## Quiet sounds for building
-
-Directive (verbatim):
-
-> id like sound effects for user actions that affect the world. eg, picking up a machine, dropping a machine, rotating a machine. sound changes for an array of machines. leave room for giving each machine custom sounds. the sounds can't be annoying or sound too reppetitive since they'll be playing all the time.
-
-The shared editor's successful lift, placement, turn and deletion emit one action cue for the whole set, including atoms. The same path handles a palette object, a pasted blueprint and a picked group. Tape edits, changed inventory caps, refill, imports and a successful backward step also sound; simulation steps, source upgrades and portal crossings retain their existing music. Selection, camera motion and refused edits add no building cue.
-
-Each cue chooses the most numerous machine kind, with a stable tie break, and lowers its pitch with group size, offset slightly by the number of machine kinds. It never creates a voice per object. A machine may set `actions.pickup`, `actions.drop`, `actions.rotate`, `actions.delete` or `actions.edit` beside its `instrument` in the machine manifest, each with the same `voice` and `note` fields. Omitted entries use five distinct soft ceramic defaults. The manifest writer preserves these overrides.
-
-The simplest design keeps cues at the shared editor mutations, rather than comparing or copying the world on every input or attaching sound to mouse and keyboard call sites. Samples have a rounded attack and release and are synthesized once at startup as 90 ms clips. Playback varies speed and gain over a long deterministic sequence, with action gain between 0.09 and 0.115 beneath the tick music. Group size changes pitch rather than volume. Each frame drains at most eight cues through the same output as tick music; browser playback stays on the audio thread, and finished native voices despawn. Idle frames synthesize nothing and allocate no action buffers. No text is added to the game.
-
-A record’s initial snapshot establishes its world silently; a player’s file import uses the existing import input and emits an edit cue. Seeking a replay discards historical action cues along with its historical tick score.
