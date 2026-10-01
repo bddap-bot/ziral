@@ -1631,3 +1631,5 @@ This is the dumbest design satisfying the directive because it replaces one func
 Superseded: from Toy 1 turns a machine through its facing, "the same cell-specific `Swing` curve used by simulation motion draw the turn".
 
 Tests: `TWIST` starts at 0, ends at exactly 1, holds 1 past the end and overshoots on the way; a machine turn's progress equals `TWIST` at every sampled phase and differs from the arm's `Swing`. The existing turn tests (mid-sweep angle strictly between rest facings, six presses landing exactly on the start facing, grabbed-point turns) pass unchanged.
+
+`proofs/machine-twist-146.gif` is the deployed page at `440249b`, a 640 by 320 crop of 1280 by 720 frames played at 50 frames per second: an arm running a tape of clockwise rotates beside a picked bonder turned clockwise every 800 ms, the arm on `Swing` and the bonder on `Twist`. The landing's frame-budget check passed both windows with zero over-budget frames (native maximum 5.666 ms, web maximum 9.5 ms).
