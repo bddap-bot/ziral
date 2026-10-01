@@ -18,6 +18,8 @@ Overlapping machine art has one fixed order: portal housings, placed glyphs, arm
 
 The simplest design assigns depths from those existing orders. A glyph type owns one depth band divided by storage slot. The existing single-sprite renderer needs no part intervals, and matching sprites remain batched. No sorting pass, entity, texture or shader work is added. Clipping the source painting would hide one overlap without defining the order of the others.
 
+The [near capture](proofs/source-ring-144-near.png) and [far capture](proofs/source-ring-144-far.png) show a source surrounded by six bonders on deployed Pages build `aa10533`, at 1280 by 720. The browser check verifies the build and imported machine positions, then compares twelve frames at each of five zoom levels. Three levels are pixel-identical; the other two vary by at most one colour value in two pixels, with no overlap-order changes. The native regression requires identical frames at two zooms and distinct machine depths.
+
 ## Pitch
 
 One sentence: who the player is, what they do, why that is fun.
