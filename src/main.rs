@@ -973,11 +973,6 @@ trait WorldAccess: std::ops::DerefMut<Target = Viewer> + Sized {
         self.edit().pin_at(item, at, button)
     }
 
-    #[cfg(test)]
-    fn press_inventory(&mut self, item: Item, pointer: Vec2, viewport: &Viewport) {
-        self.edit().press_inventory(item, pointer, viewport)
-    }
-
     fn card_press(&mut self, id: u64, pointer: Vec2, button: MouseButton) {
         self.edit().card_press(id, pointer, button)
     }
@@ -1230,6 +1225,31 @@ impl<S: std::ops::Deref<Target = Sim>, V: std::ops::Deref<Target = Viewer>> Edit
                     .find(|card| covers(card))
                     .map(|card| card.id)
             })
+    }
+
+    fn item_target(
+        &self,
+        pointer: Vec2,
+        viewport: &Viewport,
+        inventory: Option<Item>,
+    ) -> Option<ItemTarget> {
+        if let Some(id) = self.card_at(pointer, viewport) {
+            let card = self.pinned.iter().find(|card| card.id == id)?;
+            let local = (viewport.world(pointer) - card.anchor) / (card.scale * MICRO_SCALE);
+            let play = self.pinned_play.iter().find(|play| {
+                Some(play.machine)
+                    == match card.item {
+                        Item::Machine(machine) => Some(machine),
+                        _ => None,
+                    }
+            });
+            card_target(card.item, local, play, self.period, self.motion)
+        } else {
+            inventory.map(|item| ItemTarget {
+                item,
+                stock: self.available(item),
+            })
+        }
     }
 
     fn shown(&self) -> &Sim {
@@ -1597,15 +1617,6 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
         }
         let id = self.pin_world(item, at);
         self.card_drag = Some(CardDrag::New { id, button });
-    }
-
-    #[cfg(test)]
-    fn press_inventory(&mut self, item: Item, pointer: Vec2, viewport: &Viewport) {
-        if !self.available(item) {
-            self.begin_pin(item, pointer, viewport, MouseButton::Left);
-        } else {
-            self.lift_inventory(item);
-        }
     }
 
     fn card_press(&mut self, id: u64, pointer: Vec2, button: MouseButton) {
@@ -3192,6 +3203,68 @@ fn hover(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ItemTarget {
+    item: Item,
+    stock: bool,
+}
+
+impl ItemTarget {
+    fn hover(self) -> session::Input {
+        session::Input::Hover(Some(self.item))
+    }
+
+    fn press(self, point: Vec2, button: MouseButton) -> session::Input {
+        if self.stock && button == MouseButton::Left {
+            session::Input::Inventory(self.item)
+        } else {
+            session::Input::Pin(self.item, point, button)
+        }
+    }
+}
+
+fn recipe_center(form: &Form) -> Vec2 {
+    form.atoms().iter().map(|(at, _)| px(*at)).sum::<Vec2>() / form.atoms().len() as f32
+}
+
+fn card_target(
+    item: Item,
+    point: Vec2,
+    play: Option<&Play>,
+    period: f32,
+    motion: f32,
+) -> Option<ItemTarget> {
+    let card = layout(item);
+    let found = item
+        .recipe()
+        .and_then(|recipe| {
+            let local = point - card.recipe + recipe_center(recipe);
+            recipe
+                .atoms()
+                .iter()
+                .find(|(at, _)| local.distance(px(*at)) <= ATOM_RADIUS)
+                .map(|(_, kind)| Item::Atom(*kind))
+        })
+        .or_else(|| {
+            let play = play?;
+            let local = point - card.field?;
+            let (prev, sim) = play.sims();
+            let frame = Frame::between(&prev, &sim, phase(play.since, period, motion));
+            let viewer = Viewer::new(&sim);
+            Editor {
+                encountered: None,
+                sim: &sim,
+                viewer: &viewer,
+            }
+            .target_item(local, &frame)
+        })
+        .or_else(|| {
+            let local = point - card.picture;
+            (local.abs().max_element() <= picture_side(item) / 2.0).then_some(item)
+        });
+    found.map(|item| ItemTarget { item, stock: false })
+}
+
 const RECIPE_BOUND: Machine = Machine::Glyph(GlyphKind::Output(sim::Tier::One));
 
 fn recipe_side() -> f32 {
@@ -3870,7 +3943,8 @@ fn edit(
         })
         || ui.iter().any(|(_, _, i)| *i != Interaction::None)
         || save.iter().any(|i| *i != Interaction::None);
-    let over_ui = over_panel || covered || inventory_at.is_some();
+    let target = screen.and_then(|point| world.view().item_target(point, &viewport, inventory_at));
+    let over_ui = over_panel || covered || target.is_some();
     let force = buttons.get_just_pressed().next().is_some()
         || buttons.get_just_released().next().is_some()
         || keys.get_just_pressed().next().is_some();
@@ -3902,41 +3976,24 @@ fn edit(
         session.send(&mut world, session::Input::KeyUp(*key));
     }
 
-    if buttons.just_pressed(MouseButton::Right)
-        && world.card_drag.is_none()
-        && let Some(pointer) = screen
-    {
-        if let Some(item) = inventory_at {
-            session.send(
-                &mut world,
-                session::Input::Pin(item, viewport.world(pointer), MouseButton::Right),
-            );
-        } else if let Some(id) = world.card_at(pointer, &viewport) {
-            session.send(
-                &mut world,
-                session::Input::Card(id, viewport.world(pointer), MouseButton::Right),
-            );
+    for button in [MouseButton::Left, MouseButton::Right] {
+        if buttons.just_pressed(button)
+            && world.card_drag.is_none()
+            && let Some(pointer) = screen
+        {
+            if let Some(target) = target {
+                session.send(&mut world, target.press(viewport.world(pointer), button));
+            } else if let Some(id) = world.card_at(pointer, &viewport) {
+                session.send(
+                    &mut world,
+                    session::Input::Card(id, viewport.world(pointer), button),
+                );
+            }
         }
     }
-    if buttons.just_pressed(MouseButton::Left)
-        && !matches!(world.card_drag, Some(CardDrag::New { .. }))
-    {
+    if buttons.just_pressed(MouseButton::Left) && target.is_none() && !covered {
         let pressed = ui.iter().find(|(_, _, i)| **i == Interaction::Pressed);
-        if let Some(id) = screen.and_then(|pointer| world.card_at(pointer, &viewport)) {
-            session.send(
-                &mut world,
-                session::Input::Card(id, viewport.world(screen.unwrap()), MouseButton::Left),
-            );
-        } else if let Some((Some(entry), _, _)) = pressed {
-            if let Some(pointer) = screen {
-                let input = if !world.view().available(entry.0) {
-                    session::Input::Pin(entry.0, viewport.world(pointer), MouseButton::Left)
-                } else {
-                    session::Input::Inventory(entry.0)
-                };
-                session.send(&mut world, input);
-            }
-        } else if let Some((_, Some(row), _)) = pressed {
+        if let Some((_, Some(row), _)) = pressed {
             if let Some(arm) = row.arm().filter(|a| *a < world.shown().arms.len()) {
                 let cursor = world.shown().arms[arm].tape.len();
                 session.send(&mut world, session::Input::Tape { arm, cursor });
@@ -3985,8 +4042,8 @@ fn edit(
         session.send(&mut world, session::Input::Key(key, shift));
     }
     if screen.is_some() {
-        let item = if let Some(item) = inventory_at {
-            Some(item)
+        let item = if let Some(target) = target {
+            Some(target.item)
         } else if !over_ui {
             let frame = Frame::between(&world.prev, world.shown(), world.phase());
             if world.down.is_none() && !world.holding() {
@@ -4000,7 +4057,8 @@ fn edit(
             None
         };
         if world.hover != item.map(card_item) {
-            session.send(&mut world, session::Input::Hover(item));
+            let input = target.map_or(session::Input::Hover(item), ItemTarget::hover);
+            session.send(&mut world, input);
         }
     }
 }
@@ -5641,8 +5699,7 @@ fn hover_card<G: GizmoConfigGroup>(
 fn compound<G: GizmoConfigGroup>(p: &mut Painter<G>, centre: Vec2, form: &Form) {
     let z = |k: usize| layer::z(layer::CARD, k, 5);
     let set = form.sim();
-    let centroid =
-        form.atoms().iter().map(|(at, _)| px(*at)).sum::<Vec2>() / form.atoms().len() as f32;
+    let centroid = recipe_center(form);
     let at = |id: usize| centre - centroid + px(set.atoms[id].unwrap().pos);
     for b in &set.bonds {
         p.bond(at(b.a), at(b.b), b.kind, z(3));
@@ -11944,6 +12001,95 @@ mod tests {
     }
 
     #[test]
+    fn inventory_and_card_items_hover_and_drag_through_the_same_target() {
+        let viewport = Viewport {
+            cam: Vec2::new(30.0, -20.0),
+            size: Vec2::new(1280.0, 720.0),
+            scale: MICRO_SCALE,
+        };
+        let mut world = Game::new(Sim::empty());
+        let item = Item::Machine(Machine::Glyph(GlyphKind::Bonder));
+        world.pin_world(item, Vec2::ZERO);
+        let before = world.sim().clone();
+        for scale in [0.5, 1.0, 2.0] {
+            world.pinned[0].scale = scale;
+            let recipe = item.recipe().unwrap();
+            for (at, kind) in recipe.atoms() {
+                let point = layout(item).recipe - recipe_center(recipe) + px(*at);
+                let pointer = viewport.screen(point * scale * MICRO_SCALE);
+                let card = world.view().item_target(pointer, &viewport, None).unwrap();
+                let inventory = world
+                    .view()
+                    .item_target(Vec2::ZERO, &viewport, Some(Item::Atom(*kind)))
+                    .unwrap();
+                assert_eq!(card, inventory);
+                for target in [inventory, card] {
+                    target.hover().apply(&mut world);
+                    assert_eq!(world.hover, Some(card_item(Item::Atom(*kind))));
+                    for button in [MouseButton::Left, MouseButton::Right] {
+                        target
+                            .press(viewport.world(pointer), button)
+                            .apply(&mut world);
+                        assert!(matches!(world.card_drag, Some(CardDrag::New { .. })));
+                        session::Input::MoveCard(Vec2::new(900.0, 400.0)).apply(&mut world);
+                        session::Input::EndCard(false).apply(&mut world);
+                        let pin = world.pinned.last().unwrap();
+                        assert_eq!(pin.item, card_item(Item::Atom(*kind)));
+                        assert_eq!(pin.anchor, Vec2::new(900.0, 400.0));
+                        let id = pin.id;
+                        world.unpin(id);
+                    }
+                }
+            }
+        }
+        assert_eq!(world.sim(), &before);
+        let atom = Item::Atom(AtomKind::Plum);
+        world.sim_mut().receive(atom);
+        let target = world
+            .view()
+            .item_target(Vec2::ZERO, &viewport, Some(atom))
+            .unwrap();
+        assert!(
+            matches!(target.press(Vec2::ZERO, MouseButton::Left), session::Input::Inventory(found) if found == atom)
+        );
+        assert!(
+            matches!(target.press(Vec2::ZERO, MouseButton::Right), session::Input::Pin(found, _, _) if found == atom)
+        );
+    }
+
+    #[test]
+    fn card_recipe_routes_chain_and_animated_atoms_are_items() {
+        let mut world = Game::new(Sim::empty());
+        let mut item = Item::Machine(Machine::Glyph(GlyphKind::Converter(AtomKind::Cobalt)));
+        for kind in [AtomKind::Plum, AtomKind::Amber, AtomKind::Base] {
+            let recipe = item.recipe().unwrap();
+            let (at, _) = recipe
+                .atoms()
+                .iter()
+                .find(|(_, atom)| *atom == kind)
+                .unwrap();
+            let point = layout(item).recipe - recipe_center(recipe) + px(*at);
+            let target = card_target(item, point, None, TICK_MS / 1000.0, MOTION).unwrap();
+            assert_eq!(target.item, Item::Atom(kind));
+            target
+                .press(Vec2::ZERO, MouseButton::Left)
+                .apply(&mut world);
+            session::Input::EndCard(false).apply(&mut world);
+            item = world.pinned.last().unwrap().item;
+            assert_eq!(item, Item::Machine(atom_machine(kind)));
+        }
+        let machine = Machine::Glyph(GlyphKind::Source);
+        let play = Play::at(machine, 1);
+        let point = layout(machine.into()).field.unwrap();
+        assert_eq!(
+            card_target(machine.into(), point, Some(&play), TICK_MS / 1000.0, MOTION)
+                .unwrap()
+                .item,
+            Item::Atom(AtomKind::Base)
+        );
+    }
+
+    #[test]
     fn right_drags_pin_several_inventory_cards_and_z_removes_only_the_focused_card() {
         let mut world = World::new(Sim::empty());
         let viewport = Viewport {
@@ -11977,16 +12123,21 @@ mod tests {
     #[test]
     fn a_left_drag_from_a_zero_count_palette_row_keeps_the_sim_and_pins_its_card_at_the_drop() {
         let item = Item::from(Machine::Glyph(GlyphKind::Bonder));
-        let mut world = World::new(Sim::empty());
-        let before = world.sim.clone();
+        let mut world = Game::new(Sim::empty());
+        let before = world.sim().clone();
         let drop = Vec2::new(640.0, 240.0);
         let viewport = Viewport {
             cam: Vec2::new(80.0, -30.0),
             size: Vec2::new(1280.0, 720.0),
             scale: 1.5,
         };
-        world.press_inventory(item, Vec2::new(90.0, 610.0), &viewport);
-        assert_eq!(world.sim, before);
+        world
+            .view()
+            .item_target(Vec2::new(90.0, 610.0), &viewport, Some(item))
+            .unwrap()
+            .press(viewport.world(Vec2::new(90.0, 610.0)), MouseButton::Left)
+            .apply(&mut world);
+        assert_eq!(world.sim(), &before);
         assert!(matches!(
             world.card_drag,
             Some(CardDrag::New {
@@ -11995,7 +12146,7 @@ mod tests {
             })
         ));
         world.end_card_drag(Some(drop), &viewport);
-        assert_eq!(world.sim, before);
+        assert_eq!(world.sim(), &before);
         assert_eq!(world.pinned.len(), 1);
         assert_eq!(world.pinned[0].item, item);
         assert_eq!(world.pinned[0].anchor, viewport.world(drop));
@@ -12004,23 +12155,28 @@ mod tests {
     #[test]
     fn a_left_drag_from_a_one_count_palette_row_lifts_the_item_and_pins_nothing() {
         let item = Item::from(Machine::Glyph(GlyphKind::Bonder));
-        let mut world = World::new(Sim::empty());
-        world.sim.receive(item);
-        let before = world.sim.clone();
+        let mut world = Game::new(Sim::empty());
+        world.sim_mut().receive(item);
+        let before = world.sim().clone();
         let drop = Hex::new(-2, 3);
         let viewport = Viewport {
             cam: Vec2::ZERO,
             size: Vec2::new(1280.0, 720.0),
             scale: 1.0,
         };
-        world.press_inventory(item, Vec2::new(90.0, 610.0), &viewport);
-        assert_eq!(world.sim, before);
+        world
+            .view()
+            .item_target(Vec2::new(90.0, 610.0), &viewport, Some(item))
+            .unwrap()
+            .press(viewport.world(Vec2::new(90.0, 610.0)), MouseButton::Left)
+            .apply(&mut world);
+        assert_eq!(world.sim(), &before);
         assert!(matches!(world.focus, Some(Focus::Hold { .. })));
         assert!(world.pinned.is_empty());
         world.pointer = Some(px(drop));
         world.release(Some(drop));
-        assert_eq!(world.sim.inventory.count(item), Some(0));
-        assert_eq!(world.sim.glyphs[0].unwrap().at, drop);
+        assert_eq!(world.sim().inventory.count(item), Some(0));
+        assert_eq!(world.sim().glyphs[0].unwrap().at, drop);
         assert!(world.pinned.is_empty());
     }
 

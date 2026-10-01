@@ -1494,3 +1494,17 @@ Report (verbatim):
 Selection and hover outline the outer edges of every tile in the existing machine footprint, including arm shafts and hands. Shared edges inside one machine disappear; each selected machine keeps its own complete boundary. A single machine-selection loop replaces the separate anchor-only glyph and arm loops and includes portals. The highlight depends on the same occupied cells used to target machines, so no second shape definition or on-screen text is needed.
 
 [The single selection](proofs/selection-footprint-single-133.png) and [the group selection](proofs/selection-footprint-group-133.png) were captured from the deployed Pages build `5e4ab6d` at 1800 by 2000. A prepared save places all three arm lengths, all nine glyph variants and an empty portal on a spaced board. The browser check verifies the deployed build and restored save, selects the arms and glyphs individually, then checks that a marquee copies all twelve before extending the selection to include the portal. The captures show the full arm reach and each machine's complete boundary without internal tile edges. The geometry regression checks every machine shape in all six orientations.
+
+## Items connect tutorial cards into routes
+
+Directive (verbatim):
+
+> this ask is going to require some high quality redesign/refactoring, but it should help significantly with playability.
+>
+> in ziral, hovering over an item within a tutorial card should have behavior similar to hovering over that item in inventory. for example, hover over plum, see plumb maker machine.  dragging a plum atom out of that card creates a plum machine card. this will help the player plan out a route to the machine they want
+
+Inventory rows and items within pinned tutorial cards resolve to one item target. One hover action reveals the item's machine; one press action carries available inventory on a left drag and otherwise creates its tutorial card. Card items represent a recipe or example rather than stock, so either mouse button pulls out a card. The card's empty surface still moves the whole card. Atoms resolve through the existing production routes: plum reveals the resonator, whose amber ingredient leads to the amber converter, whose base ingredient leads to the source.
+
+The simplest design removes the separate inventory button dispatch. Recipe painting and targeting share their centre calculation; animated examples use the existing scene hit test. Card coordinates come from their world anchor and scale, so panning and resizing need no second interaction implementation. No dependency or on-screen text is added.
+
+Tests exercise both surfaces through the shared target and recorded input actions, both mouse buttons, three card scales, unchanged simulation state, stocked inventory placement, animated atoms and a three-card ingredient route.
