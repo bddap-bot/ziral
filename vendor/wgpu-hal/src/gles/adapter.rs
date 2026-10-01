@@ -884,7 +884,6 @@ impl super::Adapter {
                     private_caps,
                     workarounds,
                     features,
-                    limits: limits.clone(),
                     options: backend_options,
                     shading_language_version,
                     next_shader_id: Default::default(),
@@ -1042,8 +1041,11 @@ impl crate::Adapter for super::Adapter {
             None
         };
 
+        let framebuffers = Arc::new(Mutex::new(super::framebuffer::Cache::default()));
+
         Ok(crate::OpenDevice {
             device: super::Device {
+                framebuffers: Arc::clone(&framebuffers),
                 shared: Arc::clone(&self.shared),
                 main_vao,
                 #[cfg(all(native, feature = "renderdoc"))]
@@ -1051,6 +1053,8 @@ impl crate::Adapter for super::Adapter {
                 counters: Default::default(),
             },
             queue: super::Queue {
+                framebuffers,
+                current_draw_fbo: Mutex::new(None),
                 shared: Arc::clone(&self.shared),
                 features,
                 draw_fbo: unsafe { gl.create_framebuffer() }

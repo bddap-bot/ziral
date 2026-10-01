@@ -988,6 +988,10 @@ impl crate::Device for super::Device {
     }
 
     unsafe fn destroy_texture(&self, texture: super::Texture) {
+        {
+            let gl = &self.shared.context.lock();
+            unsafe { self.framebuffers.lock().remove(gl, &texture.inner) };
+        }
         if texture.drop_guard.is_none() {
             let gl = &self.shared.context.lock();
             match texture.inner {

@@ -95,6 +95,7 @@ mod conv;
 mod device;
 #[cfg_attr(webgl, path = "fence_webgl.rs")]
 mod fence;
+mod framebuffer;
 mod queue;
 
 pub use fence::Fence;
@@ -275,7 +276,6 @@ struct AdapterShared {
     context: AdapterContext,
     private_caps: PrivateCapabilities,
     features: wgt::Features,
-    limits: wgt::Limits,
     workarounds: Workarounds,
     options: wgt::GlBackendOptions,
     shading_language_version: naga::back::glsl::Version,
@@ -294,6 +294,7 @@ pub struct Adapter {
 }
 
 pub struct Device {
+    framebuffers: Arc<Mutex<framebuffer::Cache>>,
     shared: Arc<AdapterShared>,
     main_vao: glow::VertexArray,
     #[cfg(all(native, feature = "renderdoc"))]
@@ -304,6 +305,7 @@ pub struct Device {
 impl Drop for Device {
     fn drop(&mut self) {
         let gl = &self.shared.context.lock();
+        unsafe { self.framebuffers.lock().clear(gl) };
         unsafe { gl.delete_vertex_array(self.main_vao) };
     }
 }
@@ -314,6 +316,8 @@ pub struct ShaderClearProgram {
 }
 
 pub struct Queue {
+    framebuffers: Arc<Mutex<framebuffer::Cache>>,
+    current_draw_fbo: Mutex<Option<glow::Framebuffer>>,
     shared: Arc<AdapterShared>,
     features: wgt::Features,
     draw_fbo: glow::Framebuffer,
@@ -332,6 +336,7 @@ pub struct Queue {
 impl Drop for Queue {
     fn drop(&mut self) {
         let gl = &self.shared.context.lock();
+        unsafe { self.framebuffers.lock().clear(gl) };
         unsafe { gl.delete_framebuffer(self.draw_fbo) };
         unsafe { gl.delete_framebuffer(self.copy_fbo) };
         unsafe { gl.delete_buffer(self.zero_buffer) };
@@ -356,7 +361,7 @@ unsafe impl Send for Buffer {}
 
 impl crate::DynBuffer for Buffer {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TextureInner {
     Renderbuffer {
         raw: glow::Renderbuffer,
@@ -518,7 +523,7 @@ impl Texture {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TextureView {
     inner: TextureInner,
     aspects: crate::FormatAspects,
@@ -918,14 +923,9 @@ enum Command {
         dst_target: BindTarget,
         dst_offset: wgt::BufferAddress,
     },
-    ResetFramebuffer {
+    BindFramebuffer {
         is_default: bool,
-    },
-    BindAttachment {
-        attachment: u32,
-        view: TextureView,
-        depth_slice: Option<u32>,
-        sample_count: u32,
+        attachments: Vec<framebuffer::Attachment>,
     },
     ResolveAttachment {
         attachment: u32,

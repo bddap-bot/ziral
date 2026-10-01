@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use core::{mem, ops::Range};
 
 use arrayvec::ArrayVec;
@@ -535,94 +535,89 @@ impl crate::CommandEncoder for super::CommandEncoder {
         // `COLOR_ATTACHMENT0` to `COLOR_ATTACHMENT31` gives 32 possible color attachments.
         assert!(desc.color_attachments.len() <= 32);
 
-        match desc
-            .color_attachments
-            .first()
-            .filter(|at| at.is_some())
-            .and_then(|at| at.as_ref().map(|at| &at.target.view.inner))
-        {
-            // default framebuffer (provided externally)
-            Some(&super::TextureInner::DefaultRenderbuffer) => {
-                self.cmd_buffer
-                    .commands
-                    .push(C::ResetFramebuffer { is_default: true });
-            }
-            _ => {
-                // set the framebuffer
-                self.cmd_buffer
-                    .commands
-                    .push(C::ResetFramebuffer { is_default: false });
-
-                for (i, cat) in desc.color_attachments.iter().enumerate() {
-                    if let Some(cat) = cat.as_ref() {
-                        let attachment = glow::COLOR_ATTACHMENT0 + i as u32;
-                        // Try to use the multisampled render-to-texture extension to avoid resolving
-                        if let Some(ref rat) = cat.resolve_target {
-                            if matches!(rat.view.inner, super::TextureInner::Texture { .. })
+        let mut attachments = Vec::new();
+        let is_default = matches!(
+            desc.color_attachments
+                .first()
+                .and_then(|at| at.as_ref())
+                .map(|at| &at.target.view.inner),
+            Some(super::TextureInner::DefaultRenderbuffer)
+        );
+        if !is_default {
+            for (i, cat) in desc.color_attachments.iter().enumerate() {
+                if let Some(cat) = cat.as_ref() {
+                    let attachment = glow::COLOR_ATTACHMENT0 + i as u32;
+                    // Try to use the multisampled render-to-texture extension to avoid resolving
+                    if let Some(ref rat) = cat.resolve_target {
+                        if matches!(rat.view.inner, super::TextureInner::Texture { .. })
                                 && self.private_caps.contains(
                                     super::PrivateCapabilities::MULTISAMPLED_RENDER_TO_TEXTURE,
                                 )
                                 && !cat.ops.contains(crate::AttachmentOps::STORE)
                                 // Extension specifies that only COLOR_ATTACHMENT0 is valid
                                 && i == 0
-                            {
-                                self.cmd_buffer.commands.push(C::BindAttachment {
-                                    attachment,
-                                    view: rat.view.clone(),
-                                    depth_slice: None,
-                                    sample_count: desc.sample_count,
-                                });
-                                continue;
-                            }
-                        }
-                        self.cmd_buffer.commands.push(C::BindAttachment {
-                            attachment,
-                            view: cat.target.view.clone(),
-                            depth_slice: cat.depth_slice,
-                            sample_count: 1,
-                        });
-                        if let Some(ref rat) = cat.resolve_target {
-                            self.state
-                                .resolve_attachments
-                                .push((attachment, rat.view.clone()));
-                        }
-                        if cat.ops.contains(crate::AttachmentOps::STORE_DISCARD) {
-                            self.state.invalidate_attachments.push(attachment);
+                        {
+                            attachments.push(super::framebuffer::Attachment {
+                                attachment,
+                                view: rat.view.clone(),
+                                depth_slice: None,
+                                sample_count: desc.sample_count,
+                            });
+                            continue;
                         }
                     }
-                }
-                if let Some(ref dsat) = desc.depth_stencil_attachment {
-                    let aspects = dsat.target.view.aspects;
-                    let attachment = match aspects {
-                        crate::FormatAspects::DEPTH => glow::DEPTH_ATTACHMENT,
-                        crate::FormatAspects::STENCIL => glow::STENCIL_ATTACHMENT,
-                        _ => glow::DEPTH_STENCIL_ATTACHMENT,
-                    };
-                    self.cmd_buffer.commands.push(C::BindAttachment {
+                    attachments.push(super::framebuffer::Attachment {
                         attachment,
-                        view: dsat.target.view.clone(),
-                        depth_slice: None,
+                        view: cat.target.view.clone(),
+                        depth_slice: cat.depth_slice,
                         sample_count: 1,
                     });
-                    if aspects.contains(crate::FormatAspects::DEPTH)
-                        && dsat.depth_ops.contains(crate::AttachmentOps::STORE_DISCARD)
-                    {
+                    if let Some(ref rat) = cat.resolve_target {
                         self.state
-                            .invalidate_attachments
-                            .push(glow::DEPTH_ATTACHMENT);
+                            .resolve_attachments
+                            .push((attachment, rat.view.clone()));
                     }
-                    if aspects.contains(crate::FormatAspects::STENCIL)
-                        && dsat
-                            .stencil_ops
-                            .contains(crate::AttachmentOps::STORE_DISCARD)
-                    {
-                        self.state
-                            .invalidate_attachments
-                            .push(glow::STENCIL_ATTACHMENT);
+                    if cat.ops.contains(crate::AttachmentOps::STORE_DISCARD) {
+                        self.state.invalidate_attachments.push(attachment);
                     }
                 }
             }
+            if let Some(ref dsat) = desc.depth_stencil_attachment {
+                let aspects = dsat.target.view.aspects;
+                let attachment = match aspects {
+                    crate::FormatAspects::DEPTH => glow::DEPTH_ATTACHMENT,
+                    crate::FormatAspects::STENCIL => glow::STENCIL_ATTACHMENT,
+                    _ => glow::DEPTH_STENCIL_ATTACHMENT,
+                };
+                attachments.push(super::framebuffer::Attachment {
+                    attachment,
+                    view: dsat.target.view.clone(),
+                    depth_slice: None,
+                    sample_count: 1,
+                });
+                if aspects.contains(crate::FormatAspects::DEPTH)
+                    && dsat.depth_ops.contains(crate::AttachmentOps::STORE_DISCARD)
+                {
+                    self.state
+                        .invalidate_attachments
+                        .push(glow::DEPTH_ATTACHMENT);
+                }
+                if aspects.contains(crate::FormatAspects::STENCIL)
+                    && dsat
+                        .stencil_ops
+                        .contains(crate::AttachmentOps::STORE_DISCARD)
+                {
+                    self.state
+                        .invalidate_attachments
+                        .push(glow::STENCIL_ATTACHMENT);
+                }
+            }
         }
+
+        self.cmd_buffer.commands.push(C::BindFramebuffer {
+            is_default,
+            attachments,
+        });
 
         let rect = crate::Rect {
             x: 0,

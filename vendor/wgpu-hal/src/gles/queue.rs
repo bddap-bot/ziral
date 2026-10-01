@@ -104,8 +104,7 @@ impl super::Queue {
         *current_index_buffer = None;
     }
 
-    unsafe fn set_attachment(
-        &self,
+    pub(super) unsafe fn set_attachment(
         gl: &glow::Context,
         fbo_target: u32,
         attachment: u32,
@@ -195,7 +194,7 @@ impl super::Queue {
         command: &C,
         #[cfg_attr(target_arch = "wasm32", allow(unused))] data_bytes: &[u8],
         queries: &[glow::Query],
-    ) {
+    ) -> Result<(), crate::DeviceError> {
         match *command {
             C::Draw {
                 topology,
@@ -891,13 +890,13 @@ impl super::Queue {
                 let block_size = src_format.block_copy_size(None).unwrap();
                 if src_format.is_compressed() {
                     log::error!("Not implemented yet: compressed texture copy to buffer");
-                    return;
+                    return Ok(());
                 }
                 if src_target == glow::TEXTURE_CUBE_MAP
                     || src_target == glow::TEXTURE_CUBE_MAP_ARRAY
                 {
                     log::error!("Not implemented yet: cubemap texture copy to buffer");
-                    return;
+                    return Ok(());
                 }
                 let format_desc = self.shared.describe_texture_format(src_format);
                 let row_texels = copy
@@ -1093,33 +1092,36 @@ impl super::Queue {
                     }
                 }
             }
-            C::ResetFramebuffer { is_default } => {
-                if is_default {
+            C::BindFramebuffer {
+                is_default,
+                ref attachments,
+            } => {
+                let fbo = if is_default {
                     unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None) };
-                } else {
+                    None
+                } else if attachments.iter().any(|a| a.is_external()) {
                     unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(self.draw_fbo)) };
-                    unsafe {
-                        gl.framebuffer_texture_2d(
-                            glow::DRAW_FRAMEBUFFER,
-                            glow::DEPTH_STENCIL_ATTACHMENT,
-                            glow::TEXTURE_2D,
-                            None,
-                            0,
-                        )
-                    };
-                    for i in 0..self.shared.limits.max_color_attachments {
-                        let target = glow::COLOR_ATTACHMENT0 + i;
+                    for a in attachments {
                         unsafe {
-                            gl.framebuffer_texture_2d(
+                            Self::set_attachment(
+                                gl,
                                 glow::DRAW_FRAMEBUFFER,
-                                target,
-                                glow::TEXTURE_2D,
-                                None,
-                                0,
+                                a.attachment,
+                                &a.view,
+                                a.depth_slice,
+                                a.sample_count,
                             )
                         };
                     }
-                }
+                    Some(self.draw_fbo)
+                } else {
+                    Some(unsafe {
+                        self.framebuffers
+                            .lock()
+                            .bind(gl, glow::DRAW_FRAMEBUFFER, attachments)
+                    }?)
+                };
+                *self.current_draw_fbo.lock() = fbo;
                 unsafe { gl.color_mask(true, true, true, true) };
                 unsafe { gl.depth_mask(true) };
                 unsafe { gl.stencil_mask(!0) };
@@ -1127,41 +1129,26 @@ impl super::Queue {
                 unsafe { gl.disable(glow::STENCIL_TEST) };
                 unsafe { gl.disable(glow::SCISSOR_TEST) };
             }
-            C::BindAttachment {
-                attachment,
-                ref view,
-                depth_slice,
-                sample_count,
-            } => {
-                unsafe {
-                    self.set_attachment(
-                        gl,
-                        glow::DRAW_FRAMEBUFFER,
-                        attachment,
-                        view,
-                        depth_slice,
-                        sample_count,
-                    )
-                };
-            }
             C::ResolveAttachment {
                 attachment,
                 ref dst,
                 ref size,
             } => {
-                unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(self.draw_fbo)) };
+                let draw_fbo = *self.current_draw_fbo.lock();
+                unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, draw_fbo) };
                 unsafe { gl.read_buffer(attachment) };
-                unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(self.copy_fbo)) };
+                let layout = [super::framebuffer::Attachment {
+                    attachment: glow::COLOR_ATTACHMENT0,
+                    view: dst.clone(),
+                    depth_slice: None,
+                    sample_count: 1,
+                }];
                 unsafe {
-                    self.set_attachment(
-                        gl,
-                        glow::DRAW_FRAMEBUFFER,
-                        glow::COLOR_ATTACHMENT0,
-                        dst,
-                        None,
-                        1,
-                    )
-                };
+                    self.framebuffers
+                        .lock()
+                        .bind(gl, glow::DRAW_FRAMEBUFFER, &layout)
+                }?;
+                unsafe { gl.draw_buffers(&[glow::COLOR_ATTACHMENT0]) };
                 unsafe {
                     gl.blit_framebuffer(
                         0,
@@ -1177,7 +1164,7 @@ impl super::Queue {
                     )
                 };
                 unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
-                unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(self.draw_fbo)) };
+                unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, draw_fbo) };
             }
             C::InvalidateAttachments(ref list) => {
                 if self
@@ -1883,6 +1870,7 @@ impl super::Queue {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -1920,7 +1908,7 @@ impl crate::Queue for super::Queue {
             }
 
             for command in cmd_buf.commands.iter() {
-                unsafe { self.process(gl, command, &cmd_buf.data_bytes, &cmd_buf.queries) };
+                unsafe { self.process(gl, command, &cmd_buf.data_bytes, &cmd_buf.queries) }?;
             }
 
             if cmd_buf.label.is_some()
