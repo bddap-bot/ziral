@@ -1457,6 +1457,8 @@ The simplest design keeps cues at the shared editor mutations, rather than compa
 
 A record’s initial snapshot establishes its world silently; a player’s file import uses the existing import input and emits an edit cue. Seeking a replay discards historical action cues along with its historical tick score.
 
+[The building session with audio](proofs/building-sounds-142.mp4) captures deployed Pages build `3ad5d2b` for 67 seconds at 1280 by 720. It shows solo pickup, placement, rotation and deletion, six group turns and drops, a portal blueprint carried as one, tape edits and repeated movement. The browser check observed exactly one pickup, rotation and drop cue for each group gesture, and 52 action cues with 52 distinct playback rates across the session. Their gains ranged from 0.0602 to 0.0764 beneath the tick gain of 0.6667. The native and web frame-budget checks passed both windows with zero over-budget frames; maxima were 6.878 ms and 8.6 ms respectively.
+
 ## A portal click puts its blueprint in hand
 
 Directive (verbatim):
