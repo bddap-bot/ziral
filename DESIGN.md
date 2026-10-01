@@ -1330,6 +1330,8 @@ The dumbest design is one threshold, checked where a wheel step moves the camera
 
 Tests: a step that ends half a notch outside the six-notch threshold stays out and the next hops in; a step past the threshold is refused with the pointer off the portal and during replay, and hops with the pointer on the portal though the camera is off it; inside, the zoom stops within one notch of the threshold; an outward step closer than the threshold is taken and enters nothing, and an inward step inside leaves nothing; a restore from inside and a round trip entered just inside the threshold land on the hop view; a crossing at the threshold keeps every object's screen position and renders the same picture apart from tiles.
 
+`proofs/portal-hop-134.gif` compares the deployed Pages builds `77a0ec4` (left) and `533b6f1` (right), with one 120-pixel wheel click per frame after the initial view. Over the portal, entry moves from click seven to click five. Over empty board, the new view stops after click four; captures after clicks five through eight are byte-identical, while the previous build keeps magnifying. Browser recordings verify both build identities and the portal crossing at the named click. The capture contains only game content.
+
 ## Plum through paired resonance
 
 Directive (verbatim): "each conversion should look and behave differently. Keep plum if its mechanics differ from amber; if plum is technically similar or redundant, remove plum and create another path to plum."
