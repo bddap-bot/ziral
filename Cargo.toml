@@ -64,3 +64,4 @@ bevy_render = { path = "vendor/bevy_render" }
 bevy_core_pipeline = { path = "vendor/bevy_core_pipeline" }
 bevy_gizmos_render = { path = "vendor/bevy_gizmos_render" }
 wgpu-hal = { path = "vendor/wgpu-hal" }
+glow = { path = "vendor/glow" }

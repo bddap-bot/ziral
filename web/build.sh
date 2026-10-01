@@ -22,7 +22,9 @@ rm -rf "$out"
 wasm-bindgen --target web --no-typescript --remove-name-section \
   --out-dir "$out" --out-name ziral \
   "${CARGO_TARGET_DIR:-$root/target}/wasm32-unknown-unknown/release/ziral.wasm"
+# Deduplicate first so optimization visits each repeated body once.
 wasm-opt "$out/ziral_bg.wasm" --duplicate-function-elimination -o "$out/ziral_bg.wasm"
+BINARYEN_CORES=6 wasm-opt "$out/ziral_bg.wasm" -O2 --duplicate-function-elimination -o "$out/ziral_bg.wasm"
 CC_wasm32_unknown_unknown=clang NIX_HARDENING_ENABLE='' cargo build --release --target wasm32-unknown-unknown --manifest-path web/transport/Cargo.toml
 wasm-bindgen --target web --no-typescript --out-dir "$out" --out-name ziral_records_transport \
   "${CARGO_TARGET_DIR:-$root/web/transport/target}/wasm32-unknown-unknown/release/ziral_records_transport.wasm"
