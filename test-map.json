@@ -6,6 +6,16 @@
   "rules": [
     {
       "paths": [
+        "art/gemini-key.sh",
+        "art/test-gemini-key.sh"
+      ],
+      "tests": [
+        "nix-shell --run 'shellcheck art/gemini-key.sh art/test-gemini-key.sh && art/test-gemini-key.sh'"
+      ],
+      "why": "offline image response proves colour keying, exterior alpha, body preservation, usage accounting and refusal of paid retries"
+    },
+    {
+      "paths": [
         "records/**",
         "default.nix"
       ],

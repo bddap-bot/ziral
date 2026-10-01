@@ -53,3 +53,13 @@ For this opt-in path, uniform canvas resampling and exact footprint clipping rep
 No package is added to the application. The image adapter uses the existing image tool, ImageMagick and pngquant. A local structural-conditioning experiment can implement the same executable interface without adding its inference stack to the game.
 
 The four-machine comparison found stronger arm and bonder character from the image-tool adapter, but their seat offsets exceeded tolerance. The local ControlNet probe retained hex structure without transparent seat apertures. Neither is an exact-geometry replacement for the default. The `machine-layout` screenshot fixture shows the arm, bonder, reification housing and first output together, with atoms at the simulation's bonder and reification seats. Render it after embedding a chosen subset with `ziral --shot review.png machine-layout 8`.
+
+## Key-colour Gemini comparison
+
+`--generator layout:./art/gemini-key.sh` selects the paid `google/gemini-3-pro-image` adapter using `OPENROUTER_API_KEY`. It requests one square 1K PNG with the layout and caption, asking for uniform `#FF00FF` seat interiors. Pixels within 16 of each RGB channel become fully transparent before fitting. The layout supplies only an exterior mask: enclosed seats are never reconstructed. ImageMagick resizes that mask; the reference measurement used Pillow, so boundary resampling can differ slightly before the exact footprint clip.
+
+The adapter uses the existing curl, jq, ImageMagick and coreutils dependencies. It records returned pixels, prompt and response metadata beside each attempt, including actual `usage.cost`. Request failures stop without paid retries. Selecting this adapter incurs charges; it has no automatic aggregate spending cap. Ming's default and zero-spend guard remain unchanged.
+
+A four-machine single-attempt sample passed exact bounds and the 6 asset-pixel seat tolerance: arm 0.25 px, bonder 0.24 px, reification 0.68 px; output-1 is seatless. Actual charges totalled $0.546700 and model calls totalled 77.16 seconds (85.47 seconds including local processing and accounting). A linear projection for 15 machines is $2.05 and 289–320 seconds sequentially, excluding fitting, builds and rendering; three workers could reduce ideal model-call time to about 96 seconds, subject to provider throughput. This is a projection, not a full-set run or geometry guarantee.
+
+Visual limitations remain: painted checkerboard inside the arm footprint, magenta seat fringes, and unwanted magenta decorations on the seatless output. The adapter is available for comparison; shipped assets and the default generator are unchanged.
