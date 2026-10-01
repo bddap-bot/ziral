@@ -51,12 +51,7 @@ fn manifest() -> &'static Manifest {
 }
 
 pub fn entry(machine: Machine) -> &'static Entry {
-    let name = crate::look::machine(machine)
-        .skin
-        .name
-        .split('/')
-        .nth(1)
-        .expect("a machine skin lives in art/machines/<name>/");
+    let name = crate::look::name(machine);
     let entry = manifest()
         .machine
         .get(name)

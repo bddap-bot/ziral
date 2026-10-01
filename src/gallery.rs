@@ -92,7 +92,7 @@ fn scenes() -> Vec<Scene> {
         }
         world.prev = world.sim.clone();
         scenes.push(Scene {
-            name: machines::name(machine).into(),
+            name: look::name(machine).into(),
             world,
             frames: 1,
         });

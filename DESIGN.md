@@ -1,12 +1,12 @@
 # ziral — design plan
 
-Design decisions and experiments. Art entries below include historical results; current guidance is in [art/BIBLE.md](art/BIBLE.md), [art/SYMBOLS.md](art/SYMBOLS.md) and [art/MACHINES.md](art/MACHINES.md).
+Design decisions and experiments. Art entries below include historical results; current guidance is in [art/SYMBOLS.md](art/SYMBOLS.md) and [Machine sprites are painted over their footprint](#machine-sprites-are-painted-over-their-footprint).
 
-### Art documentation review
+## Machine sprites are painted over their footprint
 
-Directive (verbatim): "queue low priority a job to review our art documentation for self-conficts or other issues"
+`nix-shell --run 'cargo run --release -- --paint [--generator CMD] [MACHINE...]'` draws one layout per machine from its simulation footprint: the machine's glaze colour fills its hexes, an arm instead gets a thin beam from hub to gripper, dark discs mark the seats, hub and gripper on their tile centres, and everything else is flat chroma green. A generator is any command run as `CMD OUT.png SIDE LAYOUT.png` with the prompt on stdin, printing its cost; the prompt is a shared layout line, the machine's caption from `art/machines/manifest.toml` and a shared style line. `art/paint/openrouter.sh MODEL` reaches every OpenRouter image model, `art/paint/layout.sh` returns the layout itself, and `art/paint/default` names the default. The command rejects an off-aspect return, keys out the green, masks the sprite to the union of its footprint hexes, rejects a return that paints more than a tenth of the surround, finds each fitting's centre by a radial-symmetry vote and rejects one more than 0.03 hex from its tile centre. A rejected return is painted again, three attempts in all; an accepted one becomes `art/machines/<name>/albedo.png` at 256 px per hex. New sprites and their in-game renders are shown before they land on main.
 
-The art documents mix current direction, abandoned experiments and the exact prompts of earlier paints. This review checks BIBLE.md, SYMBOLS.md, MACHINES.md, the art entries here, the manifest directions and the recorded prompts together. The simplest design deletes repeated rules, corrects descriptions against the existing pipeline and labels historical evidence. Rewriting past paint records during this review would falsify their provenance; changing the rubric or repainting would turn a documentation correction into a new art decision. Unresolved choices from this review are listed on [issue #110](https://github.com/bddap-bot/ziral/issues/110).
+The simplest design makes that one layout the only geometric input. Containment and fitting placement are then measured against the footprint that drew it, so no critic scores the picture and no prompt accumulates rules correcting a model. A new model is one more command.
 
 ## Machine overlap has one order
 
@@ -53,7 +53,7 @@ Directive: Minute editing comes from Opus Magnum. Zoomed out editing comes from 
 
 Each 400 ms simulation tick produces one ordered `TickEvents` value. Its typed events carry the arm or glyph and the atoms, bond, motion, position or stall reason involved in firing, writing a bond, consuming, spawning, grabbing, dropping, moving and stalling. Event order is simulation order, so equal starting state and input produce equal state and equal events. Replay and card playback retain this output while stepping; neither infers action by comparing states or keeps another action log.
 
-Every expressive layer is a pure consumer of the tick stream. A machine responds through whole-machine poses, activation energy in the material shader, sound on the 400 ms grid, and a short particle burst. The machine manifest holds one typed default emitter beside each rig and instrument; a rig emitter, when present, replaces it through one resolution function. Each emitter fixes a material-bible look, count, lifetime in ticks, layer, driving event, and whether activation energy scales its count. The same tick event starts the rig, material, sound, and burst, and activation energy bounds the burst, leaving one clock and one seam. A stalled machine has no driving event and starts no burst.
+Every expressive layer is a pure consumer of the tick stream. A machine responds through whole-machine poses, activation energy in the material shader, sound on the 400 ms grid, and a short particle burst. The machine manifest holds one typed default emitter beside each rig and instrument; a rig emitter, when present, replaces it through one resolution function. Each emitter fixes a material look, count, lifetime in ticks, layer, driving event, and whether activation energy scales its count. The same tick event starts the rig, material, sound, and burst, and activation energy bounds the burst, leaving one clock and one seam. A stalled machine has no driving event and starts no burst.
 
 Particles are the generic default, not the expressive layer: kiln sparks, steam, and dust use the existing clay, brass, ivory, amber, and glaze language, while particles alone would float over the world without the machine responding in its own material. A minimal in-repo emitter is used instead of `bevy_hanabi`. Two to twelve circles per firing event need deterministic placement, tick lifetime, and world-layer ordering; the existing painter provides all three without a second effect graph, timer, asset path, or WASM dependency. `bevy_hanabi` is suited to larger GPU-authored fields, but here it adds a parallel clock and configuration surface to three values already owned by the manifest.
 
@@ -78,7 +78,7 @@ The stages land in dependency order: the typed stream with replay and card playb
 
 ## First playable
 
-One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by whatever transport the player builds from the same primitives. No readout. We might not ever need to provide an explicit goal. Graybox, circles and lines, until the art bible (art/BIBLE.md) replaced it.
+One micro editor: a small hex grid, two arms, bond and unbond, an instruction tape. One wide view: instances of that machine on a grid, joined by whatever transport the player builds from the same primitives. No readout. We might not ever need to provide an explicit goal. Graybox, circles and lines, until the Fired Workshop look replaced it.
 
 Directive: “No readout”; “We might not ever need to provide an explicit goal”.
 
@@ -197,6 +197,12 @@ Tests cover the centre and a point near the cell corner with an atom and a machi
 
 ## Parking lot
 
+- Creating a bond requires an atom: the atom becomes the bond between two other atoms.
+- A jam element: a bane in the early game, until the player learns they need it and builds machines to manufacture it on purpose.
+- Metals become transferable over long distances via a reaction resembling electroplating. Make it extra complicated, perhaps consuming a consumable on the receiving end.
+- Select a machine by entering a code, like d-pad codes. The fun may be there.
+- Clever matter-positive interactions between glyphs might be the progression later.
+
 ### Exponential pip proposals
 
 Directive (verbatim): "separately, get me some mockups for a pip design with more moxie that fits the exponential repr. think outside the box here, \"given an exponential representation, how do we communicate both max and current, in a pleasing way\""
@@ -214,73 +220,6 @@ Candidate B nests successive circular marks. Its trade-off is a compact cap silh
 Candidate C stacks successively wider bars. Its trade-off is immediate whole-versus-fractional fill and a stable outer shape, at the cost of reading more like a gauge than a row of pips.
 
 Candidate D sweeps successive arc marks around one brass centre. Its trade-off is a lively compact rhythm whose final stop makes the cap visible, at the cost of making exact whole-mark counting slower than the other candidates.
-
-### Machine housings
-
-Each glyph is one substantial housing, with functional seats cut into its body. The ten current glyph entries include the second-bond applicator; all three arm lengths retain their existing art. Broad ceramic castings replace the separate seat pods and connecting bars. The footprint remains a measurement boundary, never a mask that clips the generated silhouette.
-
-Directive: “all three arm lengths retain their existing art”.
-
-The shared glyph scaffold supplies one grey envelope. The source's separate housing role and orange guide are deleted because its body cells have the same meaning as every other body cell. Exact captions and attachment hashes accompany the replacement candidates.
-
-The critic keeps its original rubric and threshold. An additional required compound judgment rejects a glyph regardless of taste score. Painting still stops after three rounds and retains the best measured, judged, non-compound candidate; a missing acceptable candidate fails the run. Computed lighting follows the single renderer described above.
-
-Directive: “Painting still stops after three rounds”.
-
-[The native-size before/after sheet](proofs/machine-housings-computed-67.png) compares the unchanged main assets with the new housings in the same board scene. [The coverage table](proofs/machine-housings-67.md) records the baseline commit, actual selections and coverage. The arm is the unchanged visual control.
-
-### Machine coverage proposals
-
-Historical proposals and experiments follow; the selected treatment is recorded above.
-
-Directive (verbatim): "I'd like to see some proposals for an art system where the machines cover more of the tiles. Large glyphs would
-not show much tile beneath."
-
-The first proposal removes the empty capture margin and paints broad rounded housings tight to every seat and connection. It is the dumbest design satisfying the directive because it changes only how much of the existing footprint the one sprite paints. Its trade-off is strong machine presence while tile corners remain visible, at the cost of crowding the grout and making adjacent machines feel nearly joined.
-
-The second proposal masks a glazed body to every occupied hex. Its trade-off is immediate, exact footprint legibility and consistent coverage at every machine size, at the cost of looking like a second tile laid over the board and making different silhouettes more alike.
-
-The third proposal broadens the body around the seats and connections and bounds it with a brass rim. Its trade-off is preserved tile corners, readable seats and a clearer object edge, at the cost of less coverage and more perimeter detail on large footprints.
-
-These remain three alternatives rather than a hidden preference. Repainting all machines before choosing was rejected because it would spend the full pipeline on a taste decision that the shipped-size comparison can make first.
-
-Directive (verbatim): "Those seem to be same machines but with colored backgrounds. Don't get me wrong, they may be a boon to readability, but that's not the sort of proposal I was expecting. I am interested in seeing new machine ideas where the machine itself would cover more of the tile. Vaguely sensical photorealistic art is where diffusion models shine. These machines tend to look more like compounds, parts connected by edges. I wonder if this comes from us feeding the recipe into the generator model. Perhaps that is a mistake."
-
-The recipe input was isolated before choosing more art. For the arm, bonder and first output, A kept the recipe image and sentence, B withheld both while preserving the existing direction, and C withheld both under a body-first direction. A against B is the controlled recipe ablation; C is an exploratory combined change of inputs and direction. Each treatment used the manifest's four candidates, the fixed rubric and at most three rounds. The table keeps the best candidate that passed all four code thresholds; the columns are `outside`, `seat`, `palette`, `off_centre`, then critic.
-
-Historical experiment: A used the then-current shared text, recipe sentence and direction with the scaffold and recipe image; B removed the recipe inputs; C also substituted the body-first direction below. The current manifest no longer contains the recipe sentence, and current prompts are composed by the director. These measurements describe those earlier inputs, not a recipe for the current pipeline.
-
-| Machine | Treatment | Capture | outside | seat | palette | off_centre | Critic |
-|---|---:|---|---:|---:|---:|---:|---:|
-| arm | A | arm-3 | 0.000 | 0.604 | 0.057 | 0.000 | 6 |
-| arm | B | arm-2 | 0.000 | 0.561 | 0.059 | 0.000 | 6 |
-| arm | C | arm-3 | 0.000 | 0.136 | 0.087 | 0.020 | 6 |
-| bonder | A | bonder-4 | 0.000 | 0.845 | 0.018 | 0.020 | 6 |
-| bonder | B | bonder-1 | 0.000 | 0.696 | 0.054 | 0.000 | 5 |
-| bonder | C | bonder-1 | 0.047 | 0.476 | 0.044 | 0.000 | 5 |
-| output-1 | A | output-1-1 | 0.000 | 0.843 | 0.267 | 0.040 | 6 |
-| output-1 | B | output-1-4 | 0.000 | 0.706 | 0.264 | 0.020 | 6 |
-| output-1 | C | output-1-3 | 0.000 | 0.372 | 0.216 | 0.020 | 5 |
-
-Neither B nor C beat A by one critic point on two machines. That experiment retained the recipe input; the later removal is recorded in the second-bond entry below.
-
-The dumbest design satisfying the revised premise is one cast housing bounded by the occupied hexes, with every functional mark cut into that body. It removes the compound-like decomposition from the direction instead of adding a new rendering system. A second sprite layer, a footprint mask, or a runtime margin change was rejected because the proposal is a choice of machine form, not a new way to draw the board.
-
-The arm proposal is: paint one monolithic cast darkened-brass workshop housing whose outer edge follows and fills the union of the two footprint hexes, reaching the top and bottom corners and both outer side corners with only a hairline of green outside. This structural housing is the machine itself, never a backing plate. Cut the broad circular pivot bearing into the left mark and an empty open terracotta-and-matte-rubber horseshoe gripping well into the right mark, with the wide drive chamber recessed inside the uninterrupted body. No green or clay lies between the openings or between an opening and its footprint edge. The purpose is visibly to turn about the bearing and grip at the open well. Keep the marks centred and empty and every surface straight-down, photoreal, weighty and evenly lit; no separate link, rail, seat pod, floating part, bead, atom, text or exposed clockwork. The trade-off is a strong tool silhouette and much less visible clay, at the cost of making the pivot and hand less independent at gameplay scale.
-
-The bonder proposal is: paint one monolithic cast terracotta compression housing whose outer edge follows and fills the union of the two footprint hexes, reaching the top and bottom corners and both outer side corners with only a hairline of green outside. This structural housing is the machine itself, never a backing plate. Cut two equal empty blue-green circular seat openings into the solid body exactly on the marks, with broad matte-rubber collars and one wide recessed darkened-brass compression chamber contained between them. No green or clay lies between the seats or between a seat and its footprint edge. The purpose is visibly to clamp two seated atoms together. Keep both openings broad, centred and empty and every surface straight-down, photoreal, weighty and evenly lit; no separate bridge, rail, seat pod, floating part, third seat, bead, atom, text or exposed clockwork. The trade-off is an immediately legible press body, at the cost of less open clay separating the two seats.
-
-The first-output proposal is: paint one monolithic cast pale-ivory receiving housing whose outer edge follows and fills the union of all seven footprint hexes as a full honeycomb silhouette, reaching every outer hex corner with only a hairline of green outside. This structural housing is the machine itself, never a backing plate. Cut seven equal empty circular receiving wells into the solid body exactly on the marks, one central and six surrounding, every well open to the green scaffold at its centre with a darkened-brass rim. Press six broad recessed channels into the body from the outer wells to the central well, with no cap, plug, boss or collector covering any opening. The purpose is visibly to receive a complete seven-part assembly. Keep every opening broad, centred and empty and every surface straight-down, photoreal, weighty and evenly lit; no separate rail, cup or floating part, bead, atom, text or exposed clockwork. The trade-off is near-total coverage and a clear receiving purpose, at the cost of the body reading close to a second layer of ivory tiles.
-
-The proposal paints used the scaffold alone and are separate from the A/B/C winners. The fixed 8-point target remained unchanged. None reached it within three rounds, so the sheet keeps the strongest measured-pass body-first capture for each footprint: arm round two at 0.000, 0.764, 0.085, 0.000 and critic 6; bonder round three at 0.000, 0.928, 0.096, 0.000 and critic 6; first output round three at 0.000, 0.873, 0.222, 0.020 and critic 6. This follows the established three-round stop rather than changing the rubric to fit the proposal. `proofs/machine-body-first-67.png` places those three captures, in that order, on the real board at shipped size without scaling their aspect. The sheet contains no caption because board art carries no writing; this paragraph makes its proposal status explicit.
-
-Directive: “The fixed 8-point target remained unchanged”.
-
-- Creating a bond requires an atom: the atom becomes the bond between two other atoms.
-- A jam element: a bane in the early game, until the player learns they need it and builds machines to manufacture it on purpose.
-- Metals become transferable over long distances via a reaction resembling electroplating. Make it extra complicated, perhaps consuming a consumable on the receiving end.
-- Select a machine by entering a code, like d-pad codes. The fun may be there.
-- Clever matter-positive interactions between glyphs might be the progression later.
 
 ## Open questions
 
@@ -515,13 +454,13 @@ Checks cover a placed machine between rest angles, a held machine whose simulati
 
 Directive: “Toy 1 wears the Fired Workshop look”.
 
-The original flat wells and geometric glyph marks were replaced by complete machine sprites. [art/BIBLE.md](art/BIBLE.md) records the current material language and distinctness gate; the earlier two-cup output and single-cell source are historical forms.
+The original flat wells and geometric glyph marks were replaced by complete machine sprites; the earlier two-cup output and single-cell source are historical forms.
 
 ### Toy 1 wears diffusion textures
 
 Directive (verbatim): "I want each machine, atom and bond in ziral to have a high res diffusion-generated texture. There should be many tile textures too. I'd like to see variance from tile to tile."
 
-The first texture pass covered geometric parts and glyph wells. Machines subsequently became complete sprites; board tiles keep their coordinate-selected variation but no longer rotate, preserving the shared grout and captured light. The current texture layout is in [art/BIBLE.md](art/BIBLE.md#4-reference).
+The first texture pass covered geometric parts and glyph wells. Machines subsequently became complete sprites; board tiles keep their coordinate-selected variation but no longer rotate, preserving the shared grout and captured light.
 
 ### Toy 1 pivots
 
@@ -539,7 +478,7 @@ The cleanup glyph is a one-slot, single-use well: the tick an atom lies on it, e
 
 Report (verbatim): "rather i see arms flickering over eachother per-frame"
 
-No two machines ever share a depth. From the board up: glyph wells, torn bond stubs, bonds, arms, atoms with their rims, then whatever a drag is carrying, above all of it. Glyphs, arms and carried pieces each take a band, and a member's depth within its band follows its place in the list, later over earlier, the same fixed order the sim resolves actuator conflicts by, so two arms crossing one cell always show the same one on top. Atoms and bonds keep one depth per class: the sim allows one atom per cell and stalls a sweep into an occupied one, so they never overlap. Before this every arm shared one depth and the renderer broke the tie by entity id, which the drawing reassigns every frame; art/machines/proof/flicker.gif is two consecutive frames before and after, and the test in `src/main.rs` renders two frames of a still scene and requires them identical.
+No two machines ever share a depth. From the board up: glyph wells, torn bond stubs, bonds, arms, atoms with their rims, then whatever a drag is carrying, above all of it. Glyphs, arms and carried pieces each take a band, and a member's depth within its band follows its place in the list, later over earlier, the same fixed order the sim resolves actuator conflicts by, so two arms crossing one cell always show the same one on top. Atoms and bonds keep one depth per class: the sim allows one atom per cell and stalls a sweep into an occupied one, so they never overlap. Before this every arm shared one depth and the renderer broke the tie by entity id, which the drawing reassigns every frame; the test in `src/main.rs` renders two frames of a still scene and requires them identical.
 
 ### Toy 1 grouts its tiles
 
@@ -549,7 +488,7 @@ Historical experiment: cropping each tile by its measured face removed flat bord
 
 Directive (verbatim): "the way our system works, textures will need to be designed to have their visual atom interface at the center of the tile. this is not the case for some of the machines in game right now"
 
-A machine meets an atom at a seat, and the sim puts an atom at the centre of its cell, so every seat is painted at the exact centre of its cell, the arm's pivot and hand included; an off-centre seat shows the bead beside its cup. The pipeline registers every capture onto its cells by its seats and rejects what the fit cannot absorb; `art/MACHINES.md` carries the rule. `art/machines/proof/off-centre.png` sets every machine on its cells with each centre marked, before and after.
+A machine meets an atom at a seat, and the sim puts an atom at the centre of its cell, so every seat is painted at the exact centre of its cell, the arm's pivot and hand included; an off-centre seat shows the bead beside its cup.
 
 ### Toy 1 grouts every tile from one template
 
@@ -565,17 +504,13 @@ The template is chosen for grain that survives the shipped minification: when th
 
 Directive (verbatim): "in order to make machines rotatable, the perspective of each should be direct-from top. we could alternatively generate six views for each machine but that may get tricky for arms rotating continuously"
 
-The renderer already turns one sprite: a glyph's quad is rotated by its `dir` and the arm's by the angle from pivot to hand, and the arm's swing between ticks sweeps that angle continuously, so six pre-rendered views would have to be blended mid-sweep. What was missing was the drawing: the prompt asked for a straight-down view in passing, nothing measured it, and three of the six shipped machines came back from a raised camera. The source's hopper shows its back wall and its ring a far inner wall; the output's cups show their far walls with a thick near rim; the second-bond's three cups the same. Turned half a circle those walls swing to the near side and the machine reads as tipped over. The arm, bonder and cleanup are drawn from straight above and stay byte-identical.
-
-The rule lives in `art/BIBLE.md` (View) and in the shared prompt (issue #30). A measurement was tried and disposed of: a concentric cup seen from straight above ought to be point-symmetric in tone about its centre, with a tilted camera lighting its far inner wall, and the six shipped machines did separate on it, flat ones at 0.08 to 0.12 against tipped ones at 0.16 to 0.22; but the candidates painted again under the new prompt, straight-down by eye, scored 0.16 to 0.24 in the same cups, because the tool shades a bowl's interior with a gradient whether or not the camera tilts. A score that cannot tell a straight-down view from a tipped one gives way to the eye, and the scaffold carries no new cue either: a plate or outline under the marks comes back as tiles (issue #25), and a straight-down view has no mark to draw. The source, output and second-bond were painted again and the kept one of each chosen by eye among the passing candidates; `art/machines/proof/top-down.png` sets every machine at the shipped size before and after, the changed ones at 4x.
+The renderer already turns one sprite: a glyph's quad is rotated by its `dir` and the arm's by the angle from pivot to hand, and the arm's swing between ticks sweeps that angle continuously, so six pre-rendered views would have to be blended mid-sweep.
 
 ### Toy 1 keeps every machine within its tiles
 
 Directive (verbatim): "we are going to need to add a new rule for textures. machine textures must stay within the bounds of their n-tiles"
 
-The sim puts a machine on n cells and nothing more; a sprite that paints past them covers a neighbour's tile, overlaps whatever stands there, and its edge lies about what the machine occupies. Three of the six shipped machines did: the bonder's kiln port and pipes sat in the notch between its two hexes, 0.37 of a circumradius beyond them; the cleanup's valve and hinge reached 0.23 past the vertices of its one hex; the source's rubber gate hung 0.20 below its hex. The old `outside` score, the mean keyed coverage of the footprint's surround inside the quad, admitted all three at its 0.15, since a port in a notch is a small share of a large surround (issue #33).
-
-`outside` is now the farthest a pixel the key leaves visible lies beyond the union of the footprint's hexes, in circumradii, against the manifest's 0.05, two pixels at the shipped size: a bound is a maximum, not an average, so the mean is gone and the worst offender's distance is what the score reports. A test paints a dot half a tolerance and one and a half tolerances beyond a bonder's face and requires the first to pass and the second to fail, each reporting its own distance. The scaffold does not draw the footprint: a hairline in a darker shade of the key, chosen so the key would remove it if copied, came back from the tool as a clay hex plate under the machine in both probes, the failure issue #25 recorded for any drawn cell, well or outline, so the shared prompt states the rule in words and the score holds it. The bonder needed its own prompt to keep the port and pipes on the channel, since the notch between two adjacent hexes is where the tool put every raised fitting. The bonder, cleanup and source were painted again and the kept one of each chosen among the passing candidates by eye for the straight-down view; the arm, output and second-bond stay byte-identical. A compact bonder then read as alike to the output in the distinctness test, whose texture term averaged the difference over the whole quad on clay, so a sprite paid for being small; it now averages over the cells either sprite paints, which leaves every full-square texture as it was. `art/machines/proof/footprint.png` sets every machine at the shipped size before and after with its footprint drawn over it, the two plate probes beside them, the changed ones at 4x.
+The sim puts a machine on n cells and nothing more; a sprite that paints past them covers a neighbour's tile, overlaps whatever stands there, and its edge lies about what the machine occupies.
 
 ### Toy 1 remakes machine textures with one command
 
@@ -663,7 +598,7 @@ Two alternatives disposed. An undo log, recording each tick's changes to walk ba
 
 Keys. Space pauses and unpauses, as before. S steps back, G steps forward, only while paused; both are home-row, left-hand, were bound to nothing, and no tape token is written with either, so a focused tape with its cursor open never sees them and stepping and editing interleave freely. G plays the sweep from ghost[n] into ghost[n+1] as a running tick does; S lands on ghost[n−1] settled, since the sim's between-tick motion is the instruction the earlier frame is about to run and has no reverse. The old `.` key, which paused and stepped forward in one press, is gone; S and G are the only step keys.
 
-Drawing. ghost[n>0] is drawn in the bible's ghost language (art/BIBLE.md, Ghost): the frame alone, the canonical frame not under it, every machine, atom, bond and mark at ghost opacity over the board drawn as always. The later free-stepping change removes the original count display. At ghost[0] paused the toy looks as it did.
+Drawing. ghost[n>0] is drawn as the frame alone: the canonical frame not under it, every machine, atom, bond and mark at ghost opacity over the board drawn as always. The later free-stepping change removes the original count display. At ghost[0] paused the toy looks as it did.
 
 Deleted. `Spent` and its index remap, and the focus remap that followed a spent glyph down the list: a spent or deleted glyph now leaves its slot empty, as an eaten atom does, and a placed one takes the first empty slot through the one `seat` the atoms already used, so nothing ever renumbers a glyph and an id names the same glyph in ghost[0] and in every ghost; the four `prev = sim.clone()` snapshots after edits, folded into the one replay; the `.` key; the world-stepping loop in the shot scenes, now a replay.
 
@@ -741,8 +676,6 @@ The inventory. `Sim::inventory` holds a count and a cap per recipe. The palette 
 
 The hover card. Hovering a palette entry raises a brass card above the palette: the machine's sprite, its recipe as atoms and bonds drawn by the one renderer that draws the board, and room beside the recipe, as wide as the recipe, for the machine's test case to play (#45). It carries no words. It is drawn on its own render layer and seen by a second camera whose viewport is the card, at one fixed scale, so zooming the board leaves the card as it is; the test case will play through the same camera, which is why a camera and not a scale threaded through every stroke of the renderer.
 
-Textures. Three machines through the pipeline, `output-1`, `output-2`, `output-3`; each prompt describes the previous tier's look in words, since nothing yet feeds a rendered reference into the image tool (#41). The third tier landed on its second prompt: the first roll painted every cup at twice its mark and all four candidates lay 0.48 to 0.92 of a circumradius past the footprint. The distinctness test judges the texture term on a sixteen-pixel thumbnail, where it was eight: at eight the second and third tiers, whose cups differ two to one in size, were 0.014 apart against the 0.023 the rule asks, one ivory blur, and at sixteen 0.044; every other pair grows apart with it.
-
 Three alternatives disposed. One output glyph per machine multiplies the palette and the art by the machine count and carries no rule the recipe does not already carry. A recipe book is a second screen, with words, showing what the card shows where the machine is chosen. An uncapped inventory never waits, so a matter path never backs up and the toy's stalls have no cause at the far end.
 
 Tests: every recipe is one compound within the first tier, bonded across adjacent cells, distinct from every other, and crafts itself; a pair crafts by its bond, a double pair an arm and a single pair a bonder; a four-atom arc and a triangle with two double bonds are left lying, and the triangle crafts once its bonds are single; a compound the second tier takes in every turn at every position where it lies wholly on the cells, 84 placements, and leaves lying at every position where it hangs off, 60; a turn and a translation give the same shape and a mirror image another; at the cap the compound lies for three ticks, a count one lower lets it fire, two returns take the count past the cap and a cap raised by the wheel lets the next fire; two compounds on one glyph craft in one tick; from the palette a machine at zero lifts nothing, a lift spends nothing, a drop spends one, a second lift at zero lifts nothing, X returns nothing and a paste of the cut machine spends nothing, and Z on it returns one past the cap; a scroll over one row changes its cap alone and stops at 256; the palette lists every machine but the source; the card scene draws the background, the border, the sprite, and the recipe's bars and beads on the card layer under a camera the card's size, for the bonder and for the arm's double bond; the craft scene crafts a bonder by hand and places it. Mutation-tested both ways. `art/reference/proof/craft.gif` (`art/gif.sh art/reference/proof/craft.gif craft 12 760:620:0:100`) is the `craft` shot scene: a source, a bonder and a first-tier output; two atoms carried by hand onto the bonder, the pair carried onto the output and eaten, the bonder's bead lighting in the palette, the bonder lifted from the palette and set down, the bead going out. The static card sheet was replaced by `art/reference/proof/cards-played.png`.
@@ -767,15 +700,6 @@ The source, first output, and bonder are the three world grants. The source prov
 
 This is the dumbest design satisfying the directive because it is a small dependency walk around ordinary test functions and the model's existing tables and transitions. One monolithic play-through was rejected because a late failure would obscure the missing fact and replay the whole ladder. Per-recipe fixtures were rejected because each would repeat the same grants, bonding, and output construction while permitting the fixture list to drift from `form::RECIPES`.
 
-### Toy 1 keeps one art direction and draws each recipe for the painter
-
-Directive (verbatim): "Lets remove the rust typing around visual descriptions for the art department. We don't need to differentiate
-human authorship like that. I don't know what I was thinking."
-
-The authored description became one plain direction string in the manifest. The type distinction had no consumer, so deleting it removed state that could disagree with the prose. The director now consumes that direction as part of the brief; [art/MACHINES.md](art/MACHINES.md) describes the current path.
-
-The recipe-image experiment from this change is withdrawn. Its historical proof is `art/machines/proof/recipe-input.png`; no recipe render, recipe sentence or `--plan` command remains in the pipeline.
-
 ### Toy 1 counts atoms per tick
 
 Directive (verbatim): "I think that atom sources will be the limited resource. 1 atom per tick. we'll keep a bound on the total number of atoms-per-tick are possible. we can easily make later things very resource intensive to craft by e.g. making a single atom that costs a compound to produce. multiple levels of that exponentiate cost."
@@ -788,7 +712,7 @@ The bound is the map. Sources have no recipe and so no inventory entry and no pa
 
 The t=0 board, `sim::start`. One source, one bonder and one first-tier output, world-placed, the inventory empty. It is the board `main` boots and the board the `craft` shot scene plays on, one implementation. Nothing else can craft the first output, so the output is placed. One source is enough: its cell holds one atom, and it refills the tick after the hand empties it. The `preloaded` world of six copies stays a shot fixture for the arms' proofs and is not a start.
 
-Decided direction, not built. An atom that costs a compound: a glyph that consumes a compound of a stated shape and emits one atom of the next kind, the bible's reserved amber. Cost then tiers by construction, a compound of such atoms costing a compound per atom, and two levels of that square the cost; the glyph consumes per tick, so progression is rate-gated by whatever supplies it.
+Decided direction, not built. An atom that costs a compound: a glyph that consumes a compound of a stated shape and emits one atom of the next kind, amber. Cost then tiers by construction, a compound of such atoms costing a compound per atom, and two levels of that square the cost; the glyph consumes per tick, so progression is rate-gated by whatever supplies it.
 
 Open question. Research: #37 records that a research-free design seems to be falling out and progression is the differing recipes per tier; if research exists, what it consumes it consumes per tick, and what it is for is not decided.
 
@@ -930,7 +854,7 @@ The cleanup glyph is gone. Beside a delete by hand, a machine whose whole work i
 
 Two alternatives disposed. Atoms as inventory items, a deleted atom returning to a count to be placed again, make the inventory a second source of matter and the delete a lift, against the directive and against #42, where the sources on the map bound the atoms per tick. A delete key that works at any ghost frame would delete an atom that exists only in a future frame, what #35 refused for an arm and #36 for a drop.
 
-Deleted: `GlyphKind::Cleanup`, its slot table and rule, `Rule::spent` and the tick's spent branch, its recipe, its look, its manifest entry and `art/machines/cleanup/`, its entry in `art/MACHINES.md` and in `cards.sh`, the `cleanup` shot scene and its two proofs, its sim tests, the focus tests that needed a glyph to vanish by a tick, and the glyph's and the hold's tests in `Focus::survive`.
+Deleted: `GlyphKind::Cleanup`, its slot table and rule, `Rule::spent` and the tick's spent branch, its recipe, its look, its manifest entry and `art/machines/cleanup/`, its entry in `cards.sh`, the `cleanup` shot scene and its two proofs, its sim tests, the focus tests that needed a glyph to vanish by a tick, and the glyph's and the hold's tests in `Focus::survive`.
 
 Tests: a click on the middle of a three-atom chain picks it and Z removes it, both bonds gone, both ends where they lay, the inventory byte-equal, and a bonder picked and deleted after it counts one; the same click at ghost[1] picks the ghost atom and Z leaves ghost[0] and the ghost byte-equal with both bonds; G on a picked atom drops it from the pick; a press on a source with an atom on it picks the atom and Z deletes the atom and leaves the source; the `delete` scene replayed headless ends with the two ends and no bond. Mutation-tested both ways. `art/reference/proof/delete.gif` (`gif.sh art/reference/proof/delete.gif delete 8 520:400:420:97`) is the `delete` shot scene: paused, a click on the middle of a bonded chain of three, Z, and the ends left in place with the bonds gone.
 
@@ -983,21 +907,6 @@ Tests: an arm dragged onto a bonder's cell, onto another arm's base and onto an 
 The rule. Nothing on screen is written in any language, the refusal included: the paste refusal's `have/need` is gone, and the shortfall is the refusal paragraph above, the palette's own picture and beads, marks in the one loop the palette's tally spawns, so the two cannot drift. The one alternative disposed: the item's picture repeated as many times as the paste needs, the missing ones ghosted; at the shipped size a machine's picture repeated reads as more machines, and the palette already counts in beads, so a second count vocabulary would be a second implementation of one thing.
 
 Tests: a paste short by the bonder and by one grab spawns, under the refusal line, the bonder's picture beside one empty ring and the grab's beside one bead and one ring, four children and nothing written among them or their children. Mutation-tested both ways: the written pair restored, a bead filled for the missing one, the rings dropped, each fails the test. `art/reference/proof/refusal.png` (`cargo run -- --shot frames refuse 0 2 900 1`, frame 90 cropped `900:620:0:100`) is the `refuse` shot scene at the shipped size, the paste refused with the bonder's picture beside one empty ring at the drop.
-### Toy 1 judges every machine texture by eye
-
-The first automated critic made visual defects observable beside measured geometry. A panel of critics was rejected because it would duplicate one judgement; re-judging unchanged candidates would discard useful cached evidence. [art/MACHINES.md](art/MACHINES.md#generate-and-select) describes the current loop and its per-candidate cache.
-
-Historical result: the first seven keeps scored 4 to 6; three revised rounds raised the best arm to 7 and the others to 6. No keep changed. `art/machines/proof/critic.png` records the second bond and its best revision under that earlier rubric. The old `critic.sh` runner, manifest-wide `judged` key and geometry-first rubric were replaced by `ask.sh`, row hashes and the presence/material/moxie order.
-
-### The third paint round starts again from the object
-
-Directive (verbatim): "8 is target but after 3 rounds we accept what where it got. It's not a violation. I wonder if the worker could improve results with lateral thinking. Maybe zooming out."
-
-Directive (verbatim): "I didn't mean literal zoom out but sure if you see it helping."
-
-Reading. Lateral thinking is a change of approach, not a camera instruction. Repeating an accumulated fault list made the painter optimize local rims and highlights while preserving the same object decomposition. The smallest different move is on the last round only: discard that list, start again from the unchanged shared prompt and machine description, secure the whole straight-down gameplay read and seat layout first, and simplify detail that competes with them. The rubric, target, shared prompt and machine direction do not change.
-
-Tried. The two score-4 keeps ran through the normal three rounds. The bonder's best scores were 5, 5 and 6; the second bond's were 6, 6 and 6. Both beat their prior keep, so the reset stays and the normal path kept bonder-2 and second-bond-4 at 6. `proofs/critic-55.png` places the second bond's prior score-4 keep beside its new score-6 keep at the shipped size, without scaling.
 
 ### Toy 1 shows what a machine does
 
@@ -1032,8 +941,6 @@ Directive: “Atoms are inventory items”; “Deleting an atom still consumes i
 The reification glyph moves from the parking lot into the model. It is a machine with a tier-two recipe and a nineteen-cell well: the centre, its six neighbours and their twelve neighbours. The centre accepts either atom kind; every outer cell demands a base atom; every adjacent pair in the radius-two hexagon must have a single or double bond. On a complete match the whole wrap is consumed and one atom of the centre's kind enters the inventory. A missing bond or a wrong outer kind leaves the wrap untouched.
 
 Directive: “The reification glyph moves from the parking lot into the model”; “a nineteen-cell well: the centre, its six neighbours and their twelve neighbours”.
-
-The glyph ships with candidate four, the best of its three paint rounds, at critic score 5 with the judgement recorded beside the candidates; the rubric and threshold are unchanged.
 
 V first reads the system clipboard through `Form::from_str`, the one compound parser. A parsed compound becomes the held `Sim` used by machine paste and its drop goes through `Sim::fits`, `Inventory::spend_all` and `Sim::place`, the one placement path. Its bill is every atom plus one base atom for every double bond; single bonds cost nothing. The check spends the whole bill together or refuses with #44's picture-and-beads line, leaving both board and inventory unchanged. An atom or arm base under any pasted atom refuses the placement before spending, and a compound cannot be placed beyond ghost zero. Machine copy and paste keep their own buffer when the system clipboard is not a compound.
 
@@ -1096,41 +1003,6 @@ This is the dumbest design satisfying the directive because only the geometry in
 
 Tests cover the fixed 26 px footprint, centred ring diameters through the maximum cap, complete inner rings, the partial outer arc, and empty rings through the hovered cap. Removing the concentric placement, collapsing the arc points, or removing the fractional arc makes the corresponding assertion fail.
 
-### The second-bond asks for no T, and the painter sees no recipe
-
-Directive (verbatim): "Yeah the bottom right there may have semi-misleading topology but it's art is definitely preferable. Artist moxy is more important than getting the t right. This thread is a dead end. I say we revert to a world where I never asked for the \"T\". Omitting the recipe from input might make the problem disappear."
-
-The T is withdrawn. Neither scaffold nor direction requires a rail from the sacrificial feed to the bond rail’s midpoint. The seat-only scaffold leaves connections to the painter; the manifest retains the restored direction. The two superseded T implementations are removed from this document.
-
-The recipe leaves the painter. "Toy 1 keeps one art direction and draws each recipe for the painter" rendered a machine's compound, beads and bars, into `NAME/recipe.png` and handed it to the image tool as a second reference with a sentence asking the form to echo it. An earlier entry ran the ablation of this input and kept it pending a threshold; this removal is the directive's, the suspected pull of every second-bond candidate toward a diagram of three beads, and the measurement is repeated below for the record. The render, the `recipe:` shot scene and its frame, the manifest's `recipe` sentence, the second `-i` hand-off, the `--plan` listing that existed to say which machine had one, and the test that proved the render reached the painter are deleted; the recipe is absent from both paint inputs and their cache key. The source and cobalt converter subsequently gained reference sketches; the current input and key definitions are in [art/MACHINES.md](art/MACHINES.md). Every machine painted before this change carries its prompt and candidates unchanged: `briefed` and `painted` were recomputed against the shorter brief and key, so nothing was repainted for the deletion.
-
-The critic ranks moxie above topology. The rubric judges, in order, presence, material richness and artist moxie, then treats its embedded snapshot of earlier bible wording as blemishes a strong picture carries lightly, and it says outright that seats on their marks and the footprint are code scores, not the critic's, that the scaffold is reference and not a checklist, that how the body joins its seats is never judged, and that the issues it names stay within what it judged. The rubric is its own commit; the bar stays at 8. Every kept candidate was judged again under it, since a changed rubric voids every score, and every keep stands.
-
-Directive: “the bar stays at 8”.
-
-Directive: the [director model](art/director-model.txt) composes the image prompts with creative freedom over art direction, changing the prompts as it sees fit.
-
-One director writes new prompts for machines, textures and the manual page. Moving its instruction and schema into `art/direct.sh` removed the separate Rust wording and kept one brief-to-caption step. [art/MACHINES.md](art/MACHINES.md#inputs-and-provenance) records current prompt provenance and regeneration; the reference concepts retain their historical log.
-
-The dumbest design is the deletion itself: the T was a sentence, the recipe was a second image, and both leave by removing them. A flag to attach the recipe, or a second direction kept for the T, would keep two painters alive.
-
-Measurement. Arm A painted with the recipe still attached, the restored direction and the recipe sentence, from a scratch checkout with the render and the second `-i` intact; arm B painted the same direction with neither, in this tree. First round, four candidates each: with the recipe 6, 6, 6, 6; without it 6, 6, 7, 6. Over three rounds per arm, with the recipe 6, 7, 6 and one footprint failure in the second round, then 6, 6, 6 and one off-centre failure; without it 7, 7, 7 and one off-centre failure in the second round, then 6, 5, 6 and one footprint failure. Neither arm reached 8; the median is 6 either way, and the one-point differences are within the spread one arm shows between its own rounds, so at four candidates a round the measurement does not show the recipe moving the result. Both arms painted under a first draft of the rubric that still quoted the footprint and one-piece links and counted the silhouette twice; the landed rubric drops those, and every keep, the restored sprite and the repaint's kept candidate were judged again under it: the restored sprite 7, the repaint's kept candidate, the best of its last round, 6. The restored sprite stays; `proofs/second-bond-76.png` sets it beside the repaint's candidate at the shipped size. That historical run discarded earlier candidates; the retained-round design below fixes the loss.
-
-
-Historical tests at recipe removal: every candidate used the scaffold alone; `direct.sh` prints the caption from a bare or fenced reply and fails on a reply with no caption; every shipped texture has a prompt file beside it; the existing keys and critic tests run against the shorter brief and key. Mutation-tested both ways: handing a candidate paint any image but the scaffold, fails the first; dropping the outer-brace capture from `direct.sh` fails the director test on a fenced reply, and dropping `-e` from its `jq` makes a reply with no `prompt` succeed and fails the test's failure case; deleting one texture's prompt file fails the prompt test.
-
-### The keep is the best of every round
-
-`--gen` painted up to three rounds per machine and wiped the previous round's candidates before painting the next, so the candidate kept after the cap was the best of the last round, not of the run. On the second-bond repaint recorded under "The second-bond asks for no T, and the painter sees no recipe", the second round's three measured passes scored 7, 7, 7 and the third's 6, 5, 6; the 7s were gone when the keep was chosen, and a 6 was kept.
-
-The simplest fix retained every paint round and its exact prompt, so selection could compare the whole run without losing evidence. [art/MACHINES.md](art/MACHINES.md#generate-and-select) defines the current selection and resume behavior; its cache-key table includes the later reference-sketch inputs.
-
-Keeping every round moved the critic's trust from the manifest to the row. The manifest's `judged` key hashed the rubric with every candidate's bytes, and a mismatch voided every score in `scores.tsv`; with rounds accumulating, the second round's paint would have voided the first round's scores and judged them again. Each row now carries the hash of the rubric and its own candidate's bytes beside its critic score, and a score is reused when that hash matches, before the measured rules are consulted, so a candidate that a tightened threshold fails keeps its score. The manifest key is deleted; the shipped rows carry their hashes and each shipped machine its `round-1.txt`.
-
-Alternatives disposed. Wiping once after the keep, leaving only the kept round: the sheet and the scores would then show one round of the run, and the rows of the deleted candidates would have to go with them. Numbering rounds into separate directories: the index already says the round, since `count` is fixed for the run. Setting `prompt.txt` to the kept round's prompt after the keep: the prompt of a round painted by an earlier, cut-off run is then unknown, and the write leaves a window between the new file and the key that keys it, where a failed sprite write has the next run wipe every round. A manifest key over the rubric alone: it would keep a stale score for a candidate replaced by hand under an unchanged prompt.
-
-Tests: three rounds with a stub critic scoring 5 and 7 in the first round and 6 in the second and third keep the 7 with its issues, record all six rows with their scores, paint the first two candidates under the first prompt and the other four under different ones, leave `prompt.txt` at the first, and write `round-1.txt` and `round-3.txt` with the prompts those rounds painted; a second run paints and judges nothing more; a hand pick of a third-round candidate updates the sprite and leaves both round files as they were; a run over the three rounds on disk with no keep recorded and a director that rewrites differently paints nothing, keeps the 7 again, and leaves the round files and `prompt.txt` as they were; a run where every candidate scores 6 keeps a first-round candidate; the rebrief test finds each round's rewrite in its round file with `prompt.txt` still the first; the changed-rubric test judges the keep once more and an unchanged run not at all. The shipped keeps' rows carry the hash of the rubric and their candidate's bytes, and the kept round's file exists. Mutation-tested both ways: keeping the last round's best fails the first test on the kept index; a tie going to the highest index fails the every-6 run; writing the round file on a round already on disk fails the no-keep run on `round-3.txt`; reusing a score without checking its hash fails the changed-rubric count, and never reusing one fails the unchanged-run count; a stale hash on a shipped keep fails the shipped test, as does a missing shipped round file.
-
 ### Instruction marks use ivory on dark brass
 
 Directive (verbatim): "the orange on purple is too difficult to see when small, color in the instruction symbols needs a-changin'"
@@ -1169,11 +1041,11 @@ The exact report is tried against all three chain atoms in separate worlds, with
 
 Directive (verbatim): "I am assuming the bottleneck for ziral tests is CPU at runtime and not compile time. If so, you'd prolly save time by compiling with optimizations on. Should be possible to enable both debug assertions and optimizations."
 
-`cargo test -- --test-threads=2` ran its 254 tests in 1208 s of wall; the requirement is under five minutes at the same thread count without deleting coverage. Per-test timing, libtest's `--report-time` at two threads, puts nearly all of it in three groups: the machine-texture pipeline tests in `machines.rs` (24 tests, 1144 s summed), the tests in `main.rs` (140 tests, 983 s summed, among them the tests that boot a headless app and read frames back), and the palette tests in `look.rs` (23 tests, 186 s summed). The slow tests in all three walk pixels in the crate's own code, and that code compiled unoptimized: `[profile.dev.package."*"]` sets every dependency to `opt-level = 3` and the test profile inherits the override, so Bevy and `image` were optimized while `machines.rs`, `look.rs` and the scene code ran at `opt-level = 0`; a `[profile.test.package."*"]` line would repeat the override.
+`cargo test -- --test-threads=2` ran its 254 tests in 1208 s of wall; the requirement is under five minutes at the same thread count without deleting coverage. Per-test timing, libtest's `--report-time` at two threads, puts nearly all of it in three groups: the machine-texture pipeline tests (24 tests, 1144 s summed), the tests in `main.rs` (140 tests, 983 s summed, among them the tests that boot a headless app and read frames back), and the palette tests in `look.rs` (23 tests, 186 s summed). The slow tests in all three walk pixels in the crate's own code, and that code compiled unoptimized: `[profile.dev.package."*"]` sets every dependency to `opt-level = 3` and the test profile inherits the override, so Bevy and `image` were optimized while the pipeline, `look.rs` and the scene code ran at `opt-level = 0`; a `[profile.test.package."*"]` line would repeat the override.
 
-The change is a `[profile.test]` with `opt-level = 3`, `debug-assertions = true` and `overflow-checks = true`, the two checks written beside the optimization they must survive. Same machine, same thread count, warm target directory: the suite runs in 167 s (`machines.rs` 134 s summed, `main.rs` 152 s, `look.rs` 31 s, 254 pass), and the crate's test build takes 94 s against 47 s unoptimized. `cargo test -- --test-threads=2` measured as one run, compile then tests, takes 257 s; the unoptimized run was not timed as one, and its parts, 47 s and 1208 s, put it near 1255 s.
+The change is a `[profile.test]` with `opt-level = 3`, `debug-assertions = true` and `overflow-checks = true`, the two checks written beside the optimization they must survive. Same machine, same thread count, warm target directory: the suite runs in 167 s (pipeline 134 s summed, `main.rs` 152 s, `look.rs` 31 s, 254 pass), and the crate's test build takes 94 s against 47 s unoptimized. `cargo test -- --test-threads=2` measured as one run, compile then tests, takes 257 s; the unoptimized run was not timed as one, and its parts, 47 s and 1208 s, put it near 1255 s.
 
-The alternative was to restructure the suite: proof renders behind a feature or in an integration binary, one app boot shared per module. The profile alone reaches the requirement, and each piece of the restructuring is a second path: a feature is a flag the test command has to carry, a shared app is state between tests that today start from nothing. The two slowest tests after the change, the shipped-machine manifest walk at 59 s and the card-at-tick scene at 51 s, are the first candidates for any further cut.
+The alternative was to restructure the suite: proof renders behind a feature or in an integration binary, one app boot shared per module. The profile alone reaches the requirement, and each piece of the restructuring is a second path: a feature is a flag the test command has to carry, a shared app is state between tests that today start from nothing.
 
 Tests: none added or changed; the measured suite is the check, and `proofs/test-wall-114.png` charts the summed time per group before and after.
 
@@ -1185,7 +1057,7 @@ legend: orange: cool thematic artsy bullshit"
 
 The source occupies its centre and five adjacent cells at every turn. Its right-hand neighbour, `DIRS[0]` before a turn, stays open as in `docs/source-six-cell-sketch.jpg`. The centre remains the sole outlet and keeps its tick event and 400 ms cadence. The source has no manufacturing recipe or inventory row. The surrounding five cells are one housing whose motion and particles feed the centre opening.
 
-The dumbest design distinguishes the one functional slot from the five occupied body cells in the glyph model. Placement and playfield bounds read their union; matching and source emission continue to read the centre slot. The art scaffold gives only the centre a seat mark, masks the complete six-cell footprint, and supplies the sketch beside that scaffold to both the art director and painter through the existing image list. One returned square remains the source of every size and turn.
+The dumbest design distinguishes the one functional slot from the five occupied body cells in the glyph model. Placement and playfield bounds read their union; matching and source emission continue to read the centre slot. One returned square remains the source of every size and turn.
 
 The alternative was to call all six cells slots and special-case the renderer so five did not look like slots. That would make the simulation data claim five outlets while the picture denied it, and would leave matching, placement, and art with different meanings for the same array. A second source sprite laid under the old one would also split one housing into a compound and create two scaling paths.
 
@@ -1209,7 +1081,7 @@ Dropping that compound onto any cell of a placed tier-one source attempts one tr
 
 The second-bond applicator accepts any atom kind on its two retained seats while still consuming one lone base atom. This makes the required all-plum compound with four double bonds synthesizable. Reachability proves the compound with actual bonder and second-bond ticks, then proves an upgrade of a placed source rather than inventory crafting.
 
-The upgrade event drives the existing material and rig pulse, a larger brass-and-amber spark burst and a five-note brass chord. The paint pipeline receives the body-first scaffold and the sketch together; the orange marks describe thematic housing, not an orange overlay. A second stacked source picture would split one housing across rendering paths and was rejected.
+The upgrade event drives the existing material and rig pulse, a larger brass-and-amber spark burst and a five-note brass chord. A second stacked source picture would split one housing across rendering paths and was rejected.
 
 Tests cover the exact six-cell footprint and two independent outlets at all turns, the exact recipe, successful consumption and one event, wrong-compound survival, blocked growth with byte-equal rollback, and the tier-two fixture and rendered card.
 
@@ -1229,9 +1101,6 @@ Each length is painted as one complete arm in the same dark-brass and terracotta
 
 The three output fixtures receive the bonder, second-bond and amber-converter recipes respectively, so their wordless cards show three different accepted products instead of manufacturing themselves.
 The dumbest design changes the fixture inputs and checks receipt in inventory through the existing playback; a separate card scene would duplicate the fixture and let the two disagree.
-
-Stored paint prompts end with image inputs: repository paths and SHA-256 hashes captured with the verbatim caption from the image tool event, with unknown inputs explicit in older records.
-The dumbest design gives paint.sh the prompt file and extends its existing event check to compare attachments before replacing that record; a separate provenance manifest would duplicate the call and let text and images disagree.
 
 ### Ghost frames keep their material
 
@@ -1298,17 +1167,11 @@ The portal occupies one cell, appears in the recipe palette, and is made from a 
 
 The dumbest design makes a placed portal carry its own canonical simulation, just as an arm carries its tape. Placement, lifting and saving then carry the interior with the machine. This removes the temporary parallel position list and rendering component store: joining two independently edited arrays would require identity bookkeeping on every move. A portal is a machine rather than an atom-processing glyph, so it has no fake reaction or seat. Interiors cannot contain another portal. Existing replay, extent fitting and camera crossing remain the only implementations.
 
-The housing uses the existing body-first machine pipeline, with unchanged measurement and critic thresholds and keep-best selection. The texture uses the existing square texture pipeline and a fixed three-round critic with an eight-point pass threshold. A tint of the clay image was rejected because its surface still reads as the overworld; an independent interior renderer would duplicate the scene and make the preview disagree.
-
-The portal has no atom seats. Its registration therefore uses the complete keyed silhouette: one translation and one uniform scale fit that silhouette to its single-cell envelope. No pixel is clipped and no axis is stretched. Inventing an atom seat only to satisfy the registration code would make the scaffold misdescribe the machine. The existing footprint, palette and critic gates still judge the registered result.
+The ethereal tile uses the existing square texture pipeline and is uniformly sized to the grout template. A tint of the clay image was rejected because its surface still reads as the overworld; an independent interior renderer would duplicate the scene and make the preview disagree.
 
 Portals recycle through the shared focus grammar, returning the portal item and discarding its interior. Their pinned cards retire with them. A portal moves with its interior intact. Recipe-fragment copying refuses interiors, as it already refuses sources; persistence stores the complete placed object.
 
-The retained housing is candidate 2 at score 7 after three rounds; no candidate reached the fixed taste threshold of 8. The ethereal tile reached 8 in its first round. Housing registration and keying are deterministic derivatives of the retained square painting; the tile is uniformly sized to the grout template. The proof combines native application captures without scaling them.
-
 The portal draws its complete housing through the zoom and disappears with the overworld on entry.
-
-Generation selects articulated entries before invoking the part splitter. A static-only or texture-only run skips the splitter entirely, because its no-argument mode selects every machine.
 
 The portal appends one craftable inventory slot; source upgrades remain excluded from inventory. The source-only selection fixture excludes the starting portal so that it selects only sources. Recipe text retains canonical atom and bond ordering.
 
@@ -1357,9 +1220,9 @@ Alternatives disposed: changing a bonded atom in place preserves a compound but 
 
 Directive: “more elaborate or efficient routes belong to later progression”.
 
-Tests: all six orientations fire only with two lone amber inputs; identity, position, bond, inventory and atom count stay unchanged; plum is encountered; one missing input, wrong kinds and externally bonded inputs leave both seats untouched; a completed pair cannot refire. Reachability constructs the resonator and both amber feeds from the starting world, uses its plum in every dependent recipe, and verifies the resulting products. Cards and palette resolve plum to the resonator. A shipped-size firing GIF and a native-size machine sheet under proofs accompany the generated housing and its unchanged critic gates.
+Tests: all six orientations fire only with two lone amber inputs; identity, position, bond, inventory and atom count stay unchanged; plum is encountered; one missing input, wrong kinds and externally bonded inputs leave both seats untouched; a completed pair cannot refire. Reachability constructs the resonator and both amber feeds from the starting world, uses its plum in every dependent recipe, and verifies the resulting products. Cards and palette resolve plum to the resonator. A shipped-size firing GIF and a native-size machine sheet under proofs accompany the generated housing.
 
-The resonator's complete housing pulses as one body and emits sparks on its one firing event. The art runner follows a linked sessions directory when verifying the director transcript, with the same model checks and a regression test.
+The resonator's complete housing pulses as one body and emits sparks on its one firing event.
 
 ## Sixty frames on every target
 
@@ -1403,29 +1266,19 @@ Tests: a seal stores only the inputs appended since the previous one; a chunk le
 
 Directive (verbatim): "speaking of astra, id like to see some fucked designs for the portal frame object. i think weird could be the way to go."
 
-Directive (verbatim): "btw i suspect the current design bible is too restrictive"
-
-Round one's six independent directions test organic shell, impossible mirror geometry, a living fur fringe, torn paper, liquid metal and a thorn skeleton. The [candidate sheet](art/explorations/portal-frame/sheet.png) pairs each with its shipped-size board placement and a large view; its captions name the bible rules each breaks. The [briefs and actual paint captions](art/explorations/portal-frame/README.md) live beside the pictures.
-
-The simplest design is an isolated set of paintings through the existing director and paint pipeline. Applying the shipped palette and housing gates would defeat the exploration, so these candidates are not entries in the shipped machine manifest and no selection is automated. The bible and shipped portal art remain unchanged. A pick and any resulting rule changes are a separate decision in issue #150.
-
 Directive (verbatim):
 
 > mol is gross, i love it. lets explore that direction. the frame itself needs to be lower profile to allow the dimension below to take up more of the frame. there's no reason the portal needs to be square by the way.
 > 
 > lets take molt as a path but steer it a bit. its organic material, small legs and carapace growing from it in unsettling ways, interdimensional mold, fungus what grew. I will design a branch of crafting that deals with growing the substance.
 
-Pick: Molt, steered. Round two paints six Molt descendants whose thin rims leave most of the tile to the interior, each with its own opening: hexagon, almond, amoeboid, circle, kidney and rounded triangle. The [round-two sheet](art/explorations/portal-frame/molt/sheet.png) fills each opening with a uniformly reduced capture of the starting portal's interior and places it at shipped size; [briefs, captions and placement](art/explorations/portal-frame/molt/README.md) sit beside it. The crafting branch that grows the substance is reserved for its own design. The bible and shipped portal art remain unchanged in this exploration.
-
 Directive (verbatim):
 
 > bracket is the one
 
-Pick: Bracket, the kidney opening in [05-bracket](art/explorations/portal-frame/molt/05-bracket/brief.md), from round two at `d2e82b60`. [Ship Bracket as the portal frame](https://github.com/bddap-bot/ziral/issues/163) carries the implementation; the crafting branch that grows the substance is reserved for its own design and belongs to neither issue.
+Pick: Bracket, the kidney opening from the second exploration round at `d2e82b60`. [Ship Bracket as the portal frame](https://github.com/bddap-bot/ziral/issues/163) carries the implementation; the crafting branch that grows the substance is reserved for its own design.
 
-The pick settles these bible rules to loosen, exactly as the brief names them: Palette §1 (rust, ochre and coral); Materials §2 (bracket fungus, membrane and legs); Silhouette §2 (one-sided crescent rather than complete housing); portal preamble and §4 (kidney aperture, low-profile frame). `art/BIBLE.md` stays unchanged here: the loosening lands through [#157](https://github.com/bddap-bot/ziral/issues/157), and the shipping frame's own brief names only what that work does not already cover, without a second edit of the same sentences.
-
-The settled framing retains round two's rule—uniformly scale the interior to cover the kidney opening's bounding box, centre it behind the opening, and let the rim clip it without stretching or warping—because the Bracket panel keeps the interior tiles and arm legible within the opening.
+The settled framing retains that round's rule—uniformly scale the interior to cover the kidney opening's bounding box, centre it behind the opening, and let the rim clip it without stretching or warping—because the Bracket panel keeps the interior tiles and arm legible within the opening.
 
 ## A portal's window shows the world below
 
@@ -1523,14 +1376,6 @@ The regression places empty and populated portals, clicks them through hit testi
 
 `proofs/portal-delete-149.gif` shows the deployed Pages build `ce4e423` at 1280 by 720: the starting portal, a press focusing it, then Z deleting it before the release. The browser check confirms the deployed build, the absent portal and the returned portal item. Releasing a portal click without Z still puts its blueprint in hand.
 
-## Additive art direction
-
-The bible offers the concept art in `art/reference/` as inspiration. Its state glazes identify states; material and ornament colours remain free. Numeric distinctness and palette gates mistook a few measurements for readability and restricted new materials without establishing a visual problem. Those build assertions are removed. The generator retains palette distance only as a reported comparison, with no rejection threshold or ranking penalty. There is one selection path. Shipped brief and judgment records remain historical evidence; regeneration checks the current brief and judgment keys, rather than making a guidance edit fail the build until every old record is replaced. Compound appearance likewise informs the holistic judgment instead of rejecting a candidate independently of its score; its recorded boolean remains useful comparison data.
-
-Machines should read as distinct from each other; silhouette, reach, seats, colour and ornament are possibilities to judge together. Existing Directive lines remain verbatim and in order. Technical notes explain shared grout, clear atom seats and even-lit albedo by the seams, readability and competing runtime lighting they address. Pipeline checks live in `art/MACHINES.md`, separate from visual inspiration.
-
-The portal aperture frames its interior through one uniform transform without prescribing a square. This admits the Bracket opening without a second bible edit when the frame ships. Historical entries above describe earlier implementations, not additional restrictions on this direction.
-
 ## Selection surrounds the whole machine
 
 Report (verbatim):
@@ -1571,17 +1416,6 @@ The regression measures the laid-out tape and cursor on the first click after pl
 
 `proofs/first-click-tape-148.gif` samples nine game-only frames from deployed Pages build `26ca6c3`: an arm is dragged from inventory, placed, clicked once, and given two instructions. The empty tape opens at full height on that click's release, without deselection or a second click. The capture's recorded build identifier matches the deployed commit; every animation frame was inspected before publication.
 
-## Output material at inventory scale
-
-The larger output trays need readable material through their centres when reduced to an inventory picture. Fine pale veins on an almost uniform ivory field disappear at that scale. The simplest design replaces those two paintings with broad blue-green mineral inlay crossing the receiving field, dark brass boundaries and restrained ivory highlights. The surface stays continuous, empty and usable for whole arrangements; its complete silhouette keeps the existing uniform registration and size source. The smaller tray already has a readable plain receiving surface.
-
-The existing generator supplies scaffold registration, painted provenance and candidate selection. Its painter supplies authored raster material, and its fixed critic supplies the bounded three-round, score-eight selection. These dependencies each do work the renderer cannot supply. No new dependency, tint, backing, flag, geometry or QA threshold is needed. The material direction replaces the pale-centre direction instead of layering a correction over every display. Arm joints and the fixture overlap are separate geometry/readability findings; this repaint does not establish their repair.
-
-Correctness, premise and simplicity review before painting: the pale radial inventory thumbnails correspond to output-2 and output-3, whose source pictures contain nearly white central fields. Texture loading already uses sRGB. Broad painted value structure survives uniform reduction without changing the renderer or simulation. Keep the existing selector and evidence rather than adding another selection path.
-
-Correctness, premise and simplicity review after selection: both output sprites retain the existing whole-image registration and alpha pipeline, with no code change. The native inventory and card captures retain broad dark material through both centres. The output-2 generator exhausted three rounds and kept candidate 5 at 6/10; its remaining weakness is decorative marbling and soft material construction. Output-3 kept candidate 5 at 8/10 in round two. All new failed candidates and scores remain beside the selected sprites, under the unchanged machine rubric and thresholds. The first tray's capped score is a limitation, not a passing art verdict. Arm joint contrast and the open hand overlapping a fixture remain outside this material repair.
-
-[`proofs/output-material-5814.png`](proofs/output-material-5814.png) is one unscaled 1280 by 720 capture of the ordinary output-2 card and inventory with both repainted trays. The same complete sprites supply the card, its running example and the inventory; no separate small-picture implementation is needed.
 ### Rendered gallery gates
 
 Directive (verbatim): "Be critical about the set of things that needs to run and spend tokens on every push. Consider what might be wasteful, what should be dropped, what you might want to run only on diff."

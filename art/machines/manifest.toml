@@ -1,21 +1,8 @@
-candidates = 4
-
-[style]
-shared = "The picture is a photoreal game sprite albedo of ONE substantial manufactured machine housing, seen straight down in orthographic plan. The scaffold supplies the exact framing: grey fills the union of footprint hexes, green is outside, coloured rings and dots mark functional openings. Grey and orange footprint fills are spatial guides, not a floor or painted slabs. Directive (verbatim): «bodies are NOT all slender; the written spec (manifest envelope ≈ twice the seat radius) is misaligned with the intended direction and gets revised, not the art. Machines may fill their hex — the current source housing (full, broad) is the reference. On the source specifically, the non-centre hexes pointing toward the middle is the intended design language; keep it.» The envelope rule is a filled, full-bodied solid occupying almost all its footprint, slightly inset from the outer edges, with generous material around functional openings; sparse or thin housings are not the norm. Keep the cobalt converter's styling, but do not use its open, cut-out silhouette as the general body model. For radial housings where applicable, outer hexagonal forms point toward the centre as on the source; these are features of one continuous housing, not separate tile panels. A machine whose function is a moving part rather than a housing may stay slender and need not fill its tile; the arm is one example, and similar functional exceptions are at artistic discretion. The body is the machine itself, not a background, backing plate or tile layer. Seats are circular apertures cut into that mass, never round pods connected by narrow bridges, spokes, rails, bonds or thin necks. Each aperture is centred exactly on its dot and has the scaffold ring diameter, with an open pure-green centre and no obstruction. No extra apertures. Retained seats have blue-green rims, consumed feeds terracotta rims. The camera has no perspective and shows no side face or far inner wall. No atoms, beads, compound, connected balls, text, numerals, logo, exposed clockwork, separate plates, table or background beyond untouched pure green. The silhouette must remain inside the guide; do not enlarge, rotate or reframe it."
-arm = "The picture is a game sprite: one compact kiln-floor machine seen in a flat plan from directly above, orthographic, no perspective, no vanishing point, no foreshortening, no side face, every seat, cup and well a concentric circle with its inner wall hidden all the way round, painted over the attached scaffold at the scaffold's exact framing. The scaffold is a flat pure green chroma-key background carrying the seat marks of the machine at true scale, each marked by role: a blue-green ring is an empty atom seat, a terracotta ring is a sacrificial feed that swallows its atom, a brass disc is a pivot, an open terracotta horseshoe is a hand, and the dot at the heart of every ring and horseshoe is the exact centre of that seat, where the atom sits. In the finished picture every seat, cup, well, funnel and hand is built concentric on its dot at the mark's own size, empty and unobstructed, as far apart as the dots are; the body between seats is slender and hugs the marks; nothing rises above or hangs below the seats or bulges out between two seats, and the machine stands directly on the green with no base, plate or floor under it. Every pixel the machine does not cover is the untouched flat pure green key: no board, tile, well, base, table, room, bead, atom, fist, finger, text, numeral, logo or exposed clockwork. No labels, watermark, menus or named-game resemblance."
-critic = "Judge one machine sprite holistically for overall visual strength and detail. The first image is the cut sprite over the board's clay tiles at gameplay scale, magnified without smoothing; the pixel steps are the magnification, not the art. The second image is its scaffold, a spatial reference rather than a visual checklist. The code has already checked footprint, seat placement and centring; do not score those measurements again. Presence: one solid, weighty kiln-floor object reads at a glance. Material richness: glazed ceramic, darkened brass and worn rubber feel tangible, with detail that rewards a close look. Artist moxie: confident, characterful painting, a machine somebody made. Detail and material richness count for the picture, never against it; prefer more detailed candidates. Artistic constraints are matters of judgment, not hard failures, automatic deductions or score caps. Score 0 through 10 for the overall picture: the strongest combines presence, rich material, detail and confidence; a weaker picture lacks those qualities. The issues name concrete visible opportunities to strengthen the next painting, in the painter's terms. Do not penalize exposed clockwork, ornamental fittings, wear over glaze, or departures from idealized view, lighting or silhouette merely for breaking a rule. Text or numerals on the board remain unwanted; judge their visual effect without a hard fail or score cap."
-
-[thresholds]
-outside = 0.05
-seat = 0.1
-off_centre = 0.1
-critic = 8
+layout = "A game sprite seen from directly above, painted over the attached layout: the coloured shape is the machine, each dark disc is a round fitting centred on that spot, and flat chroma green stays plain green."
+style = "Fired Workshop: glazed ceramic, darkened brass and rubber, rich tactile materials, generous ornamental hardware, soft even light, no lettering."
 
 [machine.arm]
-direction = "The machine is a stout radial workshop arm lying flat across the two marks: over the brass disc, a broad circular darkened-brass pivot bearing; from it one thick one-piece brass link reaching into the second well; there, over the horseshoe mark and copying its opening, a wide OPEN terracotta-and-rubber horseshoe (materials from the palette table in art/BIBLE.md) gripper with nothing in its jaws. Grease ports, riveted service plates and fine scratches at the contact edges. Nothing but the arm itself; no fist, no fingers, no beads, no atoms, no dial or emblem."
-kept = 8
-briefed = "4b770af9016996d7"
-painted = "0333a193899558fe"
+caption = "A slender jointed brass arm reaching from a heavy riveted pivot hub to a ring-shaped gripper, with open green all around it."
 
 [machine.arm.instrument]
 voice = "brass"
@@ -38,10 +25,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.arm-2]
-direction = "The machine is a stout radial workshop arm at length two, lying flat from the brass pivot mark through the unmarked middle cell to the distant horseshoe mark. A broad circular darkened-brass pivot and a thick one-piece forged-brass spine form one solid, weighty silhouette. One broad blue-green glazed ceramic inlay fills most of the spine's face inside a substantial brass rim, separating the arm clearly from the clay board and giving it confident workshop character. At the far mark, a restrained terracotta collar carries a dominant matte-rubber horseshoe using the material colour in the palette table in art/BIBLE.md that copies the mark and leaves its throat empty. Dark brass, rubbed amber edges, blue-green glaze, terracotta and dense rubber form large material areas. The spine stays narrower than half a cell and every endpoint hugs its mark. Nothing but the arm itself; no tile outline, fist, fingers, beads, atoms, dial, emblem or exposed clockwork."
-kept = 2
-briefed = "b222aadf67a626f5"
-painted = "9644d7be62fdcd03"
+caption = "A long jointed brass arm with one elbow, reaching from a heavy riveted pivot hub to a ring-shaped gripper, with open green all around it."
 
 [machine.arm-2.instrument]
 voice = "brass"
@@ -64,10 +48,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.arm-3]
-direction = "The machine is a stout radial workshop arm at length three, lying flat from the brass pivot mark through both unmarked middle cells to the distant horseshoe mark. A broad circular darkened-brass pivot and a thick one-piece forged-brass spine form one solid, weighty silhouette. Two broad blue-green glazed ceramic inlays fill most of the spine's face inside a substantial brass rim, separating the arm clearly from the clay board and giving it confident workshop character. At the far mark, a restrained terracotta collar carries a dominant matte-rubber horseshoe using the material colour in the palette table in art/BIBLE.md that copies the mark and leaves its throat empty. Dark brass, rubbed amber edges, blue-green glaze, terracotta and dense rubber form large material areas. The spine stays narrower than half a cell and every endpoint hugs its mark. Nothing but the arm itself; no tile outline, fist, fingers, beads, atoms, dial, emblem or exposed clockwork."
-kept = 1
-briefed = "3788ac68cb461726"
-painted = "f214b8f04bcdc607"
+caption = "A long straight telescoping brass arm reaching from a heavy riveted pivot hub to a ring-shaped gripper, with open green all around it."
 
 [machine.arm-3.instrument]
 voice = "brass"
@@ -90,10 +71,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.bonder]
-direction = "A single terracotta compression housing spanning two footprint cells, with two equal blue-green circular apertures bored into one broad cast body. A wide recessed brass pressure chamber is contained inside the solid material between the openings. The purpose is to clamp two seated atoms together. No separate connecting bar."
-kept = 5
-briefed = "f9e2de857e74f397"
-painted = "ca16213440e5ef08"
+caption = "A terracotta glazed press with two round seats side by side and a heavy brass clamp between them."
 
 [machine.bonder.instrument]
 voice = "wood"
@@ -116,10 +94,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.converter-amber]
-direction = "A single amber-glazed casting fills the three-cell footprint as one broad rounded triangular kiln housing. Three equal circular apertures sit exactly on the marked centres, bored into the continuous material. Broad sculpted ceramic shoulders and one recessed dark-brass flow chamber make the housing recognisable without connecting pods or pipes."
-kept = 8
-briefed = "d114cb0db3eda524"
-painted = "497ffe06b52a55e0"
+caption = "An amber glazed crucible with three round seats in a triangle, wrapped in brass bands around a small kiln vent."
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -134,11 +109,7 @@ layer = "behind"
 energy_scaled = true
 
 [machine.converter-cobalt]
-direction = "A single cobalt-glazed sculpted kiln housing fills the four-cell rhombus envelope. The reference sketch supplies geometry only. Two apertures at the marked opposite ends are cut into its broad continuous body; the terracotta input and cobalt output are separated by a broad recessed sinuous brass heat chamber within the housing. No narrow waist, tube joining pods, backing plate or extra openings."
-references = ["../../docs/converter-cobalt-sketch.jpg"]
-kept = 5
-briefed = "b76912b3daddae64"
-painted = "3a5b7207893482a2"
+caption = "A cobalt glazed kiln with an intake seat and an outlet seat at opposite ends, joined by brass pipework."
 
 [machine.converter-cobalt.instrument]
 voice = "ceramic"
@@ -161,10 +132,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.output-1]
-direction = "One substantial pale-ivory ceramic receiving plinth fills its seven-cell honeycomb footprint, slightly inset from the guide. A continuous glazed tabletop offers an open space to place things, with a softly luminous blue-green inlay and a broad darkened-brass rim. Ornamental rivets and scalloped brass fittings enrich the perimeter. The radial shoulders point inward around one unbroken receiving field. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself."
-kept = 10
-briefed = "21c2fcc6a4c3037e"
-painted = "1e6cac26b98cac8d"
+caption = "A broad ivory glazed receiving tray with a shallow round socket in every cell, rimmed in darkened brass with corner rivets."
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -179,10 +147,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.output-2]
-direction = "One substantial pale-ivory ceramic receiving tray fills its nineteen-cell hexagonal footprint, slightly inset from the guide. A broad uninterrupted receiving surface carries deep blue-green mineral rivers flowing all the way through its centre, alternating with wide warm ivory ceramic islands. The inlay occupies substantial areas rather than hairline veins; dark mineral edges and restrained highlights keep the centre richly structured even in a 64-pixel inventory picture. An ornate darkened-brass perimeter frames this magical acceptor field spacious enough for a whole arrangement. Recessed brass scrollwork, riveted corner fittings and inward-pointing sculpted shoulders belong to one continuous body. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself."
-kept = 5
-briefed = "32d94ce35f232e25"
-painted = "d211d4e7579cf1f5"
+caption = "A large ivory glazed receiving tray with a shallow round socket in every cell, rimmed in darkened brass with corner rivets."
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -197,10 +162,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.output-3]
-direction = "One monumental pale-ivory ceramic receiving table fills its thirty-seven-cell hexagonal footprint, slightly inset from the guide. Its expansive uninterrupted glazed face is a magical acceptor field of warm ivory ceramic crossed through its centre by broad darkened-brass inlay and deep blue-green mineral bands. Large interlocking material areas, dark recessed boundaries and restrained highlights retain visible structure in a 64-pixel inventory picture; the centre has no blank white expanse or luminous wash. The inlays lie flush in the continuous receiving surface. A substantial scalloped perimeter, ornamental service plates and rivets give the table workshop character; the radial shoulders point toward the broad open centre. This output is a receiving surface rather than an aperture-bearing housing: the field is solid, empty and unobstructed, without per-atom holes, cups or a seat grid. The table is the machine itself."
-kept = 5
-briefed = "6741426dea9abe26"
-painted = "d350ebf10af5c2eb"
+caption = "A very large ivory glazed receiving tray with a shallow round socket in every cell, rimmed in darkened brass with corner rivets."
 
 [machine.output-3.instrument]
 voice = "brass"
@@ -215,10 +177,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.portal]
-direction = 'Directive (verbatim): "some mystical theme". Directive (verbatim): "something visually interesting in the portal". One substantial plum ceramic portal housing fills the single grey hex footprint. Its broad continuous rounded hexagonal body surrounds one large central square aperture with softly rounded corners, about half the hex height and width. The aperture contains a deep plum mineral glaze with broad luminous ivory swirling mineral veins, open and visually interesting even with no contents. A restrained continuous rubbed brass lip meets ivory glazed inner edges. All four corners of the central half-width square remain unobstructed for a live interior preview. The body is one weighty casting, never beads, nodes, bonds, separate pods or a compound. No functional atom seats or extra openings, no symbols or writing. Top-down orthographic, no perspective, green outside only; the aperture is painted depth, not green.'
-kept = 5
-briefed = "1ba8293379418479"
-painted = "f5486969abb2e599"
+caption = "A plum glazed portal frame, a thick ornamented rim with brass brackets around a wide round opening."
 motion = "dilate"
 
 [machine.portal.instrument]
@@ -234,10 +193,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.reification]
-direction = "One broad amber and terracotta kiln housing fills its nineteen-cell hexagonal footprint. Nineteen equal empty apertures, one centre and rings of six and twelve, are bored into one continuous ceramic casting with broad solid material between them. The central aperture has a restrained recessed brass metering collar within the housing. No channels connecting rings, lattice, separate cups or tile-shaped panels."
-kept = 5
-briefed = "e1ba9c0f9a1db516"
-painted = "38f02add2b0f3a14"
+caption = "A broad amber glazed honeycomb slab of nineteen round seats bound in ornate brass fretwork."
 
 [machine.reification.instrument]
 voice = "wood"
@@ -252,10 +208,7 @@ layer = "behind"
 energy_scaled = true
 
 [machine.resonator]
-direction = "A broad twin-seat resonance instrument fills its two adjacent hexagons as one continuous plum-glazed ceramic housing. Two equal amber-lined circular apertures sit side by side in the marked seats. A substantial sculpted brass resonant crest rises between them inside the continuous body, with paired concentric ivory inlays suggesting a shared vibration. The shoulders fill both cells generously. No separate output opening, kiln, thin connecting rail, independent pods, symbols or writing."
-kept = 5
-briefed = "a2abb6ba1b89ec5f"
-painted = "c2dcad91cfadc11d"
+caption = "A plum glazed tuning bridge holding two round seats, with brass tuning forks and coiled wire between them."
 motion = "dilate"
 
 [machine.resonator.instrument]
@@ -271,10 +224,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.second-bond]
-direction = "A single sculpted plum compression manifold fills its three-cell footprint as one broad triangular housing. Two blue-green retaining apertures and one terracotta consumed-feed aperture are bored into the same continuous casting. A broad recessed brass pressure channel remains internal to the housing. No triangular network of separate rings or rails."
-kept = 2
-briefed = "c8728f6c8ebc4650"
-painted = "770f1d48ffd92095"
+caption = "A plum glazed press with three round seats in a triangle, one feed seat beside a pair joined by a brass strap."
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -297,10 +247,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.source]
-direction = "One substantial sculpted blue-green glazed kiln-feed housing fills the single continuous grey envelope of the centre and five adjacent cells, with the right-hand neighbouring cell left open. The grey silhouette is one unbroken body guide, not individual tiles. One circular outlet is bored exactly on the marked centre through a broad continuous ceramic shell. A recessed dark-brass metering collar and matte-rubber gate surround the empty aperture, and one broad shallow brass metering groove follows the inner curve of the shell within its solid mass. The ceramic surface flows continuously across every cell boundary as one softly domed casting, with substantial shoulders and integrated hexagonal forms following the shared envelope rule. No separate hexagonal panels, tile borders, detached lobes, pods, radial nodes, extra openings or backing plate. The silhouette is slightly inset from the guide and every surface is seen straight down."
-kept = 8
-briefed = "2ec4e76030019f5d"
-painted = "78c584b46f18ace0"
+caption = "A blue-green glazed spring, a broad horseshoe of fluted lobes curled around one round seat and banded with brass."
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -315,10 +262,7 @@ layer = "behind"
 energy_scaled = true
 
 [machine.source-2]
-direction = "One substantial blue-green glazed ceramic kiln-feed housing fills the six-cell envelope of two staggered columns and three rows. Exactly two empty circular outlet apertures are bored side by side in the middle row, precisely at the scaffold dots. The four upper and lower body cells are continuous sculpted ceramic feeding these outlets, with broad shoulders and recessed dark-brass metering grooves inside the casting. The entire outer contour is inset from the grey envelope, including its deep right-hand cleft. No separate drums, pods, connecting necks, tile faces or backing plate."
-kept = 10
-briefed = "8a77ed2ab574570a"
-painted = "86d6b4d685c8e706"
+caption = "A blue-green glazed spring, a broad fluted body around two round seats side by side, banded with brass vents."
 
 [machine.source-2.instrument]
 voice = "ceramic"

@@ -2,6 +2,6 @@
 web/dist/
 *.log
 *.part
-art/machines/*/judged/
 
 /.gallery/
+/.paint/

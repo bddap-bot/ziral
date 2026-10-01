@@ -5,7 +5,7 @@ mod form;
 mod gallery;
 mod look;
 #[cfg(not(target_arch = "wasm32"))]
-mod machines;
+mod paint;
 mod particles;
 mod persist;
 mod rig;
@@ -2763,7 +2763,7 @@ fn main() {
         (args, replay)
     };
     #[cfg(not(target_arch = "wasm32"))]
-    if let Some(status) = machines::configure(&args) {
+    if let Some(status) = paint::run(&args) {
         std::process::exit(status);
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -6082,12 +6082,6 @@ mod shot {
             name.contains(':') || SCENES.contains(&name),
             "unknown scene {name}"
         );
-        let machine = |name: &str| {
-            Machine::ALL
-                .into_iter()
-                .find(|item| machines::name(*item) == name)
-                .unwrap_or_else(|| panic!("unknown machine {name}"))
-        };
         match name {
             "portal-copy-109" => {
                 world.sim = Sim::empty();
@@ -6140,7 +6134,7 @@ mod shot {
             name if name.starts_with("housing:") => {
                 world.sim = Sim::empty();
                 world.set_hover(None);
-                match machine(&name[8..]) {
+                match look::named(&name[8..]) {
                     Machine::Portal => world.sim.portals.push(Some(sim::Portal::new(FOCUS))),
                     Machine::Glyph(kind) => world.sim.glyphs.push(Some(Glyph::new(kind, FOCUS, 0))),
                     Machine::Arm(length) => {
@@ -6585,7 +6579,7 @@ mod shot {
                 }
             }
             name if name.starts_with("card:") => {
-                let machine = machine(&name[5..]);
+                let machine = look::named(&name[5..]);
                 world.sim = Sim::empty();
                 world.period = f32::INFINITY;
                 world.motion = 0.0;
@@ -12107,7 +12101,7 @@ mod tests {
 
     fn card_fills(machine: Machine, ticks: u64) -> Vec<(Vec3, f32)> {
         let _render = render_test::lock();
-        let name = machines::name(machine);
+        let name = look::name(machine);
         let dir =
             std::env::temp_dir().join(format!("ziral-card-{name}-{ticks}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

@@ -125,12 +125,7 @@ fn manifest() -> &'static Manifest {
 }
 
 pub fn instrument(machine: Machine) -> Instrument {
-    let name = crate::look::machine(machine)
-        .skin
-        .name
-        .split('/')
-        .nth(1)
-        .expect("a machine skin lives in art/machines/<name>/");
+    let name = crate::look::name(machine);
     manifest()
         .machine
         .get(name)
@@ -481,7 +476,7 @@ pub fn proof(ticks: &[(TickEvents, View)]) -> (String, Vec<u8>) {
             .collect::<Vec<_>>();
         let names = heard
             .iter()
-            .map(|(hit, _)| crate::machines::name(hit.machine))
+            .map(|(hit, _)| crate::look::name(hit.machine))
             .collect::<Vec<_>>()
             .join(", ");
         text.push_str(&format!("tick {} -> [{}]\n", tick.tick, names));

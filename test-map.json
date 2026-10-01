@@ -41,27 +41,15 @@
     },
     {
       "paths": [
-        "art/ask.sh",
-        "art/director-model.txt",
-        "art/tests/ask.sh"
+        "art/paint/**",
+        "art/textures/gen.sh"
       ],
       "tests": [
-        "nix-shell --run 'shellcheck art/ask.sh art/tests/ask.sh && art/tests/ask.sh && cargo test ask_sh -- --test-threads=2 && cargo test direct_sh -- --test-threads=2'",
+        "nix-shell --run 'shellcheck art/paint/*.sh art/textures/gen.sh'",
+        "nix-shell --run 'cargo test paint:: -- --test-threads=2'",
         "nix-shell --run 'cargo test rendered_gallery_is_deterministic_and_matches_reviewed_hashes -- --test-threads=2'"
       ],
-      "why": "the shared runner passes the directive model explicitly and accepts only successful calls with matching transcript models"
-    },
-    {
-      "paths": [
-        "art/paint.sh",
-        "art/textures/gen.sh",
-        "art/tests/**"
-      ],
-      "tests": [
-        "nix-shell --run 'shellcheck art/paint.sh art/textures/gen.sh art/tests/paint.sh && art/tests/paint.sh'",
-        "nix-shell --run 'cargo test rendered_gallery_is_deterministic_and_matches_reviewed_hashes -- --test-threads=2'"
-      ],
-      "why": "the recorded image call supplies both caption and input hashes; mismatched attachments must fail before a record is replaced"
+      "why": "every image generator plugs in through one command contract; the layout plug drives the whole machine pipeline offline"
     },
     {
       "paths": [
@@ -72,15 +60,6 @@
         "nix-shell --run 'cargo test rendered_gallery_is_deterministic_and_matches_reviewed_hashes -- --test-threads=2'"
       ],
       "why": "prose; nothing executes it"
-    },
-    {
-      "paths": [
-        "proofs/rounds/**"
-      ],
-      "tests": [
-        "nix-shell --run 'cargo test rendered_gallery_is_deterministic_and_matches_reviewed_hashes -- --test-threads=2'"
-      ],
-      "why": "critic round renders and their score record are inspected together on the stitched proof"
     },
     {
       "paths": [
@@ -115,16 +94,6 @@
     },
     {
       "paths": [
-        "art/direct.sh"
-      ],
-      "tests": [
-        "nix-shell --run 'shellcheck art/direct.sh && cargo test direct_sh -- --test-threads=2'",
-        "nix-shell --run 'cargo test rendered_gallery_is_deterministic_and_matches_reviewed_hashes -- --test-threads=2'"
-      ],
-      "why": "direct.sh writes every painted prompt; the stub-codex test runs the script"
-    },
-    {
-      "paths": [
         "art/textures/*.prompt.txt",
         "art/overlay/*.prompt.txt"
       ],
@@ -139,11 +108,13 @@
         "art/machines/**"
       ],
       "tests": [
-        "nix-shell --run 'shellcheck art/paint.sh art/ask.sh art/direct.sh'",
-        "nix-shell --run 'cargo test machines -- --test-threads=2'",
+        "nix-shell --run 'shellcheck art/machines/proof.sh'",
+        "nix-shell --run 'cargo test paint:: -- --test-threads=2'",
+        "nix-shell --run 'cargo test every_machine_sprite -- --test-threads=2'",
+        "nix-shell --run 'cargo test rig:: -- --test-threads=2'",
         "nix-shell --run 'cargo test rendered_gallery_is_deterministic_and_matches_reviewed_hashes -- --test-threads=2'"
       ],
-      "why": "the machine textures are painted by ziral --gen through paint.sh, their prompts written through direct.sh and their candidates judged through ask.sh; the tests check the shipped scaffolds, prompts, kept candidates, sprites and keys against the manifest"
+      "why": "the shipped sprites are checked for size, footprint containment and fittings on their tile centres; rig and sound read the same manifest; the gallery renders every machine"
     },
     {
       "paths": [

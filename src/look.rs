@@ -429,6 +429,22 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
     }
 }
 
+pub fn name(item: Machine) -> &'static str {
+    machine(item)
+        .skin
+        .name
+        .split('/')
+        .nth(1)
+        .expect("a machine skin lives in art/machines/<name>/")
+}
+
+pub fn named(name: &str) -> Machine {
+    Machine::ALL
+        .into_iter()
+        .find(|item| self::name(*item) == name)
+        .unwrap_or_else(|| panic!("no machine is named {name}"))
+}
+
 pub fn skins() -> impl Iterator<Item = Skin> {
     AtomKind::ALL
         .into_iter()
@@ -923,6 +939,28 @@ pub(crate) mod tests {
                 letters,
                 [expected.to_string()],
                 "{name} disagrees with its binding"
+            );
+        }
+    }
+
+    #[test]
+    fn every_painted_texture_has_the_prompt_that_painted_it_beside_it() {
+        let art = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("art");
+        let mut painted = vec![("overlay/page", "overlay/page"), (GROUT.name, GROUT.name)];
+        painted.extend(AtomKind::ALL.map(|k| atom(k).skin.name).map(|n| (n, n)));
+        painted.extend(BondKind::ALL.map(|k| bond(k).skin.name).map(|n| (n, n)));
+        painted.extend(TILES.iter().map(|t| {
+            let (family, index) = t.name.rsplit_once('-').expect("tile-NN");
+            assert!(index.parse::<u32>().is_ok(), "{}", t.name);
+            (t.name, family)
+        }));
+        for (png, name) in painted {
+            let prompt = art.join(format!("{name}.prompt.txt"));
+            assert!(art.join(format!("{png}.png")).exists(), "{png}.png");
+            assert!(
+                std::fs::read_to_string(&prompt).is_ok_and(|text| !text.trim().is_empty()),
+                "{}: no prompt beside the texture",
+                prompt.display()
             );
         }
     }
