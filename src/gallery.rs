@@ -2,7 +2,7 @@
 
 use super::*;
 use bevy::render::view::window::screenshot::{Screenshot, ScreenshotCaptured};
-use image::{RgbaImage, imageops};
+use image::{ImageEncoder, RgbaImage, imageops};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -138,7 +138,7 @@ fn encoded(image: &RgbaImage) -> Vec<u8> {
     bytes.into_inner()
 }
 
-fn digest(image: &RgbaImage) -> String {
+fn digest(bytes: &[u8]) -> String {
     use std::io::Write;
     use std::process::{Command, Stdio};
     let mut child = Command::new("sha256sum")
@@ -146,12 +146,7 @@ fn digest(image: &RgbaImage) -> String {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&encoded(image))
-        .unwrap();
+    child.stdin.take().unwrap().write_all(bytes).unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
     String::from_utf8(output.stdout)
@@ -426,11 +421,23 @@ fn artifacts(root: &Path, frames: &[(String, Vec<RgbaImage>)]) -> String {
     let mut sheet = RgbaImage::new(width, y + row_height);
     let mut hashes = String::new();
     for ((name, image), (x, y)) in images.into_iter().zip(positions) {
-        image.save(root.join(format!("{name}.png"))).unwrap();
-        hashes += &format!("{name} {}\n", digest(&image));
+        let bytes = encoded(&image);
+        std::fs::write(root.join(format!("{name}.png")), &bytes).unwrap();
+        hashes += &format!("{name} {}\n", digest(&bytes));
         imageops::replace(&mut sheet, &image, x as i64, y as i64);
     }
-    sheet.save(root.join("sheet.png")).unwrap();
+    image::codecs::png::PngEncoder::new_with_quality(
+        std::io::BufWriter::new(std::fs::File::create(root.join("sheet.png")).unwrap()),
+        image::codecs::png::CompressionType::Fast,
+        image::codecs::png::FilterType::NoFilter,
+    )
+    .write_image(
+        &sheet,
+        sheet.width(),
+        sheet.height(),
+        image::ExtendedColorType::Rgba8,
+    )
+    .unwrap();
     std::fs::write(root.join("hashes.txt"), &hashes).unwrap();
     hashes
 }

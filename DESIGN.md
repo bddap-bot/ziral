@@ -1591,3 +1591,5 @@ A critic run removes its previous approval artifact before checking inputs, so f
 The swing strip keeps all sixty native-scale frames in eight columns. A 180-pixel crop encloses the pivot and the complete swept hand path, removing unused floor to the left and below the arm. The former 260-pixel crop repeats more empty grout than motion and widens the strip beyond common image-viewer dimensions. No frame is omitted or resized.
 
 The palette critic still loses the pale machine relief at 48 pixels after backing contrast passes. Removing machine-row horizontal padding gives that space to the picture. This increases real interface detail without widening the inventory, shrinking atoms, stretching an aspect ratio, or adding another layout.
+
+Gallery output encodes each scene once and hashes those same bytes. The large composite uses lossless fast PNG compression with a fixed filter: adaptive filtering spends time choosing a smaller file without changing any rendered pixel. Scene hashes, mechanical checks and the shared render deadline remain unchanged.
