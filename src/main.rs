@@ -404,7 +404,7 @@ struct Pinned {
 
 impl Pinned {
     fn screen_rect(&self, viewport: &Viewport) -> (Vec2, Vec2) {
-        let size = card_size(self.item) * self.scale;
+        let size = card_size(self.item) * self.scale * MICRO_SCALE / viewport.scale;
         (viewport.screen(self.anchor) - size / 2.0, size)
     }
 }
@@ -1661,9 +1661,7 @@ impl<S: std::ops::DerefMut<Target = Sim>, V: std::ops::DerefMut<Target = Viewer>
             return false;
         };
         let card = self.pinned.iter_mut().find(|card| card.id == id).unwrap();
-        let base = card_size(card.item);
-        let limit = (viewport.size / base).min_element().max(0.05);
-        card.scale = zoomed(card.scale, notches).clamp(0.05, limit);
+        card.scale = zoomed(card.scale, notches).clamp(0.05, 8.0);
         true
     }
 
@@ -3343,12 +3341,12 @@ fn card(
         .map(|(index, card)| {
             let focused = world.focus == Some(Focus::Card(card.id));
             let rank = if focused { world.pinned.len() } else { index };
-            let (at, _) = card.screen_rect(&viewport);
+            let (at, size) = card.screen_rect(&viewport);
             let placed = Placement {
                 kind: CardCamera::Pin(card.id),
                 item: card.item,
                 at,
-                scale: card.scale,
+                scale: size.x / card_size(card.item).x,
                 order: 2 + rank as isize,
             };
             (card.id, placed)
@@ -3759,10 +3757,7 @@ fn view(
             && let Some(id) = world.card_at(c, &viewport)
         {
             let pinned = world.pinned.iter().find(|card| card.id == id).unwrap();
-            let limit = (viewport.size / card_size(pinned.item))
-                .min_element()
-                .max(0.05);
-            let scale = zoomed(pinned.scale, notches).clamp(0.05, limit);
+            let scale = zoomed(pinned.scale, notches).clamp(0.05, 8.0);
             session.send(&mut world, session::Input::ScaleCard(id, scale));
             true
         } else {
@@ -12218,7 +12213,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dragged_cards_anchor_is_the_world_point_under_the_drop_and_the_wheel_changes_only_its_pixel_size()
+    fn a_dragged_cards_anchor_is_the_world_point_under_the_drop_and_the_wheel_changes_only_its_world_scale()
      {
         let item = Machine::Glyph(GlyphKind::Bonder).into();
         let mut world = World::new(Sim::empty());
@@ -12265,6 +12260,9 @@ mod tests {
         board.scroll(Vec2::new(1200.0, 40.0), 2.0);
         assert!((board.scale - zoomed(1.25, -2.0)).abs() < 1e-5);
         assert!((world.pinned[0].scale - 1.0).abs() < 1e-5);
+        board.scale = 0.05;
+        assert!(world.resize_card(board.screen(anchor), 1.0, &board));
+        assert!(world.pinned[0].scale > 1.0);
     }
 
     #[derive(Clone)]
@@ -12349,7 +12347,7 @@ mod tests {
     }
 
     #[test]
-    fn two_pinned_cards_stay_over_their_world_points_through_a_pan_and_a_zoom_in_and_out_without_changing_pixel_size()
+    fn two_pinned_cards_stay_over_their_world_points_through_a_pan_and_a_zoom_in_and_out_at_constant_world_scale()
      {
         let cards = [
             Pinned {
@@ -12392,7 +12390,20 @@ mod tests {
             for viewport in &viewports {
                 let (at, shown_size) = card.screen_rect(viewport);
                 assert_eq!(at + shown_size / 2.0, viewport.screen(card.anchor));
-                assert_eq!(shown_size, size);
+                assert_eq!(shown_size * viewport.scale, size * MICRO_SCALE);
+                let mut world = World::new(Sim::empty());
+                world.pinned.push(card.clone());
+                assert_eq!(
+                    world.card_at(at + shown_size - Vec2::ONE, viewport),
+                    Some(card.id)
+                );
+                assert_eq!(
+                    world.card_at(
+                        at + shown_size + Vec2::splat(CARD_BORDER_PX + 1.0),
+                        viewport
+                    ),
+                    None
+                );
             }
             assert_ne!(
                 card.screen_rect(&viewports[0]).0,

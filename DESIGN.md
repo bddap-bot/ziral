@@ -179,6 +179,15 @@ This is the dumbest design satisfying the directive because the existing board t
 
 Tests pin two cards through a pan and a zoom in and out without changing their pixel sizes, commit the release frame's world point as a dragged card's anchor, keep card-camera clipping inside the physical target, preserve right-drag routing, and preserve both inventory branches and card identity. Each goes red when its named projection, drop, clipping, routing, branch, or identity fault is substituted and green when restored. `proofs/pinned-world-93.gif` (`art/gif.sh proofs/pinned-world-93.gif pinned-world-93 6 1280:720:0:0`) shows two cards pinned while the board pans, zooms in, and zooms out at the shipped size.
 
+### Pinned card world scale
+
+Directive (verbatim): "an items tutorial card, when pinned to the world, does not apparently grow or shrink when zooming in or out of the world. currently position is pinned, i want scale pinned too. scroll while hovering over the card should grow or shrink it. scroll while hovering over the world should zoom in or out, which changes the *apparent* size of pinned cards to the viewer. the scale in the world stays the same"
+
+This supersedes the fixed-pixel sizing above. A pin owns its world scale as well as its world anchor. Its projected rectangle supplies drawing, the card camera, and hit testing; board zoom changes apparent size without changing the pin. The existing close-view scale defines the base world size, preserving the initial card size at that view. Scrolling over a pin changes its world scale; scrolling elsewhere zooms the board.
+
+The simplest design removes the fixed-pixel projection and the viewport-dependent resize ceiling. A fixed world-scale range of 0.05 through 8 keeps resizing independent of camera zoom, so a grow gesture cannot shrink a card that became larger than the screen. No dependency, on-screen text, or second placement state is added. Tests check constant world dimensions through pan and zoom, projected hit bounds, wheel routing, and card-camera sizing.
+
+
 Directive (verbatim): "right now, we can't over over an atom and see how it's made, let us make it so hovering over an atom, or pinning its card shows the machine that makes the atom"
 
 Every early-game atom has one row in the route table: the base atom resolves to the source and each later atom resolves to its converter. Point-aware board hover resolves an atom through that row, then gives the existing machine card painter and playback the resulting machine. Pinning an atom resolves through the same row before the existing pin is created, so hover and pin hold the same machine card and use the same anchor.
