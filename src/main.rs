@@ -3576,7 +3576,7 @@ fn spawn_ui(mut commands: Commands, kiln: Res<Kiln>) {
                 palette
                     .spawn(Node {
                         flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.0),
+                        row_gap: Val::Px(1.0),
                         ..default()
                     })
                     .with_children(|col| {
@@ -4359,7 +4359,7 @@ struct Kiln {
     bond: Handle<Mesh>,
     rim: Handle<Mesh>,
     tiled: Option<(Tiling, bool)>,
-    glaze: [Handle<ColorMaterial>; 8],
+    glaze: [Handle<ColorMaterial>; Glaze::ALL.len()],
     patina: Handle<ColorMaterial>,
     card: [Handle<ColorMaterial>; 2],
     atoms: Handle<Image>,
@@ -5960,7 +5960,7 @@ mod shot {
         acts
     }
 
-    pub const SCENES: [&str; 62] = [
+    pub const SCENES: [&str; 63] = [
         "portal-copy-109",
         "portal",
         "source-upgrade",
@@ -6003,6 +6003,7 @@ mod shot {
         "converters",
         "resonator",
         "resonator-sheet",
+        "fuse-feed",
         "converter-sheet",
         "reification",
         "rig",
@@ -6480,6 +6481,46 @@ mod shot {
                 sim.place(&input.replay(1), Hex::new(3, 0));
                 world.sim = sim;
                 world.period = f32::INFINITY;
+            }
+            "fuse-feed" => {
+                use Instr::{Drop, Grab, Move, Rot, Wait};
+                let (cw, ccw) = (Rot(Spin::Cw), Rot(Spin::Ccw));
+                let mut sim = Sim::empty();
+                sim.glyphs
+                    .push(Some(Glyph::new(GlyphKind::Fuse, Hex::new(2, 0), 0)));
+                let chain: Vec<usize> = (-4..2)
+                    .rev()
+                    .map(|q| {
+                        sim.spawn(Atom {
+                            kind: AtomKind::Base,
+                            pos: Hex::new(q, 0),
+                        })
+                    })
+                    .collect();
+                for pair in chain.windows(2) {
+                    sim.bonds.push(sim::Bond {
+                        a: pair[0],
+                        b: pair[1],
+                        kind: sim::BondKind::Single,
+                    });
+                }
+                for (kind, q, r) in [(AtomKind::Cobalt, 3, 0), (AtomKind::Cobalt, 3, -1)] {
+                    sim.spawn(Atom {
+                        kind,
+                        pos: Hex::new(q, r),
+                    });
+                }
+                sim.arms.push(Arm::new(
+                    ArmLength::One,
+                    Hex::new(0, -1),
+                    5,
+                    vec![Grab, Move(1), Drop, Move(4)],
+                ));
+                let mut feed = vec![Wait, Wait, Grab, cw, Drop, ccw, ccw, Grab, cw, Drop];
+                feed.resize(16, Wait);
+                sim.arms
+                    .push(Arm::new(ArmLength::One, Hex::new(4, -1), 4, feed));
+                world.sim = sim;
             }
             "converters" => {
                 let mut sim = Sim::empty();
@@ -12034,7 +12075,7 @@ mod tests {
         assert_surface_at_corners(
             &frame,
             "palette",
-            [(229, 147), (254, 147), (229, 172), (254, 172)],
+            [(229, 12), (254, 12), (229, 37), (254, 37)],
             strip,
         );
         assert_surface_at_corners(

@@ -194,14 +194,16 @@ pub enum AtomKind {
     Amber,
     Plum,
     Cobalt,
+    Jade,
 }
 
 impl AtomKind {
-    pub const ALL: [AtomKind; 4] = [
+    pub const ALL: [AtomKind; 5] = [
         AtomKind::Base,
         AtomKind::Amber,
         AtomKind::Plum,
         AtomKind::Cobalt,
+        AtomKind::Jade,
     ];
 }
 
@@ -346,6 +348,7 @@ pub enum GlyphKind {
     Reification,
     Converter(AtomKind),
     Resonator,
+    Fuse,
     Output(Tier),
 }
 
@@ -354,7 +357,7 @@ impl GlyphKind {
         matches!(self, Self::Source | Self::SourceTwo)
     }
 
-    pub const ALL: [GlyphKind; 11] = [
+    pub const ALL: [GlyphKind; 12] = [
         GlyphKind::Source,
         GlyphKind::SourceTwo,
         GlyphKind::Bonder,
@@ -363,6 +366,7 @@ impl GlyphKind {
         GlyphKind::Converter(AtomKind::Amber),
         GlyphKind::Resonator,
         GlyphKind::Converter(AtomKind::Cobalt),
+        GlyphKind::Fuse,
         GlyphKind::Output(Tier::One),
         GlyphKind::Output(Tier::Two),
         GlyphKind::Output(Tier::Three),
@@ -439,7 +443,7 @@ pub struct Slot {
     pub at: Hex,
     pub kind: Option<AtomKind>,
     pub consumed: bool,
-    pub lone: bool,
+    pub bonds: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -454,7 +458,7 @@ const fn base(at: Hex) -> Slot {
         at,
         kind: Some(AtomKind::Base),
         consumed: false,
-        lone: false,
+        bonds: None,
     }
 }
 
@@ -474,7 +478,7 @@ const fn consumed(at: Hex) -> Slot {
 
 const SECOND_BOND: [Slot; 3] = [
     Slot {
-        lone: true,
+        bonds: Some(0),
         ..consumed(ORIGIN)
     },
     any(DIRS[0]),
@@ -494,19 +498,30 @@ const AMBER_CONVERTER: [Slot; 3] = [consumed(ORIGIN), consumed(DIRS[0]), consume
 const RESONATOR: [Slot; 2] = [
     Slot {
         kind: Some(AtomKind::Amber),
-        lone: true,
+        bonds: Some(0),
         ..base(ORIGIN)
     },
     Slot {
         kind: Some(AtomKind::Amber),
-        lone: true,
+        bonds: Some(0),
         ..base(DIRS[0])
     },
 ];
 const COBALT_CONVERTER: [Slot; 1] = [Slot {
-    lone: true,
+    bonds: Some(0),
     ..consumed(ORIGIN)
 }];
+const FUSE: [Slot; 2] = [
+    Slot {
+        bonds: Some(1),
+        ..consumed(ORIGIN)
+    },
+    Slot {
+        kind: Some(AtomKind::Cobalt),
+        bonds: Some(0),
+        ..base(DIRS[0])
+    },
+];
 const COBALT_FOOTPRINT: [Hex; 4] = [ORIGIN, Hex::new(1, 0), Hex::new(0, 1), Hex::new(1, 1)];
 const COBALT_OUTPUT: [Hex; 1] = [Hex::new(1, 1)];
 
@@ -580,7 +595,8 @@ impl GlyphKind {
             },
             GlyphKind::Resonator => plain(&RESONATOR),
             GlyphKind::Converter(AtomKind::Cobalt) => plain(&COBALT_CONVERTER),
-            GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+            GlyphKind::Fuse => plain(&FUSE),
+            GlyphKind::Converter(AtomKind::Base | AtomKind::Plum | AtomKind::Jade) => {
                 panic!("only amber and cobalt have converters")
             }
             GlyphKind::Output(Tier::One) => plain(&OUTPUT_1),
@@ -614,6 +630,14 @@ impl GlyphKind {
         match self {
             GlyphKind::Converter(AtomKind::Cobalt) => &COBALT_OUTPUT,
             _ => &[],
+        }
+    }
+
+    pub const fn transmutes(self) -> Option<AtomKind> {
+        match self {
+            GlyphKind::Resonator => Some(AtomKind::Plum),
+            GlyphKind::Fuse => Some(AtomKind::Jade),
+            _ => None,
         }
     }
 
@@ -1165,7 +1189,15 @@ impl Sim {
                         slot.kind
                             .is_none_or(|kind| self.atoms[*id].unwrap().kind == kind)
                     })
-                    .filter(|id| !slot.lone || self.bonds.iter().all(|x| x.a != *id && x.b != *id))
+                    .filter(|id| {
+                        slot.bonds.is_none_or(|n| {
+                            self.bonds
+                                .iter()
+                                .filter(|x| x.a == *id || x.b == *id)
+                                .count()
+                                == n
+                        })
+                    })
             })
             .collect::<Option<_>>()?;
         let bonded = |a: usize, b: usize| self.bond_between(a, b).map(|i| self.bonds[i].kind);
@@ -1272,11 +1304,16 @@ impl Sim {
         if let Some(kind) = made {
             self.receive(Item::Atom(kind));
         }
-        if g.kind == GlyphKind::Resonator {
-            for id in ids {
-                self.atoms[id].as_mut().unwrap().kind = AtomKind::Plum;
+        if let Some(kind) = g.kind.transmutes() {
+            for (_, id) in rule
+                .slots
+                .iter()
+                .zip(ids)
+                .filter(|(slot, _)| !slot.consumed)
+            {
+                self.atoms[id].as_mut().unwrap().kind = kind;
             }
-            self.encounter(Item::Atom(AtomKind::Plum));
+            self.encounter(Item::Atom(kind));
         }
         if let GlyphKind::Converter(kind) = g.kind {
             let offset = g.kind.product().expect("a converter has an output");
@@ -1754,7 +1791,34 @@ pub fn fixture(machine: Machine) -> Fixture {
                 },
             }
         }
-        Machine::Glyph(GlyphKind::Converter(AtomKind::Base | AtomKind::Plum)) => {
+        Machine::Glyph(GlyphKind::Fuse) => {
+            let mut sim = armed(ArmLength::One, vec![Grab, Move(0)]);
+            let chain: Vec<usize> = (1..4).map(|q| sim.spawn(base(Hex::new(q, 0)))).collect();
+            for pair in chain.windows(2) {
+                sim.bonds.push(Bond {
+                    a: pair[0],
+                    b: pair[1],
+                    kind: BondKind::Single,
+                });
+            }
+            sim.spawn(Atom {
+                kind: AtomKind::Cobalt,
+                pos: Hex::new(5, 0),
+            });
+            sim.glyphs
+                .push(Some(Glyph::new(GlyphKind::Fuse, Hex::new(4, 0), 0)));
+            Fixture {
+                sim,
+                ticks: 2,
+                done: |s| {
+                    s.atom_at(Hex::new(5, 0))
+                        .is_some_and(|id| s.atoms[id].unwrap().kind == AtomKind::Jade)
+                        && s.atoms.iter().flatten().count() == 3
+                        && s.bonds.len() == 1
+                },
+            }
+        }
+        Machine::Glyph(GlyphKind::Converter(AtomKind::Base | AtomKind::Plum | AtomKind::Jade)) => {
             panic!("only amber and cobalt have converters")
         }
         Machine::Glyph(GlyphKind::Output(tier)) => {
@@ -1894,13 +1958,13 @@ mod tests {
 
     #[test]
     fn upgrade_rows_do_not_consume_inventory_slots() {
-        assert_eq!(CRAFT_RECIPE_COUNT, 26);
+        assert_eq!(CRAFT_RECIPE_COUNT, 27);
         assert_eq!(
             Inventory::EMPTY.count(Machine::Glyph(GlyphKind::SourceTwo).into()),
             None
         );
-        let count: Vec<u32> = (0..30).collect();
-        let cap = vec![32u32; 30];
+        let count: Vec<u32> = (0..32).collect();
+        let cap = vec![32u32; 32];
         let saved = serde_json::json!({ "count": count, "cap": cap });
         let inventory: Inventory = serde_json::from_value(saved.clone()).unwrap();
         assert_eq!(serde_json::to_value(inventory).unwrap(), saved);
@@ -1908,7 +1972,7 @@ mod tests {
             assert_eq!(inventory.count(*item), Some(index as u32));
         }
         for (index, kind) in AtomKind::ALL.into_iter().enumerate() {
-            assert_eq!(inventory.count(Item::Atom(kind)), Some(26 + index as u32));
+            assert_eq!(inventory.count(Item::Atom(kind)), Some(27 + index as u32));
         }
     }
 
@@ -2512,7 +2576,7 @@ mod tests {
     fn converter_inputs_and_every_recipe_are_distinct_under_every_turn() {
         let mut forms: Vec<Form> = recipes().iter().map(|(_, form)| form.clone()).collect();
         forms.extend(ATOM_ROUTES.iter().filter_map(|(_, route)| match route {
-            AtomRoute::Source | AtomRoute::Resonator => None,
+            AtomRoute::Source | AtomRoute::Resonator | AtomRoute::Fuse => None,
             AtomRoute::Converter(text) => Some(text.parse().unwrap()),
         }));
         for a in 0..forms.len() {
@@ -2689,6 +2753,155 @@ mod tests {
         blocked.step();
         assert_eq!(blocked.atoms, before.atoms);
         assert_eq!(blocked.bonds, before.bonds);
+    }
+
+    fn fused(dir: usize, length: usize, input: AtomKind) -> (Sim, Vec<usize>, usize) {
+        let at = Hex::new(3, -2);
+        let mut sim = Sim::empty();
+        sim.glyphs.push(Some(Glyph::new(GlyphKind::Fuse, at, dir)));
+        let chain: Vec<usize> = (0..length as i32)
+            .map(|i| {
+                sim.spawn(Atom {
+                    kind: AtomKind::Base,
+                    pos: at.add(DIRS[(dir + 3) % 6].scale(i)),
+                })
+            })
+            .collect();
+        for pair in chain.windows(2) {
+            bond(&mut sim, pair[0], pair[1], BondKind::Single);
+        }
+        let seat = sim.spawn(Atom {
+            kind: input,
+            pos: at.add(DIRS[dir]),
+        });
+        (sim, chain, seat)
+    }
+
+    #[test]
+    fn the_fuse_burns_only_the_chain_end_and_changes_the_lone_cobalt_in_place_at_every_turn() {
+        for dir in 0..6 {
+            let (mut sim, chain, seat) = fused(dir, 4, AtomKind::Cobalt);
+            let before = sim.clone();
+            let events = sim.step().events;
+            assert_eq!(
+                events,
+                [
+                    TickEvent::Fired {
+                        glyph: 0,
+                        machine: Machine::Glyph(GlyphKind::Fuse),
+                        at: Hex::new(3, -2),
+                    },
+                    TickEvent::Consumed {
+                        glyph: 0,
+                        atoms: vec![chain[0]],
+                    },
+                ],
+                "turn {dir}"
+            );
+            assert_eq!(sim.atoms[chain[0]], None);
+            for id in &chain[1..] {
+                assert_eq!(sim.atoms[*id], before.atoms[*id]);
+            }
+            assert_eq!(sim.bonds, before.bonds[1..]);
+            assert_eq!(
+                sim.atoms[seat],
+                Some(Atom {
+                    kind: AtomKind::Jade,
+                    ..before.atoms[seat].unwrap()
+                })
+            );
+            assert!(sim.encountered.contains(&Item::Atom(AtomKind::Jade)));
+            assert_eq!(sim.inventory, before.inventory);
+            let after = sim.clone();
+            sim.step();
+            assert_eq!(sim.atoms, after.atoms, "jade does not refire, turn {dir}");
+        }
+    }
+
+    #[test]
+    fn the_fuse_refuses_a_lone_atom_a_chain_middle_a_wrong_input_or_a_bonded_input() {
+        let unchanged = |mut sim: Sim, why: &str| {
+            let before = sim.clone();
+            assert!(sim.step().events.is_empty(), "{why}");
+            assert_eq!(sim.atoms, before.atoms, "{why}");
+            assert_eq!(sim.bonds, before.bonds, "{why}");
+        };
+        unchanged(fused(0, 1, AtomKind::Cobalt).0, "a lone atom is no chain");
+        let (mut middle, chain, _) = fused(0, 2, AtomKind::Cobalt);
+        let below = middle.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(3, -1),
+        });
+        bond(&mut middle, chain[0], below, BondKind::Single);
+        unchanged(middle, "a chain's middle is no end");
+        for wrong in [
+            AtomKind::Base,
+            AtomKind::Amber,
+            AtomKind::Plum,
+            AtomKind::Jade,
+        ] {
+            unchanged(fused(0, 3, wrong).0, "a wrong input");
+        }
+        let (mut amber_chain, chain, _) = fused(0, 3, AtomKind::Cobalt);
+        amber_chain.atoms[chain[0]].as_mut().unwrap().kind = AtomKind::Amber;
+        unchanged(amber_chain, "an amber end");
+        let (mut tied, _, seat) = fused(0, 3, AtomKind::Cobalt);
+        let tail = tied.spawn(Atom {
+            kind: AtomKind::Base,
+            pos: Hex::new(5, -2),
+        });
+        bond(&mut tied, seat, tail, BondKind::Single);
+        unchanged(tied, "a bonded input");
+        let (mut empty, _, seat) = fused(0, 3, AtomKind::Cobalt);
+        empty.atoms[seat] = None;
+        unchanged(empty, "no input");
+    }
+
+    #[test]
+    fn an_arm_pushes_a_chain_into_the_fuse_one_burn_per_conversion_and_stalls_once_it_runs_out() {
+        use Instr::*;
+        let (mut sim, chain, seat) = fused(0, 4, AtomKind::Cobalt);
+        let fuel = Hex::new(3, -2);
+        for id in &chain {
+            let atom = sim.atoms[*id].as_mut().unwrap();
+            atom.pos = atom.pos.sub(DIRS[0]);
+        }
+        let pivot = sim.atoms[chain[1]].unwrap().pos.add(DIRS[2]);
+        sim.arms.push(Arm::new(
+            ArmLength::One,
+            pivot,
+            5,
+            vec![Grab, Move(1), Drop, Move(4)],
+        ));
+        let mut conversions = 0;
+        for _ in 0..16 {
+            let events = sim.step().events;
+            if events
+                .iter()
+                .any(|event| matches!(event, TickEvent::Fired { .. }))
+            {
+                conversions += 1;
+                assert_eq!(sim.atoms[seat].unwrap().kind, AtomKind::Jade);
+                sim.atoms[seat].as_mut().unwrap().kind = AtomKind::Cobalt;
+            }
+        }
+        assert_eq!(conversions, 3);
+        let left: Vec<Atom> = sim.atoms.iter().flatten().copied().collect();
+        assert_eq!(
+            left,
+            [
+                Atom {
+                    kind: AtomKind::Base,
+                    pos: fuel.sub(DIRS[0]),
+                },
+                Atom {
+                    kind: AtomKind::Cobalt,
+                    pos: fuel.add(DIRS[0]),
+                },
+            ]
+        );
+        assert!(sim.bonds.is_empty());
+        assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
     }
 
     #[test]

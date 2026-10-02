@@ -10,6 +10,8 @@ use sim::{
     ArmLength, Atom, AtomKind, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, Machine, ORIGIN,
     Sim, Spin, Tier,
 };
+const FUSE_CHAIN: &str = "B0,0 B0,1 0,0-0,1";
+
 const TOKENS: [Instr; 13] = [
     Instr::Grab,
     Instr::Drop,
@@ -111,6 +113,13 @@ impl ProofId {
                     return Ok(vec![
                         ProofId::RecipeItem(Item::Machine(Machine::Glyph(GlyphKind::Resonator))),
                         ProofId::RoutedAtom(AtomKind::Amber),
+                    ]);
+                }
+                if matches!(atom_route(kind), AtomRoute::Fuse) {
+                    return Ok(vec![
+                        ProofId::RecipeItem(Item::Machine(Machine::Glyph(GlyphKind::Fuse))),
+                        ProofId::RoutedAtom(AtomKind::Cobalt),
+                        ProofId::Compound(FUSE_CHAIN),
                     ]);
                 }
                 let AtomRoute::Converter(text) = atom_route(kind) else {
@@ -523,6 +532,9 @@ fn prove_item(item: Item, premises: &[Fact]) -> Result<Fact, String> {
 }
 
 fn prove_atom(kind: AtomKind, premises: &[Fact]) -> Result<Fact, String> {
+    if matches!(atom_route(kind), AtomRoute::Fuse) {
+        return prove_fused(premises);
+    }
     if matches!(atom_route(kind), AtomRoute::Resonator) {
         let machine = Item::Machine(Machine::Glyph(GlyphKind::Resonator));
         let mut sim = Sim::empty();
@@ -574,6 +586,37 @@ fn prove_atom(kind: AtomKind, premises: &[Fact]) -> Result<Fact, String> {
     (atoms == [Atom { kind, pos }])
         .then_some(Fact::Atom(kind))
         .ok_or_else(|| format!("the {kind:?} converter left {atoms:?}"))
+}
+
+fn prove_fused(premises: &[Fact]) -> Result<Fact, String> {
+    let mut sim = Sim::empty();
+    grant_item(
+        &mut sim,
+        premises,
+        Item::Machine(Machine::Glyph(GlyphKind::Fuse)),
+    )?;
+    take_glyph(&mut sim, GlyphKind::Fuse, ORIGIN, 0)?;
+    grant_compound(&mut sim, premises, FUSE_CHAIN, 0, ORIGIN)?;
+    let input = grant_atom(
+        &mut sim,
+        premises,
+        Atom {
+            kind: AtomKind::Cobalt,
+            pos: DIRS[0],
+        },
+    )?;
+    sim.step();
+    let atoms: Vec<Atom> = sim.atoms.iter().flatten().copied().collect();
+    let made = Atom {
+        kind: AtomKind::Jade,
+        pos: DIRS[0],
+    };
+    (sim.atoms[input] == Some(made)
+        && sim.atom_at(ORIGIN).is_none()
+        && atoms.len() == 2
+        && sim.bonds.is_empty())
+    .then_some(Fact::Atom(AtomKind::Jade))
+    .ok_or_else(|| format!("the fuse left {atoms:?}"))
 }
 
 fn prove_reified(kind: AtomKind, premises: &[Fact]) -> Result<Fact, String> {

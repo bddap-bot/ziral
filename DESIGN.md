@@ -127,6 +127,30 @@ This is the dumbest design satisfying the directive because it adds one atom row
 Directive (verbatim): "make the rescipe for arm B0,1 B0,2 B1,0 B1,1 B2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1 except it uses the new token atoms"
 The arm recipe replaces its base atoms with cobalt in that five-atom, four-single-bond shape. This is the dumbest design satisfying the directive because it changes the one table row and its fixtures; a second recipe or conversion path was rejected because either would preserve the recipe being replaced.
 
+### Jade atom and chain-fed fuse
+
+Decision: a machine needs a polymer to function. A chain must occupy it. Each step it destroys only the chain's end atom, never the whole chain, so the chain has to be pushed in continuously. While fed, each step converts a separate input atom into a new atom type, burning one chain atom per conversion. It belongs in the current progression, because arm movement already makes chains.
+
+Checked first on main: `Instr::Move` translates an arm one cell and carries the whole compound its hand holds, so an arm pushes a chain (`a_move_carries_the_arm_and_its_held_compound_one_cell`).
+
+The footprint is two cells in a line: a fuel seat and, beyond it, an input seat. A chain reaches the fuel seat from any other side. Pushing an end that has not burned carries it onto the input seat, so an arm pushing against a waiting input or product stalls there.
+
+A chain is what the fuel seat holds when its atom is a base atom with exactly one bond: the end of a compound of two or more atoms. A lone atom and a chain's middle, with two bonds, do not fire. The seat rule's `lone` flag became an exact bond count, so a lone seat counts zero bonds and the fuel seat counts one; no second predicate was added.
+
+The input is one lone cobalt atom. One fired 400 ms tick consumes only the end atom and changes the cobalt to jade in place, keeping its identity and position. The resonator and the fuse share one in-place path: every unconsumed seat's atom becomes the machine's product.
+
+Jade is the fifth atom, written `J`: a #5FA83A glazed bead carved with one spiral groove that winds into a darkened-brass pin. Its one use is the centre of the third-tier output's recipe, the centre bonded to six base atoms, so the 37-cell output now comes after the fuse. The fuse is jade's only route.
+
+The fuse's own recipe is a straight chain of three cobalt atoms with two single bonds. It fits the first-tier output, needs only cobalt, so it is crafted after the first arm, and it shows the machine eating chains.
+
+The stall. An n-atom chain gives n − 1 conversions: the last atom has no bond left and is never burned. With no chain end on the fuel seat the cobalt waits unconverted, so whatever delivers inputs stalls against it, and an arm whose hand finds no chain atom stalls on its grab. A product left on the input seat is not cobalt, so nothing fires, and the next pushed end stalls against it. There is no stored fuel and no countdown.
+
+Each conversion looks and behaves differently. Amber collapses a bonded three-base fork into one atom; the resonator turns two lone ambers into plum in place with no fuel; the cobalt converter turns one lone base into cobalt at the far end of its rhombus. The fuse alone burns a feed it does not convert, and it is the only converter that an arm must keep feeding. Its housing is terracotta, since a green glaze would key out against the paint pipeline's chroma green. It puffs steam on the burn, plays a wood note, and its sprite shows a beaded fuse ending in an ember mouth at one end and a cradled bead under copper coils at the other.
+
+This is the dumbest design that satisfies the decision because it adds one atom row, one two-seat rule, one recipe and one fixture, and it reuses the tick, the seat predicates and the in-place change that the resonator already uses. Alternatives disposed: burning the whole chain is what the decision forbids; a chain that runs through the machine and out the far side needs an exit cell and a rule for the middle; a separate output cell adds a vacancy rule the in-place change does not need; fuel of any kind would let a player burn cobalt and arm recipes, while base fuel keeps the chain the cheapest thing on the board. The palette columns now stack their rows one pixel apart instead of four, so the fifth atom row fits the shared token and atom column within the frame.
+
+Tests: the fuse burns only the end atom, keeps the rest of the chain and its other bonds, changes the cobalt to jade in place at every turn and does not refire on jade; a lone atom, a chain middle, an amber end, a wrong input, a bonded input and an empty input seat leave everything untouched; an arm pushing a four-atom chain gets three conversions, leaves the last atom lone beside the fuel seat, and stalls on its grab; the fixture pushes a chain into the fuse in two ticks; reachability proves the fuse from its recipe, jade from the fuse, a base pair and cobalt, and the third-tier output from jade. The `fuse-feed` shot scene shows one arm feeding a six-atom chain while a second arm swaps a fresh cobalt onto the input seat, two conversions, and the feeding arm stalling against the last jade.
+
 ### Playtest saves
 
 Directive (verbatim): "I'd like to be able to playtest this without starting from scratch each time. Time for save-load functionality?"

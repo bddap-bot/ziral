@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 27] = [
+pub const RECIPES: [(Item, &str); 28] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
@@ -44,9 +44,10 @@ pub const RECIPES: [(Item, &str); 27] = [
         glyph(GlyphKind::Converter(AtomKind::Cobalt)),
         "B0,0 B0,1 B0,2 A1,0 A1,1 P1,2 0,0-0,1 0,0-1,0 0,1=0,2 0,1-1,1 0,2-1,2 1,0-1,1 1,1-1,2",
     ),
+    (glyph(GlyphKind::Fuse), "C0,0 C0,1 C0,2 0,0-0,1 0,1-0,2"),
     (
         glyph(GlyphKind::Output(Tier::Three)),
-        "B0,1 B0,2 B1,0 B1,1 B1,2 B2,0 B2,1 0,1-1,1 0,2-1,1 1,0-1,1 1,1-1,2 1,1-2,0 1,1-2,1",
+        "B0,1 B0,2 B1,0 J1,1 B1,2 B2,0 B2,1 0,1-1,1 0,2-1,1 1,0-1,1 1,1-1,2 1,1-2,0 1,1-2,1",
     ),
     (
         glyph(GlyphKind::Reification),
@@ -109,10 +110,11 @@ pub const RECIPES: [(Item, &str); 27] = [
 pub enum AtomRoute {
     Source,
     Resonator,
+    Fuse,
     Converter(&'static str),
 }
 
-pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 4] = [
+pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 5] = [
     (AtomKind::Base, AtomRoute::Source),
     (
         AtomKind::Amber,
@@ -120,6 +122,7 @@ pub const ATOM_ROUTES: [(AtomKind, AtomRoute); 4] = [
     ),
     (AtomKind::Plum, AtomRoute::Resonator),
     (AtomKind::Cobalt, AtomRoute::Converter("B0,0")),
+    (AtomKind::Jade, AtomRoute::Fuse),
 ];
 
 pub fn atom_route(kind: AtomKind) -> AtomRoute {
@@ -134,6 +137,7 @@ pub fn atom_machine(kind: AtomKind) -> Machine {
     match atom_route(kind) {
         AtomRoute::Source => Machine::Glyph(GlyphKind::Source),
         AtomRoute::Resonator => Machine::Glyph(GlyphKind::Resonator),
+        AtomRoute::Fuse => Machine::Glyph(GlyphKind::Fuse),
         AtomRoute::Converter(_) => Machine::Glyph(GlyphKind::Converter(kind)),
     }
 }
@@ -294,6 +298,7 @@ fn letter(kind: AtomKind) -> char {
         AtomKind::Amber => 'A',
         AtomKind::Plum => 'P',
         AtomKind::Cobalt => 'C',
+        AtomKind::Jade => 'J',
     }
 }
 
@@ -303,6 +308,7 @@ fn kind(letter: char) -> Option<AtomKind> {
         'A' => Some(AtomKind::Amber),
         'P' => Some(AtomKind::Plum),
         'C' => Some(AtomKind::Cobalt),
+        'J' => Some(AtomKind::Jade),
         _ => None,
     }
 }
@@ -336,12 +342,13 @@ fn machine_name(kind: GlyphKind) -> &'static str {
         GlyphKind::Bonder => "bonder",
         GlyphKind::SecondBond => "second-bond",
         GlyphKind::Reification => "reification",
-        GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+        GlyphKind::Converter(AtomKind::Base | AtomKind::Plum | AtomKind::Jade) => {
             panic!("only amber and cobalt have converters")
         }
         GlyphKind::Converter(AtomKind::Amber) => "amber-converter",
         GlyphKind::Resonator => "resonator",
         GlyphKind::Converter(AtomKind::Cobalt) => "cobalt-converter",
+        GlyphKind::Fuse => "fuse",
         GlyphKind::Output(Tier::One) => "output-1",
         GlyphKind::Output(Tier::Two) => "output-2",
         GlyphKind::Output(Tier::Three) => "output-3",
@@ -364,7 +371,7 @@ fn validate_fragment(sim: &Sim) -> Result<(), String> {
             GlyphKind::Source | GlyphKind::SourceTwo => {
                 return Err("a source cannot be copied".to_string());
             }
-            GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+            GlyphKind::Converter(AtomKind::Base | AtomKind::Plum | AtomKind::Jade) => {
                 return Err("only amber and cobalt have converters".to_string());
             }
             _ => {}
@@ -437,6 +444,7 @@ fn glyph_kind(name: &str) -> Option<GlyphKind> {
         "amber-converter" => Some(GlyphKind::Converter(AtomKind::Amber)),
         "resonator" => Some(GlyphKind::Resonator),
         "cobalt-converter" => Some(GlyphKind::Converter(AtomKind::Cobalt)),
+        "fuse" => Some(GlyphKind::Fuse),
         "output-1" => Some(GlyphKind::Output(Tier::One)),
         "output-2" => Some(GlyphKind::Output(Tier::Two)),
         "output-3" => Some(GlyphKind::Output(Tier::Three)),

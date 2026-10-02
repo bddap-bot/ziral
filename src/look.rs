@@ -125,7 +125,7 @@ pub fn footprint(item: Machine) -> Vec<Cell> {
                             at,
                             kind: Some(AtomKind::Cobalt),
                             consumed: false,
-                            lone: true,
+                            bonds: Some(0),
                         })
                     } else {
                         Role::Body
@@ -180,11 +180,12 @@ pub enum Glaze {
     Amber,
     Plum,
     Cobalt,
+    Jade,
     Ivory,
 }
 
 impl Glaze {
-    pub const ALL: [Glaze; 8] = [
+    pub const ALL: [Glaze; 9] = [
         Glaze::Clay,
         Glaze::Brass,
         Glaze::Terracotta,
@@ -192,6 +193,7 @@ impl Glaze {
         Glaze::Amber,
         Glaze::Plum,
         Glaze::Cobalt,
+        Glaze::Jade,
         Glaze::Ivory,
     ];
 
@@ -204,6 +206,7 @@ impl Glaze {
             Glaze::Amber => Color::srgb_u8(0xE0, 0xA4, 0x58),
             Glaze::Plum => Color::srgb_u8(0x7D, 0x5B, 0xA6),
             Glaze::Cobalt => Color::srgb_u8(0x36, 0x57, 0xA7),
+            Glaze::Jade => Color::srgb_u8(0x5F, 0xA8, 0x3A),
             Glaze::Ivory => Color::srgb_u8(0xF4, 0xED, 0xE4),
         }
     }
@@ -310,6 +313,7 @@ pub enum Shape {
     RingedBead,
     FacetedBead,
     KnobbedBead,
+    SpiralBead,
     Bars(usize),
     Radial(ArmLength),
     Cells(usize),
@@ -360,6 +364,12 @@ pub fn atom(kind: AtomKind) -> Look<()> {
             glaze: Glaze::Cobalt,
             skin: skin!("textures/atom-cobalt"),
             shape: Shape::KnobbedBead,
+            marking: (),
+        },
+        AtomKind::Jade => Look {
+            glaze: Glaze::Jade,
+            skin: skin!("textures/atom-jade"),
+            shape: Shape::SpiralBead,
             marking: (),
         },
     }
@@ -413,7 +423,8 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
         GlyphKind::Converter(AtomKind::Amber) => (Glaze::Amber, machine!("converter-amber")),
         GlyphKind::Resonator => (Glaze::Plum, machine!("resonator")),
         GlyphKind::Converter(AtomKind::Cobalt) => (Glaze::Cobalt, machine!("converter-cobalt")),
-        GlyphKind::Converter(AtomKind::Base | AtomKind::Plum) => {
+        GlyphKind::Fuse => (Glaze::Terracotta, machine!("fuse")),
+        GlyphKind::Converter(AtomKind::Base | AtomKind::Plum | AtomKind::Jade) => {
             panic!("only amber and cobalt have converters")
         }
         GlyphKind::Output(Tier::One) => (Glaze::Ivory, machine!("output-1")),

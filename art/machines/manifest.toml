@@ -133,6 +133,21 @@ event = "fired"
 layer = "on"
 energy_scaled = true
 
+[machine.fuse]
+caption = "A terracotta glazed brazier: at one end a glowing ember mouth biting the tip of a beaded fuse that runs in from outside, at the other a brass cradle holding one bead under copper coils."
+
+[machine.fuse.instrument]
+voice = "wood"
+note = 57
+
+[machine.fuse.emitter]
+look = "steam"
+count = 6
+lifetime = 2
+event = "fired"
+layer = "on"
+energy_scaled = true
+
 [machine.output-1]
 caption = "A broad hand-woven basket of split cane bound in dark leather, one open weave across the whole shape, with no seats or sockets."
 
