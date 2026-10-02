@@ -510,24 +510,26 @@ struct PortalView {
 }
 
 impl PortalView {
-    const TILE: f32 = HEX * 0.9;
+    const TILE: f32 = 2.0 * look::HOLE;
 
     fn hop() -> f32 {
         zoomed(Self::TILE, 6.0)
     }
 
-    fn extent(sim: &Sim) -> (Vec2, Vec2) {
-        let mut lo = Vec2::splat(f32::INFINITY);
-        let mut hi = Vec2::splat(f32::NEG_INFINITY);
-        let cells = sim
-            .glyphs
+    fn cells(sim: &Sim) -> impl Iterator<Item = Hex> + '_ {
+        sim.glyphs
             .iter()
             .flatten()
             .flat_map(|g| g.cells())
             .chain(sim.atoms.iter().flatten().map(|a| a.pos))
             .chain(sim.arms.iter().flat_map(|a| [a.pivot, a.hand()]))
-            .chain(sim.portals.iter().flatten().map(|p| p.at));
-        for cell in cells {
+            .chain(sim.portals.iter().flatten().map(|p| p.at))
+    }
+
+    fn extent(sim: &Sim) -> (Vec2, Vec2) {
+        let mut lo = Vec2::splat(f32::INFINITY);
+        let mut hi = Vec2::splat(f32::NEG_INFINITY);
+        for cell in Self::cells(sim) {
             lo = lo.min(px(cell) - Vec2::splat(HEX));
             hi = hi.max(px(cell) + Vec2::splat(HEX));
         }
@@ -540,9 +542,13 @@ impl PortalView {
 
     fn of(sim: &Sim) -> Self {
         let (lo, hi) = Self::extent(sim);
+        let center = (lo + hi) / 2.0;
+        let reach = Self::cells(sim)
+            .map(|cell| px(cell).distance(center) + HEX)
+            .fold(HEX, f32::max);
         Self {
-            center: (lo + hi) / 2.0,
-            side: (hi - lo).max_element().max(HEX * 2.0),
+            center,
+            side: 2.0 * reach,
         }
     }
 
@@ -4693,9 +4699,29 @@ struct Painter<'a, 'gw, 'gs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
     layers: RenderLayers,
     shift: Vec2,
     scale: f32,
+    depth: Depth,
+}
+
+#[derive(Clone, Copy)]
+struct Depth {
+    base: f32,
+    span: f32,
+}
+
+impl Depth {
+    const FLAT: Depth = Depth {
+        base: 0.0,
+        span: 1.0,
+    };
 }
 
 impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
+    fn push(&mut self, mut stroke: Stroke) {
+        let z = &mut stroke.transform.translation.z;
+        *z = self.depth.base + *z * self.depth.span;
+        self.strokes.push(stroke);
+    }
+
     fn shifted(&mut self, by: Vec2, draw: impl FnOnce(&mut Self)) {
         let was = self.shift;
         self.shift += by * self.scale;
@@ -4708,37 +4734,41 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         transform.translation =
             (transform.translation.truncate() * self.scale + self.shift).extend(z);
         transform.scale *= self.scale;
-        self.strokes.push(Stroke {
+        self.push(Stroke {
             ink: Ink::Color(mesh.0, material.0),
             layers: self.layers.clone(),
             transform,
         });
     }
 
-    fn interior(&mut self, sim: &Sim, at: Vec2, scale: f32, lift: f32) {
+    fn interior(&mut self, sim: &Sim, at: Vec2, scale: f32, under: f32) {
         let fit = PortalView::of(sim);
         let (kiln, floor) = (self.kiln, (self.floor)(fit));
+        let (shift, old_scale, depth) = (self.shift, self.scale, self.depth);
+        self.depth = Depth {
+            base: depth.base + (under - layer::INTERIOR) * depth.span,
+            span: depth.span * layer::INTERIOR / layer::SCENE,
+        };
         self.fill(
             &floor,
             kiln.skin(look::ETHEREAL),
             at,
             0.0,
             Vec2::splat(scale),
-            lift + layer::GLYPHS + layer::INTERIOR / 2.0,
+            0.0,
         );
-        let (shift, old_scale) = (self.shift, self.scale);
         self.shift += (at - fit.center * scale) * self.scale;
         self.scale *= scale;
         scene(
             self,
             &Frame::between(sim, sim, 1.0),
-            lift + layer::INTERIOR,
+            0.0,
             &[],
             1.0,
             false,
             None,
         );
-        (self.shift, self.scale) = (shift, old_scale);
+        (self.shift, self.scale, self.depth) = (shift, old_scale, depth);
     }
 
     fn outline(&mut self, at: Vec2, size: f32) {
@@ -4772,7 +4802,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         scale: Vec2,
         z: f32,
     ) {
-        self.strokes.push(Stroke {
+        self.push(Stroke {
             ink: M::ink(mesh.clone(), material.clone()),
             layers: self.layers.clone(),
             transform: Transform {
@@ -4784,7 +4814,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
     }
 
     fn instruction(&mut self, instr: Instr, at: Vec2, side: f32, z: f32) {
-        self.strokes.push(Stroke {
+        self.push(Stroke {
             ink: Ink::Symbol(instr),
             layers: self.layers.clone(),
             transform: Transform {
@@ -4923,7 +4953,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         let scale = rig::entry(Machine::Portal)
             .motion
             .map_or(1.0, |motion| motion.scale(pulse));
-        self.strokes.push(Stroke {
+        self.push(Stroke {
             ink: Ink::Sprite(Sprite {
                 image: self.kiln.image(look.skin),
                 custom_size: Some(look::quad(Machine::Portal).size() * self.scale * scale),
@@ -4985,6 +5015,7 @@ mod layer {
     pub const CARD: Range<f32> = 0.6..0.7;
     pub const LIFT: f32 = 0.8;
     pub const INTERIOR: f32 = 0.001;
+    pub const SCENE: f32 = 1.0;
 
     pub fn glyph(kind: crate::sim::GlyphKind, i: usize, n: usize, lift: f32) -> f32 {
         let kinds = crate::sim::GlyphKind::ALL;
@@ -5390,6 +5421,7 @@ fn draw(
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
         scale: 1.0,
+        depth: Depth::FLAT,
     };
     let board_phase = world.board_phase();
     let mut f = Frame::between(&world.prev, world.shown(), board_phase);
@@ -5502,6 +5534,7 @@ fn draw(
             layers: ATOMS,
             shift: atom_at(kind),
             scale: 1.0,
+            depth: Depth::FLAT,
         };
         preview.bead(Vec2::ZERO, look::atom(kind), layer::BEAD);
     }
@@ -5513,6 +5546,7 @@ fn draw(
         layers: CARD,
         shift: Vec2::ZERO,
         scale: 1.0,
+        depth: Depth::FLAT,
     };
     if let Some(item) = world.hover {
         rendered_card(&mut p, item, world.play.as_ref(), HOVER_SLOT, &*world);
@@ -5606,7 +5640,7 @@ fn scene<G: GizmoConfigGroup>(
             &portal.sim,
             px(portal.at),
             PortalView::of(&portal.sim).scale(),
-            lift,
+            layer::GLYPHS - layer::INTERIOR + lift,
         );
     }
     for (index, glyph) in f.sim.glyphs.iter().enumerate() {
@@ -5792,7 +5826,7 @@ fn hover_card<G: GizmoConfigGroup>(
                 (false, 1.0, sim::ActivationEnergy::default()),
             );
             p.scale = old_scale;
-            p.interior(&portal.sim, Vec2::ZERO, scale, layer::LIFT);
+            p.interior(&portal.sim, Vec2::ZERO, scale, layer::LIFT + layer::GLYPHS);
             return;
         }
         for h in playfield(machine) {
@@ -8019,9 +8053,10 @@ mod tests {
                     .find(|(at, _)| (at.z - z).abs() < 1e-4)
                     .map(|(_, scale)| *scale)
             };
-            let bead = scale_at(layer::LIFT + layer::INTERIOR + layer::BEAD).expect("fixture bead");
-            let floor = scale_at(layer::LIFT + layer::GLYPHS + layer::INTERIOR / 2.0)
-                .expect("interior floor");
+            let under = layer::LIFT + layer::GLYPHS - layer::INTERIOR;
+            let bead = scale_at(under + layer::BEAD * layer::INTERIOR / layer::SCENE)
+                .expect("fixture bead");
+            let floor = scale_at(under).expect("interior floor");
             assert!((bead - HEX * 0.4 * scale).abs() < 1e-3);
             assert!((floor - scale).abs() < 1e-4);
         }
@@ -8180,7 +8215,7 @@ mod tests {
     }
 
     #[test]
-    fn portal_floor_lies_over_its_housing_and_under_everything_inside() {
+    fn portal_interior_lies_under_its_housing_and_over_its_floor() {
         type Window<'w, 's> = (
             Query<'w, 's, (Entity, &'static Transform, &'static RenderLayers), With<Fill>>,
             Query<'w, 's, &'static MeshMaterial2d<ColorMaterial>, With<Fill>>,
@@ -8249,8 +8284,8 @@ mod tests {
                     panic!("the window draws one floor")
                 };
                 assert!(
-                    housing < floor,
-                    "the housing at {housing} covers the floor at {floor}"
+                    floor < housing,
+                    "the floor at {floor} covers the housing at {housing}"
                 );
                 let inside: Vec<f32> = drawn
                     .iter()
@@ -8262,8 +8297,8 @@ mod tests {
                     "the interior's glyph, arm, atoms and bond are drawn"
                 );
                 assert!(
-                    inside.iter().all(|z| z > floor),
-                    "the floor at {floor} covers something inside at {inside:?}"
+                    inside.iter().all(|z| z > floor && z < housing),
+                    "something inside at {inside:?} is not between the floor at {floor} and the housing at {housing}"
                 );
                 *probe.lock().unwrap() = true;
             },
@@ -8717,9 +8752,8 @@ mod tests {
         let before = image::open(dir.join("00000.png")).unwrap().to_rgba8();
         let after = image::open(dir.join("00007.png")).unwrap().to_rgba8();
         assert_eq!(before.dimensions(), (1280, 720));
-        let half = PortalView::TILE / 2.0 * 720.0 / PortalView::hop() - 2.0;
-        let window =
-            |x: u32, y: u32| (x as f32 - 640.0).abs() < half && (y as f32 - 360.0).abs() < half;
+        let hole = look::HOLE * 720.0 / PortalView::hop() - 2.0;
+        let window = |x: u32, y: u32| Vec2::new(x as f32 - 640.0, y as f32 - 360.0).length() < hole;
         let changed = before
             .enumerate_pixels()
             .zip(after.pixels())
