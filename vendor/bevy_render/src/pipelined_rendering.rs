@@ -197,7 +197,12 @@ fn renderer_extract(app_world: &mut World, _world: &mut World) {
 
                 render_channels.send_blocking(render_app);
             } else {
-                // Renderer thread panicked
+                bevy_log::error!("renderer_extract requested AppExit::Error: render thread channel disconnected");
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    use std::io::Write;
+                    let _ = writeln!(std::io::stderr().lock(), "renderer_extract requested AppExit::Error: render thread channel disconnected");
+                }
                 world.write_message(AppExit::error());
             }
         });

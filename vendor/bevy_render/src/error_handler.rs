@@ -76,7 +76,12 @@ impl Default for RenderErrorHandler {
         // likely hit the same error repeatedly, resulting in hazardous strobing effects.
         // The parameters to this function are (error, main_world, render_world).
         Self(|error, main_world, _| {
-            bevy_log::error!("Quitting the application due to {:?} RenderError", error.ty);
+            bevy_log::error!("RenderErrorHandler requested AppExit::Error: {error:#?}");
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                use std::io::Write;
+                let _ = writeln!(std::io::stderr().lock(), "RenderErrorHandler requested AppExit::Error: {error:#?}");
+            }
             main_world.write_message(AppExit::error());
             RenderErrorPolicy::StopRendering
         })

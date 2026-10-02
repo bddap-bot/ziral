@@ -80,3 +80,84 @@ impl Drop for Guard {
         }
     }
 }
+
+#[test]
+fn error_exits_report_the_requesting_renderer_and_cause() {
+    use bevy::{
+        app::{App, AppExit, SubApp},
+        ecs::schedule::ScheduleLabel,
+        prelude::*,
+        render::{
+            RenderApp,
+            error_handler::{ErrorType, RenderError, RenderErrorHandler, RenderErrorPolicy},
+            pipelined_rendering::PipelinedRenderingPlugin,
+            renderer::WgpuWrapper,
+        },
+    };
+
+    if let Ok(case) = std::env::var("ZIRAL_EXIT_DIAGNOSTIC_CASE") {
+        let mut app = App::new();
+        if case == "device" {
+            app.add_message::<AppExit>();
+            let error = RenderError {
+                ty: ErrorType::OutOfMemory,
+                description: "diagnostic allocation".into(),
+                source: Some(WgpuWrapper::new(Box::new(std::io::Error::other(
+                    "Device::create_texture diagnostic source",
+                )))),
+            };
+            let policy =
+                (RenderErrorHandler::default().0)(&error, app.world_mut(), &mut World::new());
+            assert!(matches!(policy, RenderErrorPolicy::StopRendering));
+        } else {
+            assert_eq!(case, "channel");
+            app.add_plugins(MinimalPlugins);
+            let mut render_app = SubApp::new();
+            render_app.update_schedule = Some(Update.intern());
+            render_app.add_systems(Update, || panic!("diagnostic render thread panic"));
+            app.insert_sub_app(RenderApp, render_app);
+            app.add_plugins(PipelinedRenderingPlugin);
+            app.finish();
+            app.cleanup();
+            app.update();
+            app.update();
+        }
+        assert_eq!(app.should_exit(), Some(AppExit::error()));
+        return;
+    }
+
+    for (case, expected) in [
+        (
+            "device",
+            vec![
+                "RenderErrorHandler requested AppExit::Error",
+                "OutOfMemory",
+                "diagnostic allocation",
+                "Device::create_texture diagnostic source",
+            ],
+        ),
+        (
+            "channel",
+            vec![
+                "renderer_extract requested AppExit::Error",
+                "render thread channel disconnected",
+                "diagnostic render thread panic",
+            ],
+        ),
+    ] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "render_test::error_exits_report_the_requesting_renderer_and_cause",
+                "--nocapture",
+            ])
+            .env("ZIRAL_EXIT_DIAGNOSTIC_CASE", case)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{case}: {stderr}");
+        for text in expected {
+            assert!(stderr.contains(text), "{case} omitted {text:?}: {stderr}");
+        }
+    }
+}
