@@ -7,6 +7,7 @@ use bevy::prelude::Color;
 use std::ops::RangeInclusive;
 
 pub const HEX: f32 = 20.0;
+pub const HOLE: f32 = 0.55 * HEX;
 const MARGIN: f32 = 1.0;
 const FACE: f32 = 458.0 / 512.0;
 const STROKE: f32 = 34.0 / 512.0;

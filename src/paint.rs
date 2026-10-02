@@ -1,5 +1,5 @@
 use crate::look::{self, HEX, Role, hex_norm, px};
-use crate::sim::{DIRS, Hex, Machine};
+use crate::sim::{DIRS, Hex, Machine, ORIGIN};
 use bevy::math::Vec2;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder, RgbaImage, imageops};
@@ -11,14 +11,7 @@ use std::process::{Command, Stdio};
 
 const PX_PER_HEX: f32 = 256.0;
 const LAYOUT_PX: u32 = 1024;
-const FITTED: f32 = 0.42;
 const BEAM: f32 = 0.1;
-const REACH: f32 = 0.5;
-const SHIFT: f32 = 0.12;
-const INNER: f32 = 0.05;
-const EDGE: f32 = 0.3;
-const PEAK: f32 = 3.0;
-const TOLERANCE: f32 = 0.03;
 const ATTEMPTS: usize = 4;
 const BLEED: usize = 16;
 const SPILL: f32 = 0.1;
@@ -27,12 +20,16 @@ const WORKERS: usize = 4;
 const KEY: [u8; 3] = [0, 255, 0];
 const OPAQUE: f32 = 0.15;
 const CLEAR: f32 = 0.4;
-const FITTING: [u8; 3] = [40, 40, 40];
+const HELD: f32 = 0.3;
+const CONSUMED: f32 = 0.6;
+const EMERGES: f32 = 0.55;
+const INSET: f32 = 0.8;
 const GENERATOR: &str = include_str!("../art/paint/default");
 
 #[derive(Deserialize)]
 struct Manifest {
     layout: String,
+    family: String,
     style: String,
     machine: BTreeMap<String, Entry>,
 }
@@ -40,6 +37,7 @@ struct Manifest {
 #[derive(Deserialize)]
 struct Entry {
     caption: String,
+    like: Option<String>,
 }
 
 fn manifest() -> Manifest {
@@ -57,12 +55,23 @@ fn caption(manifest: &Manifest, item: Machine) -> &str {
 }
 
 fn prompt(manifest: &Manifest, item: Machine) -> String {
+    let family = match like(manifest, item) {
+        Some(_) => format!(" {}", manifest.family),
+        None => String::new(),
+    };
     format!(
-        "{} {} {}",
+        "{} {}{family} {}",
         manifest.layout,
         caption(manifest, item),
         manifest.style
     )
+}
+
+fn like(manifest: &Manifest, item: Machine) -> Option<Machine> {
+    manifest.machine[look::name(item)]
+        .like
+        .as_deref()
+        .map(look::named)
 }
 
 fn side(item: Machine) -> u32 {
@@ -89,11 +98,6 @@ impl Frame {
     fn world(self, x: u32, y: u32) -> Vec2 {
         let at = (Vec2::new(x as f32, y as f32) + 0.5) / self.px - 0.5;
         self.centre + Vec2::new(at.x, -at.y) * self.side
-    }
-
-    fn pixel(self, at: Vec2) -> Vec2 {
-        let d = (at - self.centre) / self.side;
-        Vec2::new(d.x + 0.5, 0.5 - d.y) * self.px
     }
 
     fn cover(self, depth: f32) -> f32 {
@@ -144,26 +148,6 @@ impl Footprint {
     }
 }
 
-fn fittings(item: Machine) -> Vec<Vec2> {
-    let mut cells: Vec<Hex> = match item {
-        Machine::Glyph(kind) => kind
-            .rule()
-            .slots
-            .iter()
-            .map(|slot| slot.at)
-            .chain(kind.product())
-            .collect(),
-        _ => look::footprint(item)
-            .iter()
-            .filter(|cell| matches!(cell.role, Role::Hand | Role::Pivot))
-            .map(|cell| cell.at)
-            .collect(),
-    };
-    cells.sort();
-    cells.dedup();
-    cells.into_iter().map(px).collect()
-}
-
 fn layout(item: Machine) -> RgbaImage {
     let frame = Frame::new(item, LAYOUT_PX);
     let footprint = look::footprint(item);
@@ -179,26 +163,46 @@ fn layout(item: Machine) -> RgbaImage {
             .map(|cell| px(cell.at))
     };
     let beam = role(Role::Pivot).zip(role(Role::Hand));
-    let fittings = fittings(item);
+    let emerges = |at: Hex| match item {
+        Machine::Glyph(kind) => kind.product() == Some(at) || kind.is_source(),
+        _ => false,
+    };
+    let marks: Vec<(Vec2, [u8; 3], f32)> = footprint
+        .iter()
+        .filter_map(|cell| match cell.role {
+            Role::Seat(_) if emerges(cell.at) => Some((px(cell.at), [255; 3], EMERGES)),
+            Role::Seat(slot) if slot.consumed => Some((px(cell.at), [0; 3], CONSUMED)),
+            Role::Seat(_) => Some((px(cell.at), [0; 3], HELD)),
+            _ => None,
+        })
+        .collect();
     RgbaImage::from_fn(LAYOUT_PX, LAYOUT_PX, |x, y| {
         let at = frame.world(x, y);
         let solid = frame.cover(match beam {
             Some((pivot, hand)) => {
                 let along = (at - pivot).dot(hand - pivot) / (hand - pivot).length_squared();
-                BEAM * HEX - at.distance(pivot + (hand - pivot) * along.clamp(0.0, 1.0))
+                let d = (at - pivot) / HEX;
+                (BEAM * HEX - at.distance(pivot + (hand - pivot) * along.clamp(0.0, 1.0)))
+                    .max((INSET - hex_norm(d.x, d.y)) * HEX)
             }
             None => shape.depth(at),
         });
-        let fitting = fittings
-            .iter()
-            .map(|centre| frame.cover(FITTED * HEX - at.distance(*centre)))
-            .fold(0.0, f32::max);
+        let hole = match item {
+            Machine::Portal => frame.cover(look::HOLE - at.distance(px(ORIGIN))),
+            _ => 0.0,
+        };
         let mix = |a: [u8; 3], b: [u8; 3], t: f32| {
             std::array::from_fn(|c| {
                 (f32::from(a[c]) * (1.0 - t) + f32::from(b[c]) * t).round() as u8
             })
         };
-        let [r, g, b] = mix(mix(KEY, body, solid), FITTING, fitting);
+        let mut rgb = mix(KEY, body, solid * (1.0 - hole));
+        for (centre, tint, amount) in &marks {
+            let d = (at - *centre) / HEX;
+            let inside = frame.cover((INSET - hex_norm(d.x, d.y)) * HEX);
+            rgb = mix(rgb, *tint, amount * inside);
+        }
+        let [r, g, b] = rgb;
         image::Rgba([r, g, b, 255])
     })
 }
@@ -256,121 +260,8 @@ fn bleed(image: &mut RgbaImage) {
     }
 }
 
-fn lightness(p: &image::Rgba<u8>) -> f32 {
-    let alpha = f32::from(p[3]) / 255.0;
-    let lit =
-        (0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2])) / 255.0;
-    alpha * lit + (1.0 - alpha) * 0.5
-}
-
-fn centre(image: &RgbaImage, at: Vec2, unit: f32) -> Option<Vec2> {
-    let side = image.width() as i64;
-    let reach = (REACH * unit).ceil() as i64;
-    let span = reach + (SHIFT * unit).ceil() as i64;
-    let origin = (at.x.floor() as i64 - span, at.y.floor() as i64 - span);
-    let size = (2 * span + 1) as usize;
-    let raw = |x: i64, y: i64| {
-        lightness(image.get_pixel(x.clamp(0, side - 1) as u32, y.clamp(0, side - 1) as u32))
-    };
-    let smooth: Vec<f32> = (-2..size as i64 + 2)
-        .flat_map(|y| (-2..size as i64 + 2).map(move |x| (x, y)))
-        .map(|(x, y)| {
-            (-1..=1)
-                .flat_map(|dy| (-1..=1).map(move |dx| (dx, dy)))
-                .map(|(dx, dy)| raw(origin.0 + x + dx, origin.1 + y + dy))
-                .sum::<f32>()
-                / 9.0
-        })
-        .collect();
-    let stride = size as i64 + 4;
-    let light = |x: i64, y: i64| smooth[((y - origin.1 + 2) * stride + x - origin.0 + 2) as usize];
-    let mut votes = vec![0f32; size * size];
-    let (inner, outer) = ((INNER * unit) as i64, reach);
-    let mut edges = Vec::new();
-    for y in origin.1..origin.1 + size as i64 {
-        for x in origin.0..origin.0 + size as i64 {
-            let gx = light(x + 1, y - 1) + 2.0 * light(x + 1, y) + light(x + 1, y + 1)
-                - light(x - 1, y - 1)
-                - 2.0 * light(x - 1, y)
-                - light(x - 1, y + 1);
-            let gy = light(x - 1, y + 1) + 2.0 * light(x, y + 1) + light(x + 1, y + 1)
-                - light(x - 1, y - 1)
-                - 2.0 * light(x, y - 1)
-                - light(x + 1, y - 1);
-            let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
-            if p.distance(at) <= span as f32 {
-                edges.push((p, Vec2::new(gx, gy)));
-            }
-        }
-    }
-    let strongest = edges.iter().map(|(_, g)| g.length()).fold(0.0, f32::max);
-    edges.retain(|(_, g)| g.length() > EDGE * strongest);
-    for (p, g) in &edges {
-        let (direction, weight) = (g.normalize(), g.length());
-        for r in inner..=outer {
-            for sign in [-1.0, 1.0] {
-                let v = *p + direction * (sign * r as f32);
-                let (vx, vy) = (v.x.floor() as i64 - origin.0, v.y.floor() as i64 - origin.1);
-                if (0..size as i64).contains(&vx) && (0..size as i64).contains(&vy) {
-                    votes[vy as usize * size + vx as usize] += weight;
-                }
-            }
-        }
-    }
-    let shift = (SHIFT * unit) as i64;
-    let local = |x: i64, y: i64| {
-        (-2..=2)
-            .flat_map(|dy| (-2..=2).map(move |dx| (dx, dy)))
-            .map(|(dx, dy)| votes[((y + dy) as usize) * size + (x + dx) as usize])
-            .sum::<f32>()
-    };
-    let (bx, by) = (-shift..=shift)
-        .flat_map(|dy| (-shift..=shift).map(move |dx| (span + dx, span + dy)))
-        .max_by(|a, b| local(a.0, a.1).total_cmp(&local(b.0, b.1)))
-        .expect("the search window is never empty");
-    let mean = votes.iter().sum::<f32>() / votes.len() as f32;
-    let peak = local(bx, by) / 25.0;
-    if !(peak > 0.0 && peak >= PEAK * mean) {
-        return None;
-    }
-    let (mut sum, mut weight) = (Vec2::ZERO, 0.0);
-    for dy in -2..=2 {
-        for dx in -2..=2 {
-            let w = votes[((by + dy) as usize) * size + (bx + dx) as usize];
-            sum += Vec2::new(
-                (origin.0 + bx + dx) as f32 + 0.5,
-                (origin.1 + by + dy) as f32 + 0.5,
-            ) * w;
-            weight += w;
-        }
-    }
-    Some(sum / weight)
-}
-
-fn alignment(item: Machine, image: &RgbaImage) -> Result<Vec<f32>, String> {
-    let frame = Frame::new(item, image.width());
-    let unit = HEX * frame.px / frame.side;
-    fittings(item)
-        .into_iter()
-        .map(|at| {
-            let target = frame.pixel(at);
-            let found =
-                centre(image, target, unit).ok_or_else(|| format!("no fitting painted at {at}"))?;
-            let error = found.distance(target) / unit * PX_PER_HEX;
-            if error <= TOLERANCE * PX_PER_HEX {
-                Ok(error)
-            } else {
-                Err(format!(
-                    "fitting at {at} is {error:.1} px off its tile centre"
-                ))
-            }
-        })
-        .collect()
-}
-
 struct Sprite {
     image: RgbaImage,
-    errors: Vec<f32>,
     fill: f32,
     spill: f32,
 }
@@ -416,10 +307,8 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
         ));
     }
     bleed(&mut image);
-    let errors = alignment(item, &image)?;
     Ok(Sprite {
         image,
-        errors,
         fill: filled / covered,
         spill: spilled / outside,
     })
@@ -429,7 +318,7 @@ fn generate(
     generator: &str,
     prompt: &str,
     side: u32,
-    layout: &Path,
+    images: &[PathBuf],
     out: &Path,
 ) -> (f64, Result<(), String>) {
     let child = Command::new("sh")
@@ -438,7 +327,7 @@ fn generate(
         .arg("paint")
         .arg(out)
         .arg(side.to_string())
-        .arg(layout)
+        .args(images)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -478,6 +367,7 @@ fn paint(
     item: Machine,
     generator: &str,
     prompt: &str,
+    reference: Option<PathBuf>,
     scratch: &Path,
 ) -> (f64, Result<Painted, String>) {
     let name = look::name(item);
@@ -490,7 +380,10 @@ fn paint(
     for attempt in 1..=ATTEMPTS {
         let out = scratch.join(format!("{name}.{attempt}.png"));
         let _ = std::fs::remove_file(&out);
-        let (spent, generated) = generate(generator, prompt, side(item), &layout, &out);
+        let images: Vec<PathBuf> = std::iter::once(layout.clone())
+            .chain(reference.clone())
+            .collect();
+        let (spent, generated) = generate(generator, prompt, side(item), &images, &out);
         cost += spent;
         let result = generated
             .and_then(|()| {
@@ -519,6 +412,10 @@ fn paint(
     (cost, Err(format!("{name}: {}", failures.join("; "))))
 }
 
+fn sprite(root: &Path, item: Machine) -> PathBuf {
+    root.join(format!("art/{}.png", look::machine(item).skin.name))
+}
+
 fn save(image: &RgbaImage, path: &Path) -> Result<(), String> {
     let mut png = Vec::new();
     PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Adaptive)
@@ -529,9 +426,10 @@ fn save(image: &RgbaImage, path: &Path) -> Result<(), String> {
             ExtendedColorType::Rgba8,
         )
         .map_err(|error| format!("{}: {error}", path.display()))?;
+    // Dithering diffuses alpha error into clear texels outside the footprint.
     let part = path.with_extension("png.part");
     let mut quantise = Command::new("pngquant")
-        .args(["--quality", "70-95", "--speed", "1", "--output"])
+        .args(["--quality", "70-95", "--speed", "1", "--nofs", "--output"])
         .arg(&part)
         .arg("-")
         .stdin(Stdio::piped())
@@ -587,31 +485,31 @@ pub fn run(args: &[String]) -> Option<i32> {
                         let name = look::name(item);
                         let words = caption(&manifest, item).split_whitespace().count();
                         let (cost, painted) =
-                            paint(item, generator, &prompt(&manifest, item), &scratch);
-                        let path = root.join(format!("art/{}.png", look::machine(item).skin.name));
+                            paint(
+                                item,
+                                generator,
+                                &prompt(&manifest, item),
+                                like(&manifest, item).map(|sibling| sprite(&root, sibling)),
+                                &scratch,
+                            );
+                        let path = sprite(&root, item);
                         let row = match painted.and_then(|painted| {
                             save(&painted.sprite.image, &path).map(|()| painted)
                         }) {
                             Ok(painted) => {
-                                let errors = &painted.sprite.errors;
                                 format!(
-                                    "{name}\t{generator}\t{}\t{cost:.4}\t{}x{}\t{}\t{}\t{:.3}\t{:.3}\t{words}\n",
+                                    "{name}\t{generator}\t{}\t{cost:.4}\t{}x{}\t{}\t{:.3}\t{:.3}\t{words}\n",
                                     painted.attempts,
                                     painted.raw.0,
                                     painted.raw.1,
                                     side(item),
-                                    if errors.is_empty() {
-                                        "none".into()
-                                    } else {
-                                        format!("{:.2}", errors.iter().copied().fold(0.0, f32::max))
-                                    },
                                     painted.sprite.fill,
                                     painted.sprite.spill,
                                 )
                             }
                             Err(error) => {
                                 eprintln!("{error}");
-                                format!("{name}\t{generator}\tfailed\t{cost:.4}\t\t\t\t\t\t{words}\n")
+                                format!("{name}\t{generator}\tfailed\t{cost:.4}\t\t\t\t\t{words}\n")
                             }
                         };
                         rows.push((items.iter().position(|i| *i == item).unwrap_or(0), row));
@@ -628,7 +526,7 @@ pub fn run(args: &[String]) -> Option<i32> {
     rows.sort();
     let table = rows.into_iter().fold(
         String::from(
-            "machine\tgenerator\tattempts\tcost_usd\treturn\tside\tinterface_px\tfill\tspill\tcaption_words\n",
+            "machine\tgenerator\tattempts\tcost_usd\treturn\tside\tfill\tspill\tcaption_words\n",
         ),
         |table, (_, row)| table + &row,
     );
@@ -703,32 +601,23 @@ mod tests {
     }
 
     #[test]
-    fn every_fitting_is_painted_on_its_tile_centre() {
-        for item in Machine::ALL {
-            if let Err(error) = alignment(item, &shipped(item)) {
-                panic!("{:?}: {error}", look::machine(item).skin);
-            }
-        }
-    }
-
-    #[test]
     fn the_layout_plug_paints_every_machine_through_the_whole_pipeline() {
         let manifest = manifest();
         let dir = scratch("layout");
         for item in Machine::ALL {
-            let (cost, painted) =
-                paint(item, "art/paint/layout.sh", &prompt(&manifest, item), &dir);
+            let (cost, painted) = paint(
+                item,
+                "art/paint/layout.sh",
+                &prompt(&manifest, item),
+                like(&manifest, item)
+                    .map(|sibling| sprite(Path::new(env!("CARGO_MANIFEST_DIR")), sibling)),
+                &dir,
+            );
             let painted = painted.unwrap();
             assert_eq!(cost, 0.0);
             assert_eq!(painted.attempts, 1);
             assert_eq!(painted.sprite.image.width(), side(item));
-            assert_eq!(painted.sprite.errors.len(), fittings(item).len());
-            assert!(
-                painted.sprite.errors.iter().all(|e| *e < 3.0),
-                "{:?}",
-                painted.sprite.errors
-            );
-            if !matches!(item, Machine::Arm(_)) {
+            if !matches!(item, Machine::Arm(_) | Machine::Portal) {
                 assert!(painted.sprite.fill > 0.9, "{}", look::name(item));
             }
         }
@@ -736,33 +625,24 @@ mod tests {
     }
 
     #[test]
+    fn the_portal_sprite_is_clear_across_its_hole() {
+        let item = Machine::Portal;
+        let image = shipped(item);
+        let frame = Frame::new(item, image.width());
+        let opaque = image
+            .enumerate_pixels()
+            .filter(|(x, y, p)| {
+                p[3] > 0 && frame.world(*x, *y).distance(px(ORIGIN)) < 0.95 * look::HOLE
+            })
+            .count();
+        assert_eq!(opaque, 0, "the portal paints {opaque} px inside its hole");
+    }
+
+    #[test]
     fn an_off_aspect_return_is_rejected_not_stretched() {
         let raw = RgbaImage::new(1024, 1000);
         let error = finish(Machine::Portal, &raw).err().unwrap();
         assert!(error.contains("off-aspect 1024x1000"), "{error}");
-    }
-
-    #[test]
-    fn a_fitting_moved_a_tenth_of_a_hex_is_rejected() {
-        let layout = layout(bonder());
-        let frame = Frame::new(bonder(), LAYOUT_PX);
-        let shift = (0.1 * HEX * frame.px / frame.side).round() as i64;
-        let mut moved = RgbaImage::from_pixel(LAYOUT_PX, LAYOUT_PX, image::Rgba([0, 255, 0, 255]));
-        imageops::overlay(&mut moved, &layout, shift, 0);
-        let error = finish(bonder(), &moved).err().unwrap();
-        assert!(error.contains("off its tile centre"), "{error}");
-    }
-
-    #[test]
-    fn a_return_without_its_fittings_is_rejected() {
-        let mut plain = layout(bonder());
-        for pixel in plain.pixels_mut() {
-            if pixel[1] < 100 {
-                *pixel = image::Rgba([200, 85, 61, 255]);
-            }
-        }
-        let error = finish(bonder(), &plain).err().unwrap();
-        assert!(error.contains("no fitting painted"), "{error}");
     }
 
     #[test]
@@ -785,16 +665,55 @@ mod tests {
             ),
         )
         .unwrap();
-        let (cost, painted) = paint(bonder(), &format!("sh {}", plug.display()), "", &dir);
+        let (cost, painted) = paint(bonder(), &format!("sh {}", plug.display()), "", None, &dir);
         assert_eq!(painted.unwrap().attempts, 2);
         assert_eq!(cost, 0.75);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
+    fn a_family_reference_reaches_the_generator_after_the_layout() {
+        let dir = scratch("like");
+        let plug = dir.join("plug.sh");
+        let seen = dir.join("seen");
+        std::fs::write(
+            &plug,
+            format!(
+                "cat >/dev/null\necho \"$4\" > {}\ncp \"$3\" \"$1\"\necho 0\n",
+                seen.display()
+            ),
+        )
+        .unwrap();
+        let reference = dir.join("sibling.png");
+        let (_, painted) = paint(
+            bonder(),
+            &format!("sh {}", plug.display()),
+            "",
+            Some(reference.clone()),
+            &dir,
+        );
+        painted.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&seen).unwrap().trim(),
+            reference.display().to_string()
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn every_like_names_another_machine() {
+        let manifest = manifest();
+        for item in Machine::ALL {
+            if let Some(sibling) = like(&manifest, item) {
+                assert_ne!(sibling, item, "{} is like itself", look::name(item));
+            }
+        }
+    }
+
+    #[test]
     fn a_failing_generator_fails_loudly_and_names_its_machine() {
         let dir = scratch("false");
-        let (_, painted) = paint(bonder(), "false", "a caption", &dir);
+        let (_, painted) = paint(bonder(), "false", "a caption", None, &dir);
         let error = painted.err().unwrap();
         assert!(error.starts_with("bonder: false failed"), "{error}");
         std::fs::remove_dir_all(dir).unwrap();

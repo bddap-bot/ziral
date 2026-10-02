@@ -1,8 +1,9 @@
-layout = "A game sprite seen from directly above, painted over the attached layout: the coloured shape is the machine, each dark disc is a round fitting centred on that spot, and flat chroma green stays plain green."
+layout = "A game sprite seen from directly above, painted over the attached layout: the coloured shape is the machine, a dark cell is a seat that uses up the piece set on it, a dimmed cell is a seat that holds its piece, a pale cell is where a new piece appears, each in whatever form suits the machine, and flat chroma green stays plain green."
+family = "The second attached image is this machine's sibling from the same family: match its materials, part shapes and part scale exactly."
 style = "Fired Workshop: glazed ceramic, darkened brass and rubber, rich tactile materials, generous ornamental hardware, soft even light, no lettering."
 
 [machine.arm]
-caption = "A slender jointed brass arm reaching from a heavy riveted pivot hub to a ring-shaped gripper, with open green all around it."
+caption = "A slender jointed brass arm reaching from a heavy riveted pivot hub to a pair of gripping jaws, with open green all around it."
 
 [machine.arm.instrument]
 voice = "brass"
@@ -25,7 +26,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.arm-2]
-caption = "A long jointed brass arm with one elbow, reaching from a heavy riveted pivot hub to a ring-shaped gripper, with open green all around it."
+caption = "A long jointed brass arm with one elbow, reaching from a heavy riveted pivot hub to a pair of gripping jaws, with open green all around it."
 
 [machine.arm-2.instrument]
 voice = "brass"
@@ -48,7 +49,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.arm-3]
-caption = "A long straight telescoping brass arm reaching from a heavy riveted pivot hub to a ring-shaped gripper, with open green all around it."
+caption = "A long straight telescoping brass arm reaching from a heavy riveted pivot hub to a pair of gripping jaws, with open green all around it."
 
 [machine.arm-3.instrument]
 voice = "brass"
@@ -94,7 +95,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.converter-amber]
-caption = "An amber glazed crucible with three round seats in a triangle, wrapped in brass bands around a small kiln vent."
+caption = "An amber glazed crucible: two feed cups each joined by a brass strap to one glowing kiln mouth, the straps meeting only at the mouth."
 
 [machine.converter-amber.instrument]
 voice = "ceramic"
@@ -109,7 +110,7 @@ layer = "behind"
 energy_scaled = true
 
 [machine.converter-cobalt]
-caption = "A cobalt glazed kiln with an intake seat and an outlet seat at opposite ends, joined by brass pipework."
+caption = "A cobalt glazed kiln: a plain intake cup at one end, brass pipework running one way to a glowing outlet spout at the far end."
 
 [machine.converter-cobalt.instrument]
 voice = "ceramic"
@@ -177,7 +178,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.portal]
-caption = "A plum glazed portal frame, a thick ornamented rim with brass brackets around a wide round opening."
+caption = "A plum glazed portal frame, a thick ornamented rim with brass brackets around a wide round opening of plain green; the rim carries nothing else."
 motion = "dilate"
 
 [machine.portal.instrument]
@@ -193,7 +194,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.reification]
-caption = "A broad amber glazed honeycomb slab of nineteen round seats bound in ornate brass fretwork."
+caption = "A broad amber glazed honeycomb well: nineteen identical open hoppers sunk deep in ornate brass fretwork, so a whole wrapped piece drops away into it."
 
 [machine.reification.instrument]
 voice = "wood"
@@ -224,7 +225,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.second-bond]
-caption = "A plum glazed press with three round seats in a triangle, one feed seat beside a pair joined by a brass strap."
+caption = "A plum glazed press: two identical seats joined by a brass strap, beside a hungry hopper that swallows its piece."
 
 [machine.second-bond.instrument]
 voice = "wood"
@@ -247,7 +248,8 @@ layer = "on"
 energy_scaled = true
 
 [machine.source]
-caption = "A blue-green glazed spring, a broad horseshoe of fluted lobes curled around one round seat and banded with brass."
+caption = "A blue-green glazed spring: one welling spout at the centre, every other cell a closed fluted lobe banded with brass."
+like = "source-2"
 
 [machine.source.instrument]
 voice = "ceramic"
@@ -262,7 +264,7 @@ layer = "behind"
 energy_scaled = true
 
 [machine.source-2]
-caption = "A blue-green glazed spring, a broad fluted body around two round seats side by side, banded with brass vents."
+caption = "A blue-green glazed spring: fluted lobes, each one cell wide and banded with brass, around two welling spouts side by side."
 
 [machine.source-2.instrument]
 voice = "ceramic"

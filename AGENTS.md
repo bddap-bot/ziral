@@ -13,11 +13,11 @@ Keep Bevy out of `src/sim.rs`; it is the lockstep simulation. Bevy belongs in
 
 `nix-shell --run 'cargo run --release -- --paint [--generator CMD] [MACHINE...]'`
 regenerates machine sprites. A generator is any command run as `CMD OUT.png SIDE
-LAYOUT.png` with the prompt on stdin; it writes a square image of the layout repainted
+LAYOUT.png [SIBLING.png]` with the prompt on stdin; it writes a square image of the layout repainted
 and prints its cost in USD. `art/paint/openrouter.sh MODEL` reaches every OpenRouter
 image model through `OPENROUTER_API_KEY`; `art/paint/layout.sh` returns the layout
 itself. The command keys out flat green, masks each sprite to its hex footprint,
-rejects an off-aspect return or a fitting off its tile centre, and writes
+rejects an off-aspect return or a painted surround, and writes
 `art/machines/<name>/albedo.png`. Keep each caption in
 [art/machines/manifest.toml](art/machines/manifest.toml) a declarative picture of a few
 dozen words; machine sprites carry no writing. Show the new sprites and in-game
