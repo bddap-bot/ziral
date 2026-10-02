@@ -635,6 +635,8 @@ Tests: the six move keys ring the arm clockwise from where it points, W, E, C, X
 
 `proofs/arm-walk-facing-147.gif` is the deployed page at `67a40f4`, a 640 by 600 crop of 1280 by 720 frames: an arm placed two turns off its rest facing has its tape focused, Shift W, Shift W, Shift X and Shift X typed, and then walks two cells along its pointing direction and two back, repeatedly. The browser record verifies the deployed build, the restored arm's turn and the four shifted key presses.
 
+`proofs/arm-ring-147.gif` is the deployed page at `600eafa`, a 480 by 480 reduction of a 720 by 720 crop of 1280 by 720 frames: the same arm has its tape focused and Shift W, E, C, X, Z and Q typed, Shift Z at cursor 4, so the tape reads all six moves and the arm walks a closed ring of six cells, repeatedly. The browser record verifies the deployed build, the restored arm's turn and the six shifted key presses.
+
 ### Tape symbols show shift in case
 
 Directive (verbatim): "Some of those key shortcuts are activated by pressing shift and a letter. Some are not. We can display difference by using lowercase to represent a button that is not pressed with shift."
