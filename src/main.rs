@@ -29,7 +29,7 @@ use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
 use form::{Form, Fragment, atom_machine, recipes};
-use look::{Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, px, skin};
+use look::{ATOM_RADIUS, Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, px, skin};
 use sim::{
     Arm, ArmLength, BondKind, DIRS, Fixture, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine,
     ORIGIN, Short, Sim, Spin, Stall, fixture,
@@ -44,7 +44,6 @@ const FOCUS: Hex = Hex::new(0, -1);
 const MAX_GRID_CELLS: f32 = 6000.0;
 const STRIP_ROWS: usize = 8;
 const DRAG_PX: f32 = 6.0;
-const ATOM_RADIUS: f32 = HEX * 0.4;
 const LINE_PX: f32 = 3.0;
 const SYMBOL_PX: f32 = 26.0;
 const MANUAL_PX: f32 = 1024.0;

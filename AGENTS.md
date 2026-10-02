@@ -17,7 +17,7 @@ LAYOUT.png [SIBLING.png]` with the prompt on stdin; it writes a square image of 
 and prints its cost in USD. `art/paint/openrouter.sh MODEL` reaches every OpenRouter
 image model through `OPENROUTER_API_KEY`; `art/paint/layout.sh` returns the layout
 itself. The command keys out flat green, masks each sprite to its hex footprint,
-rejects an off-aspect return or a painted surround, and writes
+rejects an off-aspect return, a painted surround, or an arm whose layout ball moved off its hand tile, clears the ball, and writes
 `art/machines/<name>/albedo.png`. Keep each caption in
 [art/machines/manifest.toml](art/machines/manifest.toml) a declarative picture of a few
 dozen words; machine sprites carry no writing. Show the new sprites and in-game
