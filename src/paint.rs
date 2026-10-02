@@ -1,4 +1,4 @@
-use crate::look::{self, ATOM_RADIUS, HEX, Role, hex_norm, px};
+use crate::look::{self, ATOM_RADIUS, HEX, Role, hex_at, hex_norm, px};
 use crate::sim::{DIRS, Hex, Machine, ORIGIN};
 use bevy::math::Vec2;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -122,6 +122,7 @@ impl Frame {
 }
 
 struct Footprint {
+    hexes: Vec<Hex>,
     cells: Vec<Vec2>,
     ring: Vec<Vec2>,
 }
@@ -137,7 +138,8 @@ impl Footprint {
         ring.sort();
         ring.dedup();
         Footprint {
-            cells: hexes.into_iter().map(px).collect(),
+            cells: hexes.iter().copied().map(px).collect(),
+            hexes,
             ring: ring.into_iter().map(px).collect(),
         }
     }
@@ -155,11 +157,10 @@ impl Footprint {
                 / 2.0
                 * HEX
         };
-        let outside = gap(&self.cells);
-        if outside > 0.0 {
-            -outside
-        } else {
+        if self.hexes.contains(&hex_at(at)) {
             gap(&self.ring)
+        } else {
+            -gap(&self.cells)
         }
     }
 }

@@ -64,6 +64,20 @@ pub fn px(h: Hex) -> Vec2 {
     Vec2::new(HEX * 3f32.sqrt() * (q + r / 2.0), HEX * 1.5 * r)
 }
 
+pub fn hex_at(p: Vec2) -> Hex {
+    let r = p.y / (HEX * 1.5);
+    let q = p.x / (HEX * 3f32.sqrt()) - r / 2.0;
+    let y = -q - r;
+    let (mut rq, ry, mut rr) = (q.round(), y.round(), r.round());
+    let (dq, dy, dr) = ((rq - q).abs(), (ry - y).abs(), (rr - r).abs());
+    if dq > dy && dq > dr {
+        rq = -ry - rr;
+    } else if dr > dy {
+        rr = -rq - ry;
+    }
+    Hex::new(rq as i32, rr as i32)
+}
+
 pub fn turn(dir: usize) -> f32 {
     px(DIRS[dir % 6]).to_angle()
 }

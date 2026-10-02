@@ -511,17 +511,41 @@ const COBALT_CONVERTER: [Slot; 1] = [Slot {
     bonds: Some(0),
     ..consumed(ORIGIN)
 }];
-const FUSE: [Slot; 2] = [
-    Slot {
+const fn trough<const N: usize>() -> [Slot; N] {
+    let back = DIRS[3];
+    let mut slots = [Slot {
         bonds: Some(1),
         ..consumed(ORIGIN)
-    },
-    Slot {
+    }; N];
+    let mut k = 1;
+    while k < N - 1 {
+        slots[k] = Slot {
+            bonds: if k < N - 2 { Some(2) } else { None },
+            ..base(Hex::new(back.q * k as i32, back.r * k as i32))
+        };
+        k += 1;
+    }
+    slots[N - 1] = Slot {
         kind: Some(AtomKind::Cobalt),
         bonds: Some(0),
-        ..base(DIRS[0])
-    },
-];
+        ..base(DIRS[1])
+    };
+    slots
+}
+
+const fn links<const N: usize>() -> [(usize, usize, Option<BondKind>); N] {
+    let mut links = [(0, 1, Some(BondKind::Single)); N];
+    let mut k = 0;
+    while k < N {
+        links[k] = (k, k + 1, Some(BondKind::Single));
+        k += 1;
+    }
+    links
+}
+
+pub const FUSE_LENGTH: usize = 8;
+const FUSE: [Slot; FUSE_LENGTH + 1] = trough();
+const FUSE_LINKS: [(usize, usize, Option<BondKind>); FUSE_LENGTH - 1] = links();
 const COBALT_FOOTPRINT: [Hex; 4] = [ORIGIN, Hex::new(1, 0), Hex::new(0, 1), Hex::new(1, 1)];
 const COBALT_OUTPUT: [Hex; 1] = [Hex::new(1, 1)];
 
@@ -595,7 +619,10 @@ impl GlyphKind {
             },
             GlyphKind::Resonator => plain(&RESONATOR),
             GlyphKind::Converter(AtomKind::Cobalt) => plain(&COBALT_CONVERTER),
-            GlyphKind::Fuse => plain(&FUSE),
+            GlyphKind::Fuse => Rule {
+                before: &FUSE_LINKS,
+                ..plain(&FUSE)
+            },
             GlyphKind::Converter(AtomKind::Base | AtomKind::Plum | AtomKind::Jade) => {
                 panic!("only amber and cobalt have converters")
             }
@@ -633,10 +660,10 @@ impl GlyphKind {
         }
     }
 
-    pub const fn transmutes(self) -> Option<AtomKind> {
+    pub const fn transmutes(self) -> Option<(AtomKind, AtomKind)> {
         match self {
-            GlyphKind::Resonator => Some(AtomKind::Plum),
-            GlyphKind::Fuse => Some(AtomKind::Jade),
+            GlyphKind::Resonator => Some((AtomKind::Amber, AtomKind::Plum)),
+            GlyphKind::Fuse => Some((AtomKind::Cobalt, AtomKind::Jade)),
             _ => None,
         }
     }
@@ -1304,12 +1331,12 @@ impl Sim {
         if let Some(kind) = made {
             self.receive(Item::Atom(kind));
         }
-        if let Some(kind) = g.kind.transmutes() {
+        if let Some((from, kind)) = g.kind.transmutes() {
             for (_, id) in rule
                 .slots
                 .iter()
                 .zip(ids)
-                .filter(|(slot, _)| !slot.consumed)
+                .filter(|(slot, _)| !slot.consumed && slot.kind == Some(from))
             {
                 self.atoms[id].as_mut().unwrap().kind = kind;
             }
@@ -1793,7 +1820,8 @@ pub fn fixture(machine: Machine) -> Fixture {
         }
         Machine::Glyph(GlyphKind::Fuse) => {
             let mut sim = armed(ArmLength::One, vec![Grab, Move(0)]);
-            let chain: Vec<usize> = (1..4).map(|q| sim.spawn(base(Hex::new(q, 0)))).collect();
+            let end = FUSE_LENGTH as i32;
+            let chain: Vec<usize> = (1..=end).map(|q| sim.spawn(base(Hex::new(q, 0)))).collect();
             for pair in chain.windows(2) {
                 sim.bonds.push(Bond {
                     a: pair[0],
@@ -1801,20 +1829,21 @@ pub fn fixture(machine: Machine) -> Fixture {
                     kind: BondKind::Single,
                 });
             }
+            let fuel = Hex::new(end + 1, 0);
             sim.spawn(Atom {
                 kind: AtomKind::Cobalt,
-                pos: Hex::new(5, 0),
+                pos: fuel.add(DIRS[1]),
             });
-            sim.glyphs
-                .push(Some(Glyph::new(GlyphKind::Fuse, Hex::new(4, 0), 0)));
+            sim.glyphs.push(Some(Glyph::new(GlyphKind::Fuse, fuel, 0)));
             Fixture {
                 sim,
                 ticks: 2,
                 done: |s| {
-                    s.atom_at(Hex::new(5, 0))
+                    let cradle = Hex::new(FUSE_LENGTH as i32 + 1, 0).add(DIRS[1]);
+                    s.atom_at(cradle)
                         .is_some_and(|id| s.atoms[id].unwrap().kind == AtomKind::Jade)
-                        && s.atoms.iter().flatten().count() == 3
-                        && s.bonds.len() == 1
+                        && s.atoms.iter().flatten().count() == FUSE_LENGTH
+                        && s.bonds.len() == FUSE_LENGTH - 2
                 },
             }
         }
@@ -2772,15 +2801,16 @@ mod tests {
         }
         let seat = sim.spawn(Atom {
             kind: input,
-            pos: at.add(DIRS[dir]),
+            pos: at.add(DIRS[(dir + 1) % 6]),
         });
         (sim, chain, seat)
     }
 
     #[test]
-    fn the_fuse_burns_only_the_chain_end_and_changes_the_lone_cobalt_in_place_at_every_turn() {
-        for dir in 0..6 {
-            let (mut sim, chain, seat) = fused(dir, 4, AtomKind::Cobalt);
+    fn the_fuse_burns_only_the_end_of_a_chain_that_fills_it_and_changes_the_cobalt_in_place_at_every_turn()
+     {
+        for (dir, length) in (0..6).zip([FUSE_LENGTH, FUSE_LENGTH + 3].into_iter().cycle()) {
+            let (mut sim, chain, seat) = fused(dir, length, AtomKind::Cobalt);
             let before = sim.clone();
             let events = sim.step().events;
             assert_eq!(
@@ -2819,7 +2849,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fuse_refuses_a_lone_atom_a_chain_middle_a_wrong_input_or_a_bonded_input() {
+    fn the_fuse_refuses_a_short_chain_a_branch_a_wrong_input_or_a_bonded_input() {
         let unchanged = |mut sim: Sim, why: &str| {
             let before = sim.clone();
             assert!(sim.step().events.is_empty(), "{why}");
@@ -2827,40 +2857,47 @@ mod tests {
             assert_eq!(sim.bonds, before.bonds, "{why}");
         };
         unchanged(fused(0, 1, AtomKind::Cobalt).0, "a lone atom is no chain");
-        let (mut middle, chain, _) = fused(0, 2, AtomKind::Cobalt);
-        let below = middle.spawn(Atom {
-            kind: AtomKind::Base,
-            pos: Hex::new(3, -1),
-        });
-        bond(&mut middle, chain[0], below, BondKind::Single);
-        unchanged(middle, "a chain's middle is no end");
+        unchanged(
+            fused(0, FUSE_LENGTH - 1, AtomKind::Cobalt).0,
+            "a chain shorter than the trough",
+        );
+        for branched in [0, FUSE_LENGTH / 2] {
+            let (mut sim, chain, _) = fused(0, FUSE_LENGTH, AtomKind::Cobalt);
+            let below = sim.spawn(Atom {
+                kind: AtomKind::Base,
+                pos: sim.atoms[chain[branched]].unwrap().pos.add(DIRS[5]),
+            });
+            bond(&mut sim, chain[branched], below, BondKind::Single);
+            unchanged(sim, "a branch in the trough");
+        }
         for wrong in [
             AtomKind::Base,
             AtomKind::Amber,
             AtomKind::Plum,
             AtomKind::Jade,
         ] {
-            unchanged(fused(0, 3, wrong).0, "a wrong input");
+            unchanged(fused(0, FUSE_LENGTH, wrong).0, "a wrong input");
         }
-        let (mut amber_chain, chain, _) = fused(0, 3, AtomKind::Cobalt);
+        let (mut amber_chain, chain, _) = fused(0, FUSE_LENGTH, AtomKind::Cobalt);
         amber_chain.atoms[chain[0]].as_mut().unwrap().kind = AtomKind::Amber;
         unchanged(amber_chain, "an amber end");
-        let (mut tied, _, seat) = fused(0, 3, AtomKind::Cobalt);
+        let (mut tied, _, seat) = fused(0, FUSE_LENGTH, AtomKind::Cobalt);
         let tail = tied.spawn(Atom {
             kind: AtomKind::Base,
-            pos: Hex::new(5, -2),
+            pos: tied.atoms[seat].unwrap().pos.add(DIRS[0]),
         });
         bond(&mut tied, seat, tail, BondKind::Single);
         unchanged(tied, "a bonded input");
-        let (mut empty, _, seat) = fused(0, 3, AtomKind::Cobalt);
+        let (mut empty, _, seat) = fused(0, FUSE_LENGTH, AtomKind::Cobalt);
         empty.atoms[seat] = None;
         unchanged(empty, "no input");
     }
 
     #[test]
-    fn an_arm_pushes_a_chain_into_the_fuse_one_burn_per_conversion_and_stalls_once_it_runs_out() {
+    fn an_arm_pushes_a_chain_through_the_fuse_until_the_stub_no_longer_fills_it_then_stalls() {
         use Instr::*;
-        let (mut sim, chain, seat) = fused(0, 4, AtomKind::Cobalt);
+        let length = FUSE_LENGTH + 2;
+        let (mut sim, chain, seat) = fused(0, length, AtomKind::Cobalt);
         let fuel = Hex::new(3, -2);
         for id in &chain {
             let atom = sim.atoms[*id].as_mut().unwrap();
@@ -2874,7 +2911,7 @@ mod tests {
             vec![Grab, Move(1), Drop, Move(4)],
         ));
         let mut conversions = 0;
-        for _ in 0..16 {
+        for _ in 0..48 {
             let events = sim.step().events;
             if events
                 .iter()
@@ -2885,22 +2922,26 @@ mod tests {
                 sim.atoms[seat].as_mut().unwrap().kind = AtomKind::Cobalt;
             }
         }
-        assert_eq!(conversions, 3);
+        assert_eq!(conversions, length - (FUSE_LENGTH - 1));
+        let stub: Vec<Hex> = (-1..FUSE_LENGTH as i32 - 2)
+            .map(|k| fuel.add(DIRS[0].scale(k)))
+            .collect();
         let left: Vec<Atom> = sim.atoms.iter().flatten().copied().collect();
         assert_eq!(
             left,
-            [
-                Atom {
+            stub.iter()
+                .rev()
+                .map(|pos| Atom {
                     kind: AtomKind::Base,
-                    pos: fuel.sub(DIRS[0]),
-                },
-                Atom {
+                    pos: *pos,
+                })
+                .chain([Atom {
                     kind: AtomKind::Cobalt,
-                    pos: fuel.add(DIRS[0]),
-                },
-            ]
+                    pos: fuel.add(DIRS[1]),
+                }])
+                .collect::<Vec<_>>()
         );
-        assert!(sim.bonds.is_empty());
+        assert_eq!(sim.bonds.len(), FUSE_LENGTH - 2);
         assert_eq!(sim.arms[0].stall, Some(Stall::Illegal));
     }
 

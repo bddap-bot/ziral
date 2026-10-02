@@ -29,7 +29,9 @@ use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
 use form::{Form, Fragment, atom_machine, recipes};
-use look::{ATOM_RADIUS, Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, px, skin};
+use look::{
+    ATOM_RADIUS, Finish, Glaze, HEX, Look, MANUAL, MachineMark, Shape, Skin, hex_at, px, skin,
+};
 use sim::{
     Arm, ArmLength, BondKind, DIRS, Fixture, Glyph, GlyphKind, Hex, Id, Instr, Item, Machine,
     ORIGIN, Short, Sim, Spin, Stall, fixture,
@@ -2507,20 +2509,6 @@ fn fragments(
             clear_fragment(&fragment);
         }
     }
-}
-
-fn hex_at(p: Vec2) -> Hex {
-    let r = p.y / (HEX * 1.5);
-    let q = p.x / (HEX * 3f32.sqrt()) - r / 2.0;
-    let y = -q - r;
-    let (mut rq, ry, mut rr) = (q.round(), y.round(), r.round());
-    let (dq, dy, dr) = ((rq - q).abs(), (ry - y).abs(), (rr - r).abs());
-    if dq > dy && dq > dr {
-        rq = -ry - rr;
-    } else if dr > dy {
-        rr = -rq - ry;
-    }
-    Hex::new(rq as i32, rr as i32)
 }
 
 fn corners(center: Vec2, size: f32) -> [Vec2; 7] {
@@ -6485,10 +6473,10 @@ mod shot {
             "fuse-feed" => {
                 use Instr::{Drop, Grab, Move, Rot, Wait};
                 let (cw, ccw) = (Rot(Spin::Cw), Rot(Spin::Ccw));
+                let ember = Hex::new(5, 0);
                 let mut sim = Sim::empty();
-                sim.glyphs
-                    .push(Some(Glyph::new(GlyphKind::Fuse, Hex::new(2, 0), 0)));
-                let chain: Vec<usize> = (-4..2)
+                sim.glyphs.push(Some(Glyph::new(GlyphKind::Fuse, ember, 0)));
+                let chain: Vec<usize> = (ember.q - sim::FUSE_LENGTH as i32 - 1..ember.q)
                     .rev()
                     .map(|q| {
                         sim.spawn(Atom {
@@ -6504,22 +6492,21 @@ mod shot {
                         kind: sim::BondKind::Single,
                     });
                 }
-                for (kind, q, r) in [(AtomKind::Cobalt, 3, 0), (AtomKind::Cobalt, 3, -1)] {
+                let cradle = ember.add(DIRS[1]);
+                for pos in [cradle, cradle.add(DIRS[2])] {
                     sim.spawn(Atom {
-                        kind,
-                        pos: Hex::new(q, r),
+                        kind: AtomKind::Cobalt,
+                        pos,
                     });
                 }
-                sim.arms.push(Arm::new(
-                    ArmLength::One,
-                    Hex::new(0, -1),
-                    5,
-                    vec![Grab, Move(1), Drop, Move(4)],
-                ));
-                let mut feed = vec![Wait, Wait, Grab, cw, Drop, ccw, ccw, Grab, cw, Drop];
-                feed.resize(16, Wait);
+                let mut push = vec![Grab, Move(1), Drop, Move(4)];
+                push.resize(12, Wait);
                 sim.arms
-                    .push(Arm::new(ArmLength::One, Hex::new(4, -1), 4, feed));
+                    .push(Arm::new(ArmLength::One, Hex::new(0, -1), 5, push));
+                let mut feed = vec![Wait, Wait, Grab, cw, Drop, ccw, ccw, Grab, cw, Drop];
+                feed.resize(64, Wait);
+                sim.arms
+                    .push(Arm::new(ArmLength::One, cradle.sub(DIRS[4]), 4, feed));
                 world.sim = sim;
             }
             "converters" => {

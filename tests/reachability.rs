@@ -7,10 +7,10 @@ mod sim;
 
 use form::{ATOM_ROUTES, AtomRoute, Form, RECIPES, atom_route};
 use sim::{
-    ArmLength, Atom, AtomKind, BondKind, DIRS, Glyph, GlyphKind, Hex, Instr, Item, Machine, ORIGIN,
-    Sim, Spin, Tier,
+    ArmLength, Atom, AtomKind, BondKind, DIRS, FUSE_LENGTH, Glyph, GlyphKind, Hex, Instr, Item,
+    Machine, ORIGIN, Sim, Spin, Tier,
 };
-const FUSE_CHAIN: &str = "B0,0 B0,1 0,0-0,1";
+const FUSE_CHAIN: &str = "B0,0 B0,1 B0,2 B0,3 B0,4 B0,5 B0,6 B0,7 0,0-0,1 0,1-0,2 0,2-0,3 0,3-0,4 0,4-0,5 0,5-0,6 0,6-0,7";
 
 const TOKENS: [Instr; 13] = [
     Instr::Grab,
@@ -595,28 +595,29 @@ fn prove_fused(premises: &[Fact]) -> Result<Fact, String> {
         premises,
         Item::Machine(Machine::Glyph(GlyphKind::Fuse)),
     )?;
-    take_glyph(&mut sim, GlyphKind::Fuse, ORIGIN, 0)?;
+    take_glyph(&mut sim, GlyphKind::Fuse, ORIGIN, 2)?;
     grant_compound(&mut sim, premises, FUSE_CHAIN, 0, ORIGIN)?;
+    let cradle = DIRS[3];
     let input = grant_atom(
         &mut sim,
         premises,
         Atom {
             kind: AtomKind::Cobalt,
-            pos: DIRS[0],
+            pos: cradle,
         },
     )?;
     sim.step();
     let atoms: Vec<Atom> = sim.atoms.iter().flatten().copied().collect();
     let made = Atom {
         kind: AtomKind::Jade,
-        pos: DIRS[0],
+        pos: cradle,
     };
     (sim.atoms[input] == Some(made)
         && sim.atom_at(ORIGIN).is_none()
-        && atoms.len() == 2
-        && sim.bonds.is_empty())
-    .then_some(Fact::Atom(AtomKind::Jade))
-    .ok_or_else(|| format!("the fuse left {atoms:?}"))
+        && atoms.len() == FUSE_LENGTH
+        && sim.bonds.len() == FUSE_LENGTH - 2)
+        .then_some(Fact::Atom(AtomKind::Jade))
+        .ok_or_else(|| format!("the fuse left {atoms:?}"))
 }
 
 fn prove_reified(kind: AtomKind, premises: &[Fact]) -> Result<Fact, String> {
@@ -786,10 +787,11 @@ fn proofs() -> Vec<ProofId> {
         add(ProofId::Compound(text));
     }
     for (_, route) in ATOM_ROUTES {
-        let AtomRoute::Converter(text) = route else {
-            continue;
-        };
-        add(ProofId::Compound(text));
+        match route {
+            AtomRoute::Converter(text) => add(ProofId::Compound(text)),
+            AtomRoute::Fuse => add(ProofId::Compound(FUSE_CHAIN)),
+            AtomRoute::Source | AtomRoute::Resonator => {}
+        }
     }
     for (item, _) in RECIPES {
         add(ProofId::RecipeItem(item));

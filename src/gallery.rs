@@ -75,6 +75,9 @@ fn scenes() -> Vec<Scene> {
                     .arms
                     .push(Arm::new(length, ORIGIN, 0, vec![Instr::Wait]))
             }
+            Machine::Glyph(kind @ GlyphKind::Fuse) => {
+                world.sim.glyphs.push(Some(Glyph::new(kind, ORIGIN, 3)))
+            }
             Machine::Glyph(kind) => world.sim.glyphs.push(Some(Glyph::new(kind, ORIGIN, 0))),
         }
         if machine == Machine::Glyph(GlyphKind::Converter(sim::AtomKind::Amber)) {
