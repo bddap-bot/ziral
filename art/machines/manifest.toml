@@ -1,4 +1,5 @@
 layout = "A game sprite seen from directly above, painted over the attached layout: the coloured shape is the machine, a dark cell is a seat that uses up the piece set on it, a dimmed cell is a seat that holds its piece, a pale cell is where a new piece appears, each in whatever form suits the machine, and flat chroma green stays plain green."
+ball = "The flat magenta ball is a piece in the hand: the jaws close around it, and it stays flat magenta."
 family = "The second attached image is this machine's sibling from the same family: match its materials, part shapes and part scale exactly."
 style = "Fired Workshop: glazed ceramic, darkened brass and rubber, rich tactile materials, generous ornamental hardware, soft even light, no lettering."
 

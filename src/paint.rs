@@ -1,4 +1,4 @@
-use crate::look::{self, HEX, Role, hex_norm, px};
+use crate::look::{self, ATOM_RADIUS, HEX, Role, hex_norm, px};
 use crate::sim::{DIRS, Hex, Machine, ORIGIN};
 use bevy::math::Vec2;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -14,10 +14,14 @@ const LAYOUT_PX: u32 = 1024;
 const BEAM: f32 = 0.1;
 const ATTEMPTS: usize = 4;
 const BLEED: usize = 16;
-const SPILL: f32 = 0.1;
+const SPILL: f32 = 0.005;
 const MARGIN: f32 = 0.25;
 const WORKERS: usize = 4;
 const KEY: [u8; 3] = [0, 255, 0];
+const BALL: [u8; 3] = [255, 0, 255];
+const TOLERANCE: f32 = 0.03;
+const VISIBLE: f32 = 0.5;
+const FRINGE: f32 = 2.0;
 const OPAQUE: f32 = 0.15;
 const CLEAR: f32 = 0.4;
 const HELD: f32 = 0.3;
@@ -30,6 +34,7 @@ const GENERATOR: &str = include_str!("../art/paint/default");
 struct Manifest {
     layout: String,
     family: String,
+    ball: String,
     style: String,
     machine: BTreeMap<String, Entry>,
 }
@@ -59,12 +64,23 @@ fn prompt(manifest: &Manifest, item: Machine) -> String {
         Some(_) => format!(" {}", manifest.family),
         None => String::new(),
     };
+    let ball = match hand(item) {
+        Some(_) => format!(" {}", manifest.ball),
+        None => String::new(),
+    };
     format!(
-        "{} {}{family} {}",
+        "{}{ball} {}{family} {}",
         manifest.layout,
         caption(manifest, item),
         manifest.style
     )
+}
+
+fn hand(item: Machine) -> Option<Vec2> {
+    look::footprint(item)
+        .iter()
+        .find(|cell| cell.role == Role::Hand)
+        .map(|cell| px(cell.at))
 }
 
 fn like(manifest: &Manifest, item: Machine) -> Option<Machine> {
@@ -163,6 +179,7 @@ fn layout(item: Machine) -> RgbaImage {
             .map(|cell| px(cell.at))
     };
     let beam = role(Role::Pivot).zip(role(Role::Hand));
+    let ball = hand(item);
     let emerges = |at: Hex| match item {
         Machine::Glyph(kind) => kind.product() == Some(at) || kind.is_source(),
         _ => false,
@@ -202,6 +219,9 @@ fn layout(item: Machine) -> RgbaImage {
             let inside = frame.cover((INSET - hex_norm(d.x, d.y)) * HEX);
             rgb = mix(rgb, *tint, amount * inside);
         }
+        if let Some(hand) = ball {
+            rgb = mix(rgb, BALL, frame.cover(ATOM_RADIUS - at.distance(hand)));
+        }
         let [r, g, b] = rgb;
         image::Rgba([r, g, b, 255])
     })
@@ -210,6 +230,42 @@ fn layout(item: Machine) -> RgbaImage {
 fn matte(rgb: [f32; 3]) -> f32 {
     let [r, g, b] = rgb;
     1.0 - ((g - r.max(b) - OPAQUE) / (CLEAR - OPAQUE)).clamp(0.0, 1.0)
+}
+
+fn ball(rgb: [f32; 3]) -> f32 {
+    let [r, g, b] = rgb;
+    ((r.min(b) - g - OPAQUE) / (CLEAR - OPAQUE)).clamp(0.0, 1.0)
+}
+
+fn unmix(rgb: [f32; 3], ball: f32) -> [f32; 3] {
+    let key = BALL.map(|c| f32::from(c) / 255.0);
+    std::array::from_fn(|c| ((rgb[c] - ball * key[c]) / (1.0 - ball)).clamp(0.0, 1.0))
+}
+
+fn locate(item: Machine, image: &RgbaImage) -> Result<Option<f32>, String> {
+    let Some(hand) = hand(item) else {
+        return Ok(None);
+    };
+    let frame = Frame::new(item, image.width());
+    let (mut area, mut sum) = (0.0, Vec2::ZERO);
+    for (x, y, pixel) in image.enumerate_pixels() {
+        let weight = ball([0, 1, 2].map(|c| f32::from(pixel[c]) / 255.0));
+        area += weight;
+        sum += frame.world(x, y) * weight;
+    }
+    let texel = frame.side / frame.px;
+    let expected = std::f32::consts::PI * (ATOM_RADIUS / texel).powi(2);
+    if area < VISIBLE * expected {
+        return Err(format!(
+            "the ball shows {:.0}% of its area",
+            100.0 * area / expected
+        ));
+    }
+    let offset = (sum / area).distance(hand) / HEX;
+    if offset > TOLERANCE {
+        return Err(format!("the ball is {offset:.3} hex off its tile centre"));
+    }
+    Ok(Some(offset))
 }
 
 fn despill(rgb: [f32; 3], keyed: f32) -> [f32; 3] {
@@ -264,6 +320,7 @@ struct Sprite {
     image: RgbaImage,
     fill: f32,
     spill: f32,
+    offset: Option<f32>,
 }
 
 fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
@@ -277,6 +334,7 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
     } else {
         imageops::resize(raw, side, side, imageops::FilterType::Lanczos3)
     };
+    let offset = locate(item, &image)?;
     let frame = Frame::new(item, side);
     let shape = Footprint::of(item);
     let (mut covered, mut filled, mut outside, mut spilled) = (0.0, 0.0, 0.0, 0.0);
@@ -285,16 +343,22 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
         let depth = shape.depth(frame.world(x, y));
         let inside = frame.cover(depth);
         let keyed = matte(rgb);
-        let painted = keyed * f32::from(pixel[3]) / 255.0;
+        let held = match (offset, hand(item)) {
+            (Some(_), Some(hand)) => ball(rgb).max(frame.cover(
+                ATOM_RADIUS + FRINGE * frame.side / frame.px - frame.world(x, y).distance(hand),
+            )),
+            _ => 0.0,
+        };
+        let painted = keyed * (1.0 - held) * f32::from(pixel[3]) / 255.0;
         let alpha = painted * inside;
         covered += inside;
         filled += alpha;
         if depth < -MARGIN * HEX {
             outside += 1.0;
-            spilled += f32::from(painted >= 1.0);
+            spilled += painted;
         }
         let [r, g, b] = if alpha > 0.0 {
-            despill(rgb, keyed).map(|c| (c * 255.0).round() as u8)
+            despill(unmix(rgb, held), keyed).map(|c| (c * 255.0).round() as u8)
         } else {
             [0, 0, 0]
         };
@@ -311,6 +375,7 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
         image,
         fill: filled / covered,
         spill: spilled / outside,
+        offset,
     })
 }
 
@@ -498,18 +563,22 @@ pub fn run(args: &[String]) -> Option<i32> {
                         }) {
                             Ok(painted) => {
                                 format!(
-                                    "{name}\t{generator}\t{}\t{cost:.4}\t{}x{}\t{}\t{:.3}\t{:.3}\t{words}\n",
+                                    "{name}\t{generator}\t{}\t{cost:.4}\t{}x{}\t{}\t{:.3}\t{:.3}\t{}\t{words}\n",
                                     painted.attempts,
                                     painted.raw.0,
                                     painted.raw.1,
                                     side(item),
                                     painted.sprite.fill,
                                     painted.sprite.spill,
+                                    painted
+                                        .sprite
+                                        .offset
+                                        .map_or(String::new(), |offset| format!("{offset:.3}")),
                                 )
                             }
                             Err(error) => {
                                 eprintln!("{error}");
-                                format!("{name}\t{generator}\tfailed\t{cost:.4}\t\t\t\t\t{words}\n")
+                                format!("{name}\t{generator}\tfailed\t{cost:.4}\t\t\t\t\t\t{words}\n")
                             }
                         };
                         rows.push((items.iter().position(|i| *i == item).unwrap_or(0), row));
@@ -526,7 +595,7 @@ pub fn run(args: &[String]) -> Option<i32> {
     rows.sort();
     let table = rows.into_iter().fold(
         String::from(
-            "machine\tgenerator\tattempts\tcost_usd\treturn\tside\tfill\tspill\tcaption_words\n",
+            "machine\tgenerator\tattempts\tcost_usd\treturn\tside\tfill\tspill\tball_offset_hex\tcaption_words\n",
         ),
         |table, (_, row)| table + &row,
     );
@@ -624,6 +693,77 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    fn arms() -> [Machine; 3] {
+        crate::sim::ArmLength::ALL.map(Machine::Arm)
+    }
+
+    #[test]
+    fn no_glaze_and_not_the_key_reads_as_the_ball() {
+        for glaze in look::Glaze::ALL {
+            assert_eq!(ball(glaze.rgb()), 0.0, "{glaze:?}");
+        }
+        assert_eq!(ball(KEY.map(|c| f32::from(c) / 255.0)), 0.0);
+    }
+
+    #[test]
+    fn the_ball_is_found_on_its_hand_and_cleared_from_the_sprite() {
+        for item in arms() {
+            let sprite = finish(item, &layout(item)).unwrap();
+            let offset = sprite.offset.unwrap();
+            assert!(offset < 0.005, "{} ball {offset} hex off", look::name(item));
+            let frame = Frame::new(item, sprite.image.width());
+            let hand = hand(item).unwrap();
+            let kept = sprite
+                .image
+                .enumerate_pixels()
+                .filter(|(x, y, p)| {
+                    p[3] > 0 && frame.world(*x, *y).distance(hand) < 0.95 * ATOM_RADIUS
+                })
+                .count();
+            assert_eq!(kept, 0, "{} keeps {kept} px of its ball", look::name(item));
+        }
+    }
+
+    #[test]
+    fn a_ball_moved_off_its_tile_centre_is_rejected() {
+        for item in arms() {
+            let raw = layout(item);
+            let shift = (0.05 * HEX / look::quad(item).side * LAYOUT_PX as f32).round() as u32;
+            let moved = RgbaImage::from_fn(LAYOUT_PX, LAYOUT_PX, |x, y| {
+                *raw.get_pixel(x.saturating_sub(shift), y)
+            });
+            let error = finish(item, &moved).err().unwrap();
+            assert!(error.contains("hex off its tile centre"), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_return_that_drops_the_ball_is_rejected() {
+        for item in arms() {
+            let mut raw = layout(item);
+            for pixel in raw.pixels_mut() {
+                if ball([0, 1, 2].map(|c| f32::from(pixel[c]) / 255.0)) > 0.0 {
+                    *pixel = image::Rgba([107, 79, 58, 255]);
+                }
+            }
+            let error = finish(item, &raw).err().unwrap();
+            assert!(error.contains("the ball shows 0%"), "{error}");
+        }
+    }
+
+    #[test]
+    fn only_arms_are_asked_to_hold_the_ball() {
+        let manifest = manifest();
+        for item in Machine::ALL {
+            assert_eq!(
+                prompt(&manifest, item).contains(&manifest.ball),
+                matches!(item, Machine::Arm(_)),
+                "{}",
+                look::name(item)
+            );
+        }
+    }
+
     #[test]
     fn the_portal_sprite_is_clear_across_its_hole() {
         let item = Machine::Portal;
@@ -649,6 +789,13 @@ mod tests {
     fn a_return_that_paints_its_surround_is_rejected() {
         let filled = RgbaImage::from_pixel(1024, 1024, image::Rgba([128, 90, 60, 255]));
         let error = finish(Machine::Portal, &filled).err().unwrap();
+        assert!(error.contains("surround is painted"), "{error}");
+    }
+
+    #[test]
+    fn a_muted_green_surround_is_rejected_not_left_as_a_haze() {
+        let muted = RgbaImage::from_pixel(1024, 1024, image::Rgba([122, 184, 102, 255]));
+        let error = finish(Machine::Portal, &muted).err().unwrap();
         assert!(error.contains("surround is painted"), "{error}");
     }
 
