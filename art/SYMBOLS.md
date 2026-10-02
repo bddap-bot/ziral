@@ -52,4 +52,4 @@ Inside a portal, the palette contains only kinds encountered in the overworld. I
 
 Directive: “Inside a portal, the palette contains only kinds encountered in the overworld”.
 
-Machine inventory pictures use the same complete painted sprites as the world. The larger output trays carry broad blue-green and brass inlays across their ivory receiving fields so their centres retain material structure under uniform reduction; no inventory-only tint or alternate sprite supplies that distinction.
+Machine inventory pictures use the same complete painted sprites as the world. The output baskets keep their woven floors and leather-bound rims legible under uniform reduction; no inventory-only tint or alternate sprite supplies that distinction.

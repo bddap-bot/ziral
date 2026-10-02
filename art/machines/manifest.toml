@@ -134,7 +134,7 @@ layer = "on"
 energy_scaled = true
 
 [machine.output-1]
-caption = "A broad ivory glazed receiving tray with a shallow round socket in every cell, rimmed in darkened brass with corner rivets."
+caption = "A broad hand-woven basket of split cane bound in dark leather, one open weave across the whole shape, with no seats or sockets."
 
 [machine.output-1.instrument]
 voice = "brass"
@@ -149,7 +149,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.output-2]
-caption = "A large ivory glazed receiving tray with a shallow round socket in every cell, rimmed in darkened brass with corner rivets."
+caption = "A large deep hand-woven basket of split cane bound in dark leather, woven walls rising around one open weave across the whole floor, with no seats or sockets."
 
 [machine.output-2.instrument]
 voice = "brass"
@@ -164,7 +164,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.output-3]
-caption = "A very large ivory glazed receiving tray with a shallow round socket in every cell, rimmed in darkened brass with corner rivets."
+caption = "A very large hand-woven basket of split cane bound in dark leather, one open weave across the whole shape, with no seats or sockets."
 
 [machine.output-3.instrument]
 voice = "brass"
