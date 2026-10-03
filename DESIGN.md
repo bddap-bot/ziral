@@ -564,6 +564,8 @@ It is the one glyph model and nothing more. A rule's precondition per slot pair 
 
 Alternatives disposed: a double stepping down to single is a second rule or bond-order arithmetic in the rule, and two firings for one break; breaking single bonds alone makes every double bond permanent; consuming an atom to break its bonds is the cleanup round's tool, and a breaker that eats matter is not a breaker. Tests: a pair joined by a single bond and a pair joined by a double bond both fire once and end unbonded, the third atom still bonded to its neighbour and every atom and the glyph still present; an unbonded pair does not fire; the next tick fires nothing. The inventory now holds more than 32 rows, so its counts serialize through a sequence of the same JSON shape.
 
+`proofs/breaker-143.gif` is the deployed page at `d792285`, a 480 by 400 crop of 1280 by 720 frames: a breaker, an arm and three base atoms are pasted and set down, the first two double-bonded across the breaker's slots and the second single-bonded to the third. The next tick severs the double bond, and the arm lifts the first atom away alone while the other two stay bonded where they lay.
+
 ### Toy 1 walks
 
 Directive (verbatim): "arms get 6 new tape symbols, capital WEFCXZA move the arms base in the associated direction. W is up, C is down fill in the blanks from there."
