@@ -1549,3 +1549,5 @@ Each bar is now a textured core on a near-black casing. The single bond's core i
 Superseded: the first bond paintings, a darkened-brass connector for the single bond and plum glaze over brass rails for the double. Every bond still wears a diffusion texture, as "Toy 1 wears diffusion textures" requires.
 
 Tests: for each bond kind, the core is at least 3:1 in luminance contrast against the grout, and against the grout, the darkest and the lightest tenth of every clay and ethereal tile, the casing or the core reaches 3:1; the worst case is 3.04:1, the amber core against the darkest plum of an ethereal tile.
+
+`proofs/bonds-138.png` is the deployed page at `f38ac06`, four unscaled 1280 by 720 captures of one compound of five atom kinds joined by single and double bonds: on the starting board's clay at the opening zoom and three notches out, then inside the starting portal on the ethereal tiles at the crossing's zoom and two notches out. The browser check read the deployed save's build before capturing.
