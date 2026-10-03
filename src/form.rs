@@ -6,12 +6,13 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub const RECIPES: [(Item, &str); 28] = [
+pub const RECIPES: [(Item, &str); 29] = [
     (glyph(GlyphKind::Bonder), "B0,0 B0,1 0,0-0,1"),
     (
         glyph(GlyphKind::SecondBond),
         "B0,0 B0,1 B1,0 0,0-0,1 0,0-1,0 0,1-1,0",
     ),
+    (glyph(GlyphKind::Breaker), "B0,0 B0,1 0,0=0,1"),
     (
         Item::Machine(Machine::Arm(ArmLength::One)),
         "C0,1 C0,2 C1,0 C1,1 C2,1 0,1-1,0 0,2-1,1 1,0-1,1 1,1-2,1",
@@ -341,6 +342,7 @@ fn machine_name(kind: GlyphKind) -> &'static str {
         }
         GlyphKind::Bonder => "bonder",
         GlyphKind::SecondBond => "second-bond",
+        GlyphKind::Breaker => "breaker",
         GlyphKind::Reification => "reification",
         GlyphKind::Converter(AtomKind::Base | AtomKind::Plum | AtomKind::Jade) => {
             panic!("only amber and cobalt have converters")
@@ -440,6 +442,7 @@ fn glyph_kind(name: &str) -> Option<GlyphKind> {
     match name {
         "bonder" => Some(GlyphKind::Bonder),
         "second-bond" => Some(GlyphKind::SecondBond),
+        "breaker" => Some(GlyphKind::Breaker),
         "reification" => Some(GlyphKind::Reification),
         "amber-converter" => Some(GlyphKind::Converter(AtomKind::Amber)),
         "resonator" => Some(GlyphKind::Resonator),

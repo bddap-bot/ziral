@@ -139,7 +139,7 @@ pub enum TickEvent {
         glyph: usize,
         a: usize,
         b: usize,
-        kind: BondKind,
+        kind: Option<BondKind>,
     },
     Consumed {
         glyph: usize,
@@ -345,6 +345,7 @@ pub enum GlyphKind {
     SourceTwo,
     Bonder,
     SecondBond,
+    Breaker,
     Reification,
     Converter(AtomKind),
     Resonator,
@@ -357,11 +358,12 @@ impl GlyphKind {
         matches!(self, Self::Source | Self::SourceTwo)
     }
 
-    pub const ALL: [GlyphKind; 12] = [
+    pub const ALL: [GlyphKind; 13] = [
         GlyphKind::Source,
         GlyphKind::SourceTwo,
         GlyphKind::Bonder,
         GlyphKind::SecondBond,
+        GlyphKind::Breaker,
         GlyphKind::Reification,
         GlyphKind::Converter(AtomKind::Amber),
         GlyphKind::Resonator,
@@ -447,10 +449,27 @@ pub struct Slot {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Link {
+    Absent,
+    Present,
+    Is(BondKind),
+}
+
+impl Link {
+    pub fn admits(self, bond: Option<BondKind>) -> bool {
+        match self {
+            Link::Absent => bond.is_none(),
+            Link::Present => bond.is_some(),
+            Link::Is(kind) => bond == Some(kind),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rule {
     pub slots: &'static [Slot],
-    pub before: &'static [(usize, usize, Option<BondKind>)],
-    pub after: &'static [(usize, usize, BondKind)],
+    pub before: &'static [(usize, usize, Link)],
+    pub after: &'static [(usize, usize, Option<BondKind>)],
 }
 
 const fn base(at: Hex) -> Slot {
@@ -533,11 +552,11 @@ const fn trough<const N: usize>() -> [Slot; N] {
     slots
 }
 
-const fn links<const N: usize>() -> [(usize, usize, Option<BondKind>); N] {
-    let mut links = [(0, 1, Some(BondKind::Single)); N];
+const fn links<const N: usize>() -> [(usize, usize, Link); N] {
+    let mut links = [(0, 1, Link::Is(BondKind::Single)); N];
     let mut k = 0;
     while k < N {
-        links[k] = (k, k + 1, Some(BondKind::Single));
+        links[k] = (k, k + 1, Link::Is(BondKind::Single));
         k += 1;
     }
     links
@@ -545,7 +564,7 @@ const fn links<const N: usize>() -> [(usize, usize, Option<BondKind>); N] {
 
 pub const FUSE_LENGTH: usize = 8;
 const FUSE: [Slot; FUSE_LENGTH + 1] = trough();
-const FUSE_LINKS: [(usize, usize, Option<BondKind>); FUSE_LENGTH - 1] = links();
+const FUSE_LINKS: [(usize, usize, Link); FUSE_LENGTH - 1] = links();
 const COBALT_FOOTPRINT: [Hex; 4] = [ORIGIN, Hex::new(1, 0), Hex::new(0, 1), Hex::new(1, 1)];
 const COBALT_OUTPUT: [Hex; 1] = [Hex::new(1, 1)];
 
@@ -600,20 +619,25 @@ impl GlyphKind {
             GlyphKind::Source => plain(&SOURCE),
             GlyphKind::SourceTwo => plain(&SOURCE_TWO),
             GlyphKind::Bonder => Rule {
-                before: &[(0, 1, None)],
-                after: &[(0, 1, BondKind::Single)],
+                before: &[(0, 1, Link::Absent)],
+                after: &[(0, 1, Some(BondKind::Single))],
                 ..plain(&BONDER)
             },
             GlyphKind::SecondBond => Rule {
-                before: &[(1, 2, Some(BondKind::Single))],
-                after: &[(1, 2, BondKind::Double)],
+                before: &[(1, 2, Link::Is(BondKind::Single))],
+                after: &[(1, 2, Some(BondKind::Double))],
                 ..plain(&SECOND_BOND)
+            },
+            GlyphKind::Breaker => Rule {
+                before: &[(0, 1, Link::Present)],
+                after: &[(0, 1, None)],
+                ..plain(&BONDER)
             },
             GlyphKind::Reification => plain(&REIFICATION),
             GlyphKind::Converter(AtomKind::Amber) => Rule {
                 before: &[
-                    (0, 1, Some(BondKind::Single)),
-                    (0, 2, Some(BondKind::Single)),
+                    (0, 1, Link::Is(BondKind::Single)),
+                    (0, 2, Link::Is(BondKind::Single)),
                 ],
                 ..plain(&AMBER_CONVERTER)
             },
@@ -727,8 +751,32 @@ pub struct Short {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Inventory {
+    #[serde(with = "counts")]
     count: [u32; CRAFT_RECIPE_COUNT + AtomKind::ALL.len()],
+    #[serde(with = "counts")]
     cap: [u32; CRAFT_RECIPE_COUNT + AtomKind::ALL.len()],
+}
+
+mod counts {
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer, const N: usize>(
+        counts: &[u32; N],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(counts)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
+        deserializer: D,
+    ) -> Result<[u32; N], D::Error> {
+        let counts = Vec::<u32>::deserialize(deserializer)?;
+        let n = counts.len();
+        counts
+            .try_into()
+            .map_err(|_| D::Error::invalid_length(n, &"one count per item"))
+    }
 }
 
 impl Inventory {
@@ -1231,7 +1279,7 @@ impl Sim {
         if rule
             .before
             .iter()
-            .any(|(a, b, want)| bonded(ids[*a], ids[*b]) != *want)
+            .any(|(a, b, want)| !want.admits(bonded(ids[*a], ids[*b])))
         {
             return None;
         }
@@ -1259,7 +1307,7 @@ impl Sim {
                 return None;
             }
         }
-        for (a, b, _) in rule.after {
+        for (a, b, _) in rule.after.iter().filter(|(_, _, kind)| kind.is_some()) {
             let (a, b) = (ids[*a], ids[*b]);
             if bonded(a, b).is_some() {
                 continue;
@@ -1295,9 +1343,13 @@ impl Sim {
         });
         for (a, b, kind) in rule.after {
             let (a, b) = (ids[*a], ids[*b]);
-            match self.bond_between(a, b) {
-                Some(i) => self.bonds[i].kind = *kind,
-                None => self.bonds.push(Bond { a, b, kind: *kind }),
+            match (self.bond_between(a, b), *kind) {
+                (Some(i), Some(kind)) => self.bonds[i].kind = kind,
+                (Some(i), None) => {
+                    self.bonds.remove(i);
+                }
+                (None, Some(kind)) => self.bonds.push(Bond { a, b, kind }),
+                (None, None) => {}
             }
             events.push(TickEvent::BondWritten {
                 glyph,
@@ -1735,6 +1787,28 @@ pub fn fixture(machine: Machine) -> Fixture {
                 },
             }
         }
+        Machine::Glyph(GlyphKind::Breaker) => {
+            let mut sim = armed(ArmLength::One, vec![Grab, cw, Drop]);
+            let glyph = Glyph::new(GlyphKind::Breaker, DIRS[0], 1);
+            let pair: Vec<usize> = glyph.slots().map(|at| sim.spawn(base(at))).collect();
+            sim.bonds.push(Bond {
+                a: pair[0],
+                b: pair[1],
+                kind: BondKind::Double,
+            });
+            sim.glyphs.push(Some(glyph));
+            Fixture {
+                sim,
+                ticks: 3,
+                done: |s| {
+                    !s.arms[0].holding
+                        && s.bonds.is_empty()
+                        && s.atom_at(DIRS[0]).is_none()
+                        && s.atom_at(DIRS[1]).is_some()
+                        && s.atom_at(DIRS[0].add(DIRS[1])).is_some()
+                },
+            }
+        }
         Machine::Glyph(GlyphKind::Reification) => {
             let form = machine
                 .recipe()
@@ -1987,13 +2061,13 @@ mod tests {
 
     #[test]
     fn upgrade_rows_do_not_consume_inventory_slots() {
-        assert_eq!(CRAFT_RECIPE_COUNT, 27);
+        assert_eq!(CRAFT_RECIPE_COUNT, 28);
         assert_eq!(
             Inventory::EMPTY.count(Machine::Glyph(GlyphKind::SourceTwo).into()),
             None
         );
-        let count: Vec<u32> = (0..32).collect();
-        let cap = vec![32u32; 32];
+        let count: Vec<u32> = (0..33).collect();
+        let cap = vec![32u32; 33];
         let saved = serde_json::json!({ "count": count, "cap": cap });
         let inventory: Inventory = serde_json::from_value(saved.clone()).unwrap();
         assert_eq!(serde_json::to_value(inventory).unwrap(), saved);
@@ -2001,7 +2075,7 @@ mod tests {
             assert_eq!(inventory.count(*item), Some(index as u32));
         }
         for (index, kind) in AtomKind::ALL.into_iter().enumerate() {
-            assert_eq!(inventory.count(Item::Atom(kind)), Some(27 + index as u32));
+            assert_eq!(inventory.count(Item::Atom(kind)), Some(28 + index as u32));
         }
     }
 
@@ -2263,6 +2337,34 @@ mod tests {
             let next = put(sim, q, r);
             bond(sim, prev, next, BondKind::Single);
             prev = next;
+        }
+    }
+
+    #[test]
+    fn a_breaker_severs_a_single_or_double_bond_whole_and_splits_the_compound() {
+        for kind in [Some(BondKind::Single), Some(BondKind::Double), None] {
+            let mut sim = Sim::empty();
+            let a = put(&mut sim, 0, 0);
+            let b = put(&mut sim, 1, 0);
+            let tail = put(&mut sim, 2, 0);
+            bond(&mut sim, b, tail, BondKind::Single);
+            if let Some(kind) = kind {
+                bond(&mut sim, a, b, kind);
+            }
+            sim.glyphs
+                .push(Some(Glyph::new(GlyphKind::Breaker, ORIGIN, 0)));
+            let tick = sim.step();
+            let fired = tick
+                .events
+                .iter()
+                .any(|e| matches!(e, TickEvent::Fired { .. }));
+            assert_eq!(fired, kind.is_some(), "{kind:?}");
+            assert_eq!(sim.bond_between(a, b), None, "{kind:?}");
+            assert_eq!(sim.component(a), vec![a], "{kind:?}");
+            assert!(sim.bond_between(b, tail).is_some(), "{kind:?}");
+            assert_eq!(sim.atoms.iter().flatten().count(), 3, "{kind:?}");
+            assert!(sim.glyphs[0].is_some(), "{kind:?}");
+            assert!(sim.step().events.is_empty(), "{kind:?}");
         }
     }
 
@@ -3777,7 +3879,7 @@ mod tests {
             matches!(
                 event,
                 TickEvent::BondWritten {
-                    kind: BondKind::Single,
+                    kind: Some(BondKind::Single),
                     ..
                 }
             )

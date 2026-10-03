@@ -95,6 +95,22 @@ event = "fired"
 layer = "on"
 energy_scaled = true
 
+[machine.breaker]
+caption = "A darkened brass press with two round seats side by side and a steel wedge set upright between them."
+like = "bonder"
+
+[machine.breaker.instrument]
+voice = "wood"
+note = 45
+
+[machine.breaker.emitter]
+look = "spark"
+count = 4
+lifetime = 2
+event = "fired"
+layer = "on"
+energy_scaled = true
+
 [machine.converter-amber]
 caption = "An amber glazed crucible: two feed cups each joined by a brass strap to one glowing kiln mouth, the straps meeting only at the mouth."
 

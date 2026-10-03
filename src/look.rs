@@ -429,6 +429,7 @@ pub fn machine(item: Machine) -> Look<MachineMark> {
         GlyphKind::SourceTwo => (Glaze::BlueGreen, machine!("source-2")),
         GlyphKind::Bonder => (Glaze::Terracotta, machine!("bonder")),
         GlyphKind::SecondBond => (Glaze::Plum, machine!("second-bond")),
+        GlyphKind::Breaker => (Glaze::Brass, machine!("breaker")),
         GlyphKind::Reification => (Glaze::Amber, machine!("reification")),
         GlyphKind::Converter(AtomKind::Amber) => (Glaze::Amber, machine!("converter-amber")),
         GlyphKind::Resonator => (Glaze::Plum, machine!("resonator")),
