@@ -4351,7 +4351,11 @@ impl Tiling {
     }
 }
 
-const BOND_WIDTH: f32 = 0.14;
+const BOND_WIDTH: f32 = 0.12;
+const BOND_CASING: f32 = 0.2;
+const BOND_SPREAD: f32 = 0.16;
+const BOND_PX: f32 = 3.0;
+const CASING: Color = Color::srgb_u8(0x0A, 0x08, 0x06);
 
 #[derive(Resource)]
 struct Kiln {
@@ -4363,6 +4367,7 @@ struct Kiln {
     tiled: Option<(Tiling, bool)>,
     glaze: [Handle<ColorMaterial>; Glaze::ALL.len()],
     patina: Handle<ColorMaterial>,
+    casing: Handle<ColorMaterial>,
     card: [Handle<ColorMaterial>; 2],
     atoms: Handle<Image>,
     skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
@@ -4592,6 +4597,7 @@ fn fire_kiln(
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: materials.add(Glaze::Brass.color().with_alpha(0.5)),
+        casing: materials.add(CASING),
         card: [Glaze::Clay.color(), brass(0.5)].map(|c| materials.add(c)),
         atoms,
         skins,
@@ -4700,6 +4706,7 @@ struct Painter<'a, 'gw, 'gs, G: GizmoConfigGroup = DefaultGizmoConfigGroup> {
     layers: RenderLayers,
     shift: Vec2,
     scale: f32,
+    pixel: f32,
     depth: Depth,
 }
 
@@ -4860,10 +4867,21 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         };
         let kiln = self.kiln;
         let material = kiln.skin(look.skin);
-        let side = (c - a).perp().normalize_or_zero() * HEX * 0.16;
+        let casing = HEX * BOND_CASING;
+        let grow = (BOND_PX * self.pixel / (self.scale * casing)).clamp(1.0, ATOM_RADIUS / casing);
+        let side = (c - a).perp().normalize_or_zero() * HEX * BOND_SPREAD * grow;
         for k in 0..n {
             let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
-            self.bar(&kiln.bond, material, a + off, c + off, HEX * BOND_WIDTH, z);
+            let (a, c) = (a + off, c + off);
+            self.bar(&kiln.bar, &kiln.casing, a, c, casing * grow, z);
+            self.bar(
+                &kiln.bond,
+                material,
+                a,
+                c,
+                HEX * BOND_WIDTH * grow,
+                z + layer::CORE,
+            );
         }
     }
 
@@ -5007,6 +5025,7 @@ mod layer {
     pub const ARMS: Range<f32> = 0.28..0.38;
     pub const BEAD: f32 = 0.4;
     pub const RIM: f32 = 0.02;
+    pub const CORE: f32 = 0.01;
     pub const HELD: Range<f32> = 0.44..0.5;
     pub const CARD: Range<f32> = 0.6..0.7;
     pub const LIFT: f32 = 0.8;
@@ -5407,8 +5426,12 @@ fn draw(
     mut card_gizmos: Gizmos<CardGizmos>,
     mut commands: Commands,
     kiln: Res<Kiln>,
+    camera: Single<&Projection, With<IsDefaultUiCamera>>,
     mut placed: Placed,
 ) {
+    let Projection::Orthographic(ortho) = *camera else {
+        return;
+    };
     let mut strokes = Vec::new();
     let (canvas, meshes, ..) = &mut placed;
     let mut floor = |fit| canvas.floor(meshes, fit);
@@ -5420,6 +5443,7 @@ fn draw(
         layers: RenderLayers::default(),
         shift: Vec2::ZERO,
         scale: 1.0,
+        pixel: ortho.scale,
         depth: Depth::FLAT,
     };
     let board_phase = world.board_phase();
@@ -5533,6 +5557,7 @@ fn draw(
             layers: ATOMS,
             shift: atom_at(kind),
             scale: 1.0,
+            pixel: 0.0,
             depth: Depth::FLAT,
         };
         preview.bead(Vec2::ZERO, look::atom(kind), layer::BEAD);
@@ -5545,6 +5570,7 @@ fn draw(
         layers: CARD,
         shift: Vec2::ZERO,
         scale: 1.0,
+        pixel: 0.0,
         depth: Depth::FLAT,
     };
     if let Some(item) = world.hover {
@@ -12339,11 +12365,11 @@ mod tests {
             );
             assert_eq!(
                 fills.len(),
-                3 + bars(&recipe)
+                3 + 2 * bars(&recipe)
                     + 2 * recipe.atoms.len()
                     + playfield(machine).len()
                     + sim.glyphs.iter().flatten().count()
-                    + bars(&sim)
+                    + 2 * bars(&sim)
                     + 2 * atoms.len()
                     + sim.arms.len(),
                 "{name}: something else on the card"

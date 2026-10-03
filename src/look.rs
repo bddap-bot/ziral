@@ -387,8 +387,8 @@ pub fn atom(kind: AtomKind) -> Look<()> {
 
 pub fn bond(kind: BondKind) -> Look<()> {
     let (glaze, skin, bars) = match kind {
-        BondKind::Single => (Glaze::Brass, skin!("textures/bond-single"), 1),
-        BondKind::Double => (Glaze::Plum, skin!("textures/bond-double"), 2),
+        BondKind::Single => (Glaze::Ivory, skin!("textures/bond-single"), 1),
+        BondKind::Double => (Glaze::Amber, skin!("textures/bond-double"), 2),
     };
     Look {
         glaze,
@@ -494,6 +494,7 @@ pub(crate) mod tests {
     const TEMPLATE_GRAIN: f32 = 0.04;
     const RING_STEPS: usize = 6;
     const SYMBOL_CONTRAST: f32 = 4.5;
+    const BOND_CONTRAST: f32 = 3.0;
 
     fn pixels(skin: Skin) -> (usize, usize, Vec<u8>) {
         let image = skin.decode();
@@ -845,6 +846,42 @@ pub(crate) mod tests {
                 "{:?} mark is {ratio:.2}:1 against its ground at {side} px, below {SYMBOL_CONTRAST}:1",
                 key.symbol
             );
+        }
+    }
+
+    #[test]
+    fn a_bond_stands_apart_from_every_floor_it_can_cross() {
+        let luminance = |pixel: [f32; 3]| Color::srgb(pixel[0], pixel[1], pixel[2]).luminance();
+        let ratio = |a: f32, b: f32| (a.max(b) + 0.05) / (a.min(b) + 0.05);
+        let casing = crate::CASING.luminance();
+        let mut grounds = vec![("grout", grout_color().luminance())];
+        for tile in TILES.iter().chain(ETHEREAL.iter()) {
+            let mut body: Vec<f32> = tile_body(*tile).into_iter().map(luminance).collect();
+            body.sort_by(f32::total_cmp);
+            grounds.push((tile.name, body[body.len() / 10]));
+            grounds.push((tile.name, body[body.len() * 9 / 10]));
+        }
+        for kind in BondKind::ALL {
+            let (w, h, data) = pixels(bond(kind).skin);
+            let half = crate::BOND_WIDTH / 3f32.sqrt() / 2.0 * h as f32;
+            let strip: Vec<[f32; 3]> = (0..h)
+                .filter(|y| (*y as f32 + 0.5 - h as f32 / 2.0).abs() < half)
+                .flat_map(|y| (0..w).map(move |x| (y * w + x) * 4))
+                .map(|i| [0, 1, 2].map(|c| f32::from(data[i + c]) / 255.0))
+                .collect();
+            let core = mean_color(&strip).luminance();
+            assert!(
+                ratio(core, grounds[0].1) >= BOND_CONTRAST,
+                "{kind:?} core is {:.2}:1 against the grout",
+                ratio(core, grounds[0].1)
+            );
+            for (name, ground) in &grounds {
+                let best = ratio(casing, *ground).max(ratio(core, *ground));
+                assert!(
+                    best >= BOND_CONTRAST,
+                    "{kind:?} is {best:.2}:1 against {name}, below {BOND_CONTRAST}:1"
+                );
+            }
         }
     }
 

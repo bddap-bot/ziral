@@ -1535,3 +1535,17 @@ A second painting of member 00's caption returned member 00's composition, so tw
 Tests: a patch of twelve by twelve cells shows every member of its world; interior board cells, and every triangle of a window's floor, wear their cell's member; every member has its prompt beside it.
 
 `proofs/interior-tiles-137.png` is the deployed page at `f0b0404`, an unscaled 1280 by 720 capture inside the starting portal: neighbouring interior cells wear different members. `proofs/interior-tiles-137.gif` zooms the deployed build from the starting board into that portal, one 120-pixel wheel click per frame, through its window to the crossing. The browser check verifies the deployed build.
+
+## Bonds stand apart from every floor
+
+Report (verbatim):
+
+> bonds in ziral are difficult to see
+
+A bond bar sampled the middle strip of its painting, and both paintings were brass there: the single bond a dark copper panel, the double bond a brass rail. On the board they read as more grout, the same brown at about the same width, and inside a portal they crossed plum and ivory tiles ringed by that same grout.
+
+Each bar is now a textured core on a near-black casing. The single bond's core is ivory ceramic and the double bond's amber ceramic, each repainted as an even field so any strip of it is the glaze; the amber painting was regraded to its glaze's mean. The casing separates the bar from clay and ivory, the core separates it from grout and plum, and a double bond stays two separated bars in a second colour. The casing is never narrower than three screen pixels, so a bond keeps its weight as the board zooms out, and it never grows wider than an atom's radius, so a bond in a portal's window stays smaller than the atoms it joins. A new material per tile, an outline shader, or gizmo lines were rejected: one casing bar under the existing core reads over every floor, and gizmo lines would stay thin when zoomed in.
+
+Superseded: the first bond paintings, a darkened-brass connector for the single bond and plum glaze over brass rails for the double. Every bond still wears a diffusion texture, as "Toy 1 wears diffusion textures" requires.
+
+Tests: for each bond kind, the core is at least 3:1 in luminance contrast against the grout, and against the grout, the darkest and the lightest tenth of every clay and ethereal tile, the casing or the core reaches 3:1; the worst case is 3.04:1, the amber core against the darkest plum of an ethereal tile.
