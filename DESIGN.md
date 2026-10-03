@@ -1522,3 +1522,4 @@ A second painting of member 00's caption returned member 00's composition, so tw
 
 Tests: a patch of twelve by twelve cells shows every member of its world; interior board cells, and every triangle of a window's floor, wear their cell's member; every member has its prompt beside it.
 
+`proofs/interior-tiles-137.png` is the deployed page at `f0b0404`, an unscaled 1280 by 720 capture inside the starting portal: neighbouring interior cells wear different members. `proofs/interior-tiles-137.gif` zooms the deployed build from the starting board into that portal, one 120-pixel wheel click per frame, through its window to the crossing. The browser check verifies the deployed build.
