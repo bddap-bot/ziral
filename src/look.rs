@@ -4,10 +4,19 @@ use bevy::asset::RenderAssetUsages;
 use bevy::image::{CompressedImageFormats, Image, ImageSampler, ImageType};
 use bevy::math::Vec2;
 use bevy::prelude::Color;
+use std::f32::consts::TAU;
 use std::ops::RangeInclusive;
+use std::sync::OnceLock;
 
 pub const HEX: f32 = 20.0;
-pub const HOLE: f32 = 0.55 * HEX;
+pub const OPENING: Opening = Opening {
+    centre: Vec2::new(0.05 * HEX, 0.0),
+    radius: 0.62 * HEX,
+    bite: Vec2::new(-0.95 * HEX, 0.0),
+    bite_radius: 0.6 * HEX,
+    rim: 0.17 * HEX,
+    fringe: 0.25 * HEX,
+};
 pub const ATOM_RADIUS: f32 = 0.4 * HEX;
 const MARGIN: f32 = 1.0;
 const FACE: f32 = 458.0 / 512.0;
@@ -183,6 +192,42 @@ impl Quad {
     pub fn size(self) -> Vec2 {
         Vec2::splat(self.side)
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct Opening {
+    pub centre: Vec2,
+    pub radius: f32,
+    pub bite: Vec2,
+    pub bite_radius: f32,
+    pub rim: f32,
+    pub fringe: f32,
+}
+
+impl Opening {
+    pub fn depth(self, at: Vec2) -> f32 {
+        (self.radius - at.distance(self.centre)).min(at.distance(self.bite) - self.bite_radius)
+    }
+
+    pub fn body(self, at: Vec2) -> f32 {
+        (self.depth(at) + self.rim).max(self.bite_radius - at.distance(self.bite))
+    }
+}
+
+pub fn aperture() -> (Vec2, f32) {
+    static APERTURE: OnceLock<(Vec2, f32)> = OnceLock::new();
+    *APERTURE.get_or_init(|| {
+        let rim = |centre: Vec2, radius: f32| {
+            (0..4096).map(move |k| centre + Vec2::from_angle(k as f32 / 4096.0 * TAU) * radius)
+        };
+        let (lo, hi) = rim(OPENING.centre, OPENING.radius)
+            .chain(rim(OPENING.bite, OPENING.bite_radius))
+            .filter(|at| OPENING.depth(*at) > -1e-3)
+            .fold((Vec2::INFINITY, Vec2::NEG_INFINITY), |(lo, hi), at| {
+                (lo.min(at), hi.max(at))
+            });
+        ((lo + hi) / 2.0, (hi - lo).max_element())
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

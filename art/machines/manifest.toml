@@ -210,7 +210,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.portal]
-caption = "A plum glazed portal frame, a thick ornamented rim with brass brackets around a wide round opening of plain green; the rim carries nothing else."
+caption = "A portal frame of living shelf fungus: stacked bracket shelves banded rust, ochre and cream fill the crescent, pale jointed legs hang toward the opening, coral carapace nubs erupt between them, and a pearly membrane rings the plain green opening."
 motion = "dilate"
 
 [machine.portal.instrument]

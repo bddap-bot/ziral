@@ -20,12 +20,15 @@ use bevy::color::{Alpha, Mix};
 use bevy::image::Image;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::math::Affine2;
+use bevy::mesh::MeshVertexBufferLayoutRef;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use bevy::render::render_resource::AsBindGroup;
 use bevy::render::render_resource::TextureFormat;
+use bevy::render::render_resource::{
+    AsBindGroup, ColorWrites, RenderPipelineDescriptor, SpecializedMeshPipelineError,
+};
 use bevy::shader::ShaderRef;
-use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
+use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dKey, Material2dPlugin};
 use bevy::ui::IsDefaultUiCamera;
 use bevy::window::{CursorLeft, PrimaryWindow};
 use form::{Form, Fragment, atom_machine, recipes};
@@ -511,10 +514,16 @@ struct PortalView {
 }
 
 impl PortalView {
-    const TILE: f32 = 2.0 * look::HOLE;
+    fn tile() -> f32 {
+        look::aperture().1
+    }
+
+    fn aperture(at: Hex) -> Vec2 {
+        px(at) + look::aperture().0
+    }
 
     fn hop() -> f32 {
-        zoomed(Self::TILE, 6.0)
+        zoomed(Self::tile(), 6.0)
     }
 
     fn cells(sim: &Sim) -> impl Iterator<Item = Hex> + '_ {
@@ -554,7 +563,7 @@ impl PortalView {
     }
 
     fn scale(&self) -> f32 {
-        Self::TILE / self.side
+        Self::tile() / self.side
     }
 
     fn floor(&self) -> Vec<(Skin, Mesh)> {
@@ -621,12 +630,12 @@ impl PortalView {
     }
 
     fn enter(&self, at: Hex, viewport: &mut Viewport) {
-        viewport.cam = self.center + (viewport.cam - px(at)) / self.scale();
+        viewport.cam = self.center + (viewport.cam - Self::aperture(at)) / self.scale();
         viewport.scale /= self.scale();
     }
 
     fn exit(&self, at: Hex, viewport: &mut Viewport) {
-        viewport.cam = px(at) + (viewport.cam - self.center) * self.scale();
+        viewport.cam = Self::aperture(at) + (viewport.cam - self.center) * self.scale();
         viewport.scale *= self.scale();
     }
 }
@@ -4367,11 +4376,12 @@ struct Kiln {
     tiled: Option<(Tiling, bool)>,
     glaze: [Handle<ColorMaterial>; Glaze::ALL.len()],
     patina: Handle<ColorMaterial>,
-    casing: Handle<ColorMaterial>,
+    casing: [Handle<ColorMaterial>; 2],
     card: [Handle<ColorMaterial>; 2],
     atoms: Handle<Image>,
-    skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)>,
+    skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])>,
     lit: Vec<(Skin, [Handle<Lit>; 4])>,
+    clip: (Handle<Mesh>, Handle<Clip>),
 }
 
 impl Kiln {
@@ -4406,9 +4416,71 @@ impl Material2d for Lit {
     }
 }
 
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+struct Clip {
+    #[uniform(0)]
+    opening: Vec4,
+    #[uniform(1)]
+    bite: Vec4,
+}
+
+impl Clip {
+    fn of(opening: look::Opening) -> Self {
+        Clip {
+            opening: opening
+                .centre
+                .extend(opening.radius + opening.rim / 2.0)
+                .extend(0.0),
+            bite: opening
+                .bite
+                .extend(opening.bite_radius - opening.rim / 2.0)
+                .extend(0.0),
+        }
+    }
+}
+
+impl Material2d for Clip {
+    fn fragment_shader() -> ShaderRef {
+        ShaderRef::Path(
+            bevy::asset::AssetPath::from_path_buf(bevy::asset::embedded_path!("clip.wgsl"))
+                .with_source("embedded"),
+        )
+    }
+
+    fn alpha_mode(&self) -> AlphaMode2d {
+        AlphaMode2d::Blend
+    }
+
+    fn depth_bias(&self) -> f32 {
+        -2.0 * layer::CLIP
+    }
+
+    fn specialize(
+        descriptor: &mut RenderPipelineDescriptor,
+        _: &MeshVertexBufferLayoutRef,
+        _: Material2dKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        if let Some(depth) = &mut descriptor.depth_stencil {
+            depth.depth_write_enabled = Some(true);
+        }
+        for target in descriptor
+            .fragment
+            .iter_mut()
+            .flat_map(|f| f.targets.iter_mut().flatten())
+        {
+            target.write_mask = ColorWrites::empty();
+        }
+        Ok(())
+    }
+}
+
 fn lit_plugin(app: &mut App) {
     bevy::asset::embedded_asset!(app, "lit.wgsl");
-    app.add_plugins(Material2dPlugin::<Lit>::default());
+    bevy::asset::embedded_asset!(app, "clip.wgsl");
+    app.add_plugins((
+        Material2dPlugin::<Lit>::default(),
+        Material2dPlugin::<Clip>::default(),
+    ));
 }
 
 impl Kiln {
@@ -4416,7 +4488,7 @@ impl Kiln {
         &self.glaze[glaze as usize]
     }
 
-    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, Handle<ColorMaterial>) {
+    fn fired(&self, skin: Skin) -> &(Skin, Handle<Image>, [Handle<ColorMaterial>; 2]) {
         self.skins
             .iter()
             .find(|(s, _, _)| *s == skin)
@@ -4424,7 +4496,7 @@ impl Kiln {
     }
 
     fn skin(&self, skin: Skin) -> &Handle<ColorMaterial> {
-        &self.fired(skin).2
+        &self.fired(skin).2[0]
     }
 
     fn image(&self, skin: Skin) -> Handle<Image> {
@@ -4514,10 +4586,11 @@ fn fire_kiln(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut lits: ResMut<Assets<Lit>>,
+    mut clips: ResMut<Assets<Clip>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let grout = look::GROUT.decode();
-    let skins: Vec<(Skin, Handle<Image>, Handle<ColorMaterial>)> = look::skins()
+    let skins: Vec<(Skin, Handle<Image>, [Handle<ColorMaterial>; 2])> = look::skins()
         .map(|skin| {
             let mut image = skin.decode();
             let crop = match skin.finish {
@@ -4538,13 +4611,20 @@ fn fire_kiln(
                 0.0,
                 Vec2::splat(0.5 * (1.0 - crop)),
             );
-            let fired = materials.add(ColorMaterial {
-                color: Color::WHITE,
-                alpha_mode,
-                texture: Some(texture.clone()),
-                uv_transform,
-            });
-            (skin, texture, fired)
+            let mut fire = |alpha_mode| {
+                materials.add(ColorMaterial {
+                    color: Color::WHITE,
+                    alpha_mode,
+                    texture: Some(texture.clone()),
+                    uv_transform,
+                })
+            };
+            let fired = fire(alpha_mode);
+            let blended = match alpha_mode {
+                AlphaMode2d::Blend => fired.clone(),
+                _ => fire(AlphaMode2d::Blend),
+            };
+            (skin, texture, [fired, blended])
         })
         .collect();
     let image = |skin: Skin| {
@@ -4597,12 +4677,38 @@ fn fire_kiln(
         tiled: None,
         glaze: Glaze::ALL.map(|g| materials.add(g.color())),
         patina: materials.add(Glaze::Brass.color().with_alpha(0.5)),
-        casing: materials.add(CASING),
+        casing: [AlphaMode2d::Opaque, AlphaMode2d::Blend].map(|alpha_mode| {
+            materials.add(ColorMaterial {
+                color: CASING,
+                alpha_mode,
+                ..default()
+            })
+        }),
         card: [Glaze::Clay.color(), brass(0.5)].map(|c| materials.add(c)),
         atoms,
         skins,
         lit,
+        clip: (meshes.add(clip_quad()), clips.add(Clip::of(look::OPENING))),
     });
+}
+
+fn clip_quad() -> Mesh {
+    let (centre, side) = look::aperture();
+    let corners = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]
+        .map(|[x, y]| Vec2::new(x, y) * side / 2.0);
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        corners.map(|v| v.extend(0.0).to_array()).to_vec(),
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        corners.map(|v| (v + centre).to_array()).to_vec(),
+    )
+    .with_inserted_indices(Indices::U32(vec![0, 1, 2, 0, 2, 3]))
 }
 
 fn band(aspect: f32) -> Mesh {
@@ -4630,6 +4736,12 @@ fn band(aspect: f32) -> Mesh {
         ],
     )
     .with_inserted_indices(Indices::U32(vec![0, 1, 2, 0, 2, 3]))
+}
+
+fn dilation(pulse: f32) -> f32 {
+    rig::entry(Machine::Portal)
+        .motion
+        .map_or(1.0, |motion| motion.scale(pulse))
 }
 
 fn unworn<M: std::fmt::Debug>(look: Look<M>) -> ! {
@@ -4661,10 +4773,11 @@ enum Ink {
     Lit(Handle<Mesh>, Handle<Lit>),
     Sprite(Sprite),
     Symbol(Instr),
+    Clip(Handle<Mesh>, Handle<Clip>),
 }
 
 impl Ink {
-    const POOLS: usize = 4;
+    const POOLS: usize = 5;
 
     fn pool(&self) -> usize {
         match self {
@@ -4672,6 +4785,7 @@ impl Ink {
             Ink::Lit(..) => 1,
             Ink::Sprite(_) => 2,
             Ink::Symbol(_) => 3,
+            Ink::Clip(..) => 4,
         }
     }
 }
@@ -4724,6 +4838,14 @@ impl Depth {
 }
 
 impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
+    fn clipped(&self) -> usize {
+        usize::from(self.depth.span < Depth::FLAT.span)
+    }
+
+    fn skin(&self, skin: Skin) -> &'a Handle<ColorMaterial> {
+        &self.kiln.fired(skin).2[self.clipped()]
+    }
+
     fn push(&mut self, mut stroke: Stroke) {
         let z = &mut stroke.transform.translation.z;
         *z = self.depth.base + *z * self.depth.span;
@@ -4749,16 +4871,29 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
         });
     }
 
-    fn interior(&mut self, sim: &Sim, at: Vec2, scale: f32, under: f32) {
+    fn interior(&mut self, sim: &Sim, frame: Vec2, scale: f32, under: f32, pulse: f32) {
         let fit = PortalView::of(sim);
         let kiln = self.kiln;
+        let zoom = scale / fit.scale();
+        let rim = zoom * dilation(pulse);
+        self.push(Stroke {
+            ink: Ink::Clip(kiln.clip.0.clone(), kiln.clip.1.clone()),
+            layers: self.layers.clone(),
+            transform: Transform {
+                translation: ((frame + look::aperture().0 * rim) * self.scale + self.shift)
+                    .extend(under - layer::INTERIOR + layer::CLIP),
+                rotation: Quat::IDENTITY,
+                scale: Vec2::splat(rim * self.scale).extend(1.0),
+            },
+        });
+        let at = frame + look::aperture().0 * zoom;
         let (shift, old_scale, depth) = (self.shift, self.scale, self.depth);
         self.depth = Depth {
             base: depth.base + (under - layer::INTERIOR) * depth.span,
             span: depth.span * layer::INTERIOR / layer::SCENE,
         };
         for (skin, floor) in (self.floor)(fit) {
-            self.fill(&floor, kiln.skin(skin), at, 0.0, Vec2::splat(scale), 0.0);
+            self.fill(&floor, self.skin(skin), at, 0.0, Vec2::splat(scale), 0.0);
         }
         self.shift += (at - fit.center * scale) * self.scale;
         self.scale *= scale;
@@ -4855,7 +4990,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
 
     fn bead(&mut self, at: Vec2, look: Look<()>, z: f32) {
         let kiln = self.kiln;
-        let (skin, patina) = (kiln.skin(look.skin), &kiln.patina);
+        let (skin, patina) = (self.skin(look.skin), &kiln.patina);
         self.stamp(&kiln.circle, skin, at, ATOM_RADIUS, z);
         self.stamp(&kiln.rim, patina, at, ATOM_RADIUS, z + layer::RIM);
     }
@@ -4866,14 +5001,21 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
             unworn(look)
         };
         let kiln = self.kiln;
-        let material = kiln.skin(look.skin);
+        let material = self.skin(look.skin);
         let casing = HEX * BOND_CASING;
         let grow = (BOND_PX * self.pixel / (self.scale * casing)).clamp(1.0, ATOM_RADIUS / casing);
         let side = (c - a).perp().normalize_or_zero() * HEX * BOND_SPREAD * grow;
         for k in 0..n {
             let off = side * (2.0 * k as f32 - (n as f32 - 1.0));
             let (a, c) = (a + off, c + off);
-            self.bar(&kiln.bar, &kiln.casing, a, c, casing * grow, z);
+            self.bar(
+                &kiln.bar,
+                &kiln.casing[self.clipped()],
+                a,
+                c,
+                casing * grow,
+                z,
+            );
             self.bar(
                 &kiln.bond,
                 material,
@@ -4964,9 +5106,7 @@ impl<'a, G: GizmoConfigGroup> Painter<'a, '_, '_, G> {
 
     fn portal(&mut self, at: Vec2, z: f32, pulse: f32) {
         let look = look::machine(Machine::Portal);
-        let scale = rig::entry(Machine::Portal)
-            .motion
-            .map_or(1.0, |motion| motion.scale(pulse));
+        let scale = dilation(pulse);
         self.push(Stroke {
             ink: Ink::Sprite(Sprite {
                 image: self.kiln.image(look.skin),
@@ -5029,7 +5169,8 @@ mod layer {
     pub const HELD: Range<f32> = 0.44..0.5;
     pub const CARD: Range<f32> = 0.6..0.7;
     pub const LIFT: f32 = 0.8;
-    pub const INTERIOR: f32 = 0.001;
+    pub const INTERIOR: f32 = 0.004;
+    pub const CLIP: f32 = LIFT * INTERIOR / SCENE;
     pub const SCENE: f32 = 1.0;
 
     pub fn glyph(kind: crate::sim::GlyphKind, i: usize, n: usize, lift: f32) -> f32 {
@@ -5378,6 +5519,13 @@ impl Canvas {
                     Ink::Symbol(instr) => {
                         commands.spawn((Fill, layers, InstructionSymbol::Card(instr), transform))
                     }
+                    Ink::Clip(mesh, material) => commands.spawn((
+                        Fill,
+                        layers,
+                        Mesh2d(mesh),
+                        MeshMaterial2d(material),
+                        transform,
+                    )),
                 };
                 pool.push(spawned.id());
                 used[kind] += 1;
@@ -5409,6 +5557,7 @@ impl Canvas {
                         .unwrap()
                         .set_if_neq(InstructionSymbol::Card(instr));
                 }
+                Ink::Clip(..) => {}
             }
         }
         for (pool, used) in canvas.pools.iter_mut().zip(used) {
@@ -5511,6 +5660,7 @@ fn draw(
                             pose.at,
                             PortalView::of(interior).scale(),
                             layer::HELD.start,
+                            0.0,
                         );
                         Machine::Portal
                     }
@@ -5666,6 +5816,7 @@ fn scene<G: GizmoConfigGroup>(
             px(portal.at),
             PortalView::of(&portal.sim).scale(),
             layer::GLYPHS - layer::INTERIOR + lift,
+            pulse,
         );
     }
     for (index, glyph) in f.sim.glyphs.iter().enumerate() {
@@ -5842,16 +5993,18 @@ fn hover_card<G: GizmoConfigGroup>(
             let progress = f.tick / fixture(machine).ticks as f32;
             let scale = fit.scale().powf(1.0 - progress.clamp(0.0, 1.0));
             let old_scale = p.scale;
-            p.scale *= scale / fit.scale();
+            let zoom = scale / fit.scale();
+            let at = look::aperture().0 * (1.0 - zoom);
+            p.scale *= zoom;
             p.machine(
                 machine,
-                Vec2::ZERO,
+                at / zoom,
                 0.0,
                 layer::z(layer::LIFT + layer::GLYPHS..layer::LIFT + layer::BOND, 0, 1),
                 (false, 1.0, sim::ActivationEnergy::default()),
             );
             p.scale = old_scale;
-            p.interior(&portal.sim, Vec2::ZERO, scale, layer::LIFT + layer::GLYPHS);
+            p.interior(&portal.sim, at, scale, layer::LIFT + layer::GLYPHS, 0.0);
             return;
         }
         for h in playfield(machine) {
@@ -8181,11 +8334,12 @@ mod tests {
                         let portal = world.portal(0);
                         let fit = PortalView::of(&portal.sim);
                         let atom = portal.sim.atoms.iter().flatten().next().unwrap();
-                        let expected = px(portal.at) + (px(atom.pos) - fit.center) * fit.scale();
+                        let expected = PortalView::aperture(portal.at)
+                            + (px(atom.pos) - fit.center) * fit.scale();
                         assert!(
                             fills.iter().any(|(material, transform, layers)| *layers
                                 == RenderLayers::default()
-                                && &material.0 == kiln.skin(look::atom(atom.kind).skin)
+                                && material.0 == kiln.fired(look::atom(atom.kind).skin).2[1]
                                 && transform.translation.truncate().distance(expected) < 1e-3
                                 && (transform.scale.x - ATOM_RADIUS * fit.scale()).abs() < 1e-3),
                             "preview uses the canonical fitted extent"
@@ -8278,11 +8432,13 @@ mod tests {
     }
 
     #[test]
-    fn portal_interior_lies_under_its_housing_and_over_its_floor() {
+    fn portal_interior_lies_under_its_housing_over_its_floor_and_under_its_clip() {
         type Window<'w, 's> = (
             Query<'w, 's, (Entity, &'static Transform, &'static RenderLayers), With<Fill>>,
             Query<'w, 's, &'static MeshMaterial2d<ColorMaterial>, With<Fill>>,
             Query<'w, 's, &'static Sprite, With<Fill>>,
+            Query<'w, 's, &'static MeshMaterial2d<Clip>, With<Fill>>,
+            Res<'w, Assets<Clip>>,
         );
         let _render = render_test::lock();
         let dir = std::env::temp_dir().join(format!("ziral-portal-floor-{}", std::process::id()));
@@ -8314,14 +8470,16 @@ mod tests {
         let probe = seen.clone();
         app.add_systems(
             Last,
-            move |world: Res<Game>, kiln: Res<Kiln>, (fills, colors, sprites): Window| {
-                let at = px(world.portal(0).at);
+            move |world: Res<Game>,
+                  kiln: Res<Kiln>,
+                  (fills, colors, sprites, clips, materials): Window| {
+                let at = PortalView::aperture(world.portal(0).at);
                 let drawn: Vec<(Entity, f32)> = fills
                     .iter()
                     .filter(|(_, transform, layers)| {
                         **layers == RenderLayers::default()
                             && (transform.translation.truncate() - at).abs().max_element()
-                                < PortalView::TILE / 2.0
+                                < PortalView::tile() / 2.0
                     })
                     .map(|(e, transform, _)| (e, transform.translation.z))
                     .collect();
@@ -8330,8 +8488,9 @@ mod tests {
                 let is_floor = |e: Entity| {
                     colors
                         .get(e)
-                        .is_ok_and(|m| look::ETHEREAL.iter().any(|skin| &m.0 == kiln.skin(*skin)))
+                        .is_ok_and(|m| look::ETHEREAL.iter().any(|skin| m.0 == kiln.fired(*skin).2[1]))
                 };
+                let is_clip = |e: Entity| clips.contains(e);
                 let [(_, housing)] = drawn
                     .iter()
                     .filter(|(e, _)| is_housing(*e))
@@ -8354,9 +8513,17 @@ mod tests {
                     floor < housing,
                     "the floor at {floor} covers the housing at {housing}"
                 );
+                let [(_, clip)] = drawn
+                    .iter()
+                    .filter(|(e, _)| is_clip(*e))
+                    .collect::<Vec<_>>()[..]
+                else {
+                    panic!("the window draws one clip")
+                };
+                let sorted = clip + materials.get(&kiln.clip.1).unwrap().depth_bias();
                 let inside: Vec<f32> = drawn
                     .iter()
-                    .filter(|(e, _)| !is_housing(*e) && !is_floor(*e))
+                    .filter(|(e, _)| !is_housing(*e) && !is_floor(*e) && !is_clip(*e))
                     .map(|(_, z)| *z)
                     .collect();
                 assert!(
@@ -8364,8 +8531,10 @@ mod tests {
                     "the interior's glyph, arm, atoms and bond are drawn"
                 );
                 assert!(
-                    inside.iter().all(|z| z > floor && z < housing),
-                    "something inside at {inside:?} is not between the floor at {floor} and the housing at {housing}"
+                    sorted < floors.iter().copied().fold(f32::MAX, f32::min)
+                        && inside.iter().all(|z| z > floor && z < clip)
+                        && clip < housing,
+                    "the clip sorts at {sorted} and hides below {clip}; the floor tops at {floor}, the housing at {housing}, inside {inside:?}"
                 );
                 *probe.lock().unwrap() = true;
             },
@@ -8545,8 +8714,9 @@ mod tests {
                 Hex::new(distance, 0);
             let portal = game.portal(0);
             let fit = PortalView::of(&portal.sim);
+            let aperture = PortalView::aperture(game.overworld.sim.portals[0].as_ref().unwrap().at);
             let mut viewport = Viewport {
-                cam: px(game.overworld.sim.portals[0].as_ref().unwrap().at),
+                cam: aperture,
                 size: Vec2::new(1280.0, 720.0),
                 scale: PortalView::hop() / 720.0 * 0.9999,
             };
@@ -8557,12 +8727,7 @@ mod tests {
                 px(portal.sim.arms[0].pivot),
                 px(portal.sim.arms[0].hand()),
             ];
-            let screens = points.map(|p| {
-                before.screen(
-                    px(game.overworld.sim.portals[0].as_ref().unwrap().at)
-                        + (p - fit.center) * fit.scale(),
-                )
-            });
+            let screens = points.map(|p| before.screen(aperture + (p - fit.center) * fit.scale()));
             game.enter(Some(0));
             game.reframe(&mut viewport);
             for (point, screen) in points.into_iter().zip(screens) {
@@ -8588,7 +8753,7 @@ mod tests {
         let mut viewport = Viewport {
             cam: px(game.portal(0).at),
             size,
-            scale: zoomed(PortalView::TILE, 7.0) / size.min_element(),
+            scale: zoomed(PortalView::tile(), 7.0) / size.min_element(),
         };
         assert_eq!(game.zoom(&mut viewport, size / 2.0, 0.5, true), None);
         assert_eq!(
@@ -8819,8 +8984,11 @@ mod tests {
         let before = image::open(dir.join("00000.png")).unwrap().to_rgba8();
         let after = image::open(dir.join("00007.png")).unwrap().to_rgba8();
         assert_eq!(before.dimensions(), (1280, 720));
-        let hole = look::HOLE * 720.0 / PortalView::hop() - 2.0;
-        let window = |x: u32, y: u32| Vec2::new(x as f32 - 640.0, y as f32 - 360.0).length() < hole;
+        let world = PortalView::hop() / 720.0;
+        let window = |x: u32, y: u32| {
+            let at = Vec2::new(x as f32 - 640.0, 360.0 - y as f32) * world;
+            look::OPENING.depth(at) > look::OPENING.fringe + 2.0 * world
+        };
         let changed = before
             .enumerate_pixels()
             .zip(after.pixels())
@@ -8840,6 +9008,22 @@ mod tests {
         assert!(
             colors.len() > 1000,
             "the interior must actually be rendered"
+        );
+        let (centre, side) = look::aperture();
+        let beyond = |x: u32, y: u32| {
+            let at = Vec2::new(x as f32 - 640.0, 360.0 - y as f32) * world;
+            (at - centre).abs().max_element() < side / 2.0 && look::OPENING.body(at) < -2.0 * world
+        };
+        let (outside, kept) = before
+            .enumerate_pixels()
+            .zip(after.pixels())
+            .filter(|((x, y, _), _)| beyond(*x, *y))
+            .fold((0, 0), |(n, same), ((_, _, a), b)| {
+                (n + 1, same + usize::from(a == b))
+            });
+        assert!(
+            outside > 1000 && kept * 10 < outside,
+            "{kept} of {outside} pixels beyond the rim already showed the interior before the crossing"
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -9049,7 +9233,7 @@ mod tests {
                 let n = world.ghosts();
                 assert_eq!(marks.0.0, n);
                 assert_eq!(marks.1.map_or(0, |children| children.len()), n as usize);
-                for (_, _, material) in &kiln.skins {
+                for material in kiln.skins.iter().flat_map(|(_, _, fired)| fired) {
                     assert_eq!(materials.get(material).unwrap().color, Color::WHITE);
                 }
                 assert_eq!(materials.get(&kiln.patina).unwrap().color.alpha(), 0.5);

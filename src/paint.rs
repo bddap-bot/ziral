@@ -203,10 +203,13 @@ fn layout(item: Machine) -> RgbaImage {
                 (BEAM * HEX - at.distance(pivot + (hand - pivot) * along.clamp(0.0, 1.0)))
                     .max((INSET - hex_norm(d.x, d.y)) * HEX)
             }
+            None if item == Machine::Portal => {
+                shape.depth(at).min(look::OPENING.body(at - px(ORIGIN)))
+            }
             None => shape.depth(at),
         });
         let hole = match item {
-            Machine::Portal => frame.cover(look::HOLE - at.distance(px(ORIGIN))),
+            Machine::Portal => frame.cover(look::OPENING.depth(at - px(ORIGIN))),
             _ => 0.0,
         };
         let mix = |a: [u8; 3], b: [u8; 3], t: f32| {
@@ -342,7 +345,14 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
     for (x, y, pixel) in image.enumerate_pixels_mut() {
         let rgb = [0, 1, 2].map(|c| f32::from(pixel[c]) / 255.0);
         let depth = shape.depth(frame.world(x, y));
-        let inside = frame.cover(depth);
+        let core = match item {
+            Machine::Portal => {
+                look::OPENING.depth(frame.world(x, y) - px(ORIGIN)) - look::OPENING.fringe
+            }
+            _ => f32::NEG_INFINITY,
+        };
+        let open = core > 0.0;
+        let inside = frame.cover(depth) * (1.0 - frame.cover(core));
         let keyed = matte(rgb);
         let held = match (offset, hand(item)) {
             (Some(_), Some(hand)) => ball(rgb).max(frame.cover(
@@ -354,7 +364,7 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
         let alpha = painted * inside;
         covered += inside;
         filled += alpha;
-        if depth < -MARGIN * HEX {
+        if depth < -MARGIN * HEX || open {
             outside += 1.0;
             spilled += painted;
         }
@@ -773,7 +783,8 @@ mod tests {
         let opaque = image
             .enumerate_pixels()
             .filter(|(x, y, p)| {
-                p[3] > 0 && frame.world(*x, *y).distance(px(ORIGIN)) < 0.95 * look::HOLE
+                p[3] > 0
+                    && look::OPENING.depth(frame.world(*x, *y) - px(ORIGIN)) > look::OPENING.fringe
             })
             .count();
         assert_eq!(opaque, 0, "the portal paints {opaque} px inside its hole");
