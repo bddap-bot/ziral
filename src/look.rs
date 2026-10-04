@@ -14,7 +14,7 @@ pub const OPENING: Opening = Opening {
     radius: 0.62 * HEX,
     bite: Vec2::new(-0.95 * HEX, 0.0),
     bite_radius: 0.6 * HEX,
-    rim: 0.17 * HEX,
+    rim: 0.05 * HEX,
     fringe: 0.25 * HEX,
 };
 pub const ATOM_RADIUS: f32 = 0.4 * HEX;

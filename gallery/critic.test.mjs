@@ -109,3 +109,26 @@ test('a failed rerun removes an earlier approval', () => {
         assert.throws(() => readFileSync(join(root, 'run/approved-hashes.txt')));
     } finally { rmSync(root, { recursive: true }); }
 });
+
+test('a scene with an approved design is judged against that design and its brief', () => {
+    const { root, run } = fixture('palette old\n', 8);
+    try {
+        mkdirSync(join(root, 'art/machines/palette'), { recursive: true });
+        writeFileSync(join(root, 'art/machines/palette/design.png'), 'design');
+        writeFileSync(join(root, 'art/machines/palette/design.md'), 'A frame of shelf fungus.');
+        const stub = join(root, 'bin/codex');
+        writeFileSync(stub, readFileSync(stub, 'utf8') + `
+const images = process.argv.flatMap((arg, i) => process.argv[i - 1] === '--image' ? [arg] : []);
+if (images[1] !== 'art/machines/palette/design.png') throw Error('design image missing: ' + images);
+if (!process.argv.some(arg => arg.includes('approved design') && arg.includes('A frame of shelf fungus.'))) throw Error('brief missing');
+`);
+        const first = run();
+        assert.equal(first.status, 0, first.stderr);
+        writeFileSync(join(root, 'art/machines/palette/design.md'), 'A frame of brass.');
+        writeFileSync(stub, readFileSync(stub, 'utf8').replace('A frame of shelf fungus.', 'A frame of brass.').replace('score:8', 'score:6'));
+        const second = run();
+        assert.notEqual(second.status, 0);
+        assert.match(second.stderr, /below eight/);
+        assert.equal(readFileSync(join(root, 'calls'), 'utf8'), 'called\ncalled\n');
+    } finally { rmSync(root, { recursive: true }); }
+});

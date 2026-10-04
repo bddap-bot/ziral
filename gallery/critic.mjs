@@ -39,12 +39,17 @@ for (const [name, hash] of current) {
     if (baseline.get(name) === hash) continue;
     changed++;
     const image = `${root}/${name}.png`;
-    const key = createHash('sha256').update(name + '\n' + hash + '\n' + rubric).digest('hex');
+    const design = `art/machines/${name}/design.png`;
+    const brief = existsSync(design) ? readFileSync(`art/machines/${name}/design.md`, 'utf8') : '';
+    const designed = brief ? [readFileSync(design), brief] : [];
+    const key = designed.reduce((h, part) => h.update('\n').update(part), createHash('sha256').update(name + '\n' + hash + '\n' + rubric)).digest('hex');
     const output = `${cache}/${key}.json`;
     if (!existsSync(output)) {
         const pending = `${root}/score.json`;
-        const prompt = `Evaluate this scene only. Do not edit files. Scene: ${name}.\n\n${rubric}`;
-        const run = spawnSync('codex', ['exec', prompt, '--ephemeral', '--sandbox', 'read-only', '--output-schema', `${root}/schema.json`, '--output-last-message', pending, '--image', image], { stdio: ['ignore', 'inherit', 'inherit'] });
+        const reference = brief ? `\n\nThe second image is the approved design for this scene's subject. Its brief:\n\n${brief}` : '';
+        const prompt = `Evaluate this scene only. Do not edit files. Scene: ${name}.${reference}\n\n${rubric}`;
+        const images = brief ? ['--image', image, '--image', design] : ['--image', image];
+        const run = spawnSync('codex', ['exec', prompt, '--ephemeral', '--sandbox', 'read-only', '--output-schema', `${root}/schema.json`, '--output-last-message', pending, ...images], { stdio: ['ignore', 'inherit', 'inherit'] });
         if (run.status !== 0) throw Error(`critic failed for ${name}`);
         const result = resultAt(pending, name);
         validate(name, hash);

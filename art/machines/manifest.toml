@@ -1,6 +1,7 @@
 layout = "A game sprite seen from directly above, painted over the attached layout: the coloured shape is the machine, a dark cell is a seat that uses up the piece set on it, a dimmed cell is a seat that holds its piece, a pale cell is where a new piece appears, each in whatever form suits the machine, and flat chroma green stays plain green."
 ball = "The flat magenta ball is a piece in the hand: the jaws close around it, and it stays flat magenta."
 family = "The second attached image is this machine's sibling from the same family: match its materials, part shapes and part scale exactly."
+design = "The second attached image is this machine's approved design: repaint that same object fitted to the layout's shape, keeping its materials, part shapes, colours and their arrangement, and adding no part or material it does not show."
 style = "Fired Workshop: glazed ceramic, darkened brass and rubber, rich tactile materials, generous ornamental hardware, soft even light, no lettering."
 
 [machine.arm]
@@ -210,7 +211,7 @@ layer = "on"
 energy_scaled = false
 
 [machine.portal]
-caption = "A portal frame of living shelf fungus: stacked bracket shelves banded rust, ochre and cream fill the crescent, pale jointed legs hang toward the opening, coral carapace nubs erupt between them, and a pearly membrane rings the plain green opening."
+caption = "A portal frame of shelf fungus: stacked bracket shelves banded rust, ochre and cream fill the crescent, pale jointed legs hang from their gills toward the opening, coral nubs erupt between them, and a thread-thin translucent membrane rings the rest."
 motion = "dilate"
 
 [machine.portal.instrument]

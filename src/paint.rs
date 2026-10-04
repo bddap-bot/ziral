@@ -28,13 +28,16 @@ const HELD: f32 = 0.3;
 const CONSUMED: f32 = 0.6;
 const EMERGES: f32 = 0.55;
 const INSET: f32 = 0.8;
+const LIP: f32 = 0.7;
 const GENERATOR: &str = include_str!("../art/paint/default");
+const DERIVE: &str = "art/paint/reference.sh";
 
 #[derive(Deserialize)]
 struct Manifest {
     layout: String,
     family: String,
     ball: String,
+    design: String,
     style: String,
     machine: BTreeMap<String, Entry>,
 }
@@ -60,6 +63,14 @@ fn caption(manifest: &Manifest, item: Machine) -> &str {
 }
 
 fn prompt(manifest: &Manifest, item: Machine) -> String {
+    if design(Path::new(env!("CARGO_MANIFEST_DIR")), item).is_some() {
+        return format!(
+            "{} {} {}",
+            manifest.layout,
+            caption(manifest, item),
+            manifest.design
+        );
+    }
     let family = match like(manifest, item) {
         Some(_) => format!(" {}", manifest.family),
         None => String::new(),
@@ -342,17 +353,17 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
     let frame = Frame::new(item, side);
     let shape = Footprint::of(item);
     let (mut covered, mut filled, mut outside, mut spilled) = (0.0, 0.0, 0.0, 0.0);
+    let (mut lip, mut lined) = (0.0, 0.0);
     for (x, y, pixel) in image.enumerate_pixels_mut() {
         let rgb = [0, 1, 2].map(|c| f32::from(pixel[c]) / 255.0);
         let depth = shape.depth(frame.world(x, y));
-        let core = match item {
-            Machine::Portal => {
-                look::OPENING.depth(frame.world(x, y) - px(ORIGIN)) - look::OPENING.fringe
-            }
+        let hole = match item {
+            Machine::Portal => look::OPENING.depth(frame.world(x, y) - px(ORIGIN)),
             _ => f32::NEG_INFINITY,
         };
+        let core = hole - look::OPENING.fringe;
         let open = core > 0.0;
-        let inside = frame.cover(depth) * (1.0 - frame.cover(core));
+        let inside = frame.cover(depth) * (1.0 - frame.cover(core + 0.5 * frame.side / frame.px));
         let keyed = matte(rgb);
         let held = match (offset, hand(item)) {
             (Some(_), Some(hand)) => ball(rgb).max(frame.cover(
@@ -364,6 +375,10 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
         let alpha = painted * inside;
         covered += inside;
         filled += alpha;
+        if (-look::OPENING.rim..0.0).contains(&hole) {
+            lip += 1.0;
+            lined += alpha;
+        }
         if depth < -MARGIN * HEX || open {
             outside += 1.0;
             spilled += painted;
@@ -379,6 +394,12 @@ fn finish(item: Machine, raw: &RgbaImage) -> Result<Sprite, String> {
         return Err(format!(
             "{:.1}% of the surround is painted, not key",
             100.0 * spilled / outside
+        ));
+    }
+    if lined < LIP * lip {
+        return Err(format!(
+            "the rim covers {:.0}% of the opening's edge",
+            100.0 * lined / lip
         ));
     }
     bleed(&mut image);
@@ -492,6 +513,21 @@ fn sprite(root: &Path, item: Machine) -> PathBuf {
     root.join(format!("art/{}.png", look::machine(item).skin.name))
 }
 
+fn design(root: &Path, item: Machine) -> Option<PathBuf> {
+    Some(sprite(root, item).with_file_name("design.png")).filter(|path| path.exists())
+}
+
+fn generator<'a>(chosen: Option<&'a str>, root: &Path, item: Machine) -> &'a str {
+    chosen.unwrap_or(match design(root, item) {
+        Some(_) => DERIVE,
+        None => GENERATOR.trim(),
+    })
+}
+
+fn reference(manifest: &Manifest, root: &Path, item: Machine) -> Option<PathBuf> {
+    design(root, item).or_else(|| like(manifest, item).map(|sibling| sprite(root, sibling)))
+}
+
 fn save(image: &RgbaImage, path: &Path) -> Result<(), String> {
     let mut png = Vec::new();
     PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Adaptive)
@@ -532,9 +568,11 @@ pub fn run(args: &[String]) -> Option<i32> {
     if flag != "--paint" {
         return None;
     }
-    let (generator, names) = match rest {
-        [option, generator, names @ ..] if option == "--generator" => (generator.as_str(), names),
-        names => (GENERATOR.trim(), names),
+    let (chosen, names) = match rest {
+        [option, generator, names @ ..] if option == "--generator" => {
+            (Some(generator.as_str()), names)
+        }
+        names => (None, names),
     };
     let mut items: Vec<Machine> = Vec::new();
     for item in names.iter().map(|name| look::named(name)) {
@@ -559,13 +597,14 @@ pub fn run(args: &[String]) -> Option<i32> {
                         items.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
                     {
                         let name = look::name(item);
+                        let generator = generator(chosen, &root, item);
                         let words = caption(&manifest, item).split_whitespace().count();
                         let (cost, painted) =
                             paint(
                                 item,
                                 generator,
                                 &prompt(&manifest, item),
-                                like(&manifest, item).map(|sibling| sprite(&root, sibling)),
+                                reference(&manifest, &root, item),
                                 &scratch,
                             );
                         let path = sprite(&root, item);
@@ -689,8 +728,7 @@ mod tests {
                 item,
                 "art/paint/layout.sh",
                 &prompt(&manifest, item),
-                like(&manifest, item)
-                    .map(|sibling| sprite(Path::new(env!("CARGO_MANIFEST_DIR")), sibling)),
+                reference(&manifest, Path::new(env!("CARGO_MANIFEST_DIR")), item),
                 &dir,
             );
             let painted = painted.unwrap();
@@ -791,6 +829,20 @@ mod tests {
     }
 
     #[test]
+    fn a_return_that_leaves_the_opening_unrimmed_is_rejected() {
+        let item = Machine::Portal;
+        let mut raw = layout(item);
+        let frame = Frame::new(item, raw.width());
+        for (x, y, pixel) in raw.enumerate_pixels_mut() {
+            if look::OPENING.depth(frame.world(x, y) - px(ORIGIN)) > -2.0 * look::OPENING.rim {
+                *pixel = image::Rgba([0, 255, 0, 255]);
+            }
+        }
+        let error = finish(item, &raw).err().unwrap();
+        assert!(error.contains("of the opening's edge"), "{error}");
+    }
+
+    #[test]
     fn an_off_aspect_return_is_rejected_not_stretched() {
         let raw = RgbaImage::new(1024, 1000);
         let error = finish(Machine::Portal, &raw).err().unwrap();
@@ -857,6 +909,60 @@ mod tests {
             reference.display().to_string()
         );
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_designed_machine_is_painted_from_its_design_not_the_house_style() {
+        let manifest = manifest();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let designed: Vec<Machine> = Machine::ALL
+            .into_iter()
+            .filter(|item| design(root, *item).is_some())
+            .collect();
+        assert!(designed.contains(&Machine::Portal));
+        for item in designed {
+            let path = design(root, item).unwrap();
+            assert!(
+                path.with_extension("md").exists(),
+                "{} has no brief",
+                path.display()
+            );
+            let prompt = prompt(&manifest, item);
+            assert!(prompt.contains(&manifest.design), "{}", look::name(item));
+            assert!(!prompt.contains(&manifest.style), "{}", look::name(item));
+            assert_eq!(reference(&manifest, root, item), Some(path));
+        }
+    }
+
+    #[test]
+    fn a_designed_machine_ships_its_design_derived_unless_another_painter_is_chosen() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        for item in Machine::ALL {
+            let Some(path) = design(root, item) else {
+                assert_eq!(generator(None, root, item), GENERATOR.trim());
+                continue;
+            };
+            assert_eq!(generator(None, root, item), DERIVE);
+            assert_eq!(generator(Some("other"), root, item), "other");
+            let derived = finish(item, &image::open(&path).unwrap().to_rgba8())
+                .unwrap()
+                .image;
+            let shipped = shipped(item);
+            let (mut error, mut n) = (0.0, 0.0);
+            for (a, b) in derived.pixels().zip(shipped.pixels()) {
+                let weight = f32::from(a[3].max(b[3])) / 255.0;
+                for c in 0..4 {
+                    error += weight * f32::from(a[c].abs_diff(b[c]));
+                }
+                n += 4.0 * weight;
+            }
+            let error = error / n;
+            assert!(
+                error < 4.0,
+                "{} differs from its derived design by {error:.1} per channel",
+                look::name(item)
+            );
+        }
     }
 
     #[test]
