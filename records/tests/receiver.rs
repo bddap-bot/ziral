@@ -78,7 +78,7 @@ async fn prefixes_are_private_idempotent_append_only_and_credential_free() {
 }
 
 #[tokio::test]
-async fn every_storage_bound_rejects_without_changing_the_record() {
+async fn an_oversized_record_is_rejected_without_changing_it() {
     let temporary = tempfile::tempdir().unwrap();
     let directory = temporary.path().join("records");
     let receiver = Receiver::new(directory.clone());
@@ -97,34 +97,98 @@ async fn every_storage_bound_rejects_without_changing_the_record() {
             .to_string()
             .contains("record full")
     );
-    let legacy = directory.join("legacy");
-    std::fs::create_dir(&legacy).unwrap();
-    let filler = legacy.join("old.json");
-    std::fs::File::create(&filler)
+    assert_eq!(std::fs::read(path).unwrap(), before);
+}
+
+fn session_file_age(path: &std::path::Path, age: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
         .unwrap()
-        .set_len(1024 * 1024 * 1024)
+        .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(age))
         .unwrap();
-    assert!(
-        receiver
-            .store(batch(&id, 1, json!([[1, "Refill"]])))
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("storage full")
-    );
-    std::fs::remove_file(filler).unwrap();
-    for n in 0..1023 {
-        std::fs::write(legacy.join(format!("{n}.json")), b"{}").unwrap();
+}
+
+fn session_file(path: &std::path::Path, length: u64, age: u64) {
+    std::fs::File::create(path)
+        .unwrap()
+        .set_len(length)
+        .unwrap();
+    session_file_age(path, age);
+}
+
+#[tokio::test]
+async fn an_upload_flood_evicts_the_least_recent_live_sessions_instead_of_rejecting() {
+    let temporary = tempfile::tempdir().unwrap();
+    let directory = temporary.path().join("records");
+    let receiver = Receiver::new(directory.clone());
+    let banned = "d".repeat(36);
+    receiver
+        .store(batch(&banned, 0, json!([[0, "Refill"]])))
+        .await
+        .unwrap();
+    ziral_records::ban(directory.clone(), &banned)
+        .await
+        .unwrap();
+    session_file_age(&directory.join(format!("{banned}.json")), 0);
+    let archive = directory.join("archive");
+    std::fs::create_dir(&archive).unwrap();
+    for n in 0..2048 {
+        std::fs::write(archive.join(format!("{n}.json")), b"{}").unwrap();
     }
-    assert!(
+    session_file(&archive.join("large.json"), 1024 * 1024 * 1024, 0);
+    let flood: Vec<_> = (0..1024)
+        .map(|n| directory.join(format!("{n:036}.json")))
+        .collect();
+    for (age, path) in flood.iter().enumerate() {
+        session_file(path, 2, 1000 + age as u64);
+    }
+    assert_eq!(
         receiver
             .store(batch(&"c".repeat(36), 0, json!([[0, "Refill"]])))
             .await
-            .unwrap_err()
-            .to_string()
-            .contains("too many sessions")
+            .unwrap(),
+        1
     );
-    assert_eq!(std::fs::read(path).unwrap(), before);
+    assert!(!flood[0].exists());
+    assert!(flood[1..].iter().all(|path| path.exists()));
+    assert!(directory.join(format!("{banned}.json")).exists());
+    assert_eq!(std::fs::read_dir(&archive).unwrap().count(), 2049);
+
+    std::fs::remove_file(&flood[1]).unwrap();
+    std::fs::remove_file(&flood[2]).unwrap();
+    let large = directory.join(format!("{}.json", "e".repeat(36)));
+    session_file(&large, 1024 * 1024 * 1024 - 1000, 500);
+    assert_eq!(
+        receiver
+            .store(batch(&"f".repeat(36), 0, json!([[0, "Refill"]])))
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(!large.exists());
+    assert!(flood[3..].iter().all(|path| path.exists()));
+
+    let oldest = format!("{:036}", 3);
+    std::fs::write(
+        &flood[3],
+        json!({"session":oldest,"build":"b".repeat(40),"seed":0,"inputs":[[0,"Refill"]]})
+            .to_string(),
+    )
+    .unwrap();
+    session_file_age(&flood[3], 0);
+    for filler in ["8", "9"] {
+        std::fs::write(directory.join(format!("{}.json", filler.repeat(36))), b"{}").unwrap();
+    }
+    assert_eq!(
+        receiver
+            .store(batch(&oldest, 1, json!([[1, "Refill"]])))
+            .await
+            .unwrap(),
+        2
+    );
+    assert!(!flood[4].exists());
+    assert!(flood[5..].iter().all(|path| path.exists()));
 }
 
 #[tokio::test]

@@ -4,13 +4,14 @@ use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use tokio::sync::Mutex;
 
 pub const DOMAIN: &[u8] = b"ziral-record/1";
 const RECORD_LIMIT: usize = 32 * 1024 * 1024;
 const TOTAL_LIMIT: u64 = 1024 * 1024 * 1024;
+const SESSION_LIMIT: usize = 1024;
 
 #[derive(Debug, Deserialize)]
 pub struct Batch {
@@ -64,7 +65,7 @@ impl Receiver {
             .write
             .try_lock()
             .map_err(|_| anyhow::anyhow!("receiver busy"))?;
-        let (count, total, existing) = usage(&self.directory, &batch.session).await?;
+        let (existing, mut live) = usage(&self.directory, &batch.session).await?;
         let path =
             existing.unwrap_or_else(|| self.directory.join(format!("{}.json", batch.session)));
         let mut record = match tokio::fs::read(&path).await {
@@ -93,17 +94,26 @@ impl Receiver {
         }
         let bytes = serde_json::to_vec(&record)?;
         ensure!(bytes.len() <= RECORD_LIMIT, "record full");
-        ensure!(count < 1024 || path.exists(), "too many sessions");
-        let previous = match tokio::fs::metadata(&path).await {
-            Ok(metadata) => metadata.len(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(error) => return Err(error.into()),
-        };
-        ensure!(
-            total - previous + bytes.len() as u64 <= TOTAL_LIMIT,
-            "storage full"
-        );
+        live.sort();
+        let mut total = live.iter().map(|session| session.1).sum::<u64>();
+        if path.parent() == Some(&self.directory) {
+            total += bytes.len() as u64;
+        }
+        let mut evicted = 0;
+        while live.len() - evicted >= SESSION_LIMIT || total > TOTAL_LIMIT {
+            let (_, length, oldest) = &live[evicted];
+            match tokio::fs::remove_file(oldest).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+            total -= length;
+            evicted += 1;
+        }
         private_directory(&self.directory).await?;
+        if evicted > 0 {
+            sync_directory(&self.directory).await?;
+        }
         let parent = path.parent().unwrap();
         private_directory(parent).await?;
         let temporary = path.with_extension("pending");
@@ -169,35 +179,45 @@ pub async fn ban(directory: PathBuf, id: &str) -> Result<()> {
     sync_directory(&directory).await
 }
 
-async fn usage(directory: &Path, session: &str) -> Result<(usize, u64, Option<PathBuf>)> {
-    let mut pending = vec![directory.to_owned()];
-    let (mut count, mut bytes) = (0, 0);
+// Subdirectories are archives and banned sessions are held for review: an upload
+// flood can neither evict them nor fill the bounds with them.
+async fn usage(
+    root: &Path,
+    session: &str,
+) -> Result<(Option<PathBuf>, Vec<(SystemTime, u64, PathBuf)>)> {
+    let mut pending = vec![root.to_owned()];
     let mut existing = None;
+    let mut live = Vec::new();
+    let mut banned = std::collections::HashSet::new();
     let name = format!("{session}.json");
     while let Some(directory) = pending.pop() {
-        let mut entries = match tokio::fs::read_dir(directory).await {
+        let mut entries = match tokio::fs::read_dir(&directory).await {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
         while let Some(entry) = entries.next_entry().await? {
             let kind = entry.file_type().await?;
+            let path = entry.path();
             if kind.is_dir() {
-                pending.push(entry.path());
-            } else if kind.is_file() && entry.path().extension().is_some_and(|ext| ext == "pending")
-            {
-                tokio::fs::remove_file(entry.path()).await?;
-            } else if kind.is_file() && entry.path().extension().is_some_and(|ext| ext == "json") {
-                count += 1;
-                bytes += entry.metadata().await?.len();
+                pending.push(path);
+            } else if kind.is_file() && path.extension().is_some_and(|ext| ext == "pending") {
+                tokio::fs::remove_file(path).await?;
+            } else if kind.is_file() && path.extension().is_some_and(|ext| ext == "json") {
                 if entry.file_name() == name.as_str() {
                     ensure!(existing.is_none(), "duplicate session files");
-                    existing = Some(entry.path());
+                    existing = Some(path);
+                } else if directory == root {
+                    let metadata = entry.metadata().await?;
+                    live.push((metadata.modified()?, metadata.len(), path));
                 }
+            } else if directory == root && path.extension().is_some_and(|ext| ext == "revoked") {
+                banned.insert(path.with_extension("json"));
             }
         }
     }
-    Ok((count, bytes, existing))
+    live.retain(|session| !banned.contains(&session.2));
+    Ok((existing, live))
 }
 
 impl iroh::protocol::ProtocolHandler for Receiver {
