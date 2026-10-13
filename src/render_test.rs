@@ -40,23 +40,11 @@ pub fn lock() -> Guard {
                 "render test {name} exceeded {seconds} s; stuck thread backtraces:"
             );
             drop(stderr);
-            let mut debugger = Command::new("timeout");
-            debugger.args([
-                "--signal=KILL",
-                "15s",
-                "gdb",
-                "--batch",
-                "--nx",
-                "--quiet",
-                "-ex",
-                "set print frame-arguments none",
-            ]);
             #[cfg(target_os = "linux")]
-            debugger.args(["-ex", &format!("python next(t for t in gdb.selected_inferior().threads() if t.ptid[1] == {tid}).switch()"), "-ex", "bt"]);
+            let mut debugger = debugger(std::process::id(), tid, "15s");
             #[cfg(not(target_os = "linux"))]
-            debugger.args(["-ex", "thread apply all bt"]);
+            let mut debugger = debugger(std::process::id(), "15s");
             let status = debugger
-                .args(["--pid", &std::process::id().to_string()])
                 .stdin(Stdio::null())
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
@@ -70,6 +58,29 @@ pub fn lock() -> Guard {
         watchdog: Some(watchdog),
         _render: render,
     }
+}
+
+/// A debugger killed while a thread waits uninterruptibly leaves that thread's attach
+/// SIGSTOP pending, stopping the whole process once the wait returns.
+fn debugger(pid: u32, #[cfg(target_os = "linux")] tid: libc::c_long, kill_after: &str) -> Command {
+    let mut debugger = Command::new("sh");
+    debugger.args([
+        "-c",
+        &format!("timeout --signal=KILL {kill_after} \"$@\"; s=$?; kill -CONT {pid}; exit $s"),
+        "sh",
+        "gdb",
+        "--batch",
+        "--nx",
+        "--quiet",
+        "-ex",
+        "set print frame-arguments none",
+    ]);
+    #[cfg(target_os = "linux")]
+    debugger.args(["-ex", &format!("python next(t for t in gdb.selected_inferior().threads() if t.ptid[1] == {tid}).switch()"), "-ex", "bt"]);
+    #[cfg(not(target_os = "linux"))]
+    debugger.args(["-ex", "thread apply all bt"]);
+    debugger.args(["--pid", &pid.to_string()]);
+    debugger
 }
 
 impl Drop for Guard {
@@ -160,4 +171,81 @@ fn error_exits_report_the_requesting_renderer_and_cause() {
             assert!(stderr.contains(text), "{case} omitted {text:?}: {stderr}");
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_debugger_killed_during_an_uninterruptible_wait_leaves_the_process_running() {
+    if std::env::var_os("ZIRAL_UNINTERRUPTIBLE_WAIT_CASE").is_some() {
+        unsafe {
+            assert_eq!(
+                libc::prctl(libc::PR_SET_PTRACER, libc::PR_SET_PTRACER_ANY, 0, 0, 0),
+                0
+            );
+            if libc::syscall(
+                libc::SYS_clone,
+                (libc::CLONE_VFORK | libc::SIGCHLD) as libc::c_ulong,
+                0,
+                0,
+                0,
+                0,
+            ) == 0
+            {
+                libc::sleep(6);
+                libc::_exit(0);
+            }
+        }
+        return;
+    }
+    let mut waiting = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "render_test::a_debugger_killed_during_an_uninterruptible_wait_leaves_the_process_running",
+        ])
+        .env("ZIRAL_UNINTERRUPTIBLE_WAIT_CASE", "1")
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = waiting.id();
+    let tasks = format!("/proc/{pid}/task");
+    let in_wait = || {
+        std::fs::read_dir(&tasks)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|task| {
+                std::fs::read_to_string(task.path().join("stat")).is_ok_and(|stat| {
+                    stat.rsplit_once(')')
+                        .is_some_and(|(_, rest)| rest.trim_start().starts_with('D'))
+                })
+            })
+    };
+    let start = std::time::Instant::now();
+    while !in_wait() {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "the child never entered its vfork wait"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let killed = debugger(pid, pid as libc::c_long, "1s")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert_eq!(killed.code(), Some(137), "the debugger must die mid-attach");
+    let start = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = waiting.try_wait().unwrap() {
+            break status;
+        }
+        if start.elapsed() > Duration::from_secs(20) {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+            waiting.kill().unwrap();
+            waiting.wait().unwrap();
+            panic!("the process never resumed: {stat}");
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+    assert!(status.success(), "{status}");
 }
