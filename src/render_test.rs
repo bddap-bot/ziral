@@ -32,7 +32,7 @@ pub fn lock() -> Guard {
     let tid = unsafe { libc::syscall(libc::SYS_gettid) };
     let (stop, done) = mpsc::channel();
     let watchdog = thread::spawn(move || {
-        if done.recv_timeout(Duration::from_secs(seconds)) == Err(mpsc::RecvTimeoutError::Timeout) {
+        if expired(&done, seconds) {
             let mut stderr = std::io::stderr().lock();
             use std::io::Write;
             let _ = writeln!(
@@ -58,6 +58,12 @@ pub fn lock() -> Guard {
         watchdog: Some(watchdog),
         _render: render,
     }
+}
+
+/// Counts only time the watchdog ran, so a process stopped by its scheduler is not hung.
+fn expired(done: &mpsc::Receiver<()>, seconds: u64) -> bool {
+    (0..seconds)
+        .all(|_| done.recv_timeout(Duration::from_secs(1)) == Err(mpsc::RecvTimeoutError::Timeout))
 }
 
 /// A debugger killed while a thread waits uninterruptibly leaves that thread's attach
@@ -248,4 +254,45 @@ fn a_debugger_killed_during_an_uninterruptible_wait_leaves_the_process_running()
         thread::sleep(Duration::from_millis(50));
     };
     assert!(status.success(), "{status}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn time_the_process_spends_stopped_does_not_count_toward_the_deadline() {
+    if std::env::var_os("ZIRAL_STOPPED_DEADLINE_CASE").is_some() {
+        let (_stop, done) = mpsc::channel();
+        let start = std::time::Instant::now();
+        let mut stopper = Command::new("sh")
+            .args([
+                "-c",
+                &format!(
+                    "sleep 0.3; kill -STOP {0}; sleep 4; kill -CONT {0}",
+                    std::process::id()
+                ),
+            ])
+            .spawn()
+            .unwrap();
+        assert!(expired(&done, 3));
+        let elapsed = start.elapsed();
+        stopper.wait().unwrap();
+        assert!(
+            elapsed > Duration::from_millis(5500),
+            "expired after {elapsed:?}"
+        );
+        return;
+    }
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "render_test::time_the_process_spends_stopped_does_not_count_toward_the_deadline",
+            "--nocapture",
+        ])
+        .env("ZIRAL_STOPPED_DEADLINE_CASE", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
