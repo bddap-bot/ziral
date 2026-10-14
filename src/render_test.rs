@@ -21,6 +21,15 @@ pub fn lock() -> Guard {
         .trim()
         .parse::<u64>()
         .unwrap();
+    let (stop, watchdog) = watch(seconds);
+    Guard {
+        stop: Some(stop),
+        watchdog: Some(watchdog),
+        _render: render,
+    }
+}
+
+fn watch(seconds: u64) -> (mpsc::Sender<()>, JoinHandle<()>) {
     let name = thread::current().name().unwrap_or("render").to_owned();
     #[cfg(target_os = "linux")]
     assert_eq!(
@@ -33,13 +42,13 @@ pub fn lock() -> Guard {
     let (stop, done) = mpsc::channel();
     let watchdog = thread::spawn(move || {
         if expired(&done, seconds) {
-            let mut stderr = std::io::stderr().lock();
             use std::io::Write;
+            // Writes past the test harness's output capture, which `_exit` would discard.
+            let mut stderr = std::io::stderr();
             let _ = writeln!(
                 stderr,
                 "render test {name} exceeded {seconds} s; stuck thread backtraces:"
             );
-            drop(stderr);
             #[cfg(target_os = "linux")]
             let mut debugger = debugger(std::process::id(), tid, "15s");
             #[cfg(not(target_os = "linux"))]
@@ -49,15 +58,12 @@ pub fn lock() -> Guard {
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
                 .status();
-            eprintln!("timeout debugger: {status:?}");
-            std::process::exit(1);
+            let _ = writeln!(stderr, "timeout debugger: {status:?}");
+            // Exit handlers would tear down the GPU driver under the still-running render threads.
+            unsafe { libc::_exit(1) }
         }
     });
-    Guard {
-        stop: Some(stop),
-        watchdog: Some(watchdog),
-        _render: render,
-    }
+    (stop, watchdog)
 }
 
 /// Counts only time the watchdog ran, so a process stopped by its scheduler is not hung.
@@ -295,4 +301,32 @@ fn time_the_process_spends_stopped_does_not_count_toward_the_deadline() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_timeout_during_driver_work_exits_with_its_diagnosis() {
+    if std::env::var_os("ZIRAL_TIMEOUT_CASE").is_some() {
+        let _watchdog = watch(2);
+        let dir = std::env::temp_dir().join(format!("ziral-timeout-{}", std::process::id()));
+        loop {
+            drop(crate::shot::still("portal", dir.clone(), 1));
+        }
+    }
+    let _render = lock();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "render_test::a_timeout_during_driver_work_exits_with_its_diagnosis",
+        ])
+        .env("ZIRAL_TIMEOUT_CASE", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("render test render_test::a_timeout_during_driver_work_exits_with_its_diagnosis exceeded 2 s"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("timeout debugger: Ok("), "{stderr}");
 }
